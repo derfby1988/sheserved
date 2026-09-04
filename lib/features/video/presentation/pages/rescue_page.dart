@@ -261,9 +261,11 @@ class _RescuePageState extends State<RescuePage> {
       }
 
       await ServiceLocator.instance.videoRepository.updateRescueStatus(
-          responseId: _activeResponseId!,
-          status: newStatus,
-          notes: notes,
+        responseId: _activeResponseId!,
+        status: newStatus,
+        videoId: _selectedEmergency?['videoId']?.toString(),
+        volunteerId: user?.id,
+        notes: notes,
       );
       
       if (user != null) {

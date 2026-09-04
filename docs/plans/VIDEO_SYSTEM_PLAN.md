@@ -887,13 +887,16 @@ color: Colors.blue.withOpacity(0.6),
 4.  **Operational Phase**:
     - เมื่อกด "ตอบรับ" ระบบจะเริ่มส่งพิกัด GPS ของอาชีพ (Responder) ไปยังผู้แจ้งเหตุทันที
     - หน้าจอเปลี่ยนเป็นโหมดนำทาง (Navigation) และแสดง ETA (เวลาที่คาดว่าจะถึง)
-    - **Mission Lock (ล็อกการเปลี่ยนเหตุการณ์ระหว่างภารกิจ)**:
-        - ขณะ `_currentResponseId != null` (ผู้ช่วยเหลืออยู่ระหว่างภารกิจ) แผงยอดนิยม (Trending Panel) จะแสดงเฉพาะการ์ดเหตุการณ์ปัจจุบันเท่านั้น **ไม่แสดงการ์ดอื่นที่ไม่เกี่ยวข้อง**
-        - ปิดความสามารถเปลี่ยนเหตุการณ์ทุกช่องทาง เพื่อป้องกันผู้ช่วยเหลือเผลอกดเปลี่ยนเหตุการณ์ขณะภารกิจยังไม่จบ:
-            - แตะการ์ดอื่นใน Trending Panel → ถูกบล็อก (มองไม่เห็นการ์ดอื่นเลย)
+    - **Mission Lock (ล็อกการรับงานซ้อนระหว่างภารกิจ — ปรับปรุง 2026-09-04)**:
+        - **หลักการ**: จิตอาสามีภารกิจ active ได้**เพียง 1 งาน** (`incident_responses` status `accepted`/`arrived`/`en_route`) — ดูเหตุการณ์อื่นได้ แต่**ห้ามรับงานซ้อน** ต้องจบภารกิจก่อน (`resolved`/`cancelled`)
+        - **Mission Auto-Select**: เข้าหน้า EmergencyLivePage แบบไม่ระบุเหตุการณ์ (เช่น จากเมนู/แท็บ) → `_restoreActiveMissionIfNeeded()` ใช้ `getActiveRescues()` (Local-first) เปิดเหตุการณ์ของภารกิจให้อัตโนมัติ จิตอาสาไม่ต้องกดค้นหาเอง
+        - **เข้าดูเหตุการณ์อื่นได้ (Trending Filter)**: กดเปิดเหตุการณ์ใหม่ (เช่น "วิเคราะห์เหตุนี้" จาก Home) → ดูได้ แต่กล่องยอดนิยมแสดงเฉพาะ **(1) การ์ดเหตุการณ์ที่ภารกิจตนเองค้าง (2) การ์ดที่กำลังดูอยู่ (3) การ์ดที่ได้รับการแจ้งเตือนหรือมีสิทธิเข้าร่วมเป็นจิตอาสา** — เกณฑ์ "มีสิทธิ" ใช้ Rule 3-5 เดียวกับ `_isEligibleResponder()`: ไม่ใช่เหตุการณ์ตัวเอง + อาชีพตรงกับ `volunteerProfessionIds` ของหมวดหมู่ + ยังไม่มีคนอาชีพเดียวกันรับ (`_computeMissionTrendingFilter()` → `_eligibleTrendingVideoIds`) — ไม่มีภารกิจค้าง → แสดงทุกการ์ดตามปกติ — **Fullscreen ต้องใช้ลิสต์ที่กรองแล้วเช่นกัน** (กันปัดเลี่ยงตัวกรอง)
+        - **บล็อกที่ปุ่มรับงาน**: กด "รับภารกิจ" ที่เหตุการณ์ใหม่ขณะมีภารกิจค้าง → `_acceptRescue()` ตรวจ `getActiveRescues()` ก่อน dialog ยืนยัน → แสดง SnackBar "คุณมีภารกิจค้างอยู่ — ต้องกด "จบภารกิจ" ให้เสร็จก่อนจึงจะรับเหตุการณ์ใหม่ได้" แล้วเด้งกลับไปเหตุการณ์ภารกิจอัตโนมัติ
+        - **ขณะอยู่ในภารกิจของตัวเอง** (`_currentResponseId != null`) ปิดความสามารถเปลี่ยนเหตุการณ์ทุกช่องทาง ป้องกันเผลอกดเปลี่ยน:
+            - แตะการ์ดอื่นใน Trending Panel → ถูกบล็อก (แผงแสดงเฉพาะการ์ดภารกิจ)
             - ปัดขึ้น/ลงบน Video Player หน้าปกติ → ถูกบล็อก พร้อม SnackBar "อยู่ระหว่างภารกิจ — ไม่สามารถเปลี่ยนเหตุการณ์ได้"
             - ปัดขึ้น/ลงใน Fullscreen Video Viewer → ถูกบล็อก พร้อม SnackBar เดียวกัน
-        - เมื่อจบภารกิจ (`_currentResponseId` กลับเป็น null หลังสถานะ `resolved`/`cancelled`) → คืนความสามารถเปลี่ยนเหตุการณ์ตามปกติ
+        - เมื่อจบภารกิจ (`_currentResponseId` กลับเป็น null หลังสถานะ `resolved`/`cancelled`) → คืนความสามารถเปลี่ยนเหตุการณ์และรับงานใหม่ตามปกติ
         - **เหตุผล**: หากผู้ช่วยเหลือเปลี่ยนเหตุการณ์กลางคัน จะสูญเสียการติดตามเส้นทาง GPS, สถานะ responder, แผนที่ และข้อมูลแชทของเหตุการณ์เดิมที่ยังค้างภารกิจ
 5.  **Completion Phase**: เมื่อถึงจุดเกิดเหตุ สามารถกด "ถึงที่เกิดเหตุแล้ว" เพื่อสรุปภารกิจ
 
@@ -1358,6 +1361,96 @@ return false;
 - `GET /api/videos/:id/responders` คืนแถวของเหตุการณ์นั้นจาก Local DB
 - หน้า reporter เห็น marker responder + เส้นประนำทาง + snackbar แจ้งสถานะ
 - ไม่มี `PGRST200` ใน log ของ flow นี้
+
+---
+
+### Bug Fix #8 — กดรับภารกิจไปแล้ว กลับเข้าหน้าเดิมต้องกดรับใหม่ (Mission State Restore)
+**วันที่:** 2026-09-04
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `lib/features/video/data/repositories/video_repository.dart`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`
+
+**อาการ:** จิตอาสากด "รับช่วยเหลือ" สำเร็จ (แถวถูกบันทึกลง `incident_responses` ใน Local Postgres จริง, status `accepted`) แต่เมื่อออกจากหน้าแล้วกลับเข้ามาเหตุการณ์เดิม ระบบแสดงการ์ด "รับภารกิจช่วยเหลือ" ใหม่ราวกับยังไม่เคยรับ
+
+**สาเหตุ (Root Causes — 3 จุด):**
+1. **Home Page dedup อ่าน Supabase ที่ว่างเปล่า**: `getTakenIncidentVideoIdsByProfession()` อ่าน `incident_responses` จาก Supabase เท่านั้น — แต่ตารางนี้ใน Supabase **ว่างทั้งตาราง** (dual-write จาก Local ล้มเหลวเงียบๆ เพราะ video ไม่ exist ใน cloud / FK violation) และยังใช้ nested relationship `users:volunteer_id(user_group_roles(profession_id))` ที่ล้มด้วย `PGRST200` → `catch` คืน `Set()` เปล่าเงียบๆ → Profession De-duplication ใช้งานไม่ได้เลย → การ์ดแดงโผล่ซ้ำให้คนที่รับไปแล้ว
+2. **`getActiveRescues()` (RescuePage) อ่าน Supabase เท่านั้น** → ได้ `[]` → restore ภารกิจที่ค้างอยู่ไม่ได้ และ status filter ขาด `en_route` (สถานะเริ่มต้นหลังกดรับ)
+3. **Restore ใน Live Page ไม่เริ่ม tracking ซ้ำ**: `_loadResponders()` restore `_currentResponseId` ได้ แต่ `initState` เรียก `_startResponderTracking()`/`_initCompass()` ก่อน restore เสร็จ แล้วทั้งคู่ early-return เพราะ `_currentResponseId == null` ในตอนนั้น → หลัง restore สำเร็จ GPS tracking และเข็มเข็มทิศไม่เคยเริ่มทำงาน
+
+**กฎที่ต้องปฏิบัติ:**
+- **Local-first ครบทุก read ของ `incident_responses`** (ต่อยอด Bug Fix #7): ทั้ง `getIncidentResponders`, `getTakenIncidentVideoIdsByProfession` และ `getActiveRescues` ต้องเรียก Local API ก่อน — Supabase เป็น fallback เท่านั้น
+- **Endpoints ที่ต้องมีใน Local API**:
+  - `GET /api/videos/taken-by-profession/:professionId` → video_ids ที่ถูกรับแล้วตามอาชีพ (status `accepted/arrived/en_route`)
+  - `GET /api/videos/volunteer/:volunteerId/active-rescues` → ภารกิจ active ของ volunteer พร้อม `videos` object ฝังอยู่ (รูปแบบเดียวกับ `*, videos(*)` ของ PostgREST)
+- **ห้ามใช้ nested PostgREST relationship** — ให้ query ตารางหลัก (`incident_responses`) แล้ว join `user_group_roles` ฝั่ง server หรือ query แยกแบบ flat
+- **Silent catch = ฟีเจอร์เงียบหาย**: `catch (e) { return {}; }` ทำให้ dedup พังโดยไม่มีใครรู้ — ต้อง `debugPrint` ทุกจุดที่ fallback
+- **Restore ต้องกู้ side-effect คืนด้วย**: หลัง restore `_currentResponseId` สำเร็จ ต้องเรียก `_startResponderTracking()` + `_initCompass()` + `_checkPrivacyPermissions()` ซ้ำ เพราะ initState เรียกไปแล้วตอนที่ state ยังเป็น null
+- **Status filter ต้องครบ 3 สถานะเสมอ**: `accepted`, `arrived`, `en_route`
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- `GET /api/videos/taken-by-profession/:professionId` คืน video_id ของเหตุการณ์ที่รับไปแล้วจาก Local DB → การ์ดแดงบน Home ไม่โผล่ซ้ำสำหรับภารกิจที่รับอยู่
+- `GET /api/videos/volunteer/:volunteerId/active-rescues` คืนภารกิจ active พร้อม `videos.id/type/user_id`
+- กลับเข้าเหตุการณ์เดิมตอนภารกิจยังไม่จบ → เห็น Rescue Control Panel ("กำลังปฏิบัติภารกิจ") ไม่ใช่ปุ่มรับภารกิจใหม่ และ GPS tracking ทำงานต่อทันที
+
+**เพิ่มเติม (2026-09-04) — Mission Auto-Select:**
+- จิตอาสาที่มีภารกิจค้างเข้าหน้า Live **แบบไม่ระบุเหตุการณ์** (เมนู/แท็บ) → `_loadInitialData()` เรียก `_restoreActiveMissionIfNeeded()` ใช้ `getActiveRescues()` (Local-first) หาภารกิจ active แล้ว `_switchVideo()` ไปยังเหตุการณ์นั้นทันที — จิตอาสาไม่ต้องกดค้นหาเหตุการณ์เอง (ถ้าระบุเหตุการณ์มาเอง → ดูได้ตาม Mission Lock Hint ด้านล่าง)
+- ถ้า `_switchVideo` ถูกเรียกจาก auto-select ผู้เรียกต้อง `return` ทันที (ป้องกัน double-load) เพราะ `_switchVideo` เรียก `_loadInitialData()` ใหม่ให้เอง
+- Safety net: ถ้าการ์ดภารกิจไม่อยู่ในหน้าแรกของ trending (เกิน 20 อันดับ) ให้ฝัง `_currentVideo` เข้าไปในลิสต์ที่ส่งให้ `TrendingPanelWidget` ขณะล็อก เพื่อไม่ให้แผงแสดงข้อความว่างแทนการ์ดภารกิจ
+- **Mission Lock Hint (ปรับปรุง 2026-09-04)**: นโยบายที่ตกลงกัน — **คง Mission Lock ตามแผน ไม่เปิดรับงานซ้อน** แต่แบ่งพฤติกรรมเป็น 2 ชั้น:
+  - **เข้าดูได้ (กรองกล่องยอดนิยม)**: จิตอาสาที่มีภารกิจค้างกดเปิดเหตุการณ์ใหม่ (เช่น "วิเคราะห์เหตุนี้" จาก Home) → ดูได้ แต่กล่องยอดนิยมแสดงเฉพาะ **(1) การ์ดเหตุการณ์ที่ภารกิจตนเองค้าง (2) การ์ดที่กำลังดูอยู่ (3) การ์ดที่ได้รับการแจ้งเตือนหรือมีสิทธิเข้าร่วมเป็นจิตอาสา** — เกณฑ์ "มีสิทธิ" ใช้ Rule 3-5 เดียวกับ `_isEligibleResponder()`: ไม่ใช่เหตุการณ์ตัวเอง + อาชีพตรงกับ `volunteerProfessionIds` ของหมวดหมู่ + ยังไม่มีคนอาชีพเดียวกันรับ (คำนวณใน `_computeMissionTrendingFilter()` แล้วเก็บใน `_eligibleTrendingVideoIds`) — ไม่มีภารกิจค้าง → แสดงทุกการ์ดตามปกติ และ fullscreen ต้องใช้ลิสต์ที่กรองแล้วเช่นกัน (กันปัดเลี่ยงตัวกรอง)
+  - **บล็อกที่ปุ่มรับงาน**: เมื่อกด "รับภารกิจ" ที่เหตุการณ์ใหม่ → `_acceptRescue()` ตรวจ `getActiveRescues()` (Local-first) ก่อน dialog ยืนยัน → ถ้ามีภารกิจค้างที่เหตุการณ์อื่น แสดง SnackBar "คุณมีภารกิจค้างอยู่ — ต้องกด จบภารกิจ ให้เสร็จก่อนจึงจะรับเหตุการณ์ใหม่ได้" แล้ว `_switchVideo()` เด้งกลับไปเหตุการณ์ภารกิจอัตโนมัติ
+  - auto-select คงไว้เฉพาะกรณีเข้าหน้า Live แบบไม่ระบุเหตุการณ์ (restore convenience)
+
+---
+
+### Bug Fix #9 — ป้องกันการกด 'จบภารกิจ' แล้ว Socket หลุด (HTTP Status Endpoint + Idempotent Update + 24h Stale Filter)
+**วันที่:** 2026-09-04
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `websocket-server/server.js`, `lib/features/video/data/repositories/video_repository.dart`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`, `lib/features/video/presentation/pages/rescue_page.dart`
+
+**ปัญหาเดิม:**
+1. การกด "จบภารกิจ" หรือเปลี่ยนสถานะ (`arrived`, `resolved`, `cancelled`) พึ่งพาเฉพาะ `socket.emit('rescue-status-update')` แบบ fire-and-forget โดยไม่มี HTTP fallback และไม่มี acknowledgement — หาก WebSocket หลุด หรือสัญญาณเครือข่ายกระตุกชั่วขณะ สถานะจะไม่ถูกบันทึกลง Local PostgreSQL แต่หน้าจอจะ pop ออกทันที ทำให้ภารกิจค้างอยู่ในสถานะ `accepted` ตลอดไป
+2. ภารกิจเก่าที่ค้างจากอดีต (เช่น หลายเดือนก่อน) ยังมีสถานะ `accepted` ทำให้ `getActiveRescues()` ดึงขึ้นมาทริกเกอร์ Mission Lock และ Auto-select อยู่ตลอดเวลา
+
+**วิธีแก้ไขและป้องกัน (Implemented):**
+1. **Primary HTTP Status Endpoint**: เพิ่ม `POST /api/videos/:id/status` (ใช้ `requireAuth`, `strictRateLimiter`, รับ `x-user-id`)
+   - อัปเดตตาราง `incident_responses` โดยตรงใน Local PostgreSQL (source of truth)
+   - อัปเดตแบบ Idempotent (`CASE WHEN status = ... AND arrived_at/resolved_at IS NULL THEN CURRENT_TIMESTAMP ELSE ... END`)
+   - ทำ Real-time Notification ส่งให้ผู้ประสบเหตุ (`rescue-incoming`) และส่งเข้าห้องวิดีโอ (`rescue-status-updated`) ผ่าน Socket Service ในคำขอเดียว
+   - ล้างและ Archive ข้อความแชทอัตโนมัติเมื่อสถานะเป็น `resolved` หรือ `cancelled`
+2. **Repository & UI Await Guard**:
+   - `VideoRepository.updateRescueStatus()` เรียก Local HTTP endpoint ก่อน แล้ว Dual-Write/Fallback ไป Supabase
+   - `_updateRescueStatus()` ใน Flutter ทำการ `await` คำสั่งของ repository ก่อนแสดงผล:
+     - หากสำเร็จ: ปลดล็อกภารกิจ (`_currentResponseId = null`, `_pendingMissionVideoId = null`), ยกเลิกเข็มทิศ, แสดง SnackBar สำเร็จสีเขียว และรอ 600ms ค่อย `Navigator.pop()`
+     - หากล้มเหลว: แสดง SnackBar สีแดงแจ้งเตือน "ไม่สามารถบันทึกสถานะได้ กรุณาลองใหม่อีกครั้ง" และ**ห้าม pop ออก** เพื่อให้ผู้ใช้กดซ้ำได้
+3. **Socket Acknowledgement**: ปรับ `socket.on('rescue-status-update')` ใน `server.js` ให้รองรับ callback acknowledgement
+4. **24-Hour Active Mission Threshold**: ใน `GET /volunteer/:volunteerId/active-rescues` เพิ่มเงื่อนไข `AND ir.accepted_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'` เพื่อตัดภารกิจค้างเก่าเก็บในอดีต (Zombie Missions) ไม่ให้เข้ามารบกวนการใช้งานปัจจุบัน
+
+---
+
+### Bug Fix #10 — กล่องยอดนิยมไม่กรองตามสิทธิจิตอาสา + เห็นเหตุการณ์ที่จบภารกิจแล้ว (Eligibility-based Filter)
+**วันที่:** 2026-09-04
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`, `lib/features/video/presentation/pages/emergency_live_page.dart`
+
+**อาการ:** จิตอาสากดเข้าจากการ์ดแจ้งเตือนหน้า Home แล้วกล่องยอดนิยมแสดงวิดีโอทุกใบ รวมถึง (1) เหตุการณ์ที่จิตอาสาผู้นี้ไม่มีสิทธิ (2) เหตุการณ์ที่จบภารกิจไปแล้ว
+
+**สาเหตุ (Root Causes — 4 จุด):**
+1. **Filter ถูก gate ที่ "มีภารกิจค้าง"**: `_computeMissionTrendingFilter()` และ `_filteredTrendingVideos()` เดิม early-return เมื่อ `_pendingMissionVideoId == null` — จิตอาสาที่เพิ่งจบภารกิจ (หรือไม่เคยมี) จึงเห็นทุกการ์ด ตรงที่สุดกับกรณีทดสอบ: จบภารกิจ 11:12 แล้วเข้าจากการ์ดแจ้งเตือน 11:36 → filter ถูกข้ามทั้งหมด
+2. **resolved ไม่ถูกนับเป็น "หมดสิทธิ"**: `taken-by-profession` กรองเฉพาะ `accepted/arrived/en_route` — เหตุการณ์ที่จบภารกิจแล้วยังผ่านเกณฑ์ → แสดงในกล่องยอดนิยม + **บั๊กแฝง**: หน้า Home จะแจ้งเตือนซ้ำเหตุการณ์ที่จบภารกิจไปแล้ว
+3. **Rule 5 มองไม่เห็น resolved**: `GET /:id/responders` คืนเฉพาะ active responders → ปุ่ม "ฉันพร้อมช่วยเหลือ" ยังแสดงบนเหตุการณ์ที่จบแล้ว และกดรับซ้ำจะฟื้นภารกิจ (upsert รีเซ็ตเป็น `en_route`)
+4. **วิดีโอไม่มี category = ไม่มีสิทธิให้ใครรับ** (Rule 4 ล้ม) แต่ยังแสดงในกล่องยอดนิยมของจิตอาสา
+
+**นโยบายที่ตกลงกัน (2026-09-04):**
+- **Filter ใช้กับจิตอาสาเท่านั้น** — จิตอาสา = ผู้ใช้ที่อาชีพตรงกับ `volunteerProfessionIds` ของ category ใดๆ (`_isVolunteerCapable`) ผู้ชมทั่วไป/reporter ที่ไม่มีอาชีพตรงเห็นทุกการ์ดตามปกติ (คง feed สาธารณะ)
+- **Resolved บล็อกต่ออาชีพ** — เหตุการณ์หายจากชุดมีสิทธิเมื่อจิตอาสา**อาชีพเดียวกัน**จบภารกิจไปแล้ว อาชีพอื่นที่ยังไม่มีใครรับยังเห็นได้ (สอดคล้องโครงสร้างหลายอาชีพต่อเหตุการณ์)
+
+**วิธีแก้ไข (Implemented):**
+1. **Eligibility-based Filter (always-on สำหรับจิตอาสา)**: `_computeMissionTrendingFilter()` คำนวณเสมอเมื่อผู้ใช้เป็นจิตอาสา (ไม่ gate ที่ภารกิจค้าง) — เกณฑ์: ไม่ใช่เหตุการณ์ตัวเอง (Rule 3) + มี category และอาชีพตรง (Rule 4) + ไม่มีคนอาชีพเดียวกันรับอยู่หรือจบไปแล้ว (Rule 5 + resolved) — `_filteredTrendingVideos()` gate ที่ `_isVolunteerCapable` แทน `_pendingMissionVideoId`
+2. **ขยาย `taken-by-profession` รวม `resolved`**: `status IN ('accepted','arrived','en_route','resolved')` — แก้พร้อมกันทั้งกล่องยอดนิยม (live page) และการแจ้งเตือนซ้ำบน Home (ใช้ endpoint เดียวกันผ่าน `getTakenIncidentVideoIdsByProfession`)
+3. **Accept Guard (defense in depth)**: `POST /:id/accept` ตรวจว่ามี resolved response โดยจิตอาสาอาชีพเดียวกันหรือไม่ → ตอบ `409 { code: 'MISSION_ALREADY_RESOLVED' }` — กันการฟื้นภารกิจที่จบแล้วแม้ UI พลาดทุกเส้นทาง
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- จิตอาสาเข้าจากการ์ดแจ้งเตือน → กล่องยอดนิยมเหลือเฉพาะ: การ์ดที่ดูอยู่ + ภารกิจค้าง + เหตุการณ์ที่มีสิทธิ (ตรงอาชีพ ไม่มีใครรับ/จบ)
+- เหตุการณ์ที่จบภารกิจแล้ว (resolved โดยอาชีพเดียวกัน) ไม่แสดงในกล่องยอดนิยมของจิตอาสาอาชีพนั้น และไม่แจ้งเตือนซ้ำบน Home
+- กดรับเหตุการณ์ที่จบแล้วโดยตรง (API) → `409 MISSION_ALREADY_RESOLVED`
+- ผู้ชมทั่วไป (ไม่มีอาชีพตรง) → กล่องยอดนิยมแสดงครบตามปกติ
 
 ---
 

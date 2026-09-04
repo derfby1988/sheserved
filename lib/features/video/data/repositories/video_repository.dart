@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
+import '../../../../services/auth_service.dart';
 import '../../models/video_models.dart';
 
 /// Repository สำหรับจัดการข้อมูลวิดีโอ
@@ -831,38 +832,119 @@ class VideoRepository {
   // ดูที่บรรทัด ~145 ด้านบน
 
   /// Update the status of an ongoing rescue
-  Future<void> updateRescueStatus({
+  /// -------------------------------------------------------------------
+  /// ✅ Primary Path: Local API POST /api/videos/:id/status
+  ///    รับประกันการบันทึกสถานะลง Local Postgres แม้ WebSocket หลุด
+  ///    และทำ Real-time Broadcast + Chat Archiving ที่ Server ในคราวเดียว
+  /// ✅ Dual-Write / Fallback: Supabase Cloud
+  Future<bool> updateRescueStatus({
     required String responseId,
     required String status,
+    String? videoId,
+    String? volunteerId,
     String? notes,
   }) async {
-    final Map<String, dynamic> updates = {
-      'status': status,
-      'updated_at': AppConfig.currentUtc.toIso8601String(),
-    };
+    bool localSuccess = false;
+    final effectiveVolunteerId =
+        volunteerId ?? AuthService.instance.userId ?? '';
 
-    if (status == 'arrived')
-      updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
-    if (status == 'resolved' || status == 'cancelled') {
-      updates['resolved_at'] = AppConfig.currentUtc.toIso8601String();
+    // ---- Primary Path: Local API ----
+    if (videoId != null &&
+        videoId.isNotEmpty &&
+        effectiveVolunteerId.isNotEmpty) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
+              headers: {
+                'Content-Type': 'application/json',
+                'x-user-id': effectiveVolunteerId,
+              },
+              body: jsonEncode({
+                'responseId': responseId,
+                'status': status,
+                'notes': notes,
+              }),
+            )
+            .timeout(const Duration(seconds: 6));
+
+        if (response.statusCode == 200) {
+          localSuccess = true;
+          debugPrint(
+            'VideoRepository: ✅ Local updateRescueStatus succeeded (status=$status, responseId=$responseId)',
+          );
+        } else {
+          debugPrint(
+            'VideoRepository: ⚠️ Local updateRescueStatus returned ${response.statusCode}: ${response.body}',
+          );
+        }
+      } catch (e) {
+        debugPrint('VideoRepository: ⚠️ Local updateRescueStatus failed: $e');
+      }
     }
-    if (notes != null) updates['notes'] = notes;
 
-    await _client
-        .from('incident_responses')
-        .update(updates)
-        .eq('id', responseId);
+    // ---- Dual-Write / Fallback: Supabase Cloud ----
+    try {
+      final Map<String, dynamic> updates = {
+        'status': status,
+        'updated_at': AppConfig.currentUtc.toIso8601String(),
+      };
+
+      if (status == 'arrived') {
+        updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
+      }
+      if (status == 'resolved' || status == 'cancelled') {
+        updates['resolved_at'] = AppConfig.currentUtc.toIso8601String();
+      }
+      if (notes != null) updates['notes'] = notes;
+
+      await _client
+          .from('incident_responses')
+          .update(updates)
+          .eq('id', responseId);
+      return true;
+    } catch (e) {
+      debugPrint(
+        'VideoRepository: Supabase updateRescueStatus error (non-critical if local succeeded): $e',
+      );
+      return localSuccess;
+    }
   }
 
   /// Fetch the volunteer's active rescues to persist state
+  /// ✅ Primary Path: Local API — accept/status-update เขียนลง Local Postgres
+  ///    เท่านั้น (Supabase copy อาจว่างเพราะ dual-write ล้มเหลวเงียบๆ)
+  /// ✅ Fallback Path: Supabase Cloud
   Future<List<Map<String, dynamic>>> getActiveRescues(
     String volunteerId,
   ) async {
+    // ---- Primary Path: Local API ----
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/volunteer/$volunteerId/active-rescues',
+            ),
+          )
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final List<dynamic> rows = jsonDecode(response.body);
+        return rows
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint(
+        'VideoRepository: Local getActiveRescues failed → fallback to Supabase: $e',
+      );
+    }
+
+    // ---- Fallback Path: Supabase Cloud ----
     final response = await _client
         .from('incident_responses')
         .select('*, videos(*)')
         .eq('volunteer_id', volunteerId)
-        .inFilter('status', ['accepted', 'arrived'])
+        .inFilter('status', ['accepted', 'arrived', 'en_route'])
         .order('accepted_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(response as List);
@@ -900,35 +982,73 @@ class VideoRepository {
   }
 
   /// ตรวจสอบว่าวิดีโอรายการใดบ้างที่มีจิตอาสาในสาขานั้นๆ รับงานไปแล้ว (ใช้สำหรับกรองในหน้า Home)
+  /// -------------------------------------------------------------------
+  /// ✅ Primary Path: Local API — `incident_responses` ถูกเขียนลง Local
+  ///    Postgres เท่านั้น (dual-write ไป Supabase ล้มเหลวเงียบๆ เมื่อ video
+  ///    ยังไม่ถูก sync ขึ้น cloud) และ nested relationship query ของ PostgREST
+  ///    ล้มด้วย PGRST200 — ดู Bug Fix #7 ใน VIDEO_SYSTEM_PLAN.md
+  /// ✅ Fallback Path: Supabase แบบ flat query (ไม่ใช้ nested relationship)
   Future<Set<String>> getTakenIncidentVideoIdsByProfession(
     List<String> videoIds,
     String professionId,
   ) async {
     if (videoIds.isEmpty) return {};
+    // ---- Primary Path: Local API ----
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConfig.localApiUrl}/api/videos/taken-by-profession/$professionId',
+            ),
+          )
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final List<dynamic> ids = jsonDecode(response.body);
+        return ids.map((e) => e.toString()).toSet();
+      }
+    } catch (e) {
+      debugPrint(
+        'VideoRepository: Local getTakenByProfession failed → fallback to Supabase: $e',
+      );
+    }
+
+    // ---- Fallback Path: Supabase Cloud (flat queries — ห้ามใช้ nested
+    // relationship เพราะ schema cache อาจไม่มี relationship แล้ว throw
+    // PGRST200 ทำให้ dedup เงียบหายทั้งฟีเจอร์) ----
     try {
       final response = await _client
           .from('incident_responses')
-          .select(
-            'video_id, users:volunteer_id(user_group_roles(profession_id))',
-          )
+          .select('video_id, volunteer_id')
           .inFilter('video_id', videoIds)
-          .inFilter('status', ['accepted', 'arrived']);
+          .inFilter('status', ['accepted', 'arrived', 'en_route']);
 
+      final List<Map<String, dynamic>> rows = List<Map<String, dynamic>>.from(
+        response as List,
+      );
+      final volunteerIds = rows
+          .map((r) => r['volunteer_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet();
       final Set<String> takenVideoIds = {};
-      for (var row in response as List) {
-        final videoId = row['video_id'] as String?;
-        final userData = row['users'];
+      if (volunteerIds.isEmpty) return takenVideoIds;
 
-        String? responderProfId;
-        if (userData is Map && userData['user_group_roles'] != null) {
-          final roles = userData['user_group_roles'];
-          if (roles is List && roles.isNotEmpty) {
-            responderProfId = roles.first['profession_id']?.toString();
-          } else if (roles is Map) {
-            responderProfId = roles['profession_id']?.toString();
-          }
-        }
+      // Resolve profession per volunteer with a flat query (no PostgREST
+      // relationship needed).
+      final roles = await _client
+          .from('user_group_roles')
+          .select('user_id, profession_id')
+          .inFilter('user_id', volunteerIds.toList());
+      final profByVolunteer = <String, String>{};
+      for (final role in roles as List) {
+        final uid = role['user_id']?.toString();
+        final pid = role['profession_id']?.toString();
+        if (uid != null && pid != null) profByVolunteer[uid] = pid;
+      }
 
+      for (final row in rows) {
+        final videoId = row['video_id']?.toString();
+        final responderProfId = profByVolunteer[row['volunteer_id']?.toString()];
         if (videoId != null && responderProfId == professionId) {
           takenVideoIds.add(videoId);
         }

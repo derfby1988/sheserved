@@ -613,6 +613,36 @@ module.exports = (pool) => {
                 return res.status(404).json({ error: 'Video not found in local database' });
             }
 
+            // ✅ Mission Lifecycle Guard: ห้ามรับงานซ้ำบนเหตุการณ์ที่จิตอาสา
+            // อาชีพเดียวกันจบภารกิจไปแล้ว (resolved) — กันการฟื้นภารกิจที่จบแล้ว
+            const resolvedCheck = await pool.query(
+                `SELECT EXISTS (
+                    SELECT 1
+                    FROM incident_responses ir
+                    JOIN LATERAL (
+                        SELECT ugr.profession_id
+                        FROM user_group_roles ugr
+                        WHERE ugr.user_id = ir.volunteer_id
+                        LIMIT 1
+                    ) ugr ON true
+                    WHERE ir.video_id = $1
+                      AND ir.status = 'resolved'
+                      AND ugr.profession_id = (
+                          SELECT ugr2.profession_id
+                          FROM user_group_roles ugr2
+                          WHERE ugr2.user_id = $2
+                          LIMIT 1
+                      )
+                ) AS resolved_by_same_profession`,
+                [id, responderId]
+            );
+            if (resolvedCheck.rows[0]?.resolved_by_same_profession === true) {
+                return res.status(409).json({
+                    error: 'ภารกิจนี้จบภารกิจไปแล้วโดยจิตอาสาอาชีพเดียวกัน',
+                    code: 'MISSION_ALREADY_RESOLVED'
+                });
+            }
+
             // ✅ Upsert — ถ้ารับงานซ้ำให้อัปเดตสถานะแทนที่จะ error
             const result = await pool.query(
                 `INSERT INTO incident_responses (video_id, volunteer_id, volunteer_start_lat, volunteer_start_lng, status)
@@ -633,6 +663,123 @@ module.exports = (pool) => {
         } catch (error) {
             console.error('Accept Incident Error:', error.message);
             res.status(500).json({ error: 'Failed to accept incident', detail: error.message });
+        }
+    });
+
+    // Update rescue status (arrived, resolved, cancelled)
+    // Primary HTTP path for mission lifecycle updates. Guarantees persistence
+    // even if WebSocket is disconnected or drops mid-request.
+    router.post('/:id/status', requireAuth, strictRateLimiter, async (req, res) => {
+        try {
+            const { id } = req.params;
+            const volunteerId = req.userId;
+            const { responseId, status, notes } = req.body;
+
+            if (!volunteerId) {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
+            if (!status || !['accepted', 'en_route', 'arrived', 'resolved', 'cancelled'].includes(status)) {
+                return res.status(400).json({ error: 'Invalid status' });
+            }
+
+            let query;
+            let params;
+            if (responseId) {
+                query = `
+                    UPDATE incident_responses
+                    SET status = $1,
+                        arrived_at = CASE WHEN $1 = 'arrived' AND arrived_at IS NULL THEN CURRENT_TIMESTAMP ELSE arrived_at END,
+                        resolved_at = CASE WHEN $1 IN ('resolved', 'cancelled') AND resolved_at IS NULL THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+                        notes = COALESCE($2, notes),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $3 AND volunteer_id = $4
+                    RETURNING *
+                `;
+                params = [status, notes || null, responseId, volunteerId];
+            } else {
+                query = `
+                    UPDATE incident_responses
+                    SET status = $1,
+                        arrived_at = CASE WHEN $1 = 'arrived' AND arrived_at IS NULL THEN CURRENT_TIMESTAMP ELSE arrived_at END,
+                        resolved_at = CASE WHEN $1 IN ('resolved', 'cancelled') AND resolved_at IS NULL THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+                        notes = COALESCE($2, notes),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE video_id = $3 AND volunteer_id = $4
+                    RETURNING *
+                `;
+                params = [status, notes || null, id, volunteerId];
+            }
+
+            const result = await pool.query(query, params);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Incident response not found or not authorized' });
+            }
+
+            const updatedRow = result.rows[0];
+
+            // Real-time notifications via socketService
+            const io = socketService.getIO();
+            if (io) {
+                // 1. Notify victim
+                const videoRes = await pool.query('SELECT user_id FROM videos WHERE id = $1', [id]);
+                const victimId = videoRes.rows[0]?.user_id;
+                if (victimId) {
+                    io.to(`user-${victimId}`).emit('rescue-incoming', {
+                        videoId: id,
+                        volunteerId,
+                        status,
+                        responseId: updatedRow.id,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                // 2. If cancelled, notify other volunteers
+                if (status === 'cancelled') {
+                    io.emit('rescue-cancelled', { videoId: id, volunteerId });
+                }
+
+                // 3. Broadcast to video room
+                io.to(`video-${id}`).emit('rescue-status-updated', {
+                    videoId: id,
+                    volunteerId,
+                    status,
+                    responseId: updatedRow.id,
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            // 4. Archive chat if resolved or cancelled
+            if (status === 'resolved' || status === 'cancelled') {
+                try {
+                    await pool.query(
+                        `INSERT INTO chat_messages_archive (id, room_id, video_id, sender_id, content, created_at, metadata)
+                         SELECT m.id, m.room_id, r.video_id, m.sender_id, m.content, m.created_at, m.metadata
+                         FROM chat_messages m
+                         JOIN chat_rooms r ON m.room_id = r.id
+                         WHERE r.video_id = $1
+                         ON CONFLICT (id) DO NOTHING`,
+                        [id]
+                    );
+                    await pool.query(
+                        `DELETE FROM chat_messages m
+                         USING chat_rooms r
+                         WHERE m.room_id = r.id AND r.video_id = $1`,
+                        [id]
+                    );
+                } catch (archiveErr) {
+                    console.error('[Rescue Status HTTP] Archive chat error:', archiveErr.message);
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `Rescue status updated to ${status}`,
+                response: updatedRow
+            });
+        } catch (error) {
+            console.error('Update Rescue Status Error:', error.message);
+            res.status(500).json({ error: 'Failed to update rescue status', detail: error.message });
         }
     });
 
@@ -672,6 +819,58 @@ module.exports = (pool) => {
         } catch (error) {
             console.error('Get Incident Responders Error:', error.message);
             res.status(500).json({ error: 'Failed to fetch incident responders' });
+        }
+    });
+
+    // Get video IDs already taken by responders of a given profession.
+    // Local DB is the source of truth for incident_responses (accept/status
+    // writes go to Local Postgres; the Supabase copy is not guaranteed), and
+    // the old Supabase nested-relationship query fails with PGRST200.
+    router.get('/taken-by-profession/:professionId', ipLimiter, async (req, res) => {
+        try {
+            const { professionId } = req.params;
+            if (!professionId) return res.json([]);
+            const result = await pool.query(
+                `SELECT DISTINCT ir.video_id
+                 FROM incident_responses ir
+                 JOIN LATERAL (
+                    SELECT ugr.profession_id
+                    FROM user_group_roles ugr
+                    WHERE ugr.user_id = ir.volunteer_id
+                    LIMIT 1
+                 ) ugr ON true
+                 WHERE ugr.profession_id = $1
+                   AND ir.status IN ('accepted', 'arrived', 'en_route', 'resolved')`,
+                [professionId]
+            );
+            res.json(result.rows.map((r) => r.video_id));
+        } catch (error) {
+            console.error('Get Taken By Profession Error:', error.message);
+            res.status(500).json({ error: 'Failed to fetch taken incidents' });
+        }
+    });
+
+    // Get a volunteer's active missions (Local DB is the source of truth —
+    // the Supabase copy of incident_responses may be empty because dual-write
+    // fails silently when the video is not synced to the cloud yet).
+    router.get('/volunteer/:volunteerId/active-rescues', ipLimiter, async (req, res) => {
+        try {
+            const { volunteerId } = req.params;
+            if (!volunteerId) return res.json([]);
+            const result = await pool.query(
+                `SELECT ir.*, to_jsonb(v) AS videos
+                 FROM incident_responses ir
+                 LEFT JOIN videos v ON v.id = ir.video_id
+                 WHERE ir.volunteer_id = $1
+                   AND ir.status IN ('accepted', 'arrived', 'en_route')
+                   AND ir.accepted_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+                 ORDER BY ir.accepted_at DESC`,
+                [volunteerId]
+            );
+            res.json(result.rows);
+        } catch (error) {
+            console.error('Get Active Rescues Error:', error.message);
+            res.status(500).json({ error: 'Failed to fetch active rescues' });
         }
     });
 

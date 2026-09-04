@@ -1169,7 +1169,7 @@ io.on('connection', (socket) => {
   });
 
   // Handle Rescue Status Updates (Feedback Loop to Victim + DB Persistence)
-  socket.on('rescue-status-update', async (data) => {
+  socket.on('rescue-status-update', async (data, callback) => {
     const { videoId, volunteerId, status, victimId, responseId } = data;
     console.log(`[Rescue] Volunteer: ${volunteerId} updated status to ${status} for incident ${videoId}`);
 
@@ -1213,6 +1213,11 @@ io.on('connection', (socket) => {
     // 4. Archive chat if resolved or cancelled to save space in main tables
     if (pool && (status === 'resolved' || status === 'cancelled')) {
       await archiveChatMessages(videoId, status);
+    }
+
+    // 5. Acknowledge caller if callback provided
+    if (typeof callback === 'function') {
+      callback({ success: true, status, responseId });
     }
   });
 

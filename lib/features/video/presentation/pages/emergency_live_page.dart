@@ -140,6 +140,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   VideoGpsTrack? _lastSyncedVideoTrack;
   List<Map<String, dynamic>> _responders = [];
   String? _currentResponseId;
+  // ✅ Mission Lock: video_id ของภารกิจค้างของผู้ใช้ (user-level context
+  // ไม่ถูกล้างตอน _switchVideo) — ใช้กรองกล่องยอดนิยมและบล็อกการรับงานซ้อน
+  String? _pendingMissionVideoId;
+  // ✅ video_ids ที่ผู้ใช้ "มีสิทธิเข้าร่วมเป็นจิตอาสา" (ตรงอาชีพ + ไม่ใช่
+  // เหตุการณ์ตัวเอง + ยังไม่มีคนอาชีพเดียวกันรับ/จบภารกิจ) — ใช้กรองกล่องยอดนิยม
+  final Set<String> _eligibleTrendingVideoIds = {};
+  // ✅ ผู้ใช้เป็น "จิตอาสา" (อาชีพตรงกับ volunteerProfessionIds ของ category
+  // ใดๆ) — จิตอาสาเท่านั้นที่กล่องยอดนิยมถูกกรองตามสิทธิ ผู้ชมทั่วไปเห็นทุกการ์ด
+  bool _isVolunteerCapable = false;
 
   CameraController? _cameraController;
   bool _isRecording = false;
@@ -942,7 +951,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                   _activeDonationRequests.length);
             });
           },
-          trendingVideos: _trendingVideos,
+          // ✅ Mission Lock: เมื่อมีภารกิจค้าง กล่องยอดนิยมแสดงเฉพาะ
+          // การ์ดภารกิจตนเอง + การ์ดที่ได้รับแจ้งเตือน/มีสิทธิเข้าร่วมเป็นจิตอาสา
+          trendingVideos: _filteredTrendingVideos(),
           onLoadMoreTrending: _loadMoreTrendingVideos,
           isLoadingTrending: _isLoadingTrending,
           highlightVideoId: _highlightVideoId,
