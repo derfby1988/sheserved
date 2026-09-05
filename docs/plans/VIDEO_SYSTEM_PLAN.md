@@ -14,7 +14,7 @@
 3. **Insert DB**: บันทึกข้อมูลเบื้องต้นและ GPS Path (ถ้ามี) ลง PostgreSQL
 4. **Transcode**: ใช้ FFmpeg แปลงเป็น HLS format
 5. **Upload to Bunny**: ส่งไฟล์ HLS ทั้งหมดขึ้น Bunny.net Storage
-6. **Cleanup**: ลบไฟล์ชั่วคราวออกจากเครื่องหลักทันทีเมื่อสำเร็จ
+6. **Cleanup**: ลบไฟล์ชั่วคราวออกจากเครื่องหลักทันทีเมื่อสำเร็จ — **ห้ามลบ HLS output (`playlist.m3u8` + segments) ที่ `videos.status='ready'`** (ดู Storage Policy ด้านล่าง)
 7. **Update DB**: อัปเดตสถานะและ URL เพื่อพร้อมใช้งาน
 8. **Notify**: แจ้งสถานะและความคืบหน้าผ่าน WebSocket
 
@@ -25,6 +25,7 @@
 1. **บันทึกลง External Drive เท่านั้น**: ไฟล์วิดีโอ (Raw/Temp) และภาพหน้าปกวิดีโอ (Thumbnails) ทั้งหมด ต้องเก็บไว้ที่ `/Volumes/PostgreSQL/sheserved_videos`
 2. **ห้ามย้ายไปเก็บที่ Local Harddisk**: ห้ามเปลี่ยน `TEMP_VIDEO_PATH` ใน `.env` กลับเป็น `./temp/videos` บน Macintosh HD โดยเด็ดขาด
 3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ipconfig getifaddr en0`) และระบุค่าให้ตรงกันทั้งใน `AppConfig.mainMachineIp` (Flutter) และ `LOCAL_API_URL` ใน `.env` (Server) ทุกครั้งที่มีการเปลี่ยนวง Network — **ดูขั้นตอนละเอียดใน Section "🔧 Network & Configuration Runbook" ด้านล่าง**
+4. **Cleanup Cron Safety (R9 — บังคับ)**: Disk cleanup cron ที่ลบไฟล์เก่าใน `TEMP_VIDEO_PATH` **ต้องตรวจ `videos.status` ใน DB ก่อนลบ UUID dir** และข้ามโฟลเดอร์ที่ `status` ∈ {`uploading`, `processing`, `ready`} — ห้ามลบ HLS playlist/segments ของวิดีโอที่ client ยังดูได้ ถ้า DB query ล้มเหลว ให้ **fail-safe (ไม่ลบ)** ไม่ใช่ fail-open (ลบหมด) — อ้างอิง Bug Fix #11 ด้านล่าง
 
 ### สถาปัตยกรรม
 
@@ -362,9 +363,15 @@ curl http://192.168.X.X:8080/api/videos/emergency/list | python3 -m json.tool
 
 | Location | Path | วัตถุประสงค์ | อายุ |
 |----------|------|------------|------|
-| **Temp** | `temp/videos/[id]/` | ไฟล์ thumbnail ที่ generate ระหว่างประมวลผล | ชั่วคราว — ถูก cleanup |
+| **Temp** | `temp/videos/[id]/` | ไฟล์ thumbnail ที่ generate ระหว่างประมวลผล | ชั่วคราว — ถูก cleanup (เฉพาะ `videos.status` ไม่ใช่ `uploading`/`processing`/`ready`) |
 | **Persistent** | `uploads/thumbnails/[id]/` | ไฟล์ thumbnail สำหรับแสดง UI ถาวร | **ถาวร — ไม่ถูก cleanup** |
 | **CDN** | `https://[zone].b-cdn.net/...` | Global delivery (ถ้า Bunny.net ตั้งค่า) | ถาวรบน CDN |
+
+> ⚠️ **Bug Fix #11 — Cleanup cron ลบ HLS ที่ยังใช้งานอยู่ (2026-09-05)**
+> **อาการ:** วิดีโอเหตุการณ์เล่นไม่ได้ (ExoPlayer ได้ 404 จาก `/temp/videos/{id}/playlist.m3u8`) แม้ `videos.status='ready'` ใน DB
+> **สาเหตุ:** Disk cleanup cron (R9) ลบไฟล์ทุกอย่างใน `TEMP_VIDEO_PATH` ที่ `mtime > 24h` โดยไม่ตรวจสถานะใน DB ทำให้ลบ HLS playlist + segments ของวิดีโอที่ client ยังดูอยู่
+> **แก้:** cleanup cron ตรวจ `SELECT status FROM videos WHERE id = $1` ก่อนลบ UUID dir; ข้ามถ้า status ∈ {`uploading`, `processing`, `ready`}; fail-safe ถ้า DB ไม่ได้ (ไม่ลบ)
+> **ไฟล์ที่เกี่ยวข้อง:** `websocket-server/server.js` (R9 Disk Cleanup Cron), `docs/secure/03_rate_limiting_resource_exhaustion.md` (R9)
 
 **URL Pattern ที่ถูกต้อง:**
 ```

@@ -31,6 +31,8 @@ const FORBIDDEN_VALUES = [
   'change-me-to-256-bit-secret-2',
   'your-supabase-jwt-secret',
   'your-service-role-key',
+  'staging.sheserved.example.com',
+  'admin@sheserved.example.com',
 ];
 
 const SENSITIVE_KEY_PATTERNS = [
@@ -124,6 +126,20 @@ function validateEnv() {
     }
     if (process.env.ALLOWED_ORIGINS === '*') {
       problems.push('ALLOWED_ORIGINS should not be "*" in staging');
+    }
+    // Phase 13.0 — Caddyfile.staging uses env-based domain/ACME email
+    if (!process.env.CADDY_STAGING_DOMAIN) {
+      problems.push('CADDY_STAGING_DOMAIN is required in staging (Caddyfile.staging)');
+    }
+    if (!process.env.CADDY_ACME_EMAIL) {
+      problems.push('CADDY_ACME_EMAIL is required in staging (Let\'s Encrypt account)');
+    }
+    // Phase 13.0 — reject Caddy placeholder values in staging
+    if (process.env.CADDY_STAGING_DOMAIN === 'staging.sheserved.example.com') {
+      problems.push('CADDY_STAGING_DOMAIN is still placeholder — set real staging domain');
+    }
+    if (process.env.CADDY_ACME_EMAIL === 'admin@sheserved.example.com') {
+      problems.push('CADDY_ACME_EMAIL is still placeholder — set real ACME email');
     }
   }
 

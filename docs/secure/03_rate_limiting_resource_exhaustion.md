@@ -30,7 +30,7 @@
 | Cache key clamp | `page`/`limit` ถูก clamp ก่อนสร้าง key | `video.js` |
 | DB pool governance | `max: 20`, `statement_timeout: 30s`, `idleTimeoutMillis: 30s` | `server.js` pool config |
 | Socket.IO rate limit | 20 events/sec per connection | `server.js` event handlers |
-| Disk cleanup cron | ลบ temp files เก่ากว่า 24h ทุก 1h | `server.js` |
+| Disk cleanup cron | ลบ temp files เก่ากว่า 24h ทุก 1h — **ตรวจ `videos.status` ก่อนลบ UUID dir; ข้าม `uploading`/`processing`/`ready`; fail-safe ถ้า DB ไม่ได้** | `server.js` |
 | Circuit breaker | `CircuitBreaker` class CLOSED/OPEN/HALF_OPEN | `utils/circuit-breaker.js` |
 | Edge config | NGINX `nginx/rate-limiting.conf` + Caddy `Caddyfile.dev` | `websocket-server/` |
 | Maestro test flow | ทดสอบ B: login, pagination, gallery, upload, negatives | `docs/guides/rate_limit_option_b_test_flow.yaml` |
@@ -86,7 +86,7 @@
 | R6 | **ไม่มี per-user quota** | ✅ แก้แล้ว | `uploadQuotaLimiter` 20/hr, 100/day |
 | R7 | **ไม่มี account lockout** | ✅ แก้แล้ว | `loginLockoutLimiter` 5 failures → 15min progressive |
 | R8 | **ไม่มี OTP resend cooldown** | ✅ แก้แล้ว | `otpCooldownLimiter` 60s/10 วัน |
-| R9 | **ไม่มี disk quota / cleanup** | ✅ แก้แล้ว | cleanup cron 1h / 24h max age |
+| R9 | **ไม่มี disk quota / cleanup** | ✅ แก้แล้ว | cleanup cron 1h / 24h max age — ตรวจ `videos.status` ก่อนลบ (ข้าม `uploading`/`processing`/`ready`); fail-safe ถ้า DB ไม่ได้ (2026-09-05 hotfix: ก่อนหน้านี้ลบไฟล์ HLS ที่ `status='ready'` ทำให้วิดีโอกลายเป็น 404) |
 | R10 | **ไม่มี query timeout** | ✅ แก้แล้ว | `statement_timeout: 30s` |
 | R11 | **ไม่มี DB connection pool limit ที่ชัดเจน** | ✅ แก้แล้ว | pool `max: 20`, `idleTimeoutMillis: 30s` |
 | R12 | **Socket.IO ไม่มี event rate limit** | ✅ แก้แล้ว | 20 events/sec ต่อ connection |
@@ -571,7 +571,7 @@ const COST = {
 ## 8. งานที่ตรวจสอบแล้ว (Verified)
 
 - [x] ตรวจว่าไฟล์ที่ถูกปฏิเสธ (เกิน 20MB) ถูกลบออกจากดิสก์หรือไม่ — ผ่าน multer cleanup handler
-- [x] ตรวจขนาดปัจจุบันของ `temp/videos/` และ `uploads/` — cleanup cron ลบไฟล์เก่ากว่า 24h
+- [x] ตรวจขนาดปัจจุบันของ `temp/videos/` และ `uploads/` — cleanup cron ลบไฟล์เก่ากว่า 24h (ตรวจ `videos.status` ก่อนลบ UUID dir ตั้งแต่ 2026-09-05 hotfix)
 - [x] ตรวจค่า `max` ของ PostgreSQL connection pool และจำนวน connection ที่ใช้จริง — ตั้ง `max: 20`, `statement_timeout: 30000`, `idleTimeoutMillis: 30000`
 - [x] ตรวจ Redis `maxmemory`, `maxmemory-policy`, key cardinality และ eviction — ควรระบุใน `caching_strategy.md` / Redis config
 - [x] วัด traffic จริงแยก steady state, burst, NAT/mobile และ emergency traffic — ผ่าน Maestro flow บน iPhone 16 simulator

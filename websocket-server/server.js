@@ -2417,31 +2417,56 @@ server.listen(PORT, '0.0.0.0', () => {
   emergencyHealthMonitorService.start();
 
   // R9: Disk Cleanup Cron — ลบ temp files ที่เก่ากว่า 24h ทุก 1 ชั่วโมง
+  // ตรวจ videos.status ก่อนลบ: ข้ามโฟลเดอร์ที่ยัง 'ready' หรือกำลัง transcode ('uploading','processing')
   const tempDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');
   const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
   const CLEANUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-  setInterval(() => {
-    fs.promises.readdir(tempDir).then(entries => {
+  const CLEANUP_ACTIVE_STATUSES = ['uploading', 'processing', 'ready'];
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  setInterval(async () => {
+    try {
+      const entries = await fs.promises.readdir(tempDir);
       const now = Date.now();
       for (const entry of entries) {
         const fullPath = path.join(tempDir, entry);
-        fs.promises.stat(fullPath).then(stat => {
-          if (now - stat.mtimeMs > CLEANUP_MAX_AGE_MS) {
-            if (stat.isDirectory()) {
-              fs.promises.rm(fullPath, { recursive: true, force: true })
-                .then(() => console.log(`[Cleanup] 🗑️  Removed old temp dir: ${entry}`))
-                .catch(err => console.warn(`[Cleanup] ⚠️  Failed to remove ${entry}:`, err.message));
-            } else {
-              fs.promises.unlink(fullPath)
-                .then(() => console.log(`[Cleanup] 🗑️  Removed old temp file: ${entry}`))
-                .catch(err => console.warn(`[Cleanup] ⚠️  Failed to remove ${entry}:`, err.message));
+        try {
+          const stat = await fs.promises.stat(fullPath);
+          if (now - stat.mtimeMs <= CLEANUP_MAX_AGE_MS) continue;
+
+          // ถ้าเป็น UUID dir → ตรวจสถานะใน DB ก่อนลบ
+          if (stat.isDirectory() && UUID_RE.test(entry) && pool) {
+            try {
+              const result = await pool.query(
+                'SELECT status FROM videos WHERE id = $1',
+                [entry]
+              );
+              const status = result.rows[0]?.status;
+              if (status && CLEANUP_ACTIVE_STATUSES.includes(status)) {
+                console.log(`[Cleanup] ⏭️  Skipped active video dir: ${entry} (status=${status})`);
+                continue;
+              }
+            } catch (dbErr) {
+              console.warn(`[Cleanup] ⚠️  DB check failed for ${entry}, skipping:`, dbErr.message);
+              continue; // fail-safe: ถ้า DB ไม่ได้ ไม่ลบ
             }
           }
-        }).catch(() => {});
+
+          if (stat.isDirectory()) {
+            await fs.promises.rm(fullPath, { recursive: true, force: true });
+            console.log(`[Cleanup] 🗑️  Removed old temp dir: ${entry}`);
+          } else {
+            await fs.promises.unlink(fullPath);
+            console.log(`[Cleanup] 🗑️  Removed old temp file: ${entry}`);
+          }
+        } catch (err) {
+          // stat ล้มเหลว → ข้าม (อาจถูกลบไปแล้ว)
+        }
       }
-    }).catch(() => {});
+    } catch (err) {
+      console.warn(`[Cleanup] ⚠️  readdir failed:`, err.message);
+    }
   }, CLEANUP_INTERVAL_MS);
-  console.log(`[Cleanup] ✅ Disk cleanup cron started — interval: ${CLEANUP_INTERVAL_MS / 60000}min, max age: ${CLEANUP_MAX_AGE_MS / 3600000}h`);
+  console.log(`[Cleanup] ✅ Disk cleanup cron started — interval: ${CLEANUP_INTERVAL_MS / 60000}min, max age: ${CLEANUP_MAX_AGE_MS / 3600000}h (skips videos with status: ${CLEANUP_ACTIVE_STATUSES.join(', ')})`);
 });
 
 // Graceful shutdown

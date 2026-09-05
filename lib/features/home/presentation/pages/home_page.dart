@@ -411,7 +411,8 @@ class _HomePageState extends ConsumerState<HomePage>
         if (category != null) {
           categoryName = category.name;
           final userProfessionId = user.professionId;
-          if (userProfessionId != null &&
+          if (user.isVolunteer &&
+              userProfessionId != null &&
               category.volunteerProfessionIds.contains(userProfessionId)) {
             isProfessional = true;
           }
@@ -857,7 +858,8 @@ class _HomePageState extends ConsumerState<HomePage>
               ? _emergencyCategories.firstWhere((c) => c.id == categoryId)
               : null;
           if (category != null) {
-            if (userProfessionId != null &&
+            if (user.isVolunteer &&
+                userProfessionId != null &&
                 category.volunteerProfessionIds.contains(userProfessionId)) {
               isProfessional = true;
             }
@@ -1395,6 +1397,14 @@ class _HomePageState extends ConsumerState<HomePage>
     debugPrint(
       'HomePage: _onAuthChanged fired, userId=$userId, professionId=${user?.professionId}',
     );
+
+    // Clear role-specific emergency cards before reloading the new user's alerts.
+    if (mounted) {
+      setState(() {
+        _professionalAlerts.clear();
+        _focusedAlert = null;
+      });
+    }
 
     // Reset connection on auth change
     if (userId != null) {

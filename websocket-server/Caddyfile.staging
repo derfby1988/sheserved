@@ -13,11 +13,12 @@
 
 {
 	admin off
-	# staging.sheserved.example.com — เปลี่ยนเป็น domain จริง
-	email admin@sheserved.example.com
+	# Phase 13.0: staging domain/ACME email มาจาก env (ไม่ hardcode ใน repo)
+	# ตั้งค่าจริงใน .env ก่อน deploy: CADDY_STAGING_DOMAIN, CADDY_ACME_EMAIL
+	email {$CADDY_ACME_EMAIL}
 }
 
-staging.sheserved.example.com {
+{$CADDY_STAGING_DOMAIN} {
 	log {
 		output stdout
 		format console

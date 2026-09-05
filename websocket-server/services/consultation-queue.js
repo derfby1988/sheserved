@@ -7,13 +7,14 @@ const { invalidateCacheMany } = require('../middleware');
 const { resolveQueueOptions } = require('../utils/queue-config');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const HAS_SERVICE_KEY = Boolean(SUPABASE_SERVICE_KEY);
 
-if (!SUPABASE_URL || (!SUPABASE_SERVICE_KEY && !SUPABASE_ANON_KEY)) {
-  console.error('❌ FATAL: SUPABASE_URL and at least one of SUPABASE_SERVICE_KEY/SUPABASE_ANON_KEY are required for consultation queue. Exiting.');
+// Phase 13.0 — no silent fallback to SUPABASE_ANON_KEY.
+// The consultation queue is a server-side worker and must use the service role key.
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required for consultation queue. Exiting.');
   if (process.env.NODE_ENV === 'production') process.exit(1);
 }
 
@@ -21,16 +22,9 @@ const connection = createBullmqConnection();
 const QUEUE_NAME = 'consultation-flow';
 
 function createSupabaseClient(authHeader = null) {
-  if (!SUPABASE_URL) return null;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
 
-  const apiKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
-  if (!apiKey) return null;
-
-  if (!HAS_SERVICE_KEY && !authHeader) {
-    return null;
-  }
-
-  return createClient(SUPABASE_URL, apiKey, {
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
     global: {
       headers: authHeader ? { Authorization: authHeader } : {},
     },
@@ -89,7 +83,7 @@ async function submitConsultationRequest(payload, authHeader, trustedUserId) {
   const supabase = createSupabaseClient(authHeader);
   if (!supabase) {
     throw new Error(
-      'Supabase is not configured for consultation submission. Provide SUPABASE_SERVICE_KEY or an Authorization bearer token.',
+      'Supabase is not configured for consultation submission. SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) is required.',
     );
   }
 
