@@ -364,6 +364,9 @@ router.post('/social/:provider', async (req, res) => {
       provider === 'google'
         ? await verifyGoogleIdToken(providerToken, {
             clientId: process.env.GOOGLE_CLIENT_ID,
+            extraClientIds: String(process.env.GOOGLE_CLIENT_IDS || '')
+              .split(/[,\s]+/)
+              .filter(Boolean),
             nonce,
           })
         : await verifyAppleIdentityToken(providerToken, {

@@ -150,10 +150,14 @@ function sha256Hex(input) {
 /**
  * Verify a Google ID token.
  * @param {string} idToken
- * @param {object} opts { clientId, nonce?, fetcher? }
+ * @param {object} opts { clientId, extraClientIds?, nonce?, fetcher? }
+ *   - clientId: Web/server client ID (primary audience)
+ *   - extraClientIds: platform client IDs (iOS/Android) — Google returns the
+ *     platform client ID as `aud` on those platforms even when serverClientId
+ *     is configured, so the server must accept the project's client ID set.
  * @returns {object} normalized profile { provider, providerUserId, email, emailVerified, firstName, lastName, displayName, photoUrl }
  */
-async function verifyGoogleIdToken(idToken, { clientId, nonce, fetcher } = {}) {
+async function verifyGoogleIdToken(idToken, { clientId, extraClientIds, nonce, fetcher } = {}) {
   if (!clientId) {
     throw new SocialVerificationError(
       'GOOGLE_CLIENT_ID is not configured',
@@ -161,8 +165,12 @@ async function verifyGoogleIdToken(idToken, { clientId, nonce, fetcher } = {}) {
     );
   }
 
+  const audiences = [clientId, ...(Array.isArray(extraClientIds) ? extraClientIds : [])]
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+
   const payload = await verifyProviderToken(idToken, GOOGLE_CERTS_URL, {
-    audience: clientId,
+    audience: audiences,
     issuers: GOOGLE_ISSUERS,
     nonce, // Google: nonce claim is stored as-is
     fetcher,

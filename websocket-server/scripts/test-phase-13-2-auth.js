@@ -364,6 +364,26 @@ async function main() {
     );
   });
 
+  await test('google: extra client ids (iOS aud) accepted + rejected without them', async () => {
+    social._clearJwksCache();
+    const iosAud = '1075504521633-iosclient-test.apps.googleusercontent.com';
+    const token = signTestToken({
+      iss: 'https://accounts.google.com',
+      aud: iosAud,
+      sub: 'google-ios-user',
+    });
+    const ok = await social.verifyGoogleIdToken(token, {
+      clientId: GOOGLE_AUD,
+      extraClientIds: [iosAud],
+      fetcher: stubFetcher,
+    });
+    assert.strictEqual(ok.providerUserId, 'google-ios-user');
+    await assert.rejects(
+      social.verifyGoogleIdToken(token, { clientId: GOOGLE_AUD, fetcher: stubFetcher }),
+      (err) => err.reason === 'invalid_signature_or_claims'
+    );
+  });
+
   await test('apple: valid identity token → verified profile', async () => {
     social._clearJwksCache();
     const token = signTestToken({

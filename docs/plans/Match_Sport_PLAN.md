@@ -1612,7 +1612,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 |---|---|
 | register/login/refresh/logout/session restore/parallel/reuse/plaintext-reset(old-app)/audit — E2E ผ่าน | ✅ ผ่านแล้ว |
 | `SUPABASE_JWT_SECRET` จริง + PostgREST live check | ✅ แทนที่แล้วและตอบ 200 (ไม่ log ค่า secret) |
-| Google/Apple social verification (server-side JWKS) | ✅ unit 31/31 + E2E fail-closed + **Google device-verified** (`/api/auth/social/google` → 200 บน Android จริง); Apple ตั้ง `APPLE_BUNDLE_ID`+iOS client แล้ว รอเทส iOS device |
+| Google/Apple social verification (server-side JWKS) | ✅ unit 32/32 + E2E fail-closed + **Google device-verified ครบทั้ง Android + iOS** (iOS ต้องเพิ่ม `GOOGLE_CLIENT_IDS` เพราะ Google คืน `aud` = iOS client ID); ⚠️ **Apple E2E บน device ถูกบล็อกโดย free/personal team** (Xcode ปฏิเสธ Sign in with Apple capability — ต้อง paid Apple Developer $99/ปี) → blocker เดิมในรายการ provider/account review ยืนยันเป็นจริง |
 | Flutter switch (login/register/social → backend) | ✅ implement + `flutter test` 16/16 + **device-verified** (Google login/logout ผ่าน backend จริง) — `useBackendAuth` default true |
 | ปิด B2 (revoke direct `password_hash` query + anon read) | ⏸️ หลัง monitor ว่าไม่มี client เก่าค้าง (compatibility step 3–4) |
 | Facebook/LINE/TikTok verification | ⏸️ deferred จนกว่าจะมี requirement/credentials ที่อนุมัติ |
