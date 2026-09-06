@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import 'package:sheserved/config/app_config.dart';
 import 'package:sheserved/core/constants/password_policy.dart';
+import 'package:sheserved/core/network/authenticated_http_client.dart';
 import 'package:sheserved/services/auth_service.dart';
 import '../models/password_change_result.dart';
 
@@ -32,6 +33,30 @@ class UserRepository {
     String? email,
     String? profileImageUrl,
   }) async {
+    // Phase 13.2 (Decision Q4=B): registration hashes server-side (Argon2id)
+    // inside a gateway transaction — the client never computes or writes
+    // password_hash.
+    if (AppConfig.useBackendAuth) {
+      try {
+        final data = await AuthenticatedHttpClient.instance.register(
+          username: username,
+          phone: phone ?? '',
+          password: password,
+          firstName: firstName,
+          lastName: lastName,
+          email: email,
+        );
+        final userJson = data['user'];
+        if (userJson == null) {
+          throw Exception('Registration failed: no user in response');
+        }
+        return UserModel.fromBackendAuth(Map<String, dynamic>.from(userJson));
+      } catch (e) {
+        debugPrint('UserRepository.createUser (backend) error: $e');
+        rethrow;
+      }
+    }
+
     final now = DateTime.now();
     final hashedPassword = _hashPassword(password);
     
@@ -154,8 +179,27 @@ class UserRepository {
   }
 
   /// เข้าสู่ระบบด้วย Username หรือ Phone และ Password
-  /// รัน query ขนานกัน + timeout ป้องกัน login ค้าง
+  ///
+  /// Phase 13.2 (Decision Q3=A/Q4=B): เมื่อ `AppConfig.useBackendAuth`
+  /// เป็น true จะส่ง credential ไป `/api/auth/login` ที่ backend
+  /// (Argon2id server-side verify + issue JWT access/refresh) — client
+  /// ไม่ส่ง `password_hash` และไม่ query hash อีกต่อไป
   Future<UserModel?> login(String identifier, String password) async {
+    if (AppConfig.useBackendAuth) {
+      try {
+        final data = await AuthenticatedHttpClient.instance.login(
+          identifier: identifier.trim(),
+          password: password,
+        );
+        final userJson = data['user'];
+        if (userJson == null || data['accessToken'] == null) return null;
+        return UserModel.fromBackendAuth(Map<String, dynamic>.from(userJson));
+      } catch (e) {
+        debugPrint('UserRepository.login (backend) error: $e');
+        return null;
+      }
+    }
+
     final hashedPassword = _hashPassword(password);
 
     // 1. ค้นหา username + phone พร้อมกัน (parallel) พร้อม timeout

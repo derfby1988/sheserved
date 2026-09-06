@@ -1,49 +1,61 @@
 /**
  * Authentication & Authorization Middleware
  * ─────────────────────────────────────────────────────────────
- * Phase 1 — Route Security Implementation Plan
+ * Phase 13.2 — JWT signature verification (HS256 dual-key, Decision Q3=A)
  *
- * Verifies user identity via PostgreSQL lookup and enforces role-based
- * access control.  Designed to work without Supabase Auth (per project
- * architecture: custom AuthService / ServiceLocator pattern).
+ * Verifies user identity via signed JWT (Authorization: Bearer).
+ * Falls back to x-user-id ONLY during compatibility window (Phase 13.2-13.5).
+ * After Phase 13.5 cutover, x-user-id will be rejected entirely.
  *
- * Dependencies used: pg (existing)
+ * Security:
+ * - Algorithm allowlist: HS256 only (reject 'none' and asymmetric).
+ * - Known kid only (active/previous).
+ * - iss, aud, exp verified.
+ * - Session revoke check via public.sessions.
+ * - Active user check via public.users.
  *
- * TODO (future): Add JWT signature verification when jsonwebtoken is installed.
- *   For now we accept x-user-id + optional Authorization bearer fallback
- *   but ALWAYS verify against the local database.
+ * Dependencies: jsonwebtoken, pg (existing)
  */
 
 'use strict';
 
-/**
- * Extract userId from request headers.
- * Priority: 1) x-user-id  2) Authorization Bearer token payload (sub)
- * Returns null if neither is present.
- */
-function _extractUserId(req) {
-  // 1. Direct userId header (existing Flutter pattern)
-  const userId = req.headers['x-user-id'];
-  if (userId && typeof userId === 'string' && userId.length > 0) {
-    return userId;
-  }
+const { verifyAccessToken } = require('../lib/jwt');
 
-  // 2. Bearer token — try to extract sub claim from JWT payload (unsigned decode)
-  //    This is defense-in-depth; signature is NOT verified here (no jsonwebtoken).
+/**
+ * Extract and verify JWT from Authorization header.
+ * During compatibility window, also accepts x-user-id (legacy, unsigned).
+ * Returns { userId, role, sessionId } or null.
+ */
+async function _extractVerifiedIdentity(req) {
+  // 1. Authorization: Bearer <token> — PREFERRED (signed JWT)
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     try {
-      // JWT = header.payload.signature — split by '.' and base64-decode payload
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
-        const claims = JSON.parse(payload);
-        if (claims.sub) return claims.sub;
-      }
+      const payload = verifyAccessToken(token);
+      return {
+        userId: payload.sub,
+        role: payload.role || 'consumer',
+        sessionId: payload.sid || null,
+        source: 'jwt',
+      };
     } catch (err) {
-      // Malformed token — silently fall through
+      // Token verification failed — do NOT fall back to x-user-id.
+      // This is a hard rejection: invalid token = 401, not anonymous.
+      throw new Error(`JWT verification failed: ${err.message}`);
     }
+  }
+
+  // 2. x-user-id — LEGACY (compatibility window only, Phase 13.2-13.5)
+  //    After Phase 13.5 cutover, this path will be removed.
+  const legacyUserId = req.headers['x-user-id'];
+  if (legacyUserId && typeof legacyUserId === 'string' && legacyUserId.length > 0) {
+    return {
+      userId: legacyUserId,
+      role: null, // will be looked up from DB
+      sessionId: null,
+      source: 'legacy_header',
+    };
   }
 
   return null;
@@ -51,8 +63,9 @@ function _extractUserId(req) {
 
 /**
  * verifyToken(pool) — Express middleware
- * Resolves user from request headers, queries local DB for
- * id | is_active | role, and attaches to req.user / req.userId / req.userRole.
+ * Verifies JWT signature (or legacy x-user-id during compatibility window),
+ * checks session revocation and active user status.
+ * Attaches to req.user / req.userId / req.userRole / req.sessionId.
  *
  * Must be wired BEFORE any route that needs identity or role checks.
  */
@@ -62,14 +75,72 @@ function verifyToken(pool) {
     req.user = null;
     req.userId = null;
     req.userRole = null;
+    req.sessionId = null;
 
-    const rawId = _extractUserId(req);
-    if (!rawId) {
-      // No identity supplied — not an error; anonymous requests allowed
-      // downstream routes should check req.userId before trusting.
+    let identity;
+    try {
+      identity = await _extractVerifiedIdentity(req);
+    } catch (err) {
+      // JWT verification failed — hard 401
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    if (!identity) {
+      // No identity supplied — anonymous request allowed downstream.
       return next();
     }
 
+    // JWT-sourced identities are verified against Supabase (users/sessions
+    // live there — the gateway pool enforces the sheserved_app role).
+    // The legacy x-user-id path (compatibility window, Phase 13.2-13.5)
+    // keeps using the local pool as before.
+    if (identity.source === 'jwt') {
+      try {
+        const { withTransaction } = require('../db/supabase-gateway-pool');
+        const verified = await withTransaction(identity.userId, async (client) => {
+          const u = await client.query(
+            'SELECT id, is_active, user_category_id FROM public.users WHERE id = $1',
+            [identity.userId]
+          );
+          if (u.rows.length === 0) return { error: 'not_found' };
+          if (!u.rows[0].is_active) return { error: 'inactive' };
+          let revoked = false;
+          if (identity.sessionId) {
+            const s = await client.query(
+              'SELECT revoked_at FROM public.sessions WHERE id = $1',
+              [identity.sessionId]
+            );
+            revoked = s.rows.length > 0 && s.rows[0].revoked_at != null;
+          }
+          return { user: u.rows[0], revoked };
+        });
+
+        if (verified.error === 'not_found') {
+          return res.status(401).json({ error: 'Unauthorized: User not found' });
+        }
+        if (verified.error === 'inactive') {
+          return res.status(403).json({ error: 'Forbidden: User is inactive' });
+        }
+        if (verified.revoked) {
+          return res.status(401).json({ error: 'Unauthorized: Session revoked' });
+        }
+
+        req.user = {
+          id: verified.user.id,
+          role: verified.user.user_category_id || identity.role || 'consumer',
+        };
+        req.userId = verified.user.id;
+        req.userRole = verified.user.user_category_id || identity.role || 'consumer';
+        req.sessionId = identity.sessionId;
+        req.identitySource = identity.source;
+        return next();
+      } catch (err) {
+        console.error('[AuthMiddleware] Gateway DB error:', err.message);
+        return res.status(500).json({ error: 'Server error during authentication' });
+      }
+    }
+
+    // ── Legacy x-user-id path (compatibility window only) ──
     if (!pool) {
       console.error('[AuthMiddleware] Database pool is not available');
       return res.status(503).json({ error: 'Service unavailable' });
@@ -78,7 +149,7 @@ function verifyToken(pool) {
     try {
       const result = await pool.query(
         'SELECT id, is_active, user_category_id FROM users WHERE id = $1',
-        [rawId]
+        [identity.userId]
       );
 
       if (result.rows.length === 0) {
@@ -92,10 +163,12 @@ function verifyToken(pool) {
 
       req.user = {
         id: userRow.id,
-        role: userRow.user_category_id || 'consumer',
+        role: userRow.user_category_id || identity.role || 'consumer',
       };
       req.userId = userRow.id;
-      req.userRole = userRow.user_category_id || 'consumer';
+      req.userRole = userRow.user_category_id || identity.role || 'consumer';
+      req.sessionId = identity.sessionId;
+      req.identitySource = identity.source;
 
       next();
     } catch (err) {

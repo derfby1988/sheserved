@@ -1096,7 +1096,7 @@ Scaffold
 
 | ตัวเลือก | เนื้อหา | ข้อดี | ข้อเสีย |
 |---|---|---|---|
-| **A** | Backend เปิด `pg` Pool ตรงไป Supabase Postgres (transaction pooler `:6543`) แล้วทำ `BEGIN; SET LOCAL app.user_id; ...; COMMIT` | ตรงกับ `app.require_current_user_id()` ที่ **มีอยู่แล้ว**; ควบคุม transaction/atomicity เต็มที่ | backend ต้องถือ DB credential ของ Supabase; ทุก read/write ที่ต้อง identity ต้องผ่าน backend (แตะ call sites จำนวนมาก) |
+| **A** | Backend เปิด `pg` Pool ตรงไป Supabase Postgres ผ่าน **Supavisor transaction pooler** (`aws-0-<region>.pooler.supabase.com:6543` ด้วย user `postgres.<project-ref>`) แล้วทำ `BEGIN; SET LOCAL app.user_id; ...; COMMIT` | ตรงกับ `app.require_current_user_id()` ที่ **มีอยู่แล้ว**; ควบคุม transaction/atomicity เต็มที่ | backend ต้องถือ DB credential ของ Supabase; ทุก read/write ที่ต้อง identity ต้องผ่าน backend (แตะ call sites จำนวนมาก) |
 | **B** | ไม่ใช้ `SET LOCAL`; backend เรียก legacy RPC ที่รับ actor param แต่ **client เรียกไม่ได้แล้ว** (revoke จาก anon) | เปลี่ยนน้อยสุด; ใช้ RPC ที่มีอยู่ทันที | RLS ไม่ได้เป็นชั้นป้องกัน เพราะ service_role bypass ทั้งหมด — เหลือชั้นเดียวคือ backend |
 | **C** ⭐ | **Hybrid ตามความเสี่ยง**: <br>• public read → anon key + public VIEW (Q5-B) <br>• private read → client ยิง Supabase ตรงด้วย **JWT ที่ sign ด้วย Supabase JWT secret** → PostgREST verify → RLS ใช้ `auth.uid()`/`request.jwt.claims` <br>• mutation ที่ต้อง atomic/มี side effect → gateway + `pg` ตรง + `SET LOCAL` | ไม่ต้อง refactor 189 call sites ทันที; ได้ RLS จริงที่ DB; mutation สำคัญยัง atomic และ audit ได้ | ต้องดูแลสอง identity path; revoke access token ก่อนหมดอายุใน PostgREST path ทำไม่ได้ → ต้องใช้ TTL สั้น |
 
@@ -1111,7 +1111,7 @@ app.current_user_id() :=
   return COALESCE(gateway_id, rest_id)
 ```
 helper ต้องยืนยัน active user และทุก policy/RPC ใช้ helper นี้ตัวเดียว เพื่อไม่ให้ identity ที่ขัดกันถูกกลบด้วย `COALESCE`
-**ถ้าเลือก A:** ต้องยืนยันว่า Supabase pooler mode ที่ใช้เป็น **transaction mode** (`:6543`) ซึ่ง `SET LOCAL` ทำงานได้เพราะอยู่ใน transaction; ห้ามใช้ `SET` ธรรมดาเด็ดขาด
+**ถ้าเลือก A:** ต้องยืนยันว่า Supabase pooler mode ที่ใช้เป็น **Supavisor transaction mode** (`aws-0-<region>.pooler.supabase.com:6543` ด้วย user `postgres.<project-ref>`) ซึ่ง `SET LOCAL` ทำงานได้เพราะอยู่ใน transaction; ห้ามใช้ `SET` ธรรมดาเด็ดขาด
 
 ---
 
@@ -1353,7 +1353,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **Decision Q12 = B / role model:** `sheserved_app NOLOGIN` เป็น permission role (ไม่มี `BYPASSRLS`, ไม่มี DDL, ห้าม UPDATE/DELETE `audit_logs`); `sheserved_gateway LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS` เป็น server-only business connection role ที่ `SET LOCAL ROLE sheserved_app`; เพิ่ม `sheserved_auth NOLOGIN` + `sheserved_auth_gateway LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS` สำหรับ bounded login/password/session functions และใช้ pool แยก (ไม่ให้ auth handler ใช้ service_role); `sheserved_worker`, `sheserved_readonly`, `sheserved_migrate` ใช้ credential/pool แยกตามหน้าที่; `sheserved_fitness_owner NOLOGIN` เป็น owner ของ bounded secure RPC
 - Migration ใหม่ต้องสร้าง/ตั้งสิทธิ์ role ทั้งหมดแบบ idempotent ผ่าน migration/admin connection; ห้ามให้ app role สร้าง role หรือ DDL เอง
 - **Gateway path:** local PostgreSQL pool เดิมต้องแยกจาก Supabase direct pool; direct pool ใช้ env `SUPABASE_DB_*` คนละชุด; ทุก request ทำ `BEGIN → SET LOCAL ROLE sheserved_app → SET LOCAL app.user_id/session_id/role/... → query/RPC → COMMIT/ROLLBACK`; error ต้อง `ROLLBACK` และ reset/release connection ทุกครั้ง
-- **Spike ก่อนเปิด role/DB path:** ยืนยัน Supabase hosted อนุญาต role/membership, `sheserved_gateway` ต่อผ่าน transaction pooler `:6543` ได้, `SET LOCAL ROLE`/`SET LOCAL app.user_id` ทำงาน, RLS ไม่รั่วข้าม pooled connection และ role ไม่มี privilege เกินขอบเขต; ถ้าไม่ได้ให้หยุดและปรับ credential/network — เป็น hard gate
+- **Spike ก่อนเปิด role/DB path:** ยืนยัน Supabase hosted อนุญาต role/membership, `sheserved_gateway` ต่อผ่าน Supavisor transaction pooler (`aws-<N>-<region>.pooler.supabase.com:6543` ด้วย user `postgres.<project-ref>`) ได้, `SET LOCAL ROLE`/`SET LOCAL app.user_id` ทำงาน, RLS ไม่รั่วข้าม pooled connection และ role ไม่มี privilege เกินขอบเขต; ถ้าไม่ได้ให้หยุดและปรับ credential/network — เป็น hard gate — ✅ **ผ่าน 2026-09-06** (project `psxcgdwcwjdbpaemkozq`, cluster `aws-1-ap-southeast-1`, dry-run + apply + spike + post-apply privilege checks ทั้ง 6 ข้อผ่าน)
 - โอน ownership secure RPC ไป `sheserved_fitness_owner`; grant `EXECUTE` เฉพาะ `sheserved_app`; Backend ห้ามเรียก legacy actor signature
 - เขียน strict Fitness RLS ใน staging/shadow; private-read policy ให้ `authenticated` ตาม data classification; public browse ใช้ public VIEW และ grant `SELECT` เฉพาะ view; **ห้าม grant mutation ให้ `authenticated`**
 - `public.sessions` เป็น auth-private: ห้าม grant table SELECT ให้ `anon`/`authenticated` แบบกว้าง; session-management endpoint ใช้ Backend/worker scoped access เท่านั้น และ refresh registry ไม่เปิดผ่าน public PostgREST
@@ -1361,6 +1361,47 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สอง — DB roles/helper/pooler พร้อมใน staging แต่ production RLS/legacy grants ยังไม่เปลี่ยน; ไม่มีผลต่อผู้ใช้
 - **Deliverable:** migration roles + helper + Supabase direct-pool adapter + audit-worker role/outbox plumbing + staging RLS/public-view scripts + deny/allow matrix
 - Gate: owner/active group admin/Sheserved admin/member/unrelated/blocked/missing/invalid identity matrix ผ่าน; pooled request A/B ไม่รั่ว; `sheserved_gateway`/`sheserved_app` ต่อ DDL/แก้ audit ไม่ได้; `public.sessions`/auth-private data ไม่เปิดผ่าน PostgREST; service_role ไม่อยู่ใน request handler; public browse ยังทำงาน
+
+#### Phase 13.1 — Implementation status (2026-09-05)
+- ✅ **Roles + helper migration:** `supabase/migrations/20260905140000_phase_13_1_db_identity_roles.sql`
+  - สร้าง roles 8 ตัว idempotently: `sheserved_app`, `sheserved_gateway`, `sheserved_auth`, `sheserved_auth_gateway`, `sheserved_worker`, `sheserved_readonly`, `sheserved_migrate`, `sheserved_fitness_owner`
+  - สร้าง `app.current_user_id()` รวมทั้ง `app.user_id` GUC และ `request.jwt.claims` JSON sub, ตรวจ conflict → `UNAUTHORIZED`
+  - สร้าง `app.is_active_user(UUID)` และอัปเดต `app.require_current_user_id()` ให้ใช้ unified helper
+  - โอน ownership secure Fitness RPCs ไป `sheserved_fitness_owner` และ grant `EXECUTE` ให้ `sheserved_app` (idempotent — ข้ามถ้า RPC ยังไม่มี); 2026-09-06 แก้ให้ `GRANT CREATE ON SCHEMA public TO sheserved_fitness_owner` ชั่วคราวก่อนโอน ownership แล้ว `REVOKE` คืน (PostgreSQL กำหนดให้ role ใหม่ต้องมี CREATE บน schema) — ตรวจ dry-run แล้วไม่มี `Skipping` เหลือ
+  - `public.sessions` auth-private: `REVOKE` จาก `anon`/`authenticated`, `GRANT` ให้ `sheserved_app`/`sheserved_auth`/`sheserved_worker` (ถ้าตารางมีอยู่)
+  - ทดสอบแล้วบน local PostgreSQL: `SET LOCAL ROLE sheserved_app` + `app.user_id` + `app.require_current_user_id()` ทำงาน
+- ✅ **Supabase direct-pool adapter:** `websocket-server/db/supabase-gateway-pool.js`
+  - `pg` Pool สำหรับ Supabase direct connection ผ่าน Supavisor transaction pooler (`aws-0-<region>.pooler.supabase.com:6543`)
+  - `withTransaction(userId, callback, context)` ทำ `BEGIN → SET LOCAL ROLE sheserved_app → set_config app.user_id/session_id/role/organization_id/branch_id → callback → COMMIT/ROLLBACK`
+  - ทดสอบแล้วบน local PostgreSQL: `current_user` เปลี่ยนเป็น `sheserved_app` และ `app.require_current_user_id()` คืน user UUID ที่ verified
+- ✅ **Env template + validator:** `websocket-server/.env.example` เพิ่ม `SUPABASE_DB_*` (host/port/name/user/password/ssl/pool_max/timeout); `config/validate-env.js` require ใน production/staging
+- ✅ **Staging strict RLS script:** `supabase/staging/phase_13_1_fitness_strict_rls.sql` (manual staging-only, ไม่ใช่ auto migration; ห้ามใช้ production จนกว่า Phase 13.5)
+- ✅ **Pooler spike script:** `websocket-server/scripts/spike-supabase-pooler.js` พร้อมรันกับ Supabase credentials จริง
+- ✅ **Hard gate ผ่านแล้ว (2026-09-06):** spike บน Supabase hosted Supavisor pooler (`aws-1-ap-southeast-1.pooler.supabase.com:6543`) รันผ่านครบทั้ง 6 ข้อ (DDL denied, audit insert denied, anon sessions denied, anon helpers denied, app helpers OK, conflict detection raises UNAUTHORIZED); migration ถูก apply จริงผ่าน SQL Editor (ทาง A) เพราะ ownership transfer ต้องการสิทธิ์เจ้าของ schema
+  - ใช้ local PostgreSQL สำหรับพัฒนา/ทดสอบ syntax + privilege + identity helper ก่อน ตามทางเลือกที่ user ตกลง
+  - **ปฏิบัติตาม** **`docs/secure/17_phase_13_1_supabase_spike_runbook.md`** (ลำดับ: dry-run migration → spike pooler → ตรวจ privilege → apply migration → ตรวจหลัง apply → post-spike cleanup) — ทำครบแล้ว
+  - ต้องทำ spike บน Supabase hosted จริงก่อน deploy ไป staging/production
+  - ห้ามใช้ local DB แทน Supabase ในภาวะใช้งานจริง (production/staging)
+  - **มาตรการลดความเสี่ยง + กันค่าใช้จ่าย (บังคับก่อน spike):** staging project เท่านั้น + dedicated user + IP allowlist + `SUPABASE_DB_POOL_MAX=2` + statement timeout 10s + dry-run ก่อน apply + เปลี่ยน password หลัง spike + ตรวจ `pg_stat_activity` ไม่มี connection ค้าง
+  - **Scripts ที่เตรียมไว้:**
+    - `websocket-server/scripts/dry-run-phase-13-1-migration.js` — `BEGIN ... ROLLBACK` migration โดยไม่ commit
+    - `websocket-server/scripts/spike-supabase-pooler.js` — guard `SPIKE_CONFIRM=yes` + บังคับ port 6543 + pool max 2 + อ่านอย่างเดียว
+- ✅ **Local verification matrix (2026-09-05):**
+  - T1 missing identity → `app.current_user_id()` คืน NULL ✅
+  - T2 gateway-only identity → คืน UUID ที่ set ✅
+  - T3 JWT-only identity → คืน UUID จาก `request.jwt.claims.sub` ✅
+  - T4 matching gateway+JWT → คืน UUID ✅
+  - T5 conflicting gateway/JWT → `UNAUTHORIZED` (fail closed) ✅
+  - T6 malformed UUID → `UNAUTHORIZED` (fail closed) ✅
+  - T7 nonexistent user → `require_current_user_id()` `UNAUTHORIZED` ✅
+  - T8 `SET LOCAL app.user_id` หายหลัง COMMIT (transaction-scoped) ✅
+  - T9 `SET LOCAL ROLE sheserved_app` หายหลัง COMMIT (transaction-scoped) ✅
+  - T10 `sheserved_app` ไม่สามารถ `CREATE TABLE` ได้หลัง `REVOKE CREATE ON SCHEMA public` ✅
+  - Adapter: `withTransaction()` เปลี่ยน `current_user` เป็น `sheserved_app` และ `app.require_current_user_id()` คืน verified UUID ✅
+  - Adapter: invalid UUID ถูกปฏิเสธที่ boundary (`INVALID_UUID`) ✅
+  - Adapter: nonexistent user ถูกปฏิเสธโดย `require_current_user_id()` ✅
+  - Validator: `SUPABASE_DB_HOST=your-project.supabase.co` ถูกปฏิเสธใน production ✅
+- ✅ **ทดสอบบน Supabase hosted ผ่านแล้ว (2026-09-06):** ใช้ Supavisor host `aws-1-ap-southeast-1.pooler.supabase.com` และ user `postgres.psxcgdwcwjdbpaemkozq` spike ผ่าน pooler `:6543` (hard gate ผ่าน — ดูผลใน spike output และ post-apply privilege checks 6 ข้อด้านบน)
 
 ### Phase 13.2 — Auth foundation (ยังไม่แตะ Fitness path)
 - **Decision Q3 = A:** sign HS256 ด้วย key active (`kid` ใน header), verify ด้วย active/previous ที่เป็น known key เท่านั้น; `ACCESS_TTL`/`REFRESH_TTL` ตาม role; ห้าม log secret/token
@@ -1379,6 +1420,42 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สาม — auth server + Flutter switch + password exposure cutover เสร็จ, แต่ Fitness ยังใช้ path เดิมและยัง spoof ได้ในส่วน Fitness (ห้ามเคลมว่า Fitness cutover)
 - **Deliverable:** backend auth + extended `public.sessions`/`audit_logs`/durable audit queue + Flutter token layer + minimum-app-version control
 - Gate: login/register/social/refresh/logout/session restore, refresh parallel/reuse, plaintext-reset, old-app rejection และ audit delivery ผ่าน test; **Fitness repository ยังไม่เปลี่ยน path**
+
+#### Phase 13.2 — Implementation status (2026-09-06)
+
+- ✅ **Migrations applied (Supabase hosted):** `20260906120000_phase_13_2_audit_logs.sql` (ตาราง `audit_logs` + indexes + `REVOKE UPDATE/DELETE` จาก `sheserved_app` + `delivered_at` สำหรับ worker claim) และ `20260906130000_phase_13_2_auth_user_grants.sql` (grant `INSERT`/`SELECT` บน `public.users` + column-scoped `UPDATE` เฉพาะ `password_hash`, `password_algo`, `password_updated_at`, `password_migrated_at`, `requires_password_reset` + RLS policies `sheserved_app_users_insert/select/update`)
+- ✅ **JWT lib (`lib/jwt.js`):** HS256 เท่านั้น, active/previous known keys พร้อม `kid`, validate `iss`/`aud`/`exp`/token type, per-role TTL ผ่าน env override (fallback global TTL)
+- ✅ **Password lib (`lib/password.js`):** Argon2id primary, `bcryptjs` cost 12 fallback เมื่อ Argon2 ใช้ไม่ได้, legacy SHA-256 verify เฉพาะ compatibility window + lazy rehash เป็น Argon2id, plaintext row → `requires_password_reset` (ห้าม auto-hash)
+- ✅ **Session/refresh (`lib/session.js`):** opaque refresh token ≥256-bit, เก็บ hash เท่านั้น, `family_id`/`prev_token_hash`/`rotated_at`, Redis `SETNX` lock + cached result (parallel refresh idempotent), grace 60 วิ, reuse หลัง grace → revoke ทั้ง family + audit, Redis ล่ม → DB row-lock fallback, raw token ไม่อยู่ใน DB/log
+- ✅ **PostgREST token (`lib/postgrest-token.js`):** แยกใบ sign ด้วย `SUPABASE_JWT_SECRET`, TTL ≤5 นาที, claims `sub`/`role=authenticated`/`iss`/`aud`; **live check ผ่าน 2026-09-06 — PostgREST ตอบ 200** หลังแทนที่ `SUPABASE_JWT_SECRET` จริง (len=88, ไม่ log ค่า)
+- ✅ **Routes (`routes/auth.js`):** `register` (เพิ่มตาม gate — server-side Argon2id hash เท่านั้น, client ไม่เขียน `password_hash`), `login` (ผูก `loginLockoutLimiter` — fail บันทึก, success reset), `social/:provider` (501 fail-closed จนกว่า provider verifier พร้อม), `refresh`, `logout`, `logout-all`, `me`, `sessions`, `sessions/:id` (reuse shared pool)
+- ✅ **Middleware/wiring:** protected-auth router แยกจาก public auth (แก้ mount order — `/me`/`/sessions` ต้องผ่าน verified JWT), `helmet()` เปิดใช้, `verifyToken` เช็ค session revocation ผ่าน Supabase, min-app-version → `426` + `x-force-update`, `AUTH_RATE_LIMIT_MAX` override สำหรับ dev/E2E (production คง 5 req/min)
+- ✅ **Audit (`lib/audit.js` + `scripts/audit-worker.js`):** durable `audit_logs` + worker ใช้ `sheserved_worker` claim ด้วย locking + `delivered_at` marker (ไม่ประมวลซ้ำ), redaction ไม่เก็บ password/token/OTP/secret
+- ✅ **Flutter foundation (เตรียมโครงเท่านั้น — ยังไม่ switch):** `flutter_secure_storage` ใน `pubspec.yaml`, `lib/core/network/authenticated_http_client.dart` (refresh-once/single-flight), `lib/core/network/app_version_checker.dart`; `login_page`/`register_page`/social flows/`user_repository.dart` **ยังไม่เปลี่ยน** ตามคำตัดสิน
+- ✅ **ผลทดสอบ:** unit/integration `scripts/test-phase-13-2-auth.js` ผ่าน (14/14 ใน run ที่ยืนยัน; เพิ่ม test หลังนั้นรวม 18 รายการ) และ E2E gate `scripts/e2e-phase-13-2-gate.js` **31/31 ผ่าน** — ครอบคลุม register/duplicate/Argon2id server-side, login/wrong password, `/me`, refresh rotation + grace replay + parallel idempotence, logout/revocation, session list, audit records, old-app rejection, cleanup
+- ⚠️ **Issues ที่แก้ระหว่าง implement:** `first_name`/`username` NOT NULL (register ต้องส่ง `firstName`), `createSession` parameter type ambiguity (เพิ่ม `::uuid`/`::text` cast), refresh ใช้ `withTransaction` ดีกว่า `pool.query('BEGIN')` แยก client, `prev_token_hash` ต้องเขียนบน session ใหม่, parallel refresh ต้องเช็ค result cache ก่อน lock, role บน refresh ต้องอ่าน `user_category_id` ปัจจุบัน
+- ⏸️ **Waiver/Deferred (อนุมัติแล้ว):** social provider verification (Google/Apple เป็นลำดับแรก — endpoint 501 fail-closed), Flutter switch จริงหลัง toggle, production OTP provider, 90-day forced-reset job, production secret rollout นอก `.env` dev
+- ⚠️ **Gate status: ผ่านในระดับ local E2E — ยังไม่เคลม production-ready**; 13.3 เริ่มได้ตามเงื่อนไขแผน แต่ Fitness path และ `x-user-id` removal ยังไม่แตะจนกว่า phase ถัดไป; residual risk B2 (client-side `password_hash` query ใน `user_repository.dart`) ยังเปิดอยู่จนกว่า Flutter switch — บันทึกเป็นรายการปิดใน compatibility cutover
+
+#### Phase 13.2 — Social verification + Flutter switch implementation (2026-09-06, free-only)
+
+- ✅ **`lib/social.js` (ใหม่):** verify Google ID token + Apple identity token ฝั่ง server ผ่าน JWKS ของ provider (`googleapis.com/oauth2/v3/certs`, `appleid.apple.com/auth/keys`) ด้วย `crypto` built-in (JWK→KeyObject) — **ไม่เพิ่ม dependency** และไม่มี paid quota; ตรวจ RS256-only, known `kid`, `iss`/`aud`/`exp`, nonce (Google as-is / Apple SHA-256); JWKS cache 1 ชม.; fail-closed ทุกกรณี (malformed/wrong-alg/unknown-kid/tampered/issuer-aud mismatch/nonce mismatch/JWKS down → `SocialVerificationError`)
+- ✅ **`POST /api/auth/social/:provider`:** Google/Apple ผ่าน; Facebook/LINE/TikTok ยัง 501 fail-closed; identity มาจาก **verified claims เท่านั้น** (`sub`/`email`/`name`) — client ส่งได้แค่ `providerToken`/`nonce` ไม่มี `userId`/username/email สำหรับ authorization; find-or-create user ใน gateway transaction (`sheserved_app` + `SET LOCAL`), server-side `generateUniqueUsername()` (slug + random suffix ตรวจซ้ำ), `verification_status='verified'`, audit `auth.login.success` (reason=`social_login`/`social_register`)
+- ✅ **Env:** `GOOGLE_CLIENT_ID`, `APPLE_BUNDLE_ID` ใน `.env.example` + `validate-env` (required in production, placeholder reject ทุก env) — เป็น config ไม่ใช่ secret
+- ✅ **Response shape:** login/register/social/me คืน `firstName`/`lastName` (UserModel ฝั่ง client ต้องใช้)
+- ✅ **Flutter switch (ตามคำตัดสิน + free-only):** `AppConfig.useBackendAuth` (default true, สลับได้ `--dart-define=USE_BACKEND_AUTH=false`) + `backendApiUrl`; `AuthenticatedHttpClient` เพิ่ม `register()`, `socialLogin(provider, token, nonce)`, `getMe()`, `restoreSession()`, `login()` รองรับ username/phone และ `_looksLikePhone`; `UserRepository.login/createUser` branch ไป backend (ไม่เขียน `password_hash` อีกต่อไป); `SocialAuthService` Google/Apple ส่ง `idToken`/`identityToken` + nonce ไป backend; `AuthService.restoreSession()` + logout revoke ผ่าน backend; `main.dart` เรียก restore ก่อน UI
+- ✅ **ผลทดสอบ:** unit `test-phase-13-2-auth.js` **31/31** (เพิ่ม 13 social tests — RSA keypair ท้องถิ่น + JWKS stub, ไม่แตะเน็ต); E2E gate **37/37** (เพิ่ม 6 social fail-closed: garbage google→401, no token→400, facebook/line/tiktok/unknown→501); Flutter `flutter test` auth suite **16/16**; smoke: register/login/me คืน firstName+lastName ถูกต้อง
+- ✅ **Device-verified (2026-09-06, Android ผ่าน Caddy :8080):** `POST /api/auth/logout` → 200 และ `POST /api/auth/social/google` → 200 — Google `idToken` (RS256, `aud` = Web client `…7ri`) verify ผ่าน JWKS จริงแล้ว link เข้า user เดิม ไม่สร้างซ้ำ; OAuth clients ครบ 3 type (Web/Android/iOS, package/bundle `com.sheserved.app`); iOS `GIDClientID`+reversed scheme ใน `Info.plist` แล้ว; `AuthenticatedHttpClient` ส่ง `x-app-version` ทุก request; `MIN_APP_VERSION_ENFORCE=false` ใน dev จนกว่า client ทุก path จะส่ง header; **Apple social รอเทสบน iOS device จริง**
+- ⏸️ **Deferred (free-only boundary):** Facebook/LINE/TikTok verification (รอ credentials/requirement), production OTP/SMS, 90-day reset job, production secret management — ยังเป็น production-readiness blockers
+
+#### Phase 13.2 — Free-only development/staging policy
+
+- **ขอบเขตที่อนุมัติ:** Phase 13.2–13.3 ใน development/staging ใช้เฉพาะส่วนที่ไม่มีค่าใช้จ่ายเพิ่มเติม ได้แก่ backend JWT/password/session/audit, Flutter switch, Google/Apple token verification ผ่าน public keys/JWKS, PostgREST token, Redis/DB ที่มีอยู่ และ automated tests; ห้ามเพิ่ม paid provider หรือ service ใหม่เพียงเพื่อปิด gate
+- **Social verification:** implement และทดสอบ Google/Apple ได้โดยไม่ซื้อบริการเพิ่ม; Facebook/LINE/TikTok ให้คง deferred จนกว่าจะมี requirement/credentials ที่อนุมัติ; ถ้า provider ต้องใช้บัญชีหรือ quota ที่มีค่าใช้จ่าย ให้บันทึกเป็น production dependency ไม่สร้างค่าใช้จ่ายระหว่าง dev/staging
+- **OTP:** development/staging ใช้ console mock เท่านั้นตาม Q4-B; ห้ามส่ง SMS จริงหรือผูก paid OTP provider ใน phase นี้
+- **Production boundary:** free-only pass ไม่ใช่ production go-live approval; ก่อน production ต้องมี production OTP provider หรือวิธี reset ที่อนุมัติ, ตรวจ Apple Developer membership/team entitlement, production secret management, provider quotas/terms และ budget approval — ถ้ายังไม่มีให้คง phase ไว้ที่ safe stop
+- **Gate interpretation:** รายการที่ต้องจ่ายถูกจัดเป็น **production-readiness blocker/waiver** ไม่ใช่เหตุให้ทำงานฟรีใน development/staging ไม่ได้; แต่ห้ามทำเครื่องหมาย production gate ผ่าน และห้ามเปิด `MIN_APP_VERSION_ENFORCE`/บังคับ migration กับผู้ใช้จริงจนกว่า compatibility, rollback และ cost approval ครบ
+- **No-cost constraint:** ห้ามใช้บัตร/ทดลองใช้ฟรีที่ auto-renew, paid SMS/email, paid Apple/Google/Facebook/LINE/TikTok quota หรือสร้าง resource ที่คิดเงินโดยไม่ขออนุมัติผู้ใช้ก่อน; ใช้ mock/local fixture เมื่อ provider ไม่จำเป็นต่อการทดสอบ security behavior
 
 ### Phase 13.3 — Verified identity ที่ HTTP และ WebSocket (Decision Q2 = A, Q9 = A)
 - **Decision Q2 = A:** `websocket-server` เดิมคือ identity authority; auth code อยู่ใน `middleware/auth.js`, `middleware/socket-auth.js` และ `routes/auth.js`; `server.js` ทำเพียง wiring (`io.use(socketAuth(...))`/mount routes) **ห้ามมี token decode/verify ใน `server.js`**
@@ -1487,6 +1564,61 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | Q12 | service_role / least privilege | A / B / C | **B** `sheserved_app` ไม่มี BYPASSRLS | ✅ **B** — `sheserved_app NOLOGIN` + `sheserved_gateway LOGIN` ใช้ `SET LOCAL ROLE`; auth role/pool แยก; service_role เฉพาะ worker/system path; ลบ fallback ไป anon ทั้งหมด | 2026-08-30 |
 
 > **แพ็กเกจที่อนุมัติ:** (B, A, A, B, B, B, C, A, A, B, B, B) และ implementation amendments: staged B2, `sheserved_gateway LOGIN` + `sheserved_app NOLOGIN`, auth-only role/pool แยก, no service_role ใน request path, encrypted refresh replay result, partition-valid audit schema/durable worker, `socket-auth` แยกไฟล์ และ invariant baseline ก่อน canary
+
+### Phase 13.2 Implementation Amendments & Decisions (2026-09-06)
+
+| หัวข้อ | การตัดสินใจ | เหตุผล / ผลกระทบ |
+|---|---|---|
+| `POST /api/auth/register` | ✅ เพิ่ม route นอกเหนือรายการ line 1408 (plan ระบุแค่ login/social/refresh/logout/me/sessions) | Gate line 1422 กำหนด "register ผ่าน test" และ compatibility step (2) กำหนด "Flutter register เปลี่ยนไป Backend"; client `user_repository.dart` ยัง hash SHA-256 ฝั่ง client แล้ว insert `password_hash` ตรงๆ — ขัด Q4-B (แถวใหม่ต้อง Argon2id) → register ต้องทำฝั่ง server ใน gateway transaction (hash Argon2id, audit `auth.login.success` reason='register', ตอบ tokens เหมือน login) |
+| `social/:provider` | ⏸️ คง 501 fail-closed — ยังไม่ implement per-provider verification | UI มี 5 providers (Google/Facebook/Apple/Line/TikTok) แต่ละตัวต้องมี credentials/client secret; **gate waiver**: social ยังนับไม่ผ่านจนกว่าจะ implement verification ตามลำดับ provider (Google/Apple ก่อน — verify ได้โดยไม่ต้อง client secret มากนัก) |
+| bcrypt fallback | ✅ ใช้ `bcryptjs` cost 12 (pure-JS, API-compatible) แทน `bcrypt` native | ลด native build risk บนทุก platform; argon2 primary, bcrypt ใช้เฉพาะเมื่อ argon2 load ไม่ได้ + verify แถว legacy `password_algo='bcrypt'` แล้ว lazy upgrade |
+| `ACCESS_TTL/REFRESH_TTL` ตาม role | ✅ `ttlFor(kind, role)` อ่าน `ACCESS_TTL_<ROLE>`/`REFRESH_TTL_<ROLE>` (uppercase, fallback global) | line 1407 กำหนด "ตาม role"; default เหมือนเดิมไม่กระทบ |
+| Min-app-version enforcement | ✅ `middleware/app-version.js` — header `x-app-version` < `MIN_APP_VERSION` → 426 + `x-min-app-version`/`x-force-update`; missing header = 426 fail-closed | Gate ต้องการ "old-app rejection ผ่าน test"; Flutter `AppVersionChecker` ฝั่ง client พร้อมใช้ |
+| refresh replay cache | ✅ implement แล้ว: cache result (Redis, TTL=grace) + `SELECT ... FOR UPDATE` fallback เมื่อ Redis ล่ม + fail-closed `alreadyRotated` | ตาม Q6-B; ห้ามคืน raw token จาก log/DB |
+| Flutter switch | ⏸️ เลื่อน — เตรียมโครง (`AuthenticatedHttpClient` + `AppVersionChecker` + `flutter_secure_storage`) ยังไม่สลับ `login_page`/`register_page`/`user_repository` | ตัดสินใจ "แค่เตรียมโครงไว้" — ทำหลัง E2E backend ผ่าน; ตามลำดับ compatibility: ship backend → switch หลัง toggle `useBackendAuth` → monitor → revoke anon |
+| 90-day forced reset enforcement | ⏸️ ยังไม่มี cron — deadline enforcement อยู่ใน Q4-B แต่ window เริ่มหลัง password cutover | จะเริ่ม trigger หลัง 90 วันจาก cutover; เลื่อนทำพร้อม/หลัง E2E |
+
+### Phase 13.2 audit result (2026-09-06) — review พบและแก้ไข 8 ข้อ
+
+- `pool.query('BEGIN')` ไม่ผูก client → แก้เป็น `withTransaction` (gateway pool + `SET LOCAL ROLE sheserved_app`)
+- `prev_token_hash` อยู่ผิดแถว (เก่า vs ใหม่) → แก้ semantic: new session เก็บ hash(old)
+- ไม่เช็ค refresh result cache ก่อน rotate → parallel ใน grace 60s สร้าง token ซ้ำ → แก้
+- ไม่มี Redis-down fallback → เพิ่ม `SELECT ... FOR UPDATE` row lock + fail-closed `alreadyRotated`
+- refresh เรียก `jwt.verifyRefreshToken` บน opaque token (ไม่ใช่ JWT) → ลบ, verify ผ่าน DB hash เท่านั้น
+- refresh ไม่ lookup role → mint token ผิด role → แก้ (derive จาก `public.users`)
+- `loginLockoutLimiter` ไม่ถูกเรียกจาก route → wire `req.recordLoginFailure()`/`req.resetLoginFailures()`
+- helmet ไม่ wire / dead import / per-request `new Pool` / audit-worker re-log ซ้ำ → แก้ครบ (`delivered_at` + `FOR UPDATE SKIP LOCKED` claim)
+
+**ผล:** unit/integration tests 18/18 ผ่าน; dry-run migration ผ่าน; min-version middleware smoke test ผ่าน (old=426, new=200, missing=426)
+
+### Phase 13.2 E2E gate result (2026-09-06) — ✅ 31/31 ผ่าน
+
+- apply 2 migrations: `20260906120000_phase_13_2_audit_logs.sql` + `20260906130000_phase_13_2_auth_user_grants.sql`
+- migrations apply ผ่าน pooler ตรง (ไม่มี Skipping notice); verify หลัง apply: audit_logs columns/indexes/PK composite/RLS/policies, users grants (INSERT + UPDATE เฉพาะ password 5 คอลัมน์ + SELECT), policies `sheserved_app_users_{insert,select,update}`
+- **fixes ระหว่าง E2E (พบจริง + แก้จริง):**
+  1. `permission denied for table users` → migration grants ที่ขาด (sheserved_app ยังไม่มี INSERT/UPDATE บน users)
+  2. `first_name NOT NULL` → register ต้อง require firstName + insert column
+  3. `could not determine data type of parameter $7` ใน `createSession` → cast `$6::uuid, $7::text` (family_id/prev_token_hash)
+  4. auth routes mount หลัง `app.use('/api', verifyToken(pool))` → `/me`/`/sessions`/`logout-all` ไม่ได้ผ่าน identity middleware → mount `verifyToken` เฉพาะ protected auth paths
+  5. `AUTH_RATE_LIMIT_MAX` env override (default 5) — dev/test ใช้ 100, production คง 5
+  6. parallel refresh ตัวที่สอง 500 (lock contention) → poll 3s + retry rotate เมื่อ lock หาย
+  7. `middleware/auth.js` JWT path ใช้ gateway pool (Supabase) แทน local pool — users/sessions อยู่บน Supabase
+- **E2E coverage:** old-app 426, register 201 + Argon2id + duplicate 409, login 200/401, me restore + invalid-token 401, refresh rotate + reuse-in-grace, parallel idempotent (same token), logout + revoked refresh 401, sessions list, audit delivery (login.success/failure, refresh.success, logout)
+- **ผล:** 31/31 passed ✅
+
+### Gate 13.2 status — ✅ free-only development/staging gate ผ่าน (รวม social + Flutter switch); production readiness ยังเปิด
+
+| ข้อ | สถานะ |
+|---|---|
+| register/login/refresh/logout/session restore/parallel/reuse/plaintext-reset(old-app)/audit — E2E ผ่าน | ✅ ผ่านแล้ว |
+| `SUPABASE_JWT_SECRET` จริง + PostgREST live check | ✅ แทนที่แล้วและตอบ 200 (ไม่ log ค่า secret) |
+| Google/Apple social verification (server-side JWKS) | ✅ unit 31/31 + E2E fail-closed + **Google device-verified** (`/api/auth/social/google` → 200 บน Android จริง); Apple ตั้ง `APPLE_BUNDLE_ID`+iOS client แล้ว รอเทส iOS device |
+| Flutter switch (login/register/social → backend) | ✅ implement + `flutter test` 16/16 + **device-verified** (Google login/logout ผ่าน backend จริง) — `useBackendAuth` default true |
+| ปิด B2 (revoke direct `password_hash` query + anon read) | ⏸️ หลัง monitor ว่าไม่มี client เก่าค้าง (compatibility step 3–4) |
+| Facebook/LINE/TikTok verification | ⏸️ deferred จนกว่าจะมี requirement/credentials ที่อนุมัติ |
+| Production OTP/reset channel, 90-day reset job, secret management, provider/account/quota review | ⏸️ production-readiness blockers — ไม่ใช้ paid service ใน free-only scope |
+
+> **การตีความ:** ถือว่า 13.2 ผ่านเฉพาะ development/staging แบบ free-only และสามารถเตรียม/ทดสอบ 13.3 ได้ตาม dependency; ยังห้ามประกาศ production-ready หรือเปิด production enforcement/cutover จนกว่า production-readiness blockers และ compatibility/rollback gate จะผ่าน
 
 ### Phase 12.9 / Phase 13 readiness checklist
 | รายการตรวจ | สถานะ |

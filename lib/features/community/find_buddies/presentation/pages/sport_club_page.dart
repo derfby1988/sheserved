@@ -3907,7 +3907,7 @@ class _SportClubPageState extends State<SportClubPage> {
         children: [
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.treeLawZoo',
+            userAgentPackageName: 'com.sheserved.app',
           ),
           if (_userLat != null && _userLng != null && _radiusKm != null)
             CircleLayer(

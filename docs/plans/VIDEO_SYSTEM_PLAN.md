@@ -311,6 +311,8 @@ ipconfig getifaddr en1   # Ethernet / USB
 static const String mainMachineIp = '192.168.X.X:8080'; // ← เปลี่ยนตรงนี้ (IP/Host + Caddy port)
 ```
 > **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize URL เก่าให้ชี้ไปที่ Caddy endpoint นี้เสมอ
+>
+> **⚠️ Phase 13.2+**: `mainMachineIp` ไหลไปเป็น default ของ `backendApiUrl` (auth `/api/auth/*`) ด้วย — ถ้าไม่แก้จุดนี้ **login/register/social ทั้งหมดจะยิงไป IP เก่า**; หรือส่ง `--dart-define=BACKEND_API_URL=http://192.168.X.X:8080` ตอน `flutter run` (ดู "เช็คลิสต์ service stack" ด้านล่าง)
 
 #### ขั้นตอนที่ 3 — อัปเดต Server Environment (สำคัญมาก)
 ```bash
@@ -342,14 +344,59 @@ curl http://192.168.X.X:8080/api/videos/emergency/list | python3 -m json.tool
 
 ---
 
+### 🩺 Checklist: Service Stack ที่ต้องรัน (Phase 13.2+) — เพิ่มจากอุบัติการณ์จริง 2026-09-06
+
+การเปลี่ยนเครื่อง/เครือข่ายหรือ reboot ต้องเช็ค **4 services** ไม่ใช่แค่ IP — ถ้าขาดตัวใดอาการจะดูเหมือน auth/app พัง:
+
+| # | Service | เช็ค | ถ้าล้ม → อาการ |
+|---|---------|------|----------------|
+| 1 | **Local PostgreSQL** (`postgresql@14`, data dir `/opt/homebrew/var/postgresql@14`) | `pg_isready` ต้องตอบ `accepting connections` | `/api/users/*/preferences` → **503**, `/api/videos/*` → **500**, log server ขึ้น `Database connection failed` |
+| 2 | **Redis** (`localhost:6379`) | `redis-cli ping` → `PONG` | refresh lock/rate limit/idempotency เสีย |
+| 3 | **Node server** (`npm run dev`, port 3000) | `curl localhost:3000/health` → 200 | ถ้า `EADDRINUSE` = process เก่าค้าง → `lsof -tiTCP:3000 \| xargs kill` ก่อน (server เก่าถือ `.env` เดิม — config ใหม่ไม่มีผล) |
+| 4 | **Caddy** (`./start-caddy.sh`, port 8080) | `curl localhost:8080/health` | แอปทุก request หา backend ไม่เจอ |
+
+**คำสั่ง start (ตามลำดับ):**
+
+```bash
+# 1) Postgres — ไม่มี auto-start ต้องรันเองทุกครั้งหลัง reboot
+#    (ถ้า "lock file postmaster.pid already exists" = stale lock → ย้ายไฟล์ออกก่อน)
+/opt/homebrew/opt/postgresql@14/bin/pg_ctl -D /opt/homebrew/var/postgresql@14 -l /tmp/pg14.log start
+
+# 2) Node (nodemon) — หลังแก้ .env ต้อง restart เสมอ
+cd websocket-server && npm run dev
+
+# 3) Caddy reverse proxy (terminal แยก)
+./start-caddy.sh
+
+# 4) Flutter — ต้องส่ง dart-define ทุกครั้ง
+flutter run \
+  --dart-define=BACKEND_API_URL=http://192.168.X.X:8080 \
+  --dart-define=GOOGLE_SERVER_CLIENT_ID="$(grep '^GOOGLE_CLIENT_ID=' websocket-server/.env | cut -d= -f2-)"
+```
+
+**อาการ → สาเหตุ (อ้างอิงจาก incident จริง):**
+
+| อาการ | สาเหตุ |
+|-------|--------|
+| ทุก request ตอบ `426` | `MIN_APP_VERSION_ENFORCE=true` แต่ client ไม่ส่ง `x-app-version` — dev ตั้ง `MIN_APP_VERSION_ENFORCE=false` (advertise-only) |
+| Social login 401 "Invalid provider token" | `serverClientId` (dart-define) ไม่ตรง `GOOGLE_CLIENT_ID` ใน `.env` — ต้องเป็น **Web client** ตัวเดียวกัน ไม่ใช่ Android/iOS client |
+| ไม่ได้ `idToken` จาก Google เลย | `serverClientId` ว่าง → ลืม `--dart-define=GOOGLE_SERVER_CLIENT_ID` |
+| Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) |
+
+> **แนวทางลดปัญหาระยะยาว:** ตั้ง **DHCP reservation** บน router ให้เครื่องหลักได้ IP เดิมทุกครั้ง — จะไม่ต้องแก้ `mainMachineIp`/`LOCAL_API_URL` เลยเมื่ออยู่เครือข่ายเดิม; ต่างเครือข่ายจริง ๆ ค่อยทำ checklist นี้
+
+---
+
 ### 📋 ไฟล์ทั้งหมดที่ต้องแก้เมื่อเปลี่ยน IP
 
 | ไฟล์ | ค่าที่ต้องแก้ | หมายเหตุ |
 |------|--------------|----------|
-| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB ให้ชี้ไป Caddy (`:8080`) |
+| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB ให้ชี้ไป Caddy (`:8080`); **ยังเป็น default ของ `backendApiUrl` (auth) ด้วย** |
 | `websocket-server/.env` | `LOCAL_API_URL` | URL ที่ Server ใช้ generate thumbnail URL ผ่าน Caddy |
 | `websocket-server/start-caddy.sh` | Caddy startup script | ใช้ `Caddyfile.dev` สำหรับ Phase 1 (`:8080`) |
 | `websocket-server/Caddyfile.dev` | Caddy dev config | bind port `8080` โดยไม่ต้อง sudo |
+| `--dart-define=BACKEND_API_URL` (build/run) | auth base URL | ถ้าไม่ส่งจะ fallback ไป `mainMachineIp` — ส่งเมื่ออยาก override โดยไม่แก้โค้ด |
+| `--dart-define=GOOGLE_SERVER_CLIENT_ID` (build/run) | Web OAuth client ID | ต้องตรง `GOOGLE_CLIENT_ID` ใน `.env` ไม่งั้น Google sign-in ไม่ได้ `idToken` |
 
 > **ไม่ต้องแก้**: DB records เก่า — `_normalizeLocalUrl()` ใน Flutter จัดการแก้ URL ที่ดึงมาจาก DB ให้ชี้ไป IP ปัจจุบันได้
 > 

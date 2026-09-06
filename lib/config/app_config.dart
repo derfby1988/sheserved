@@ -23,7 +23,7 @@ class AppConfig {
   // =====================================================
 
   /// IP หรือ Local Hostname ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '172.20.10.13:8080';
+  static const String mainMachineIp = '192.168.0.107:8080';
 
   /// URL ของ API Server ผ่าน Caddy
   static const String localApiUrl = 'http://$mainMachineIp';
@@ -70,6 +70,37 @@ class AppConfig {
   // =====================================================
   // FEATURE FLAGS
   // =====================================================
+
+  /// เปิดใช้งาน Backend Auth (Phase 13.2 — Decision Q3=A/Q4=B/Q6=B)
+  ///
+  /// true  = login/register/social ผ่าน websocket-server backend
+  ///         (Argon2id server-side, JWT access/refresh tokens)
+  /// false = ใช้ legacy Supabase client-side path (compatibility window)
+  ///
+  /// สลับได้ผ่าน --dart-define=USE_BACKEND_AUTH=false
+  /// ⚠️ อย่าเปิด true พร้อมกันกับการลบ backend URL — ต้องตั้ง [backendApiUrl] ก่อน
+  static const bool useBackendAuth = bool.fromEnvironment(
+    'USE_BACKEND_AUTH',
+    defaultValue: true,
+  );
+
+  /// Base URL ของ websocket-server backend (Caddy reverse proxy)
+  /// ใช้สำหรับ /api/auth/* และ authenticated HTTP requests
+  static const String backendApiUrl = String.fromEnvironment(
+    'BACKEND_API_URL',
+    defaultValue: 'http://$mainMachineIp',
+  );
+
+  /// Google OAuth **Web** client ID — ต้องเป็นค่าเดียวกับ GOOGLE_CLIENT_ID
+  /// ฝั่ง websocket-server (backend verify `aud` เทียบกับค่านี้)
+  ///
+  /// ต้องส่งเป็น serverClientId ของ GoogleSignIn ไม่อย่างนั้น Google
+  /// จะไม่คืน idToken และ backend-auth social login ใช้ไม่ได้
+  /// ตั้งผ่าน --dart-define=GOOGLE_SERVER_CLIENT_ID=...
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '',
+  );
 
   /// เปิดใช้งาน Location Tracking
   static const bool enableLocationTracking = true;

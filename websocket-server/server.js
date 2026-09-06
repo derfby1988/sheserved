@@ -61,6 +61,8 @@ const videoRoutes = require('./routes/video');
 const adminRoutes = require('./routes/admin');
 const consultationRoutes = require('./routes/consultation');
 const victimsRoutes = require('./routes/victims');
+// Phase 13.2 — Auth routes
+const authRoutes = require('./routes/auth');
 const { shutdown: shutdownConsultationQueue } = require('./services/consultation-queue');
 const victimRetentionCountdownStarter = require('./jobs/victim-retention-countdown-starter');
 const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
@@ -256,6 +258,11 @@ const {
 } = require('./middleware');
 
 // Middleware
+const helmet = require('helmet');
+app.use(helmet()); // Phase 13.2 — security headers
+// Phase 13.2 — force-update policy: reject below MIN_APP_VERSION (426)
+const { minAppVersionMiddleware } = require('./middleware/app-version');
+app.use(minAppVersionMiddleware);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' })); // R8: body size limit
 app.use(requestContext);
@@ -263,6 +270,29 @@ app.use(requestContext);
 // ✅ Rate Limiter: ใช้กับ API ทั้งหมด (60 req/min per IP)
 // ยกเว้น Static Files ที่ express.static จัดการเอง
 app.use('/api', defaultRateLimiter);
+
+// Phase 13.2 — Auth routes (login, refresh, logout, me, sessions)
+// Auth endpoints use their own rate limiting (loginLockout/authRateLimiter)
+// applied per-endpoint below.
+const { loginLockoutLimiter, otpCooldownLimiter } = require('./middleware/rate-limiter');
+
+// Login: strict rate limit + lockout on repeated failures
+app.post('/api/auth/login', authRateLimiter, loginLockoutLimiter);
+// Register: strict rate limit (spam / account-creation abuse)
+app.post('/api/auth/register', authRateLimiter);
+// Refresh: rate limit to prevent token spraying
+app.post('/api/auth/refresh', authRateLimiter);
+// Social login: rate limit
+app.post('/api/auth/social/:provider', authRateLimiter);
+// OTP endpoints (when added): otpCooldownLimiter
+
+// Protected auth endpoints require a verified identity (JWT path verifies
+// against Supabase via gateway pool).  Public endpoints (login/register/
+// refresh/social) are exempt — they are pre-auth.
+app.use('/api/auth/me', verifyToken(pool));
+app.use('/api/auth/logout-all', verifyToken(pool));
+app.use('/api/auth/sessions', verifyToken(pool));
+app.use('/api/auth', authRoutes);
 
 // Serve static directory for fallback video playback
 const videoDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, 'temp/videos');

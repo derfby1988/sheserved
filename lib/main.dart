@@ -52,6 +52,7 @@ import 'features/donation/presentation/pages/donation_admin_page.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
 import 'config/sync_config.dart';
+import 'services/auth_service.dart';
 import 'services/supabase_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'features/chat/data/models/chat_models.dart';
@@ -186,6 +187,12 @@ void main() async {
 
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();
+
+  // Phase 13.2 — restore backend session (secure storage → /me) ก่อนเปิด UI
+  // เพื่อให้ AuthGuard เห็น currentUser ทันทีโดยไม่ต้อง login ใหม่
+  if (AppConfig.useBackendAuth) {
+    await AuthService.instance.restoreSession();
+  }
 
   // Initialize Thai Date Service
   await ThaiDateService().initializeLocale('th_TH');

@@ -6,6 +6,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:sheserved/config/app_config.dart';
+import 'package:sheserved/core/network/authenticated_http_client.dart'
+    as auth_client;
 import '../models/user_model.dart';
 import '../repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -83,8 +86,13 @@ class SocialAuthService {
   final SupabaseClient _supabaseClient;
 
   // Google Sign In Configuration
+  // serverClientId = Web client ID (ตัวเดียวกับ GOOGLE_CLIENT_ID ฝั่ง backend)
+  // ต้องตั้งค่านี้ไม่อย่างนั้น Google จะไม่คืน idToken → backend verify ไม่ได้
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
+    serverClientId: AppConfig.googleServerClientId.isEmpty
+        ? null
+        : AppConfig.googleServerClientId,
   );
 
   // LINE Login Configuration
@@ -108,6 +116,18 @@ class SocialAuthService {
 
       if (googleUser == null) {
         return SocialAuthResult.error('ยกเลิกการเข้าสู่ระบบ');
+      }
+
+      // Phase 13.2: backend verifies the Google ID token server-side (JWKS).
+      // We never trust the client-supplied profile — only the verified claims.
+      if (AppConfig.useBackendAuth) {
+        final auth = await googleUser.authentication;
+        final idToken = auth.idToken;
+        if (idToken == null || idToken.isEmpty) {
+          return SocialAuthResult.error(
+              'ไม่ได้รับ ID token จาก Google — ตรวจสอบ GOOGLE_CLIENT_ID/serverClientId');
+        }
+        return await _backendSocialLogin('google', idToken);
       }
 
       final socialUserInfo = SocialUserInfo(
@@ -193,6 +213,17 @@ class SocialAuthService {
         nonce: nonce,
       );
 
+      // Phase 13.2: backend verifies the Apple identity token server-side
+      // (JWKS + iss/aud/nonce).  The raw nonce is sent so the backend can
+      // verify the SHA-256 nonce claim — never trust client identity.
+      if (AppConfig.useBackendAuth) {
+        final identityToken = credential.identityToken;
+        if (identityToken == null || identityToken.isEmpty) {
+          return SocialAuthResult.error('ไม่ได้รับ identity token จาก Apple');
+        }
+        return await _backendSocialLogin('apple', identityToken, nonce: rawNonce);
+      }
+
       final socialUserInfo = SocialUserInfo(
         id: credential.userIdentifier ?? '',
         email: credential.email,
@@ -273,6 +304,38 @@ class SocialAuthService {
   // =====================================================
   // COMMON HANDLERS
   // =====================================================
+
+  /// Phase 13.2 — social login ผ่าน backend (`POST /api/auth/social/:provider`)
+  ///
+  /// Backend verify provider token (Google/Apple JWKS) แล้ว find-or-create user
+  /// ใน transaction ที่ `SET LOCAL ROLE sheserved_app` — identity มาจาก verified
+  /// claims เท่านั้น, client ไม่ส่ง userId/username/email เพื่อ authorization
+  Future<SocialAuthResult> _backendSocialLogin(
+    String provider,
+    String providerToken, {
+    String? nonce,
+  }) async {
+    try {
+      final data = await auth_client.AuthenticatedHttpClient.instance.socialLogin(
+        provider: provider,
+        providerToken: providerToken,
+        nonce: nonce,
+      );
+      final userJson = data['user'];
+      if (userJson == null || data['accessToken'] == null) {
+        return SocialAuthResult.error('การเข้าสู่ระบบล้มเหลว (no user)');
+      }
+      final user = UserModel.fromBackendAuth(Map<String, dynamic>.from(userJson));
+      // ยังไม่มีทางรู้ว่าเป็นผู้ใช้ใหม่จาก response → คืน isNewUser=false
+      return SocialAuthResult.success(user);
+    } on auth_client.AuthException catch (e) {
+      debugPrint('Social backend login error: ${e.statusCode} ${e.message}');
+      return SocialAuthResult.error('เข้าสู่ระบบ Social ไม่สำเร็จ');
+    } catch (e) {
+      debugPrint('Social backend login error: $e');
+      return SocialAuthResult.error('เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+    }
+  }
 
   /// Handle social login - ตรวจสอบและสร้าง/อัพเดทผู้ใช้
   Future<SocialAuthResult> _handleSocialLogin(SocialUserInfo info) async {

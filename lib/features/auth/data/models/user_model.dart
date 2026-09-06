@@ -258,6 +258,35 @@ class UserModel {
     );
   }
 
+  /// สร้าง UserModel จาก backend auth response (Phase 13.2 — Decision Q3=A)
+  ///
+  /// Backend `/api/auth/{login,register,social/:provider}` คืน
+  /// `user: { id, username, phone, email, firstName, lastName, role }`
+  /// (camelCase — ต่างจาก Supabase snake_case).  Client ยัง fetch รายละเอียด
+  /// เพิ่มเติม (profession, verification_status ฯลฯ) ผ่าน repository เดิม
+  /// ในช่วง compatibility — ที่นี่ตั้งค่า defaults ที่ปลอดภัยเท่านั้น
+  /// และไม่เก็บ password_hash/token ใด ๆ
+  factory UserModel.fromBackendAuth(Map<String, dynamic> user) {
+    final now = DateTime.now().toUtc();
+    final role = user['role']?.toString() ?? 'consumer';
+
+    return UserModel(
+      id: user['id'].toString(),
+      userType: UserType.consumer,
+      firstName: user['firstName']?.toString() ?? '',
+      lastName: user['lastName']?.toString() ?? '',
+      username: user['username']?.toString() ?? '',
+      phone: user['phone']?.toString(),
+      socialProvider: user['socialProvider']?.toString(),
+      socialId: user['socialId']?.toString(),
+      verificationStatus: VerificationStatus.verified,
+      isActive: user['isActive'] ?? true,
+      createdAt: now,
+      updatedAt: now,
+      role: role,
+    );
+  }
+
   /// คำนวณ isConsultationProvider จาก profession_id
   /// Fallback: ถ้ามี profession_id ที่ไม่ใช่ consumer → ถือว่าเป็น provider
   static bool _computeIsConsultationProvider(Map<String, dynamic> json) {

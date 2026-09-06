@@ -40,3 +40,13 @@ android/build
 android/app/build
 bin/
 **/bin/
+
+# Secrets / environment — Phase 13.1
+.env
+**/.env
+# Phase 13.2 — env backups may contain real secrets; never track them
+**/.env.*
+!**/.env.example
+# Keep example templates tracked
+!.env.example
+!**/.env.example

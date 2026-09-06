@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/app_config.dart';
+import '../core/network/authenticated_http_client.dart';
 import '../features/auth/data/models/user_model.dart';
 import '../features/auth/data/repositories/user_repository.dart';
 import 'presence_service.dart';
@@ -84,11 +86,43 @@ class AuthService extends ChangeNotifier {
   Future<void> logout() async {
     // หยุด heartbeat ก่อน logout
     await PresenceService.instance.stop();
+
+    // Phase 13.2: revoke refresh session ที่ backend + ลบ tokens ออกจาก
+    // secure storage (best-effort — logout ท้องถิ่นต้องสำเร็จเสมอ)
+    if (AppConfig.useBackendAuth) {
+      try {
+        await AuthenticatedHttpClient.instance.logout();
+      } catch (e) {
+        debugPrint('AuthService: backend logout error: $e');
+      }
+    }
+
     _currentUser = null;
     debugPrint('AuthService: User logged out');
     notifyListeners();
   }
-  
+
+  /// Phase 13.2 — restore session จาก secure storage (access/refresh tokens)
+  /// เรียกตอน app start; ถ้า token ยัง valid จะตั้ง currentUser กลับมา
+  Future<bool> restoreSession() async {
+    if (!AppConfig.useBackendAuth) return false;
+
+    AuthenticatedHttpClient.instance.configure(baseUrl: AppConfig.backendApiUrl);
+    try {
+      final userJson = await AuthenticatedHttpClient.instance.restoreSession();
+      if (userJson == null) return false;
+
+      // /me คืน camelCase field ชุดเดียวกับ auth response
+      final user = UserModel.fromBackendAuth(userJson);
+      await login(user);
+      debugPrint('AuthService: Session restored for ${user.username}');
+      return true;
+    } catch (e) {
+      debugPrint('AuthService: Session restore failed: $e');
+      return false;
+    }
+  }
+
   /// Get user ID
   String? get userId => _currentUser?.id;
 }

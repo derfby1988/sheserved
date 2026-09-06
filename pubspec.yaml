@@ -55,6 +55,9 @@ dependencies:
   # HTTP Client
   http: ^1.2.0
   csv: ^6.0.0
+
+  # Phase 13.2 — Secure token storage
+  flutter_secure_storage: ^9.2.2
   
   # Thai BE Date Picker
   thai_buddhist_date: ^0.2.7

@@ -340,8 +340,16 @@ const strictRateLimiter = rateLimiter({ maxRequests: 10, windowSec: 60 });
 /**
  * Rate Limiter สำหรับ Auth endpoints (login / register)
  * ป้องกัน Brute Force
+ *
+ * maxRequests defaults to 5/min per identifier (IP during pre-auth).
+ * Overridable via AUTH_RATE_LIMIT_MAX so dev/test suites (which legitimately
+ * issue many auth calls per minute) are not blocked; production stays at 5.
  */
-const authRateLimiter = rateLimiter({ maxRequests: 5, windowSec: 60, keyPrefix: 'rate:auth' });
+const authRateLimiter = rateLimiter({
+  maxRequests: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 5,
+  windowSec: 60,
+  keyPrefix: 'rate:auth',
+});
 
 /**
  * Rate Limiter ทั่วไป (API กลาง)

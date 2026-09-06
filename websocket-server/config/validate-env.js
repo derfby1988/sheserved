@@ -18,6 +18,35 @@ const REQUIRED_IN_PRODUCTION = [
   'ALLOWED_ORIGINS',
   // Phase 13.0 — Supabase URL required for any environment
   'SUPABASE_URL',
+  // Phase 13.1 — direct-pool env required in production for gateway transactions
+  'SUPABASE_DB_HOST',
+  'SUPABASE_DB_PORT',
+  'SUPABASE_DB_NAME',
+  'SUPABASE_DB_USER',
+  'SUPABASE_DB_PASSWORD',
+  // Phase 13.2 — JWT signing keys required for auth
+  'JWT_ACTIVE_KID',
+  'JWT_ACTIVE_SECRET',
+  'JWT_ISSUER',
+  'JWT_AUDIENCE',
+  'ACCESS_TTL',
+  'REFRESH_TTL',
+  // Phase 13.2 — PostgREST token mint requires Supabase JWT secret
+  'SUPABASE_JWT_SECRET',
+];
+
+const REQUIRED_IN_STAGING = [
+  'DB_HOST',
+  'DB_NAME',
+  'DB_USER',
+  'DB_PASSWORD',
+  'ALLOWED_ORIGINS',
+  'SUPABASE_URL',
+  'SUPABASE_DB_HOST',
+  'SUPABASE_DB_PORT',
+  'SUPABASE_DB_NAME',
+  'SUPABASE_DB_USER',
+  'SUPABASE_DB_PASSWORD',
 ];
 
 const FORBIDDEN_VALUES = [
@@ -33,6 +62,16 @@ const FORBIDDEN_VALUES = [
   'your-service-role-key',
   'staging.sheserved.example.com',
   'admin@sheserved.example.com',
+  // Phase 13.1 — Supabase direct-pool placeholders
+  'your-project.supabase.co',
+  'your-project-ref',
+  'aws-0-<region>.pooler.supabase.com',
+  'postgres.<project-ref>',
+  'db.<project-ref>.supabase.co',
+  '<database-password>',
+  // Phase 13.2 — Social provider config placeholders
+  'your-google-oauth-client-id.apps.googleusercontent.com',
+  'com.example.sheserved',
 ];
 
 const SENSITIVE_KEY_PATTERNS = [
@@ -116,10 +155,29 @@ function validateEnv() {
     if (process.env.SUPABASE_JWT_SECRET && process.env.SUPABASE_JWT_SECRET === 'your-supabase-jwt-secret') {
       problems.push('SUPABASE_JWT_SECRET is still placeholder');
     }
+
+    // Phase 13.2 — Social provider config (expected audience).  Required in
+    // production because /auth/social/:provider is part of the auth foundation;
+    // placeholder values are rejected for every environment below.
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      problems.push('GOOGLE_CLIENT_ID is required in production (social login)');
+    }
+    if (!process.env.APPLE_BUNDLE_ID) {
+      problems.push('APPLE_BUNDLE_ID is required in production (social login)');
+    }
+  }
+
+  // Phase 13.2 — Social config placeholders rejected in any environment
+  // (matches FORBIDDEN_VALUES loop above; explicit here for non-sensitive keys).
+  if (process.env.GOOGLE_CLIENT_ID === 'your-google-oauth-client-id.apps.googleusercontent.com') {
+    problems.push('GOOGLE_CLIENT_ID is still placeholder');
+  }
+  if (process.env.APPLE_BUNDLE_ID === 'com.example.sheserved') {
+    problems.push('APPLE_BUNDLE_ID is still placeholder');
   }
 
   if (env === 'staging') {
-    for (const key of REQUIRED_IN_PRODUCTION) {
+    for (const key of REQUIRED_IN_STAGING) {
       if (!process.env[key]) {
         problems.push(`Missing required env in staging: ${key}`);
       }
