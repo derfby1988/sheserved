@@ -24,6 +24,8 @@
 ### Free-only policy
 
 - Development/staging ทำเฉพาะงานที่ไม่มีค่าใช้จ่ายเพิ่ม: backend auth, Flutter switch, Google/Apple verification ผ่าน public keys/JWKS, PostgREST token, existing Redis/DB และ automated tests
+- **Temporary development convenience (บันทึกมติล่าสุด):** ระหว่างรอเปิดใช้ Phase 13.2 อย่างเป็นทางการ ให้รัน Flutter ด้วย `--dart-define=USE_BACKEND_AUTH=false` เพื่อใช้ legacy direct Supabase login/register/social โดยไม่ต้องเปิดเครื่องที่รัน `websocket-server`; นี่เป็น compatibility/testing mode เท่านั้น และยังมี residual risk B2 (client-side `password_hash` query)
+- **Production guard:** ห้ามใช้ `USE_BACKEND_AUTH=false` ใน release/production และห้ามปิด backend auth เพื่อหลบปัญหา network; ค่าใน `AppConfig.useBackendAuth` ยังคง default เป็น `true` เพื่อป้องกันการเผลอปล่อย legacy path
 - ห้ามผูก paid OTP/SMS, ส่ง SMS จริง, ใช้ paid quota, เปิด free trial ที่ auto-renew หรือสร้าง resource ที่คิดเงินโดยไม่ได้รับอนุมัติ
 - ใช้ console OTP mock และ local/provider fixtures ต่อได้ใน dev/staging; ห้ามเปิด mock นี้ใน production
 - Google/Apple verification code ทำและทดสอบได้โดยไม่ซื้อ service ใหม่; สถานะ Apple Developer membership/team และ provider terms/quota ต้องตรวจอีกครั้งก่อน production
@@ -61,10 +63,37 @@
 
 ## 3. การรันระบบ (dev/staging)
 
+### Development temporary direct-auth mode
+
+ใช้เมื่อทดสอบ UI/ฟีเจอร์ทั่วไปและไม่ต้องการเปิดเครื่อง backend:
+
+```bash
+flutter run \
+  -d <device-id> \
+  --dart-define=USE_BACKEND_AUTH=false
+```
+
+โหมดนี้ยังต้องมี Supabase URL/anon key และใช้ legacy client-side auth path; ไม่ใช่ security boundary และห้ามใช้กับ release/production
+
+> **ข้อจำกัดสำคัญ:** legacy password login คำนวณ SHA-256 แล้ว query `users.password_hash` โดยตรง จึงใช้ได้เฉพาะบัญชีที่ยังมี `password_algo=sha256`; บัญชีที่สร้าง/ย้ายผ่าน Phase 13.2 เป็น `argon2id` จะ login ด้วย direct mode ไม่ได้ ต้องใช้ `USE_BACKEND_AUTH=true` และ backend `/api/auth/login` แทน. ห้ามลด Argon2id กลับเป็น SHA-256 หรือเพิ่มการอ่าน hash เพื่อแก้ปัญหานี้
+
+### Phase 13.2 backend-auth mode
+
+ใช้สำหรับการทดสอบ security gate และ device verification:
+
 ```bash
 cd websocket-server
 node server.js                 # auth API พร้อมที่ /api/auth/*
 node scripts/audit-worker.js   # worker ส่ง audit_events → audit_logs (รันแยก process)
+```
+
+Flutter:
+
+```bash
+flutter run \
+  -d <device-id> \
+  --dart-define=USE_BACKEND_AUTH=true \
+  --dart-define=BACKEND_API_URL=http://<backend-host>:8080
 ```
 
 - `audit-worker` ใช้ role `sheserved_worker` เท่านั้น — ห้ามถือ service_role
@@ -130,7 +159,7 @@ node -e "require('dotenv').config(); const {mintPostgrestToken}=require('./lib/p
 - Migrations: `supabase/migrations/20260906120000_phase_13_2_audit_logs.sql`, `20260906130000_phase_13_2_auth_user_grants.sql`
 - Social verification: `websocket-server/lib/social.js` (Google/Apple JWKS, RS256, iss/aud/exp/nonce, cache 1 ชม.)
 - **Device-verified (2026-09-06, Android ผ่าน Caddy :8080):** `POST /api/auth/logout` → 200 (session revoked), `POST /api/auth/social/google` → 200 — `idToken` RS256 verify ผ่าน Google JWKS → link เข้า user เดิม (`926b174a…`, ไม่สร้างซ้ำ); auth calls ส่ง `x-app-version: 1.0.0` ทุก request
-- **Device-verified (2026-09-06, iOS iPhone 14 Pro Max):** email/password login ผ่าน backend สำเร็จ (`AuthService: User logged in - derfby`), session restore + logout ผ่าน backend, **Google Sign-In ผ่าน backend สำเร็จ** (link เข้า user เดิม `926b174a…` ตรงกับ Android), `Local DB connected` หลัง iPhone เข้า Wi-Fi เดียวกับ Mac
+- **Device-verified (2026-09-06, iOS iPhone 14 Pro Max):** email/password login ผ่าน backend สำเร็จด้วย user เดิม `derfby` (`password_algo=argon2id`, `userId=9b1d3f0d…`), session restore + logout ผ่าน backend, **Google Sign-In ผ่าน backend สำเร็จ** (link เข้า user เดิม `926b174a…` ตรงกับ Android), `Local DB connected` หลัง iPhone เข้า Wi-Fi เดียวกับ Mac
 - **iOS Google `aud` fix (2026-09-06):** บน iOS Google คืน `idToken` ที่ `aud` = **iOS client ID** (ไม่ใช่ Web client เหมือน Android) → เพิ่ม env `GOOGLE_CLIENT_IDS` (comma-separated extra audiences, ใส่ iOS client) + `verifyGoogleIdToken` รับ `extraClientIds`; foreign `aud` ยังถูก reject (test ยืนยัน) → unit **32/32**
 - **Apple social — E2E บน device ยังทำไม่ได้กับ free account:** error `AuthorizationError 1000` (ไม่มี entitlement) → เพิ่ม `com.apple.developer.applesignin` แล้ว Xcode ปฏิเสธ signing (*"Personal development teams... do not support the Sign In with Apple capability"*) → revert entitlement; server-side Apple JWKS verify (lib/social.js) พร้อม + test แล้ว; **ต้อง paid Apple Developer + อนุมัติงบ** ก่อน device E2E/production
 - **Bring-up issues ที่พบและแก้ (อ้างอิงตอนเปลี่ยนเครื่อง/เครือข่าย):** ① local Postgres ไม่รัน (stale `postmaster.pid`) → legacy endpoints 503/500 — start ด้วย `pg_ctl -D /opt/homebrew/var/postgresql@14`; ② server process เก่าค้าง `:3000` → `EADDRINUSE` และ env เก่าไม่มี `GOOGLE_CLIENT_ID` — kill ก่อน `npm run dev`; ③ `MIN_APP_VERSION_ENFORCE=false` ใน dev (advertise-only) จนกว่า client ทุก path จะส่ง `x-app-version`; ④ `AuthenticatedHttpClient` ส่ง `x-app-version` ทุก request แล้ว

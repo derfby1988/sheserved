@@ -23,7 +23,7 @@ class AppConfig {
   // =====================================================
 
   /// IP หรือ Local Hostname ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '192.168.0.107:8080';
+  static const String mainMachineIp = '192.168.0.114:8080';
 
   /// URL ของ API Server ผ่าน Caddy
   static const String localApiUrl = 'http://$mainMachineIp';
@@ -77,7 +77,10 @@ class AppConfig {
   ///         (Argon2id server-side, JWT access/refresh tokens)
   /// false = ใช้ legacy Supabase client-side path (compatibility window)
   ///
-  /// สลับได้ผ่าน --dart-define=USE_BACKEND_AUTH=false
+  /// สำหรับ development ชั่วคราว ให้สลับเป็น legacy direct path ด้วย
+  /// --dart-define=USE_BACKEND_AUTH=false เพื่อทดสอบโดยไม่ต้องเปิด backend
+  /// ทุกครั้ง (Supabase ต้องยังเข้าถึงได้)
+  /// ค่า default ยังคง true เพื่อไม่ให้ release build เผลอใช้ legacy auth
   /// ⚠️ อย่าเปิด true พร้อมกันกับการลบ backend URL — ต้องตั้ง [backendApiUrl] ก่อน
   static const bool useBackendAuth = bool.fromEnvironment(
     'USE_BACKEND_AUTH',

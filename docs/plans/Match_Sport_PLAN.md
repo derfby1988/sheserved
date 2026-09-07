@@ -1450,6 +1450,10 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 
 #### Phase 13.2 — Free-only development/staging policy
 
+- **มติล่าสุด — temporary development convenience:** ระหว่างที่ยังไม่เปิดใช้ Phase 13.2 เป็น auth path หลัก ให้ development ใช้ legacy direct Supabase login/register/social ชั่วคราวได้ด้วย `--dart-define=USE_BACKEND_AUTH=false` เพื่อทดสอบโดยไม่ต้องเปิดเครื่อง `websocket-server` ตลอดเวลา; ให้ใช้เฉพาะ development/testing และบันทึก residual risk B2 ต่อไป
+- **ข้อจำกัด direct password ที่ต้องจำ:** legacy client คำนวณ/ค้นหาเฉพาะ SHA-256 (`password_algo=sha256`); บัญชีใหม่หรือบัญชีที่ lazy-rehash แล้วเป็น Argon2id จะ login แบบ direct ไม่ได้โดยตั้งใจ — ต้องกลับไป `USE_BACKEND_AUTH=true` เพื่อให้ backend verify Argon2id; ห้ามลด algorithm หรือ expose hash เพื่อให้ direct mode ผ่าน
+- **Production/staging security gate:** `AppConfig.useBackendAuth` default ยังคงเป็น `true`; เมื่อทดสอบ Phase 13.2, device verification, หรือ staging security gate ต้องใช้ `USE_BACKEND_AUTH=true` และ backend URL ที่เข้าถึงได้; ห้ามใช้ direct mode เพื่ออ้างว่า auth gate ผ่าน
+- **Rollback/cutover condition:** การกลับมาใช้ Backend Auth เป็นค่าใช้งานหลักต้องทำหลัง compatibility review, ปิด/monitor direct `password_hash` query, ตรวจ rollback และกำหนดวัน revoke legacy path; ห้ามลบ backend implementation หรือ migrations ระหว่าง temporary window
 - **ขอบเขตที่อนุมัติ:** Phase 13.2–13.3 ใน development/staging ใช้เฉพาะส่วนที่ไม่มีค่าใช้จ่ายเพิ่มเติม ได้แก่ backend JWT/password/session/audit, Flutter switch, Google/Apple token verification ผ่าน public keys/JWKS, PostgREST token, Redis/DB ที่มีอยู่ และ automated tests; ห้ามเพิ่ม paid provider หรือ service ใหม่เพียงเพื่อปิด gate
 - **Social verification:** implement และทดสอบ Google/Apple ได้โดยไม่ซื้อบริการเพิ่ม; Facebook/LINE/TikTok ให้คง deferred จนกว่าจะมี requirement/credentials ที่อนุมัติ; ถ้า provider ต้องใช้บัญชีหรือ quota ที่มีค่าใช้จ่าย ให้บันทึกเป็น production dependency ไม่สร้างค่าใช้จ่ายระหว่าง dev/staging
 - **OTP:** development/staging ใช้ console mock เท่านั้นตาม Q4-B; ห้ามส่ง SMS จริงหรือผูก paid OTP provider ใน phase นี้
@@ -1613,7 +1617,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | register/login/refresh/logout/session restore/parallel/reuse/plaintext-reset(old-app)/audit — E2E ผ่าน | ✅ ผ่านแล้ว |
 | `SUPABASE_JWT_SECRET` จริง + PostgREST live check | ✅ แทนที่แล้วและตอบ 200 (ไม่ log ค่า secret) |
 | Google/Apple social verification (server-side JWKS) | ✅ unit 32/32 + E2E fail-closed + **Google device-verified ครบทั้ง Android + iOS** (iOS ต้องเพิ่ม `GOOGLE_CLIENT_IDS` เพราะ Google คืน `aud` = iOS client ID); ⚠️ **Apple E2E บน device ถูกบล็อกโดย free/personal team** (Xcode ปฏิเสธ Sign in with Apple capability — ต้อง paid Apple Developer $99/ปี) → blocker เดิมในรายการ provider/account review ยืนยันเป็นจริง |
-| Flutter switch (login/register/social → backend) | ✅ implement + `flutter test` 16/16 + **device-verified** (Google login/logout ผ่าน backend จริง) — `useBackendAuth` default true |
+| Flutter switch (login/register/social → backend) | ✅ implement + `flutter test` 16/16 + **device-verified** (Argon2id password login ของ user เดิม `derfby` + Google login/logout ผ่าน backend จริงบน iOS/Android) — `useBackendAuth` default true |
 | ปิด B2 (revoke direct `password_hash` query + anon read) | ⏸️ หลัง monitor ว่าไม่มี client เก่าค้าง (compatibility step 3–4) |
 | Facebook/LINE/TikTok verification | ⏸️ deferred จนกว่าจะมี requirement/credentials ที่อนุมัติ |
 | Production OTP/reset channel, 90-day reset job, secret management, provider/account/quota review | ⏸️ production-readiness blockers — ไม่ใช้ paid service ใน free-only scope |
