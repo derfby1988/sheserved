@@ -23,7 +23,8 @@ class ThaiAddress {
     this.leaderRole,
   });
 
-  String get fullAddress => 'ต.$subDistrict อ.$district จ.$province $postalCode';
+  String get fullAddress =>
+      'ต.$subDistrict อ.$district จ.$province $postalCode';
 
   @override
   String toString() => fullAddress;
@@ -34,11 +35,13 @@ class ThaiAddress {
 class ThaiAddressPicker extends StatefulWidget {
   final void Function(ThaiAddress address)? onAddressSelected;
   final ThaiAddress? initialAddress;
+  final String? initialPostalCode;
 
   const ThaiAddressPicker({
     super.key,
     this.onAddressSelected,
     this.initialAddress,
+    this.initialPostalCode,
   });
 
   @override
@@ -70,7 +73,13 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
   void initState() {
     super.initState();
     _repository = ThaiAddressRepository(Supabase.instance.client);
-    if (widget.initialAddress != null) {
+    if (widget.initialPostalCode != null &&
+        widget.initialPostalCode!.length == 5) {
+      _postalCodeController.text = widget.initialPostalCode!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onPostalCodeChanged(widget.initialPostalCode!);
+      });
+    } else if (widget.initialAddress != null) {
       _postalCodeController.text = widget.initialAddress!.postalCode;
       _postalCode = widget.initialAddress!.postalCode;
       _selectedProvince = widget.initialAddress!.province;
@@ -149,7 +158,9 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
 
     try {
       final districts = await _repository.getDistrictsByPostalCodeAndProvince(
-          _postalCode!, _selectedProvince!);
+        _postalCode!,
+        _selectedProvince!,
+      );
       setState(() {
         _districts = districts;
         _isLoadingDistricts = false;
@@ -166,7 +177,10 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
 
   /// โหลดตำบลจากอำเภอที่เลือก
   Future<void> _loadSubDistricts() async {
-    if (_postalCode == null || _selectedProvince == null || _selectedDistrict == null) return;
+    if (_postalCode == null ||
+        _selectedProvince == null ||
+        _selectedDistrict == null)
+      return;
     setState(() {
       _selectedSubDistrict = null;
       _subDistricts = [];
@@ -176,7 +190,10 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
     try {
       final subDistricts = await _repository
           .getSubDistrictsByPostalCodeProvinceAndDistrict(
-              _postalCode!, _selectedProvince!, _selectedDistrict!);
+            _postalCode!,
+            _selectedProvince!,
+            _selectedDistrict!,
+          );
       setState(() {
         _subDistricts = subDistricts;
         _isLoadingSubDistricts = false;
@@ -196,21 +213,26 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
         _selectedProvince != null &&
         _selectedDistrict != null &&
         _selectedSubDistrict != null) {
-      widget.onAddressSelected?.call(ThaiAddress(
-        postalCode: _postalCode!,
-        province: _selectedProvince!,
-        district: _selectedDistrict!,
-        subDistrict: _selectedSubDistrict!,
-        localGovType: _leaderRole?.localGovType,
-        leaderRole: _leaderRole,
-      ));
+      widget.onAddressSelected?.call(
+        ThaiAddress(
+          postalCode: _postalCode!,
+          province: _selectedProvince!,
+          district: _selectedDistrict!,
+          subDistrict: _selectedSubDistrict!,
+          localGovType: _leaderRole?.localGovType,
+          leaderRole: _leaderRole,
+        ),
+      );
     }
   }
 
   /// โหลดข้อมูลผู้นำชุมชนตามรูปแบบการปกครอง
   Future<void> _loadLeaderRole() async {
-    if (_postalCode == null || _selectedProvince == null ||
-        _selectedDistrict == null || _selectedSubDistrict == null) return;
+    if (_postalCode == null ||
+        _selectedProvince == null ||
+        _selectedDistrict == null ||
+        _selectedSubDistrict == null)
+      return;
     setState(() => _isLoadingLeaderRole = true);
     try {
       final role = await _repository.getLeaderRoleByAddress(
@@ -230,11 +252,18 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
     }
   }
 
-  InputDecoration _buildFieldDecoration({required String hintText, required IconData icon}) {
+  InputDecoration _buildFieldDecoration({
+    required String hintText,
+    required IconData icon,
+  }) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: AppTextStyles.bodyMedium.copyWith(color: Colors.grey[400]),
-      prefixIcon: Icon(icon, color: AppColors.primary.withOpacity(0.5), size: 22),
+      prefixIcon: Icon(
+        icon,
+        color: AppColors.primary.withOpacity(0.5),
+        size: 22,
+      ),
       filled: true,
       fillColor: Colors.grey[50],
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -265,30 +294,44 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
         // ── รหัสไปรษณีย์ (เริ่มต้นที่นี่) ──
         TextFormField(
           controller: _postalCodeController,
-          decoration: _buildFieldDecoration(
-            hintText: 'รหัสไปรษณีย์ 5 หลัก',
-            icon: Icons.local_post_office_rounded,
-          ).copyWith(
-            errorText: _postalCodeError,
-            suffixIcon: _isLoadingProvinces
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                  )
-                : (_postalCode != null && _provinces.isNotEmpty)
-                    ? const Icon(Icons.check_circle, color: Colors.green, size: 22)
+          decoration:
+              _buildFieldDecoration(
+                hintText: 'รหัสไปรษณีย์ 5 หลัก',
+                icon: Icons.local_post_office_rounded,
+              ).copyWith(
+                errorText: _postalCodeError,
+                suffixIcon: _isLoadingProvinces
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : (_postalCode != null && _provinces.isNotEmpty)
+                    ? const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 22,
+                      )
                     : null,
-          ),
+              ),
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(5),
           ],
-          style: AppTextStyles.bodyMedium.copyWith(fontSize: 18, letterSpacing: 4, fontWeight: FontWeight.bold),
+          style: AppTextStyles.bodyMedium.copyWith(
+            fontSize: 18,
+            letterSpacing: 4,
+            fontWeight: FontWeight.bold,
+          ),
           textAlign: TextAlign.center,
           onChanged: _onPostalCodeChanged,
           validator: (val) {
-            if (val == null || val.length != 5) return 'กรุณากรอกรหัสไปรษณีย์ 5 หลัก';
+            if (val == null || val.length != 5)
+              return 'กรุณากรอกรหัสไปรษณีย์ 5 หลัก';
             return null;
           },
         ),
@@ -306,10 +349,23 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
 
               // ── จังหวัด ──
               DropdownButtonFormField<String>(
-                decoration: _buildFieldDecoration(hintText: 'จังหวัด', icon: Icons.map_rounded),
+                decoration: _buildFieldDecoration(
+                  hintText: 'จังหวัด',
+                  icon: Icons.map_rounded,
+                ),
                 value: _selectedProvince,
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[500]),
-                items: _provinces.map((p) => DropdownMenuItem(value: p, child: Text(p, style: AppTextStyles.bodyMedium))).toList(),
+                icon: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.grey[500],
+                ),
+                items: _provinces
+                    .map(
+                      (p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p, style: AppTextStyles.bodyMedium),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (val) {
                   setState(() => _selectedProvince = val);
                   _loadDistricts();
@@ -330,18 +386,43 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
                     _isLoadingDistricts
                         ? const Padding(
                             padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+                            child: Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                           )
                         : DropdownButtonFormField<String>(
-                            decoration: _buildFieldDecoration(hintText: 'อำเภอ/เขต', icon: Icons.location_city_rounded),
+                            decoration: _buildFieldDecoration(
+                              hintText: 'อำเภอ/เขต',
+                              icon: Icons.location_city_rounded,
+                            ),
                             value: _selectedDistrict,
-                            icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[500]),
-                            items: _districts.map((d) => DropdownMenuItem(value: d, child: Text(d, style: AppTextStyles.bodyMedium))).toList(),
+                            icon: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: Colors.grey[500],
+                            ),
+                            items: _districts
+                                .map(
+                                  (d) => DropdownMenuItem(
+                                    value: d,
+                                    child: Text(
+                                      d,
+                                      style: AppTextStyles.bodyMedium,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
                             onChanged: (val) {
                               setState(() => _selectedDistrict = val);
                               _loadSubDistricts();
                             },
-                            validator: (val) => val == null ? 'กรุณาเลือกอำเภอ/เขต' : null,
+                            validator: (val) =>
+                                val == null ? 'กรุณาเลือกอำเภอ/เขต' : null,
                           ),
 
                     // ── ตำบล/แขวง ──
@@ -357,18 +438,44 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
                           _isLoadingSubDistricts
                               ? const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 16),
-                                  child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
                                 )
                               : DropdownButtonFormField<String>(
-                                  decoration: _buildFieldDecoration(hintText: 'ตำบล/แขวง', icon: Icons.holiday_village_rounded),
+                                  decoration: _buildFieldDecoration(
+                                    hintText: 'ตำบล/แขวง',
+                                    icon: Icons.holiday_village_rounded,
+                                  ),
                                   value: _selectedSubDistrict,
-                                  icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[500]),
-                                  items: _subDistricts.map((s) => DropdownMenuItem(value: s, child: Text(s, style: AppTextStyles.bodyMedium))).toList(),
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Colors.grey[500],
+                                  ),
+                                  items: _subDistricts
+                                      .map(
+                                        (s) => DropdownMenuItem(
+                                          value: s,
+                                          child: Text(
+                                            s,
+                                            style: AppTextStyles.bodyMedium,
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                                   onChanged: (val) {
                                     setState(() => _selectedSubDistrict = val);
                                     _loadLeaderRole();
                                   },
-                                  validator: (val) => val == null ? 'กรุณาเลือกตำบล/แขวง' : null,
+                                  validator: (val) => val == null
+                                      ? 'กรุณาเลือกตำบล/แขวง'
+                                      : null,
                                 ),
                         ],
                       ),
@@ -385,14 +492,20 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.2),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 22),
+                          Icon(
+                            Icons.check_circle_rounded,
+                            color: AppColors.primary,
+                            size: 22,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -410,13 +523,21 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
                       if (_isLoadingLeaderRole)
                         const Padding(
                           padding: EdgeInsets.only(top: 10),
-                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         )
                       else if (_leaderRole != null) ...[
                         const Divider(height: 20),
                         Row(
                           children: [
-                            Icon(Icons.account_balance_rounded, size: 16, color: Colors.deepPurple[400]),
+                            Icon(
+                              Icons.account_balance_rounded,
+                              size: 16,
+                              color: Colors.deepPurple[400],
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               _leaderRole!.govTypeNameTh,
@@ -431,7 +552,11 @@ class _ThaiAddressPickerState extends State<ThaiAddressPicker> {
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            Icon(Icons.person_pin_rounded, size: 16, color: Colors.orange[700]),
+                            Icon(
+                              Icons.person_pin_rounded,
+                              size: 16,
+                              color: Colors.orange[700],
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(

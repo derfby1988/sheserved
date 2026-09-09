@@ -216,6 +216,7 @@
   - สิทธิ์กล้อง/คลังภาพ: ถ้าไม่อนุญาต ปุ่ม “เพิ่มรูปสนาม” แสดง SnackBar อธิบายวิธีเปิดสิทธิ์ในตั้งค่าเครื่อง
   - บังคับล็อกอินเมื่อส่ง: ถ้าไม่ล็อกอิน เมื่อกด “สร้างก๊วน” → ไปหน้า Login พร้อม redirect `{ route: '/community/find-buddies/create', args: draft }` และกลับมาดำเนินการต่อ
   - ระหว่างบันทึก: ปุ่มแสดงสถานะ loading + disabled และมี SnackBar เมื่อสำเร็จ/ล้มเหลว
+  - **แผนปรับปรุง UX/UI ฟอร์มสร้างก๊วน:** ดูรายละเอียดและการแบ่ง phase ในหัวข้อ [Phase 14 — แผนปรับปรุง UX/UI หน้าสร้างก๊วนกีฬา (Create Group UX Polish)](#phase-14--แผนปรับปรุง-uxui-หน้าสร้างก๊วนกีฬา-create-group-ux-polish--รอตัดสินใจ-implement) ด้านล่าง
 
 - โครงร่าง Widget Tree (สรุป)
 ```
@@ -1853,3 +1854,128 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | canary แยกข้อมูลเสียเดิมกับข้อมูลเสียใหม่หรือไม่ | ✅ baseline invariant ก่อน canary; gate นับเฉพาะ violation ใหม่ |
 | แผน rollback เปิดช่องโหว่เดิมกลับหรือไม่ | ✅ rollback ได้เฉพาะ secure App/Backend release; ห้ามเปิด anon mutation/legacy actor RPC กลับ |
 | สถานะ implementation | ✅ Phase 12.9 ปิดสมบูรณ์; ✅ Phase 13.0 ปิดสมบูรณ์ (public views + env template + validator + fallback removed + Caddy staging env-based + socket.io-parser patched); ⚠️ Phase 13.1–13.6 ยังไม่ได้ลงมือ |
+
+---
+
+## Phase 14 — แผนปรับปรุง UX/UI หน้าสร้างก๊วนกีฬา (Create Group UX Polish) ⏳ รอตัดสินใจ implement
+
+> บันทึกจากการวิเคราะห์ UX/UI ของ `lib/features/community/find_buddies/presentation/pages/create_group_page.dart` (2026-09-09) เพื่อยกระดับความลื่นไหล ความชัดเจนของข้อมูล และลดความผิดพลาดของผู้ใช้ก่อนและขณะกรอกฟอร์ม แบ่งออกเป็น 4 sub-phases ตามระดับความเร่งด่วนและผลกระทบ
+
+### สรุปจุดที่ควรปรับปรุง (Pain Points)
+1. **Dropdown กีฬา Responsive ยาก:** ความกว้างถูกล็อคด้วย `MediaQuery.of(context).size.width - 72` เสี่ยง overflow บนจอเล็ก/แนวนอน และเมื่อมีกีฬา 60+ ชนิด ไม่มีช่องค้นหาทำให้ต้องเลื่อนหานาน
+2. **Validation ไม่ทันท่วงที:** ฟอร์มไม่ได้เปิด `AutovalidateMode.onUserInteraction` ต้องกดปุ่มสร้างก๊วนก่อนจึงจะแจ้งเตือน และการตรวจกีฬาแยกยิงผ่าน `SnackBar` แทนที่จะแจ้งที่ตัวฟิลด์โดยตรง
+3. **ป้องกันข้อมูลสูญหาย (Unsaved Draft Guard):** หากผู้ใช้พิมพ์ข้อมูลค้างไว้แล้วกด Back หรือ Gesture ปัดกลับ ข้อมูลทั้งหมดจะหายไปทันที (ระบบบันทึก draft ปัจจุบันทำงานเฉพาะตอนเด้งไปหน้า Login)
+4. **ความไม่สอดคล้องระหว่างพิกัดแผนที่กับข้อความจังหวัด/อำเภอ:** ช่องกรอกจังหวัด/อำเภอเป็น text ดิบไม่เชื่อมโยงกับหมุดบนแผนที่ ผู้ใช้อาจปักหมุดที่หนึ่งแต่พิมพ์ชื่ออีกจังหวัดหนึ่ง
+5. **แผนที่ขาดความยืดหยุ่นและการควบคุม:** ความสูงคงที่ 180px เล็กเกินไปสำหรับการระบุตำแหน่งละเอียด ขาดปุ่มเคลียร์/ลบหมุด และพึ่งพา online tiles (OSM) 100%
+6. **การจำกัดจำนวนตัวอักษรไม่โปร่งใส:** ฟิลด์ชื่อก๊วนและคำอธิบายซ่อน `counterText: ''` ทำให้ผู้ใช้ไม่ทราบว่าพิมพ์ไปเท่าไรหรือใกล้ชนเพดาน 60/500 ตัวอักษรหรือไม่
+7. **ป้ายกำกับตัวเลือกเพศกำกวม:** ตัวเลือก “ช.”, “ญ.”, “เสรี” สั้นเกินไปและอาจสร้างความสับสน
+8. **Error State และ Retry ของการโหลดกีฬา:** หาก API/DB กีฬาล้มเหลว หน้าจอแสดงเพียงฟิลด์ว่าง ไม่มีข้อความเตือนหรือปุ่มกดโหลดใหม่ (Retry)
+
+---
+
+### Phase 14.1 — Quick Wins: Form Usability & Visual Clarity (ความเร่งด่วนสูง — ทำได้ทันที ไม่กระทบ Data Model)
+- **14.1.1 ปรับป้ายกำกับตัวเลือกเพศให้ชัดเจน:**
+  - เปลี่ยนจาก `ช.` → `ชาย`, `ญ.` → `หญิง`, `เสรี` → `ไม่ระบุ` (คง internal value `'male'|'female'|'any'` ตามเดิม)
+- **14.1.2 เปิดใช้ Live Validation & Error Indicator ที่ฟิลด์:**
+  - ตั้งค่า `autovalidateMode: AutovalidateMode.onUserInteraction` ใน `Form`
+  - ทำ custom form field / input decoration error สำหรับ dropdown กีฬา ให้แสดงกรอบแดงและข้อความ error ใต้ช่องเมื่อยังไม่ได้เลือก แทนการพึ่งพา `SnackBar` อย่างเดียว
+- **14.1.3 แสดงตัวนับจำนวนอักษร (Character Counter):**
+  - เปิดการแสดงผล counter แบบกระชับ เช่น `0/60` และ `0/500` (หรือแสดงเฉพาะเมื่อพิมพ์เกิน 80% ของ limit)
+- **14.1.4 ปรับปรุง Error State ของรายการกีฬา:**
+  - เพิ่ม state `_sportsLoadFailed` พร้อมแสดงปุ่ม “แตะเพื่อโหลดใหม่ (Retry)” ภายในช่อง dropdown หากโหลดรายการกีฬาไม่สำเร็จ
+- **เกณฑ์การตรวจรับ (Gate 14.1):** ข้อความเพศอ่านเข้าใจง่าย, ฟอร์มแสดงผล error ทันทีเมื่อพิมพ์ผิด/ไม่ครบ, มี counter ชัดเจน และกด retry รายการกีฬาได้จริง
+
+---
+
+### Phase 14.2 — Data Safety & Dropdown Experience (ความเร่งด่วนปานกลาง — ยกระดับ Flow และป้องกันข้อมูลหาย)
+- **14.2.1 ป้องกันออกจากหน้าโดยไม่ตั้งใจ (Unsaved Changes Guard):**
+  - ใช้ `PopScope` (หรือ `WillPopScope`) ดักจับเมื่อผู้ใช้กด back หรือปัดหน้าจอกลับ หากมีการพิมพ์ชื่อ/คำอธิบาย/เลือกกีฬาไว้แล้ว ให้แสดง Confirmation Dialog: *"คุณต้องการละทิ้งการสร้างก๊วนนี้หรือไม่? ข้อมูลที่กรอกไว้จะไม่ถูกบันทึก"* พร้อมปุ่ม "ยกเลิก" และ "ละทิ้ง"
+- **14.2.2 ปรับปรุง Dropdown กีฬาให้ Responsive & ค้นหาได้ (Searchable Sports Selector):**
+  - ปรับการคำนวณความกว้างให้ยืดหยุ่นตาม Layout constraints จริง (ไม่ใช้ hardcoded `width - 72`)
+  - เปลี่ยนจากการใช้ `DropdownMenu` ธรรมดา เป็น Searchable Modal Bottom Sheet หรือ Dropdown with Search field เพื่อให้ผู้ใช้พิมพ์ค้นหาชื่อกีฬาไทย/อังกฤษได้รวดเร็ว รองรับรายการกีฬาที่ขยายตัวในอนาคต
+- **เกณฑ์การตรวจรับ (Gate 14.2):** กดย้อนกลับขณะกรอกฟอร์มมี dialog เตือนไม่ให้ข้อมูลหลุด, dropdown กีฬาไม่ล้นขอบจอทุกขนาด และค้นหาชื่อกีฬาด้วยคีย์เวิร์ดได้แม่นยำ
+
+---
+
+### Phase 14.3 — ThaiAddressPicker & Map Enhancements (ความเร่งด่วนปานกลาง — ปรับปรุงการจัดการที่อยู่และพิกัดสนาม)
+
+> **มติสถาปัตยกรรมแผนที่ (ตัวเลือก A — Hybrid Platform & Cost Guardrail):**
+> - **iOS / Android:** ใช้ `google_maps_flutter` เต็มรูปแบบ สอดคล้องกับหน้าหลัก (Home Map) และหน้าฉุกเฉิน (Emergency Map)
+> - **Web Platform:** ปิดการโหลด Interactive Map ตามค่าเริ่มต้น เพื่อประหยัดโควต้าค่าใช้จ่าย Google Maps ($200 credit) และเพิ่มความเร็ว โดยแสดง fallback container ที่แนะนำให้ปักหมุดผ่านแอปมือถือ หรือเลือกที่อยู่ด้วย `ThaiAddressPicker` แทน
+> - **Platform Settings:** ควบคุมการเปิด/ปิด Web Map ผ่านสวิตช์ `group_create` ในหน้า `/admin/platform-settings`
+> - **Quota & Cost Logging:** บันทึกเมตริก `map_load_group_create` แยกอิสระผ่าน `PlatformService.logMapLoad(pageName: 'group_create')` และแสดงผลการใช้โควต้า/ประมาณการค่าใช้จ่ายในหน้าเฝ้าดูระบบ `/admin/system-monitor`
+
+- **14.3.1 ผสาน ThaiAddressPicker ผ่าน Modal Bottom Sheet (ประหยัดพื้นที่ฟอร์ม):**
+  - ยกเลิก text fields กรอกจังหวัด/อำเภอดิบเดิม เปลี่ยนเป็นการ์ดแสดงที่อยู่ที่เลือก พร้อมปุ่ม "เลือกที่อยู่ (ต./อ./จ.)" ที่เปิด `ThaiAddressPicker` ผ่าน Modal Bottom Sheet
+  - ใช้ cascading address selector มาตรฐานของแอป (`thai_address_picker.dart`): รหัสไปรษณีย์ 5 หลัก → จังหวัด → อำเภอ/เขต → ตำบล/แขวง
+  - ปรับขนาด Bottom Sheet ให้พอดีกับเนื้อหา (`useSafeArea: true`, `ConstrainedBox` ความสูง 40%–70% ของหน้าจอ พร้อม `Flexible` + `SingleChildScrollView`) ป้องกันการล้นจอหรือทับแป้นพิมพ์
+  - แสดงผลสรุปที่อยู่แบบย่อชัดเจนบนการ์ด เช่น `ต.บางมด อ.ทุ่งครุ จ.กรุงเทพมหานคร 10140` พร้อมปุ่มกดแก้ไขหรือเลือกใหม่
+- **14.3.2 บันทึกข้อมูลที่อยู่ครบระดับถึง Database (Schema Migration):**
+  - สร้าง Supabase migration เพิ่มคอลัมน์ในตาราง `public.fitness_groups`:
+    - `subdistrict TEXT` (ตำบล/แขวง)
+    - `postal_code VARCHAR(5)` (รหัสไปรษณีย์)
+  - อัปเดต `fitness_groups_public` view (ถ้าเกี่ยวข้องใน Phase 13) และ Repository methods (`createGroup`, `updateGroup`, `listGroups`) ให้รองรับ `subdistrict` และ `postal_code`
+  - อัปเดตการ serialize/deserialize ในระบบ Draft (`create_group_draft`) ให้บันทึกและกู้คืนค่า `subdistrict` และ `postal_code` ครบถ้วน
+- **14.3.3 เชื่อมโยงที่อยู่กับแผนที่ Google Maps (Address-driven Map Centering):**
+  - เมื่อผู้ใช้เลือกที่อยู่ผ่าน `ThaiAddressPicker` สำเร็จ ให้นำชื่ออำเภอ/จังหวัดไปดึงพิกัดศูนย์กลางคร่าวๆ (Geocoding / Nominatim centroid lookup) เพื่อเลื่อนกล้องแผนที่ (`GoogleMapController.animateCamera()`) ไปยังพื้นที่นั้นโดยอัตโนมัติ ช่วยลดภาระผู้ใช้ไม่ต้องเลื่อนหาจากแผนที่ทั้งประเทศ
+  - ผู้ใช้สามารถแตะแผนที่เพื่อขยับหมุดระบุตำแหน่งสนามจริงที่เฉพาะเจาะจงต่อได้ทันที
+- **14.3.4 ปรับปรุงการโต้ตอบกับแผนที่ และควบคุมตาม Platform (Map Usability & Platform Controls):**
+  - ใช้ `PlatformService.shouldShowLiveMap(pageName: 'group_create')` ในการตรวจสอบสิทธิ์การเรนเดอร์:
+    - **มือถือ (iOS/Android):** เรนเดอร์ `GoogleMap` (มีปุ่มใช้ตำแหน่งฉัน, ปุ่มขยายเต็มจอ `Fullscreen Map Picker`, และปุ่ม "ล้างพิกัด")
+    - **เว็บ (Web Browser):** แสดง UI Fallback เป็นกล่องข้อมูลพร้อมป้ายเตือน "แผนที่ถูกปิดใช้งานบนเบราว์เซอร์เพื่อประหยัดโควต้า กรุณาปักหมุดผ่านแอปพลิเคชันมือถือ" (หรือปุ่มเปิดชั่วคราวหาก Admin เปิดใน Platform Settings)
+  - เพิ่มปุ่มขยายแผนที่เต็มจอ (Fullscreen Google Map Picker Dialog) เพื่อการปักหมุดที่แม่นยำบนจอเล็ก
+  - เพิ่มปุ่ม “ล้างพิกัด (Clear Pin)” เพื่อให้ผู้ใช้สามารถยกเลิกพิกัดได้หากต้องการนัดหมายแบบระบุเพียงพื้นที่
+- **14.3.5 ผสานเครื่องมือควบคุมใน Platform Settings & แสดงสถิติใน System Monitor:**
+  - **Platform Settings (`platform_settings_page.dart`):** เพิ่มรายการสวิตช์ `หน้าสร้างก๊วนกีฬา (Create Sport Group Map)` ภายใต้การควบคุม Web Platform (`PlatformService.updateWebMapSetting('group_create', v)`)
+  - **โควต้าและการบันทึก Log (`platform_service.dart`):** เรียก `PlatformService.logMapLoad(pageName: 'group_create')` เมื่อมีการเปิดใช้งานแผนที่หน้าสร้างก๊วน เพื่อบันทึก `map_load_group_create` และ `map_loads_total` ลงตาราง `platform_metrics`
+  - **System Monitor (`system_monitor_page.dart` & `system_monitor_service.dart`):** นำเมตริก `map_load_group_create` มาแสดงแจกแจงในหมวด `Usage & Cost Guardrails` และคำนวณรวมใน `estimatedMapCost` ($7/1,000 loads) ให้ผู้ดูแลระบบเห็นชัดเจนว่าหน้านี้ใช้เครดิตไปเท่าใด
+- **14.3.6 ระบบค้นหาพิกัดและที่อยู่แบบรวมศูนย์ (Unified Smart Search — รหัสไปรษณีย์ 5 หลัก & ชื่อสถานที่ Hybrid):**
+  - **หลักการค้นหาและการแยกแยะรูปแบบอัตโนมัติ (Intelligent Unified Detection):**
+    1. ผู้ใช้กรอกข้อความลงในช่องค้นหาเดียว ระบบจะวิเคราะห์รูปแบบข้อความทันที:
+       - **กรณีรหัสไปรษณีย์ (ตัวเลข 5 หลัก เช่น `10140`, `50000`):** ค้นหารายชื่อตำบล/อำเภอ/จังหวัดที่ตรงกันจากตาราง `thai_addresses` (หรือ Nominatim postal search) แสดงตัวเลือกตำบล/อำเภอ เมื่อผู้ใช้แตะเลือก ระบบจะกรอก `ThaiAddress` และปักหมุดพร้อมเลื่อนแผนที่ไปยังพื้นที่นั้นให้อัตโนมัติ (รวดเร็วและฟรี 100%)
+       - **กรณีตัวเลขพิกัดละติจูด/ลองจิจูด:** ปักหมุดและเลื่อนแผนที่ไปยังตำแหน่งนั้นทันที (0 วินาที, ฟรี 100%)
+       - **กรณีชื่อสถานที่/สนามกีฬา (ข้อความทั่วไป):** ค้นหาขั้นแรกผ่าน **OpenStreetMap (Nominatim)** ฟรี 100% บันทึก log `place_search_osm` หากไม่พบและเปิดสวิตช์ จะ fallback ไปยัง **Google Places API** บันทึก log `place_search_google_places`
+    2. ผลลัพธ์แสดงใน Dropdown แนะนำ พร้อมระบุ Badge ชัดเจน (`รหัสไปรษณีย์`, `OSM (ฟรี)`, หรือ `Google Places`)
+  - **เครื่องมือควบคุมใน Platform Settings (`platform_settings_page.dart`):**
+    - เพิ่มสวิตช์ `อนุญาตค้นหาด้วย Google Places เมื่อหาใน OSM ไม่พบ (Google Places Search Fallback)` เพื่อให้ Admin สามารถเปิด/ปิด fallback ได้ ป้องกันค่าใช้จ่าย API โตเกินคาด
+  - **การวัดผลและสถิติใน System Monitor (`system_monitor_page.dart` & `system_monitor_service.dart`):**
+    - แสดงจำนวนครั้งที่ค้นหาแยกตาม Provider (`place_search_osm` vs `place_search_google_places`)
+    - คำนวณประมาณการค่าใช้จ่ายของ Google Places Search (~$32/1,000 requests) รวมไว้ใน Usage & Cost Guardrails
+- **เกณฑ์การตรวจรับ (Gate 14.3):**
+  - เลือกที่อยู่ผ่าน Bottom Sheet ด้วย `ThaiAddressPicker` ได้ราบรื่นและขนาดพอดีจอ
+  - ข้อมูล `province`, `district`, `subdistrict`, `postal_code` บันทึกลง DB ถูกต้องครบถ้วน
+  - บน iOS/Android แผนที่ Google Maps แสดงผลและขยับตามที่อยู่อัตโนมัติ หมุดขยายเต็มจอและล้างได้
+  - บน Web แผนที่ปิดใช้งานโดย default และมี fallback ชัดเจน สามารถเปิดได้จาก Platform Settings
+  - ค้นหาแบบรวมศูนย์ (Unified Smart Search) แยกแยะรหัสไปรษณีย์ 5 หลัก, ชื่อสถานที่ (Hybrid), และพิกัดได้ถูกต้อง
+  - สถิติ `map_load_group_create`, `place_search_osm`, และ `place_search_google_places` บันทึกและแสดงผลใน System Monitor อย่างถูกต้อง แม่นยำ และคำนวณค่าใช้จ่ายใน cost guardrails
+
+---
+
+### Phase 14.4 — Cost Standards Integration & Final Polish (ทำร่วมกับ Phase 9.1)
+
+> UI ระบบค่าใช้จ่าย 2 ระดับ ยึดตามมติ [ระบบค่าใช้จ่าย 2 ระดับ (ตัดสินใจแล้ว 2026-09-08)](#ระบบค่าใช้จ่าย-2-ระดับ-ตัดสินใจแล้ว-2026-09-08) และใช้ pattern เดียวกับ Phase 14.1–14.3: section แบบ `_buildModernSection`, การแก้ไขรายการผ่าน Modal Bottom Sheet, live validation, บันทึกลง Draft และป้องกันข้อมูลหายร่วมกับ Unsaved Changes Guard ของ 14.2.1
+
+- **14.4.1 Section "ค่าใช้จ่ายของก๊วน" ในหน้าสร้าง/แก้ไขก๊วน (ระดับที่ 1):**
+  - เพิ่ม `_buildModernSection(title: 'ค่าใช้จ่ายของก๊วน', icon: Icons.payments_outlined)` วางระหว่าง section "การตั้งค่าก๊วน" กับ "สถานที่และพิกัด" ใน `create_group_page.dart` (ใช้ร่วมกันหน้าแก้ไขก๊วน, แสดงเฉพาะผู้จัดการก๊วนตาม policy เดิม)
+  - แบ่งเป็น 2 sub-section ภายในการ์ดเดียว:
+    1. **ค่าก๊วน/ค่าสมาชิก (`group_fee`)** — รายการแสดงชื่อ, ยอดเงิน (บาท), chip รอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` และ badge เงื่อนไขการชำระ
+    2. **Template ค่าใช้จ่ายรอบ (`round_expense`)** — รายการแสดงชื่อ, chip หมวด `สนาม/อุปกรณ์/อื่นๆ`, ยอดต่อหน่วย + หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้น (ถ้ามี) และ badge เงื่อนไขการชำระ
+  - แต่ละรายการเป็น card row ที่แตะเพื่อแก้ไข และมี action ปิดใช้งาน (deactivate) — standard ที่เคยถูกใช้ในรอบต้องปิดใช้งานแทนการลบ เพื่อไม่ทำลาย snapshot ของรอบเดิม; รายการ inactive แสดงจางและยุบไว้ท้ายลิสต์
+  - ปุ่มเพิ่มรายการ 2 ปุ่มแยกตามประเภท: "+ เพิ่มค่าก๊วน/ค่าสมาชิก" และ "+ เพิ่ม template ค่ารอบ" (touch target ≥ 48dp)
+  - Empty state: แสดง "ยังไม่ได้กำหนดค่าใช้จ่าย" พร้อมข้อความอธิบายสั้นว่าสมาชิกจะเห็น "ยังไม่ได้กำหนด" — ไม่ใช่ error และบันทึกก๊วนได้ปกติ (ค่าใช้จ่ายไม่บังคับ)
+- **14.4.2 ฟอร์มเพิ่ม/แก้ไขรายการผ่าน Modal Bottom Sheet:**
+  - ใช้ `showModalBottomSheet(isScrollControlled: true)` + padding ตาม `viewInsets` เพื่อไม่ให้คีย์บอร์ดบังฟิลด์ (สอดคล้อง 14.4.4)
+  - **ฟอร์ม `group_fee`:** ชื่อรายการ (≤100 ตัวอักษร), จำนวนเงิน (≥0, ทศนิยม ≤2 ตำแหน่ง), Dropdown รอบเรียกเก็บ allowlist `per_use/per_day/per_week/per_month/per_year/lifetime` แสดงป้ายไทย, และเงื่อนไขการชำระ
+  - **ฟอร์ม `round_expense`:** ชื่อรายการ, หมวด `venue/equipment/other` (`สนาม/อุปกรณ์/อื่นๆ`), ยอดต่อหน่วย, หน่วยคิด `flat/per_item/per_round/per_hour` (`เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`), จำนวนเริ่มต้น (เปิดกรอกเฉพาะ `per_item`/`per_hour`; `flat`/`per_round` ล็อกเป็น 1) และเงื่อนไขการชำระ
+  - `payment_timing` ใช้ ChoiceChip 3 ตัวเลือก "ก่อนอนุมัติเข้าร่วมรอบ / ก่อนเข้าร่วมก๊วน / จ่ายที่สนาม" (ค่าเริ่มต้น `at_venue`) พร้อมข้อความอธิบายใต้ chip ว่าแต่ละเงื่อนไขมีผลอย่างไรเมื่อเปิด payment phase ภายหลัง — ใน Phase นี้เก็บ/แสดงเงื่อนไขเท่านั้น ยังไม่เรียกเก็บเงินจริง
+  - Live validation ภายใน sheet: ชื่อห้ามว่างและห้ามซ้ำรายการ active ประเภทเดียวกัน, ยอดเงินต้อง parse ได้และไม่เกิน 2 ตำแหน่งทศนิยม, จำนวนเริ่มต้นต้อง >0 — แสดง error ใต้ฟิลด์ทันทีตามแนว 14.1.2 ไม่ใช้ SnackBar อย่างเดียว
+  - แก้ไข standard ที่เคยถูกเลือกใช้ในรอบแล้ว → แสดง confirmation เตือนว่า "การเปลี่ยนแปลงไม่กระทบรอบนัดที่สร้างไปแล้ว (เก็บเป็น snapshot)" ก่อนบันทึก ตามกติกา Cost standard/item integrity
+- **14.4.3 การบันทึกและ Draft:**
+  - หน้าสร้างก๊วน: เก็บรายการค่าใช้จ่ายไว้ใน state เท่านั้น → `createGroup()` สำเร็จแล้วจึง batch บันทึก standards ผ่าน repository ตามลำดับ; ถ้าบันทึก standard ล้มเหลวให้แจ้ง SnackBar พร้อมปุ่ม retry (ก๊วนสร้างสำเร็จแล้ว ห้าม rollback ก๊วนเพราะค่าใช้จ่ายล้มเหลว — แก้ได้จากหน้าแก้ไขก๊วน)
+  - หน้าแก้ไขก๊วน: เพิ่ม/แก้/ปิดใช้งาน standard ยิง repository ทันทีต่อรายการ พร้อม optimistic update + rollback UI เมื่อล้มเหลว
+  - Draft (`create_group_draft`) ต้อง serialize/restore รายการ cost standards ทั้งสองประเภทครบ (ชื่อ, ประเภท, หมวด, ยอด, หน่วย/รอบเรียกเก็บ, จำนวนเริ่มต้น, payment_timing) และรายการเหล่านี้ต้องถือเป็น "ข้อมูลที่กรอกแล้ว" ที่ทำให้ Unsaved Changes Guard ของ 14.2.1 เด้งเตือน
+  - เตรียม UI ระดับที่ 2 (ค่าใช้จ่ายเฉพาะรอบใน `_showCreateSessionSheet()`) ให้สอดคล้อง pattern เดียวกัน: ปุ่ม "เลือกจากค่ามาตรฐานก๊วน" แสดงเฉพาะ `round_expense` active, ปุ่ม "เพิ่มค่าใช้จ่ายกำหนดเอง" ใช้ฟอร์มเดียวกับ 14.4.2, แสดงยอดประมาณการรวมของรอบ — รายละเอียด validation ตามหัวข้อ "สร้างรอบนัด (Bottom Sheet)"
+- **14.4.4 Accessibility & Mobile Testing:**
+  - ตรวจสอบ Touch target (ขนาดปุ่ม ≥ 48x48 dp), รองรับ Screen Reader (Semantics) รวมถึงรายการค่าใช้จ่ายและ badge เงื่อนไขการชำระ
+  - ทดสอบการทำงานร่วมกับคีย์บอร์ดบนอุปกรณ์จอเล็ก (Keyboard avoiding & auto-scroll to focused field) ทั้งในฟอร์มหลักและ Bottom Sheet ค่าใช้จ่าย
+- **เกณฑ์การตรวจรับ (Gate 14.4):** เพิ่ม/แก้ไข/ปิดใช้งาน `group_fee` และ `round_expense` จากหน้าสร้าง/แก้ไขก๊วนได้ครบตาม allowlist, validation แจ้งที่ฟิลด์ทันที, รายการรอดจาก Draft restore และ Unsaved Guard, standard ที่ถูกใช้แล้วไม่ถูกลบและแจ้งเตือน snapshot ก่อนแก้, คีย์บอร์ดไม่บังฟิลด์/ปุ่ม submit และผ่าน Accessibility inspection

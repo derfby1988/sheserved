@@ -4,24 +4,29 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// PlatformService - จัดการ Logic เกี่ยวกับความแตกต่างของแต่ละแพลตฟอร์ม (Web/iOS/Android)
 /// ช่วยให้การบำรุงรักษาโค้ดทำได้จากที่เดียว (Centralized Logic)
 class PlatformService {
-  
   /// ตรวจสอบว่าเป็น Web หรือไม่
   static bool get isWeb => kIsWeb;
-  
+
   /// ตรวจสอบว่าเป็น iOS หรือไม่
-  static bool get isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-  
+  static bool get isIOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   /// ตรวจสอบว่าเป็น Android หรือไม่
-  static bool get isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   // สวิตช์หลักสำหรับเปิด/ปิดแผนที่บน Web
-  static bool _isWebMapEnabled = false; 
+  static bool _isWebMapEnabled = false;
+
+  // สวิตช์สำหรับเปิด/ปิด Google Places Search Fallback
+  static bool _isGooglePlacesFallbackEnabled = true;
 
   // สถานะเปิด/ปิดแผนที่แยกตามหน้าจอ (สำหรับ Web)
   static Map<String, bool> _webMapSettings = {
     'home': true,
     'rescue': false,
     'emergency': true,
+    'group_create': false,
   };
 
   /// อัปเดตสถานะเปิด/ปิดแผนที่บน Web ทั้งหมด
@@ -31,6 +36,15 @@ class PlatformService {
 
   /// ตรวจสอบสถานะ Master Switch ของ Web Map
   static bool get isWebMapEnabled => _isWebMapEnabled;
+
+  /// อัปเดตสถานะเปิด/ปิด Google Places Search Fallback
+  static void setGooglePlacesFallbackEnabled(bool value) {
+    _isGooglePlacesFallbackEnabled = value;
+  }
+
+  /// ตรวจสอบสถานะ Google Places Search Fallback
+  static bool get isGooglePlacesFallbackEnabled =>
+      _isGooglePlacesFallbackEnabled;
 
   /// อัปเดตการตั้งค่าแผนที่รายหน้าจอ (ใช้โดย Admin)
   static void updateWebMapSetting(String pageName, bool value) {
@@ -51,35 +65,61 @@ class PlatformService {
     }
     return true; // Always live on Mobile
   }
-  
+
   /// URL รูปภาพทดแทนแผนที่ (Fallback Image)
-  static String get mapFallbackImageUrl => 
-    'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&q=80&w=1000';
+  static String get mapFallbackImageUrl =>
+      'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&q=80&w=1000';
 
   /// ข้อความแจ้งเตือนเมื่อแผนที่ถูกปิดใช้งาน
-  static String get mapDisabledMessage => 
-    'แผนที่ถูกปิดใช้งานบนเบราว์เซอร์เพื่อความรวดเร็วและประหยัดข้อมูล';
+  static String get mapDisabledMessage =>
+      'แผนที่ถูกปิดใช้งานบนเบราว์เซอร์เพื่อความรวดเร็วและประหยัดข้อมูล';
 
   /// บันทึกการโหลดแผนที่ (ใช้สำหรับนับโควต้า/ประมาณการค่าใช้จ่าย)
   /// [pageName] คือชื่อหน้าจอที่เรียกใช้แผนที่ เช่น 'home', 'rescue', 'emergency'
   static Future<void> logMapLoad({String pageName = 'unknown'}) async {
-    final platform = kIsWeb ? 'web' : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
+    final platform = kIsWeb
+        ? 'web'
+        : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
     final metricName = 'map_load_$pageName';
-    
+
     try {
       // 1. บันทึกแยกตามหน้าจอ
       await Supabase.instance.client.rpc(
-        'increment_platform_metric', 
-        params: {'p_platform': platform, 'p_metric_name': metricName}
+        'increment_platform_metric',
+        params: {'p_platform': platform, 'p_metric_name': metricName},
       );
-      
+
       // 2. บันทึกรวม (Total) เพื่อใช้คำนวณค่าใช้จ่ายรวม
       await Supabase.instance.client.rpc(
-        'increment_platform_metric', 
-        params: {'p_platform': platform, 'p_metric_name': 'map_loads_total'}
+        'increment_platform_metric',
+        params: {'p_platform': platform, 'p_metric_name': 'map_loads_total'},
       );
     } catch (e) {
       debugPrint('Error logging map load for $pageName: $e');
+    }
+  }
+
+  /// บันทึกการค้นหาสถานที่แยกตาม provider ('osm' หรือ 'google_places')
+  static Future<void> logPlaceSearch({required String provider}) async {
+    final platform = kIsWeb
+        ? 'web'
+        : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
+    final metricName = 'place_search_$provider';
+
+    try {
+      // 1. บันทึกแยกตาม provider
+      await Supabase.instance.client.rpc(
+        'increment_platform_metric',
+        params: {'p_platform': platform, 'p_metric_name': metricName},
+      );
+
+      // 2. บันทึกยอดรวมการค้นหาสถานที่
+      await Supabase.instance.client.rpc(
+        'increment_platform_metric',
+        params: {'p_platform': platform, 'p_metric_name': 'place_search_total'},
+      );
+    } catch (e) {
+      debugPrint('Error logging place search for $provider: $e');
     }
   }
 

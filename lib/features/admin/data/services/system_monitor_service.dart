@@ -22,7 +22,10 @@ class SystemMonitorService {
   }
 
   Future<Map<String, String>> get _headers async {
-    return const {'Content-Type': 'application/json', 'Accept': 'application/json'};
+    return const {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
   }
 
   Future<Map<String, dynamic>> _getJson(String endpoint) async {
@@ -48,10 +51,7 @@ class SystemMonitorService {
       return await _getJson('/health');
     } catch (e) {
       debugPrint('SystemMonitorService: failed to fetch /health: $e');
-      return {
-        'status': 'error',
-        'error': e.toString(),
-      };
+      return {'status': 'error', 'error': e.toString()};
     }
   }
 
@@ -60,11 +60,7 @@ class SystemMonitorService {
       return await _getJson('/health/queues');
     } catch (e) {
       debugPrint('SystemMonitorService: failed to fetch /health/queues: $e');
-      return {
-        'healthy': false,
-        'error': e.toString(),
-        'queues': <dynamic>[],
-      };
+      return {'healthy': false, 'error': e.toString(), 'queues': <dynamic>[]};
     }
   }
 
@@ -83,7 +79,9 @@ class SystemMonitorService {
     required Map<String, dynamic> queueHealth,
     required List<Map<String, dynamic>> metrics,
   }) {
-    final queues = List<Map<String, dynamic>>.from(queueHealth['queues'] ?? const []);
+    final queues = List<Map<String, dynamic>>.from(
+      queueHealth['queues'] ?? const [],
+    );
     final failingQueues = queues.where((queue) {
       final healthy = queue['healthy'];
       return healthy == false;
@@ -94,27 +92,76 @@ class SystemMonitorService {
       return sum + count;
     });
 
-    final webMapMetrics = metrics.where((metric) {
-      final platform = metric['platform']?.toString().toLowerCase() ?? '';
+    final mapLoadMetrics = metrics.where((metric) {
       final metricName = metric['metric_name']?.toString().toLowerCase() ?? '';
-      return platform == 'web' && metricName.startsWith('map_load_');
+      return metricName.startsWith('map_load_');
     }).toList();
 
-    final estimatedMapCost = webMapMetrics.fold<double>(0.0, (sum, metric) {
+    final estimatedMapCost = mapLoadMetrics.fold<double>(0.0, (sum, metric) {
       final count = int.tryParse(metric['count']?.toString() ?? '0') ?? 0;
       return sum + (count / 1000.0) * 7.0;
     });
 
+    final groupCreateMetrics = metrics.where((metric) {
+      final metricName = metric['metric_name']?.toString().toLowerCase() ?? '';
+      return metricName == 'map_load_group_create';
+    }).toList();
+
+    final estimatedGroupCreateCost = groupCreateMetrics.fold<double>(0.0, (
+      sum,
+      metric,
+    ) {
+      final count = int.tryParse(metric['count']?.toString() ?? '0') ?? 0;
+      return sum + (count / 1000.0) * 7.0;
+    });
+
+    final groupCreateLoads = groupCreateMetrics.fold<int>(0, (sum, metric) {
+      return sum + (int.tryParse(metric['count']?.toString() ?? '0') ?? 0);
+    });
+
+    final osmSearchMetrics = metrics.where((metric) {
+      final metricName = metric['metric_name']?.toString().toLowerCase() ?? '';
+      return metricName == 'place_search_osm';
+    }).toList();
+    final osmSearchCount = osmSearchMetrics.fold<int>(0, (sum, metric) {
+      return sum + (int.tryParse(metric['count']?.toString() ?? '0') ?? 0);
+    });
+
+    final googlePlacesMetrics = metrics.where((metric) {
+      final metricName = metric['metric_name']?.toString().toLowerCase() ?? '';
+      return metricName == 'place_search_google_places';
+    }).toList();
+    final googlePlacesSearchCount = googlePlacesMetrics.fold<int>(0, (
+      sum,
+      metric,
+    ) {
+      return sum + (int.tryParse(metric['count']?.toString() ?? '0') ?? 0);
+    });
+    final estimatedGooglePlacesCost = googlePlacesMetrics.fold<double>(0.0, (
+      sum,
+      metric,
+    ) {
+      final count = int.tryParse(metric['count']?.toString() ?? '0') ?? 0;
+      return sum + (count / 1000.0) * 32.0;
+    });
+
     final queueAlerts = <Map<String, dynamic>>[];
     for (final queue in queues) {
-      final name = queue['name']?.toString() ?? queue['queueName']?.toString() ?? 'unknown-queue';
+      final name =
+          queue['name']?.toString() ??
+          queue['queueName']?.toString() ??
+          'unknown-queue';
       final healthy = queue['healthy'] == true;
       final waiting = int.tryParse(queue['waiting']?.toString() ?? '0') ?? 0;
       final failed = int.tryParse(queue['failed']?.toString() ?? '0') ?? 0;
       final thresholds = queue['thresholds'];
-      final thresholdMap = thresholds is Map ? Map<String, dynamic>.from(thresholds) : <String, dynamic>{};
-      final maxWaiting = int.tryParse(thresholdMap['maxWaiting']?.toString() ?? '0') ?? 0;
-      final maxFailed = int.tryParse(thresholdMap['maxFailed']?.toString() ?? '0') ?? 0;
+      final thresholdMap = thresholds is Map
+          ? Map<String, dynamic>.from(thresholds)
+          : <String, dynamic>{};
+      final maxWaiting =
+          int.tryParse(thresholdMap['maxWaiting']?.toString() ?? '0') ?? 0;
+      final maxFailed =
+          int.tryParse(thresholdMap['maxFailed']?.toString() ?? '0') ?? 0;
 
       final queueSeverity = _deriveSeverity(
         current: waiting,
@@ -131,7 +178,11 @@ class SystemMonitorService {
         queueAlerts.add({
           'type': 'queue',
           'name': name,
-          'severity': _pickHigherSeverity(queueSeverity, failedSeverity, healthy ? 'info' : 'critical'),
+          'severity': _pickHigherSeverity(
+            queueSeverity,
+            failedSeverity,
+            healthy ? 'info' : 'critical',
+          ),
           'message': failed > 0
               ? '$name มี failed jobs $failed รายการ'
               : '$name backlog อยู่ที่ $waiting / ${maxWaiting > 0 ? maxWaiting : '-'}',
@@ -146,8 +197,11 @@ class SystemMonitorService {
       usageAlerts.add({
         'type': 'usage',
         'name': 'web_map_cost',
-        'severity': estimatedMapCost >= mapCostCritical ? 'critical' : 'warning',
-        'message': 'ค่าใช้จ่าย Web Map โดยประมาณอยู่ที่ \$${estimatedMapCost.toStringAsFixed(2)}',
+        'severity': estimatedMapCost >= mapCostCritical
+            ? 'critical'
+            : 'warning',
+        'message':
+            'ค่าใช้จ่าย Web Map โดยประมาณอยู่ที่ \$${estimatedMapCost.toStringAsFixed(2)}',
       });
     }
 
@@ -174,18 +228,32 @@ class SystemMonitorService {
       'platformMetricCount': metrics.length,
       'totalRequests': totalRequests,
       'estimatedMapCost': estimatedMapCost,
+      'estimatedGroupCreateCost': estimatedGroupCreateCost,
+      'groupCreateLoads': groupCreateLoads,
+      'osmSearchCount': osmSearchCount,
+      'googlePlacesSearchCount': googlePlacesSearchCount,
+      'estimatedGooglePlacesCost': estimatedGooglePlacesCost,
       'alerts': alerts,
-      'criticalAlertCount': alerts.where((alert) => alert['severity'] == 'critical').length,
-      'warningAlertCount': alerts.where((alert) => alert['severity'] == 'warning').length,
-      'recommendedAction': failingQueues.isNotEmpty || queueHealth['healthy'] != true
+      'criticalAlertCount': alerts
+          .where((alert) => alert['severity'] == 'critical')
+          .length,
+      'warningAlertCount': alerts
+          .where((alert) => alert['severity'] == 'warning')
+          .length,
+      'recommendedAction':
+          failingQueues.isNotEmpty || queueHealth['healthy'] != true
           ? 'ตรวจสอบ failed queues และลดโหลดก่อน'
           : estimatedMapCost > 0
-              ? 'พิจารณาปิด Web Map ที่ไม่จำเป็นเพื่อลดค่าใช้จ่าย'
-              : 'สถานะปกติ',
+          ? 'พิจารณาปิด Web Map ที่ไม่จำเป็นเพื่อลดค่าใช้จ่าย'
+          : 'สถานะปกติ',
     };
   }
 
-  String _deriveSeverity({required int current, required int warningThreshold, required int criticalThreshold}) {
+  String _deriveSeverity({
+    required int current,
+    required int warningThreshold,
+    required int criticalThreshold,
+  }) {
     if (criticalThreshold > 0 && current >= criticalThreshold) {
       return 'critical';
     }

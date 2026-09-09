@@ -921,9 +921,11 @@ class FitnessBuddiesRepository {
     bool ownerAutoJoin = true,
     String? coverImageUrl,
     String? venuePhotoUrl,
-    String genderPreference = 'any',
+    String? genderPreference = 'any',
     String? province,
     String? district,
+    String? subdistrict,
+    String? postalCode,
     double? lat,
     double? lng,
   }) async {
@@ -939,6 +941,8 @@ class FitnessBuddiesRepository {
       'gender_preference': genderPreference,
       if (province != null) 'province': province,
       if (district != null) 'district': district,
+      if (subdistrict != null) 'subdistrict': subdistrict,
+      if (postalCode != null) 'postal_code': postalCode,
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
       'created_by': userId,
@@ -1061,6 +1065,8 @@ class FitnessBuddiesRepository {
     String? genderPreference,
     String? province,
     String? district,
+    String? subdistrict,
+    String? postalCode,
     double? lat,
     double? lng,
   }) async {
@@ -1074,6 +1080,8 @@ class FitnessBuddiesRepository {
     if (genderPreference != null) data['gender_preference'] = genderPreference;
     if (province != null) data['province'] = province;
     if (district != null) data['district'] = district;
+    if (subdistrict != null) data['subdistrict'] = subdistrict;
+    if (postalCode != null) data['postal_code'] = postalCode;
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
     if (data.isEmpty && ownerAutoJoin == null) return;

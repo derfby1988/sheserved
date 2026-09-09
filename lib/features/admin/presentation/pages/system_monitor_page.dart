@@ -50,7 +50,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
 
       final systemHealth = Map<String, dynamic>.from(results[0] as Map);
       final queueHealth = Map<String, dynamic>.from(results[1] as Map);
-      final platformMetrics = List<Map<String, dynamic>>.from(results[2] as List);
+      final platformMetrics = List<Map<String, dynamic>>.from(
+        results[2] as List,
+      );
 
       final summary = _service.buildCostGuardrailSummary(
         systemHealth: systemHealth,
@@ -89,7 +91,8 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
 
   int _toInt(dynamic value) => int.tryParse(value?.toString() ?? '0') ?? 0;
 
-  double _toDouble(dynamic value) => double.tryParse(value?.toString() ?? '0') ?? 0.0;
+  double _toDouble(dynamic value) =>
+      double.tryParse(value?.toString() ?? '0') ?? 0.0;
 
   String _formatDateTime(DateTime? value) {
     if (value == null) return '-';
@@ -98,7 +101,8 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
         '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}:${local.second.toString().padLeft(2, '0')}';
   }
 
-  Color _statusColor(bool healthy) => healthy ? AppColors.success : AppColors.error;
+  Color _statusColor(bool healthy) =>
+      healthy ? AppColors.success : AppColors.error;
 
   String _statusLabel(bool healthy) => healthy ? 'Healthy' : 'At Risk';
 
@@ -146,7 +150,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
       body: RefreshIndicator(
         onRefresh: _loadData,
         child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
           padding: const EdgeInsets.all(16),
           children: [
             _buildHeroCard(),
@@ -157,7 +163,10 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             const SizedBox(height: 16),
             _buildSystemHealthCard(),
             const SizedBox(height: 16),
-            _buildQueueOverviewCard(queueThresholdWaiting, queueThresholdFailed),
+            _buildQueueOverviewCard(
+              queueThresholdWaiting,
+              queueThresholdFailed,
+            ),
             const SizedBox(height: 16),
             _buildQueueList(),
             const SizedBox(height: 16),
@@ -230,7 +239,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
                     const SizedBox(height: 4),
                     Text(
                       'เฝ้าดู health, queue backlog และสัญญาณค่าใช้จ่ายแบบ real-time',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.white.withOpacity(0.9)),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.white.withOpacity(0.9),
+                      ),
                     ),
                   ],
                 ),
@@ -279,7 +290,11 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     );
   }
 
-  Widget _heroCounterChip({required String label, required int value, required Color color}) {
+  Widget _heroCounterChip({
+    required String label,
+    required int value,
+    required Color color,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -309,13 +324,19 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
   }
 
   Widget _buildAlertSummary() {
-    final alerts = List<Map<String, dynamic>>.from(_summary['alerts'] ?? const []);
+    final alerts = List<Map<String, dynamic>>.from(
+      _summary['alerts'] ?? const [],
+    );
     if (alerts.isEmpty) {
       return _statusBanner(true, 'ยังไม่พบ alert เกิน threshold ในตอนนี้');
     }
 
-    final criticalAlerts = alerts.where((alert) => alert['severity'] == 'critical').toList();
-    final warningAlerts = alerts.where((alert) => alert['severity'] == 'warning').toList();
+    final criticalAlerts = alerts
+        .where((alert) => alert['severity'] == 'critical')
+        .toList();
+    final warningAlerts = alerts
+        .where((alert) => alert['severity'] == 'warning')
+        .toList();
 
     return Column(
       children: [
@@ -327,7 +348,8 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             icon: Icons.dangerous_outlined,
             alerts: criticalAlerts,
           ),
-        if (criticalAlerts.isNotEmpty && warningAlerts.isNotEmpty) const SizedBox(height: 12),
+        if (criticalAlerts.isNotEmpty && warningAlerts.isNotEmpty)
+          const SizedBox(height: 12),
         if (warningAlerts.isNotEmpty)
           _alertCard(
             title: 'Warning Alerts',
@@ -374,13 +396,18 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
                     ),
                     Text(
                       subtitle,
-                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.16),
                   borderRadius: BorderRadius.circular(999),
@@ -422,7 +449,11 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     );
   }
 
-  Widget _buildHeroMetric({required IconData icon, required String label, required String value}) {
+  Widget _buildHeroMetric({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -447,7 +478,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
           const SizedBox(height: 4),
           Text(
             label,
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.white.withOpacity(0.82)),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Colors.white.withOpacity(0.82),
+            ),
           ),
         ],
       ),
@@ -510,14 +543,15 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
       ),
     ];
 
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: cards,
-    );
+    return Wrap(spacing: 12, runSpacing: 12, children: cards);
   }
 
-  Widget _smallStatCard(String label, String value, IconData icon, Color color) {
+  Widget _smallStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       width: (MediaQuery.of(context).size.width - 44) / 2,
       padding: const EdgeInsets.all(16),
@@ -557,7 +591,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
                 ),
                 Text(
                   label,
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -569,7 +605,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
 
   Widget _buildSystemHealthCard() {
     final middleware = _systemHealth['middleware'];
-    final middlewareMap = middleware is Map ? Map<String, dynamic>.from(middleware) : <String, dynamic>{};
+    final middlewareMap = middleware is Map
+        ? Map<String, dynamic>.from(middleware)
+        : <String, dynamic>{};
     final database = _systemHealth['database']?.toString() ?? '-';
     final redis = _systemHealth['redis']?.toString() ?? '-';
 
@@ -579,12 +617,28 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
       icon: Icons.health_and_safety_outlined,
       child: Column(
         children: [
-          _infoRow('Backend', _systemHealth['status']?.toString() ?? 'unknown', _systemHealth['status'] == 'ok'),
+          _infoRow(
+            'Backend',
+            _systemHealth['status']?.toString() ?? 'unknown',
+            _systemHealth['status'] == 'ok',
+          ),
           _infoRow('Database', database, database == 'connected'),
           _infoRow('Redis', redis, redis == 'connected'),
-          _infoRow('Rate Limiter', middlewareMap['rateLimiter']?.toString() ?? '-', true),
-          _infoRow('Idempotency', middlewareMap['idempotency']?.toString() ?? '-', true),
-          _infoRow('Cache-Aside', middlewareMap['cacheAside']?.toString() ?? '-', true),
+          _infoRow(
+            'Rate Limiter',
+            middlewareMap['rateLimiter']?.toString() ?? '-',
+            true,
+          ),
+          _infoRow(
+            'Idempotency',
+            middlewareMap['idempotency']?.toString() ?? '-',
+            true,
+          ),
+          _infoRow(
+            'Cache-Aside',
+            middlewareMap['cacheAside']?.toString() ?? '-',
+            true,
+          ),
         ],
       ),
     );
@@ -602,9 +656,23 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
         children: [
           Row(
             children: [
-              Expanded(child: _thresholdCard('Waiting', waiting, waitingLimit, AppColors.warning)),
+              Expanded(
+                child: _thresholdCard(
+                  'Waiting',
+                  waiting,
+                  waitingLimit,
+                  AppColors.warning,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _thresholdCard('Failed', failed, failedLimit, AppColors.error)),
+              Expanded(
+                child: _thresholdCard(
+                  'Failed',
+                  failed,
+                  failedLimit,
+                  AppColors.error,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -632,7 +700,12 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(
             '$value${limit > 0 ? ' / $limit' : ''}',
@@ -648,7 +721,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               value: limit > 0 ? ratio : null,
               minHeight: 8,
               backgroundColor: color.withOpacity(0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(overLimit ? AppColors.error : color),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                overLimit ? AppColors.error : color,
+              ),
             ),
           ),
         ],
@@ -666,20 +741,29 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 _isLoading ? 'กำลังดึงข้อมูล queue...' : 'ยังไม่มีข้อมูล queue',
-                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
             )
           : Column(
-              children: _queues.map((queue) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildQueueCard(queue),
-              )).toList(),
+              children: _queues
+                  .map(
+                    (queue) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildQueueCard(queue),
+                    ),
+                  )
+                  .toList(),
             ),
     );
   }
 
   Widget _buildQueueCard(Map<String, dynamic> queue) {
-    final name = queue['name']?.toString() ?? queue['queueName']?.toString() ?? 'unknown-queue';
+    final name =
+        queue['name']?.toString() ??
+        queue['queueName']?.toString() ??
+        'unknown-queue';
     final healthy = queue['healthy'] == true;
     final waiting = _toInt(queue['waiting']);
     final active = _toInt(queue['active']);
@@ -687,17 +771,23 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     final failed = _toInt(queue['failed']);
     final latencyMs = _toDouble(queue['latencyMs']);
     final thresholds = queue['thresholds'];
-    final thresholdMap = thresholds is Map ? Map<String, dynamic>.from(thresholds) : <String, dynamic>{};
+    final thresholdMap = thresholds is Map
+        ? Map<String, dynamic>.from(thresholds)
+        : <String, dynamic>{};
     final maxWaiting = _toInt(thresholdMap['maxWaiting']);
     final maxFailed = _toInt(thresholdMap['maxFailed']);
-    final waitingRatio = maxWaiting <= 0 ? 0.0 : (waiting / maxWaiting).clamp(0.0, 1.0);
+    final waitingRatio = maxWaiting <= 0
+        ? 0.0
+        : (waiting / maxWaiting).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: healthy ? AppColors.divider : AppColors.error.withOpacity(0.2)),
+        border: Border.all(
+          color: healthy ? AppColors.divider : AppColors.error.withOpacity(0.2),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -714,7 +804,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               Expanded(
                 child: Text(
                   name,
-                  style: AppTextStyles.heading5.copyWith(fontWeight: FontWeight.w700),
+                  style: AppTextStyles.heading5.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               _queueBadge(healthy),
@@ -725,11 +817,36 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _miniMetricChip('waiting', '$waiting', Icons.schedule_outlined, AppColors.warning),
-              _miniMetricChip('active', '$active', Icons.play_circle_outline, AppColors.info),
-              _miniMetricChip('completed', '$completed', Icons.check_circle_outline, AppColors.success),
-              _miniMetricChip('failed', '$failed', Icons.error_outline, AppColors.error),
-              _miniMetricChip('latency', '${latencyMs.toStringAsFixed(0)} ms', Icons.speed, AppColors.primaryDark),
+              _miniMetricChip(
+                'waiting',
+                '$waiting',
+                Icons.schedule_outlined,
+                AppColors.warning,
+              ),
+              _miniMetricChip(
+                'active',
+                '$active',
+                Icons.play_circle_outline,
+                AppColors.info,
+              ),
+              _miniMetricChip(
+                'completed',
+                '$completed',
+                Icons.check_circle_outline,
+                AppColors.success,
+              ),
+              _miniMetricChip(
+                'failed',
+                '$failed',
+                Icons.error_outline,
+                AppColors.error,
+              ),
+              _miniMetricChip(
+                'latency',
+                '${latencyMs.toStringAsFixed(0)} ms',
+                Icons.speed,
+                AppColors.primaryDark,
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -739,7 +856,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               value: maxWaiting > 0 ? waitingRatio : null,
               minHeight: 8,
               backgroundColor: AppColors.warning.withOpacity(0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(healthy ? AppColors.warning : AppColors.error),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                healthy ? AppColors.warning : AppColors.error,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -748,12 +867,16 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               Expanded(
                 child: Text(
                   'Threshold: waiting ${maxWaiting > 0 ? maxWaiting : '-'} / failed ${maxFailed > 0 ? maxFailed : '-'}',
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
               Text(
                 'Last completed: ${queue['lastCompletedAt'] ?? '-'}',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
               ),
             ],
           ),
@@ -771,7 +894,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: (healthy ? AppColors.success : AppColors.error).withOpacity(0.12),
+        color: (healthy ? AppColors.success : AppColors.error).withOpacity(
+          0.12,
+        ),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -784,7 +909,12 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     );
   }
 
-  Widget _miniMetricChip(String label, String value, IconData icon, Color color) {
+  Widget _miniMetricChip(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -811,7 +941,16 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
 
   Widget _buildUsageAndCostCard() {
     final estimatedMapCost = _toDouble(_summary['estimatedMapCost']);
+    final estimatedGroupCreateCost = _toDouble(
+      _summary['estimatedGroupCreateCost'],
+    );
+    final groupCreateLoads = _toInt(_summary['groupCreateLoads']);
     final totalRequests = _toInt(_summary['totalRequests']);
+    final osmSearchCount = _toInt(_summary['osmSearchCount']);
+    final googlePlacesSearchCount = _toInt(_summary['googlePlacesSearchCount']);
+    final estimatedGooglePlacesCost = _toDouble(
+      _summary['estimatedGooglePlacesCost'],
+    );
 
     final metrics = _platformMetrics.take(6).toList();
 
@@ -843,33 +982,117 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _costCard(
+                  'Group Create Map Cost',
+                  '\$${estimatedGroupCreateCost.toStringAsFixed(2)}',
+                  Icons.sports_outlined,
+                  estimatedGroupCreateCost > 0
+                      ? AppColors.warning
+                      : AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _costCard(
+                  'Group Create Map Loads',
+                  '$groupCreateLoads',
+                  Icons.touch_app_outlined,
+                  AppColors.info,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _costCard(
+                  'OSM Searches (Free)',
+                  '$osmSearchCount',
+                  Icons.travel_explore_outlined,
+                  AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _costCard(
+                  'Google Places Cost',
+                  '\$${estimatedGooglePlacesCost.toStringAsFixed(2)} ($googlePlacesSearchCount)',
+                  Icons.place_outlined,
+                  estimatedGooglePlacesCost > 0
+                      ? AppColors.warning
+                      : AppColors.info,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           Text(
             'Cost-related settings',
-            style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 10),
           _configRow('Database mode', AppConfig.databaseMode.name),
-          _configRow('Console OTP (no SMS cost)', AppConfig.useConsoleOtp ? 'Enabled' : 'Disabled'),
+          _configRow(
+            'Console OTP (no SMS cost)',
+            AppConfig.useConsoleOtp ? 'Enabled' : 'Disabled',
+          ),
           _configRow('AI mode', AppConfig.vegaAiMode.name),
-          _configRow('AI kill switch', AppConfig.vegaAiKillSwitch ? 'ON' : 'OFF'),
-          _configRow('Push notifications', AppConfig.enablePushNotifications ? 'Enabled' : 'Disabled'),
-          _configRow('Web map switch', PlatformService.isWebMapEnabled ? 'Enabled' : 'Disabled'),
-          _configRow('Video quota / day', '${SyncConfig.dailyVideoUploadQuota} uploads'),
-          _configRow('Video file size cap', '${SyncConfig.maxVideoFileSizeMB} MB'),
-          _configRow('Video cooldown', '${SyncConfig.videoUploadCooldownSeconds} sec'),
-          _configRow('Emergency recording cap', '${SyncConfig.maxEmergencyRecordingSeconds} sec'),
+          _configRow(
+            'AI kill switch',
+            AppConfig.vegaAiKillSwitch ? 'ON' : 'OFF',
+          ),
+          _configRow(
+            'Push notifications',
+            AppConfig.enablePushNotifications ? 'Enabled' : 'Disabled',
+          ),
+          _configRow(
+            'Web map switch',
+            PlatformService.isWebMapEnabled ? 'Enabled' : 'Disabled',
+          ),
+          _configRow(
+            'Google Places search fallback',
+            PlatformService.isGooglePlacesFallbackEnabled
+                ? 'Enabled'
+                : 'Disabled',
+          ),
+          _configRow(
+            'Video quota / day',
+            '${SyncConfig.dailyVideoUploadQuota} uploads',
+          ),
+          _configRow(
+            'Video file size cap',
+            '${SyncConfig.maxVideoFileSizeMB} MB',
+          ),
+          _configRow(
+            'Video cooldown',
+            '${SyncConfig.videoUploadCooldownSeconds} sec',
+          ),
+          _configRow(
+            'Emergency recording cap',
+            '${SyncConfig.maxEmergencyRecordingSeconds} sec',
+          ),
           if (metrics.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(
               'Top platform metrics',
-              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
-            ...metrics.map((metric) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _metricRow(metric),
-            )),
+            ...metrics.map(
+              (metric) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _metricRow(metric),
+              ),
+            ),
           ],
         ],
       ),
@@ -896,7 +1119,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
           const SizedBox(height: 4),
           Text(
             title,
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),
@@ -913,7 +1138,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             flex: 2,
             child: Text(
               label,
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -921,7 +1148,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             flex: 3,
             child: Text(
               value,
-              style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
+              style: AppTextStyles.bodySmall.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.right,
             ),
           ),
@@ -956,14 +1185,26 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(metricName, style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600)),
-                Text(platform, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                Text(
+                  metricName,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  platform,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
           Text(
             '$count',
-            style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -982,12 +1223,14 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
           _actionButton(
             label: 'Platform Settings',
             icon: Icons.settings_applications_outlined,
-            onPressed: () => Navigator.pushNamed(context, '/admin/platform-settings'),
+            onPressed: () =>
+                Navigator.pushNamed(context, '/admin/platform-settings'),
           ),
           _actionButton(
             label: 'Video Controls',
             icon: Icons.video_settings_outlined,
-            onPressed: () => Navigator.pushNamed(context, '/admin/video-control'),
+            onPressed: () =>
+                Navigator.pushNamed(context, '/admin/video-control'),
           ),
           _actionButton(
             label: 'Sync Settings',
@@ -1004,7 +1247,11 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     );
   }
 
-  Widget _actionButton({required String label, required IconData icon, required VoidCallback onPressed}) {
+  Widget _actionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
     return SizedBox(
       width: MediaQuery.of(context).size.width > 700 ? 220 : double.infinity,
       child: OutlinedButton.icon(
@@ -1015,7 +1262,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           foregroundColor: AppColors.primaryDark,
           side: BorderSide(color: AppColors.primary.withOpacity(0.35)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
     );
@@ -1025,19 +1274,30 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
     final recommendations = <String>[];
 
     if (_summary['queueHealthy'] != true) {
-      recommendations.add('ตรวจ failed jobs และ requeue jobs ที่จำเป็นก่อน backlog โตขึ้น');
+      recommendations.add(
+        'ตรวจ failed jobs และ requeue jobs ที่จำเป็นก่อน backlog โตขึ้น',
+      );
     }
     if (_toDouble(_summary['estimatedMapCost']) > 0) {
-      recommendations.add('ลดการใช้ Web Map ที่ไม่จำเป็น หรือปิดในหน้า Platform Settings');
+      recommendations.add(
+        'ลดการใช้ Web Map ที่ไม่จำเป็น หรือปิดในหน้า Platform Settings',
+      );
     }
-    if (AppConfig.vegaAiMode == VegaAiMode.live && !AppConfig.vegaAiKillSwitch) {
-      recommendations.add('ใช้ AI kill-switch เมื่อมี burst usage หรือค่าใช้จ่ายเกิน budget');
+    if (AppConfig.vegaAiMode == VegaAiMode.live &&
+        !AppConfig.vegaAiKillSwitch) {
+      recommendations.add(
+        'ใช้ AI kill-switch เมื่อมี burst usage หรือค่าใช้จ่ายเกิน budget',
+      );
     }
     if (SyncConfig.dailyVideoUploadQuota > 50) {
-      recommendations.add('ถ้าผู้ใช้เพิ่มขึ้นมาก ให้ลด video quota ต่อวันลงเพื่อคุม CPU/IO');
+      recommendations.add(
+        'ถ้าผู้ใช้เพิ่มขึ้นมาก ให้ลด video quota ต่อวันลงเพื่อคุม CPU/IO',
+      );
     }
     if (recommendations.isEmpty) {
-      recommendations.add('สถานะระบบปกติ: รักษา config ปัจจุบันและตรวจ queue health เป็นระยะ');
+      recommendations.add(
+        'สถานะระบบปกติ: รักษา config ปัจจุบันและตรวจ queue health เป็นระยะ',
+      );
     }
 
     return _sectionCard(
@@ -1054,13 +1314,19 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
                   children: [
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
-                      child: Icon(Icons.check_circle, size: 18, color: AppColors.success),
+                      child: Icon(
+                        Icons.check_circle,
+                        size: 18,
+                        color: AppColors.success,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         item,
-                        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                   ],
@@ -1088,7 +1354,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
           Expanded(
             child: Text(
               'ไม่สามารถโหลดข้อมูลบางส่วนได้: $_errorMessage',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
         ],
@@ -1136,12 +1404,16 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
                   children: [
                     Text(
                       title,
-                      style: AppTextStyles.heading5.copyWith(fontWeight: FontWeight.w700),
+                      style: AppTextStyles.heading5.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -1164,7 +1436,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             flex: 2,
             child: Text(
               label,
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
           Expanded(
@@ -1180,7 +1454,9 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
+              style: AppTextStyles.bodySmall.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -1200,12 +1476,17 @@ class _SystemMonitorPageState extends State<SystemMonitorPage> {
       ),
       child: Row(
         children: [
-          Icon(healthy ? Icons.verified_outlined : Icons.warning_amber_rounded, color: color),
+          Icon(
+            healthy ? Icons.verified_outlined : Icons.warning_amber_rounded,
+            color: color,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
