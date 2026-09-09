@@ -488,19 +488,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     const SizedBox(height: 8),
                                     _buildRecentNames(),
                                   ],
-                                  const SizedBox(height: 16),
-                                  _buildModernTextField(
-                                    controller: _descCtrl,
-                                    label: 'คำอธิบาย (ไม่บังคับ)',
-                                    hint:
-                                        'รายละเอียดเพิ่มเติม เช่น ระดับฝีมือ อุปกรณ์...',
-                                    maxLines: 3,
-                                    maxLength: 500,
-                                  ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 32),
                             _buildCollapsibleSection(
                               title: 'รูปภาพ',
                               icon: Icons.image_outlined,
@@ -534,9 +525,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 32),
                             _buildCollapsibleSection(
-                              title: 'การตั้งค่าก๊วน',
+                              title: 'เงื่อนไขเพิ่มเติม',
                               icon: Icons.settings_outlined,
                               expanded: _showSettingsSection,
                               onToggle: () => setState(
@@ -546,6 +537,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+
+                                  const SizedBox(height: 20),
                                   const Text(
                                     'เพศที่ต้องการชวนเข้าร่วม',
                                     style: TextStyle(
@@ -574,12 +567,20 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     onChanged: (v) =>
                                         setState(() => _ownerAutoJoin = v),
                                   ),
+                                                                        const Divider(height: 24),                              _buildModernTextField(
+                                    controller: _descCtrl,
+                                    label: 'คำอธิบาย (ไม่บังคับ)',
+                                    hint:
+                                        'รายละเอียดเพิ่มเติม เช่น ระดับฝีมือ อุปกรณ์...',
+                                    maxLines: 3,
+                                    maxLength: 500,
+                                  ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 32),
                             _buildModernSection(
-                              title: 'สถานที่และพิกัด',
+                              title: 'สถานที่ตั้งสนาม',
                               icon: Icons.location_on_outlined,
                               child: Column(
                                 children: [
@@ -1482,8 +1483,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   textInputAction: TextInputAction.search,
                   onSubmitted: _searchPlace,
                   decoration: const InputDecoration(
-                    hintText:
-                        'ค้นหาด้วยรหัสไปรษณีย์ (เช่น 10140) หรือชื่อสถานที่...',
+                    hintText: 'รหัสไปรษณีย์ | ชื่อสถานที่',
                     hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
                     border: InputBorder.none,
                     isDense: true,
