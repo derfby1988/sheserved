@@ -92,7 +92,29 @@ where username = '<test-username>';
 - ห้ามเพิ่ม fallback จาก direct mode ไป backend แบบเงียบ ๆ เพราะจะทำให้ผลทดสอบและ security boundary ไม่ชัดเจน
 - `USE_BACKEND_AUTH=false` ไม่ได้ปิด local API, WebSocket หรือ sync ทั้งหมด; ฟีเจอร์เหล่านั้นอาจยังต้องใช้ backend
 
-## 5. การย้ายกลับไป Backend Auth
+## 5. Coexistence matrix ระหว่าง Phase 13.3
+
+การเลือกแนวทาง **Security-first staged rollout** ไม่ได้ revoke direct Supabase auth ทันที แต่จำกัด direct mode ให้เป็น UI/Supabase compatibility path เท่านั้น:
+
+| ความสามารถ | `USE_BACKEND_AUTH=false` | `USE_BACKEND_AUTH=true` |
+|---|---|---|
+| Direct Supabase login/register/social | อนุญาตเฉพาะ development/testing | ไม่ใช่ path หลัก |
+| Strict protected HTTP | ไม่รับรอง; อาจถูกปฏิเสธด้วย `401` | ใช้ verified Backend Bearer JWT |
+| Private WebSocket connection/room | ไม่รับรอง; ใช้ได้เฉพาะ public/anonymous allowlist | ใช้ verified Backend access token หลัง socket/room gates |
+| `x-user-id` หรือ Supabase user ID เป็น actor | ห้ามใช้เพื่อยกระดับสิทธิ์ | ห้ามใช้โดยเด็ดขาด |
+| Silent fallback จาก strict backend path | ห้าม | ห้าม |
+| Production/release build | ห้าม | ต้องผ่าน production gates เพิ่มเติม |
+
+ข้อกำหนดสำคัญ:
+
+- Direct mode ยังใช้ทดสอบ UI และ Supabase compatibility ได้ โดยไม่ต้องเปิด `websocket-server` สำหรับ authentication
+- Direct mode ไม่ได้สร้าง Backend access/refresh JWT และไม่ถือเป็น verified backend identity
+- Phase 13.3 strict routes และ private WebSocket rooms ต้อง fail closed เมื่อไม่มี verified Backend JWT
+- Public/anonymous features อนุญาตได้เฉพาะ endpoint/event ที่อยู่ใน allowlist และห้ามนำไปใช้กับ private data
+- ห้ามส่ง `x-user-id`, `userId` หรือ Supabase user ID เพื่อหลบ strict identity boundary
+- ยังไม่ revoke direct Supabase auth จนกว่าจะผ่าน compatibility/cutover gate ของ Phase 13.5
+
+## 6. การย้ายกลับไป Backend Auth
 
 เมื่อพร้อมเปิดใช้ Phase 13.2 เป็น path หลัก:
 
@@ -106,7 +128,7 @@ where username = '<test-username>';
 
 ห้ามลบ backend implementation, migrations หรือ audit/session logic ระหว่าง temporary window
 
-## 6. Test matrix
+## 7. Test matrix
 
 | กรณีทดสอบ | โหมด | ผลที่คาดหวัง |
 |---|---|---|
@@ -120,7 +142,7 @@ where username = '<test-username>';
 | Session restore | direct | ไม่มี Phase 13.2 JWT restore; เริ่มเป็น anonymous ได้ |
 | Session restore | backend | restore ผ่าน access/refresh session |
 
-## 7. Production guard
+## 8. Production guard
 
 `USE_BACKEND_AUTH=false` ห้ามใช้ใน:
 

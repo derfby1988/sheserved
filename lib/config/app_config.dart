@@ -23,7 +23,7 @@ class AppConfig {
   // =====================================================
 
   /// IP หรือ Local Hostname ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '192.168.0.114:8080';
+  static const String mainMachineIp = '192.168.1.129:8080';
 
   /// URL ของ API Server ผ่าน Caddy
   static const String localApiUrl = 'http://$mainMachineIp';
