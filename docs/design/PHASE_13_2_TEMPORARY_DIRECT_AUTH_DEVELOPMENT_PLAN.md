@@ -114,6 +114,20 @@ where username = '<test-username>';
 - ห้ามส่ง `x-user-id`, `userId` หรือ Supabase user ID เพื่อหลบ strict identity boundary
 - ยังไม่ revoke direct Supabase auth จนกว่าจะผ่าน compatibility/cutover gate ของ Phase 13.5
 
+### 5.1 ฟีเจอร์ที่ direct mode จะใช้ไม่ได้หลัง Phase 13.3 (ต้องใช้ `USE_BACKEND_AUTH=true`)
+
+| ฟีเจอร์ | เหตุผล |
+|---|---|
+| Personal socket room `user-{id}` และ targeted emergency alert | server join room จาก verified `socket.userId` เท่านั้น; anonymous socket ไม่มี personal room |
+| Private chat/room (consultation, emergency chat, fitness group) | ต้องผ่าน membership check ด้วย verified identity |
+| `location-update`, `volunteer-route`, `video-interaction` แบบมี actor | payload `userId` ที่ไม่มี verified socket identity จะถูกปฏิเสธ |
+| Local API ของ video/victim/consultation/watermark ที่เป็น protected route | strict route รับเฉพาะ `Authorization: Bearer <Backend JWT>` |
+| Session restore/refresh ของ Backend | direct mode ไม่มี Backend access/refresh token |
+
+สิ่งที่ direct mode ยังใช้ได้: login/register/social ผ่าน Supabase, UI ทั่วไป, Supabase read/write ตาม RLS เดิม, public video browsing/viewer-count และ endpoint/event ที่อยู่ใน public allowlist
+
+**ข้อควรระวังเรื่อง fallback:** เมื่อ Local API ตอบ `401/403` ให้ถือเป็น auth error และ fail closed — ห้าม fallback ไปเขียน Supabase แทน (มิฉะนั้นจะเกิด data split Local/Cloud และ bypass strict path)
+
 ## 6. การย้ายกลับไป Backend Auth
 
 เมื่อพร้อมเปิดใช้ Phase 13.2 เป็น path หลัก:

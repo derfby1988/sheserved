@@ -1581,16 +1581,112 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **Coexistence matrix:** `USE_BACKEND_AUTH=false` = direct Supabase login ได้ใน dev/test, strict protected HTTP/private WebSocket ไม่รับรอง, production ห้ามใช้; `USE_BACKEND_AUTH=true` = Backend JWT สำหรับ security/staging gate และ private HTTP/WebSocket; default ยังคงเป็น `true`
 
 ### Phase 13.3 — Verified identity ที่ HTTP และ WebSocket (Decision Q2 = A, Q9 = A)
-- **Decision Q2 = A:** `websocket-server` เดิมคือ identity authority; `middleware/auth.js` และ `routes/auth.js` เป็นฐานที่มีอยู่ ส่วน Phase 13.3 ต้องสร้าง `middleware/socket-auth.js` และย้าย token verification ออกจาก `server.js`; หลังงานเสร็จ `server.js` ทำเพียง wiring (`io.use(socketAuth(...))`/mount routes) **ห้ามมี token decode/verify ใน `server.js`**
-- `middleware/auth.js`/`socket-auth.js`: verify algorithm allowlist HS256, known `kid` (active/previous), signature, issuer, audience, expiry, session revoke และ active user แบบ fail closed; **เลิกใช้ `x-user-id` เป็น identity** (เหลือได้เฉพาะ tracing หลัง redaction)
-- **ย้าย inline endpoints ทั้งหมดของ `server.js` (~33 จุด) เข้าสู่ `routes/` ทีละกลุ่ม** พร้อมใช้ `req.userId` แทน `userId`/`responderId` จาก body/query (จุดเสี่ยงที่พบ: ~1603, 1663, 1695, 1714, 1817, 1927, 2104) และปฏิเสธ mismatch
-- **Decision Q9 = A:** handshake รับ signed access token เท่านั้น; ทุก `join` ต้องผ่าน DB membership check โดยใช้ Supabase direct-pool adapter/`sheserved_app` จาก 13.1 (ไม่ใช้ service_role ใน request handler) แล้ว cache ผลใน Redis 60 วิ; ก่อน 13.1 gate ผ่าน ห้ามเปิด room authorization ใน production
-- ห้อง Fitness ตรวจ `chat_rooms` → `fitness_groups` → active `fitness_group_members` และไม่มี active `fitness_group_blocklist`; ต้องมี migration ผูก `chat_rooms.group_id` ↔ `fitness_groups.id`; consultation/emergency ตรวจ membership ของห้องนั้น
-- invalidate cache + force-leave socket ทันทีเมื่อถอดสมาชิก/บล็อก/revoke; หลาย instance ใช้ Redis Pub/Sub; ตรวจซ้ำก่อน `message:send`, `history/read` และ event ที่มีผลถาวร; `typing` ใช้ผลจาก join ได้
-- Flutter เปลี่ยน 3 จุด `x-user-id` (`victim_repository`, `watermark_repository`, `consultation_repository`) ไปใช้ `Authorization: Bearer`; private Supabase read ใช้ PostgREST token แยกจาก access token หลัก
-- **จุดหยุดที่ปลอดภัย (Safe Stop):** ✅ แนะนำจุดหยุดที่สี่ — หลัง 13.3 HTTP/WebSocket identity verify แล้วและ room membership ทำงาน แต่ Fitness gateway/cutover ยังไม่เปิด; direct mutation legacy ยังต้องระบุ residual risk
-- **Deliverable:** release 13.3 = verified middleware + `socket-auth` + BOLA refactor + room authorization + Flutter Bearer migration
-- Gate: forged/unsigned/expired/wrong-issuer-audience/revoked token → 401; missing/conflicting identity → 401; actor mismatch → ปฏิเสธ; join ห้องไม่ได้รับอนุญาต → ปฏิเสธ; `message:send`/history หลัง revoke → ปฏิเสธ; public/anonymous allowlist ไม่ fallback ไป protected
+
+**สถานะการวางแผน:** เริ่มได้ แต่ต้องทำแบบ **Security-first staged rollout** และห้ามถือว่า `socket-auth` หรือ room authorization มีอยู่แล้ว เพียงเพราะมีชื่ออยู่ในแผน
+
+#### ทางเลือกหลักเพื่อป้องกันผลกระทบ
+
+| ผลกระทบ | ทางเลือก | ระดับคำแนะนำ | หลักการตัดสินใจ |
+|---|---|---:|---|
+| Direct Supabase login ใช้งานไม่ได้ | A. คง `USE_BACKEND_AUTH=false` เป็น UI/Supabase compatibility path และไม่เปิด strict path ให้ mode นี้ | **1** | กระทบน้อยสุด, rollback ง่าย, สอดคล้องกับ Phase 13.5 gate |
+| Direct Supabase login ใช้งานไม่ได้ | B. ทำ bridge จาก Supabase session เป็น Backend JWT | 3 | ขอบเขตใหญ่และเสี่ยงสร้าง identity boundary ซ้ำ; ไม่แนะนำใน Phase 13.3 |
+| Direct Supabase login ใช้งานไม่ได้ | C. Revoke direct auth ทันที | 4 | ไม่เลือก; ทำลาย development workflow และเกินขอบเขตที่อนุมัติ |
+| Legacy `x-user-id` ทำให้ client เก่าพัง | A. แยก strict route กับ legacy compatibility route พร้อม metric/วันหมดอายุ | **1** | ปิดความเสี่ยงใหม่โดยไม่ทำ big-bang outage |
+| Legacy `x-user-id` ทำให้ client เก่าพัง | B. เปิด flag ปิดทั้งระบบทันที | 3 | ทดสอบง่ายแต่ blast radius สูง; ใช้ได้เฉพาะหลัง compatibility gate |
+| WebSocket handshake spoof | A. สร้าง `socket-auth.js` และใช้ signed Backend JWT; legacy handshake ต่อได้เฉพาะ public/anonymous | **1** | ปิดช่อง spoof ก่อน โดยไม่ทำให้ public browsing หยุด |
+| WebSocket handshake spoof | B. คง unsigned compatibility ต่อไป | 4 | ไม่เลือก; identity ยัง spoof ได้ |
+| Private room BOLA | A. ตัดสิน schema ก่อน แล้วใช้ deny-by-default membership adapter + Redis invalidation | **1** | ไม่ผูก authorization กับ schema ที่ยังไม่ยืนยัน |
+| Private room BOLA | B. เชื่อ `roomId`/JWT claims จาก client | 4 | claims stale และเปิดช่อง IDOR |
+| Flutter call sites ส่ง actor ID | A. migrate เป็น wave เล็ก เริ่มจาก low-blast-radius route พร้อม static scan/device test | **1** | ทดสอบและ rollback เป็นราย wave |
+| Flutter call sites ส่ง actor ID | B. แก้ทุก call site พร้อมกัน | 3 | เร็วแต่แยกสาเหตุ regression ยาก |
+| Token revoke ระหว่างใช้งาน | A. ตรวจ session ที่ handshake และ event สำคัญ พร้อม force-leave ผ่าน Pub/Sub | **1** | fail closed และลด private data exposure |
+| Token revoke ระหว่างใช้งาน | B. ตรวจเฉพาะตอน connect | 3 | implementation ง่ายแต่ session ที่ถูก revoke ยังใช้งานต่อได้ |
+| Silent fallback ไป Supabase เมื่อ strict route ตอบ 401/403 (`video_repository` dual-write/fallback) | A. แยก auth error ออกจาก network error: 401/403 ต้อง refresh-once แล้ว fail closed ห้ามเขียน Supabase แทน; fallback ใช้ได้เฉพาะ network/5xx ตาม policy เดิม | **1** | ป้องกัน data split Local/Cloud และไม่ให้ strict enforcement กลายเป็นช่องเขียนตรง |
+| Silent fallback ไป Supabase เมื่อ strict route ตอบ 401/403 | B. คง fallback ทุก error เหมือนเดิม | 4 | ไม่เลือก; strict path จะถูก bypass เงียบ ๆ |
+| Flutter socket client ส่ง `auth.userId`/`token` เป็น raw identity และ `user-connected` ใช้ `userId` จาก client เพื่อ join `user-{id}` | A. `websocket_service.dart` ส่ง Backend access token ใน handshake; server join personal room จาก verified `socket.userId` เท่านั้น; direct mode ต่อได้แบบ anonymous/public | **1** | ปิด spoof personal room และ emergency alert misrouting |
+| Flutter socket client ส่ง raw identity | B. คง `userId` ใน handshake แล้วให้ server เชื่อ | 4 | ไม่เลือก; เท่ากับ unsigned identity เดิม |
+| Access token TTL 15 นาที บน socket ที่เชื่อมต่อยาว | A. ตรวจ exp/revoke ที่ handshake และ event สำคัญ; client reconnect ด้วย token ใหม่หลัง refresh; token หมดอายุ → server สั่ง re-auth ไม่ silent-accept | **1** | สอดคล้อง fail closed และ refresh-once ของ 13.2 |
+| Access token TTL 15 นาที บน socket | B. ยืด TTL หรือไม่ตรวจ exp หลัง connect | 3 | ลด friction แต่ขัด Q3/Q6 และเพิ่ม exposure หลัง revoke |
+| Middleware อื่นใช้ `x-user-id` เป็น key (`rate-limiter`, `idempotency`, `request-context`, `error-handler`) | A. ใช้ `req.userId` ที่ verify แล้ว; ไม่มี identity → key ตาม IP/anonymous; ห้ามอ่าน header ดิบ | **1** | ปิดช่อง spoof header เพื่อหลบ rate limit หรือชน idempotency key คนอื่น |
+| Middleware อื่นใช้ `x-user-id` | B. คงไว้เพราะ "ไม่ใช่ authorization" | 3 | header ปลอมยังกระทบ quota/idempotency ของ user อื่นได้ |
+| Identity source แยกกัน: JWT path ใช้ Supabase gateway pool, legacy path ใช้ local pool `users` | A. P0 ยืนยันว่า `users.id`/`is_active`/role ตรงกันสองฝั่ง และกำหนด source of truth เดียวสำหรับ active/revoke check | **1** | ป้องกัน user ที่ inactive/revoked ฝั่งหนึ่งแต่ยังผ่านอีกฝั่ง |
+
+**มติที่เสนอ:** เลือก A ในทุกแถวข้างต้น; ไม่สร้าง Supabase-to-Backend bridge และไม่ revoke direct auth ใน Phase 13.3
+
+**ผลกระทบต่อ development ที่ต้องยอมรับหลัง 13.3 (บันทึกไว้ใน `docs/design/PHASE_13_2_TEMPORARY_DIRECT_AUTH_DEVELOPMENT_PLAN.md` ด้วย):** `USE_BACKEND_AUTH=false` จะไม่มี personal room `user-{id}`, emergency alert แบบ targeted, private chat/room และ strict HTTP; ทดสอบ real-time/volunteer/consultation/victim/watermark flow ต้องใช้ `USE_BACKEND_AUTH=true` เท่านั้น
+
+#### ลำดับ phase ใหม่เพื่อให้ทดสอบผลกระทบเป็นช่วง
+
+1. **P0 — Preflight, inventory และ test harness**
+   - ตรวจ `middleware/auth.js`, `lib/jwt.js`, gateway pool, local pool และ session-revocation query ให้ใช้ identity contract เดียวกัน; ยืนยันว่า `users` ฝั่ง local และ Supabase ให้ผล active/role ตรงกัน
+   - ทำ inventory HTTP routes/Socket.IO events และบันทึก baseline ของ client ที่ใช้ `x-user-id`/direct auth
+   - **กำหนด public allowlist อย่างชัดเจน** (เช่น `join-room` เฉพาะ `video-*`, `viewer-count`, public video/list endpoints) — สิ่งที่ไม่อยู่ใน allowlist ถือเป็น protected โดย default
+   - เพิ่ม forged, expired, revoked, actor-mismatch และ anonymous-access tests
+   - กำหนด rollback unit ต่อ wave: server flag (เช่น `STRICT_AUTH_ROUTES`/`STRICT_SOCKET_AUTH`) + revert commit ของ wave นั้น โดยไม่แตะ wave ก่อนหน้า
+   - **Gate:** pool/role assumptions, test harness, public allowlist, compatibility baseline และ rollback note ผ่าน review
+
+2. **P0 — HTTP identity contract แบบไม่ตัด legacy ทันที**
+   - ยืนยัน verified `req.userId` และปฏิเสธ actor mismatch ใน protected handlers
+   - เปิด strict enforcement แบบ route/cohort opt-in; legacy routes ยังแยกและติด metric/วันหมดอายุ
+   - เริ่มจาก route ที่มีความเสี่ยงสูงแต่ call site น้อย เพื่อวัด `401`, `403`, fallback และ regression
+   - **Gate:** route pilot ผ่าน HTTP security tests และไม่มี strict route fallback ไป direct Supabase
+
+3. **P1 — Flutter HTTP pilot wave**
+   - ย้าย `consultation_repository` ก่อนเป็น wave แรก แล้วจึง `victim_repository`, `watermark_repository` และ `video_repository` (7 จุด — ทำเป็น sub-wave ตาม endpoint)
+   - ใช้ `AuthenticatedHttpClient`/`Authorization: Bearer`; ห้ามใช้ `x-user-id` หรือ actor ID ใน body เพื่อ authorization
+   - **แก้ fallback policy ใน `video_repository`:** 401/403 จาก Local API → refresh-once แล้ว fail closed พร้อมแจ้ง UI; **ห้าม** dual-write/fallback ไป Supabase เมื่อเป็น auth error; fallback คงไว้เฉพาะ network/timeout/5xx ตาม policy เดิม
+   - ทดสอบแต่ละ wave ด้วย `USE_BACKEND_AUTH=true`; คง `USE_BACKEND_AUTH=false` สำหรับ UI/Supabase compatibility เท่านั้น
+   - **Gate:** device test, refresh-once, logout, 401/403 behavior (ไม่มีแถวใหม่ใน Supabase จาก auth error) และ static scan ของ wave ผ่านก่อนขยาย
+
+4. **P0 — WebSocket connection authentication**
+   - สร้าง `middleware/socket-auth.js`; `server.js` ทำเพียง wiring และห้าม decode/verify token เอง
+   - รับ signed Backend access token เท่านั้นสำหรับ authenticated socket; ห้ามใช้ handshake `auth.userId`/`auth.token` หรือ `x-user-id` เป็น raw user ID
+   - ตรวจ signature, `kid`, issuer, audience, expiry, token type, session revoke และ active user; anonymous ใช้ได้เฉพาะ public allowlist จาก P0
+   - `user-connected`/personal room `user-{id}` ต้องมาจาก verified `socket.userId` เท่านั้น; payload `userId` จาก client ใช้ได้เฉพาะเพื่อตรวจ mismatch แล้วปฏิเสธ
+   - **Flutter `websocket_service.dart`:** ส่ง Backend access token ใน `setAuth`; หลัง refresh token ต้อง reconnect ด้วย token ใหม่; เมื่อ server แจ้ง `auth_expired`/`connect_error` ห้าม retry ด้วย token เดิม; direct mode เชื่อมต่อแบบ anonymous เท่านั้น
+   - ใช้ dedicated test client ก่อนผูกกับทุก Flutter feature
+   - **Gate:** forged/unsigned/expired/revoked handshake ปฏิเสธ; valid JWT/reconnect/refresh-then-reconnect ผ่าน; direct mode ไม่ยกระดับเป็น private socket และไม่ได้ personal room
+
+5. **P1 — Remaining HTTP/BOLA refactor และ event actor checks**
+   - ย้าย inline endpoints ใน `server.js` ทีละกลุ่ม และใช้ `req.userId`/`socket.userId` ที่ verify แล้วเท่านั้น
+   - socket events ที่มี actor (`location-update`, `video-interaction`, `volunteer-route`, `emergency-alert` ฯลฯ) ใช้ `socket.userId`; payload `userId` ที่ไม่ตรง → ปฏิเสธ + `authz.denied` (แทน warn-only ปัจจุบัน)
+   - migrate `rate-limiter`, `idempotency`, `request-context` และ `error-handler` ให้ใช้ verified identity หรือ IP/anonymous key โดยไม่อ่าน `x-user-id` ดิบ
+   - ทำ static scan หา unsigned decode, `x-user-id`, client `password_hash` และ direct protected mutation
+   - **Gate:** all protected pilot routes/event actors reject mismatch, rate-limit/idempotency key ไม่ spoof ได้ และ legacy usage มี metric ครบ
+
+6. **P1 — Room authorization data-model decision และ adapter**
+   - ยืนยัน source of truth ของ `chat_rooms`, `participant_ids`, `room_ref_id` และความสัมพันธ์กับ `fitness_groups`; ห้ามสมมติ `chat_rooms.group_id`
+   - อนุมัติ mapping/migration หรือ junction model และแยก policy ของ Fitness, consultation และ emergency
+   - สร้าง `authorizeRoomJoin(userId, roomId, roomType)` ผ่าน direct-pool/`sheserved_app`; ห้าม service_role ใน request path
+   - **Gate:** schema, query plan, deny-by-default และ privacy/error contract ผ่าน review
+
+7. **P1 — Join/message/history authorization และ revocation propagation**
+   - ทุก private join ตรวจ membership และ cache Redis 60 วินาที; ตรวจซ้ำก่อน `message:send`, `history/read` และ persistent events
+   - invalidate cache + force-leave เมื่อ remove/block/revoke; หลาย instance ใช้ Redis Pub/Sub
+   - `join-room` ห้าม `socket.join()` ก่อน authorization; public video แยกจาก private policy
+   - **Gate:** unauthorized join/message/history ปฏิเสธ, revoke หยุด private access, public allowlist ยังทำงาน
+
+8. **P2 — Observability, compatibility monitoring และ release gate**
+   - เพิ่ม redacted events: `auth.accepted`, `auth.rejected`, `authz.denied`, `room.join.denied`, `session.revoked`
+   - monitor legacy `x-user-id` และ direct `password_hash`; ห้าม revoke direct Supabase auth จนกว่า Phase 13.5 compatibility/cutover gate
+   - จัดทำ rollback, minimum-version และ route/cohort enforcement runbook
+   - **Final gate:** security/device tests, compatibility metrics, rollback evidence และ safe-stop review ครบก่อนขยาย enforcement
+
+**ข้อห้ามระหว่าง Phase 13.3:**
+- ห้ามปิด direct Supabase auth ทั้งระบบ และห้ามสร้าง Supabase-session-to-Backend-JWT bridge
+- ห้ามใช้ Supabase user ID, `x-user-id`, handshake `auth.userId` หรือ payload `userId` เป็น trusted actor
+- ห้าม fallback เงียบจาก strict Backend path ไป direct Supabase **รวมถึงเมื่อได้ 401/403** — auth error ต้อง fail closed ไม่ใช่เขียน Cloud แทน
+- ห้ามเปิด private room authorization ก่อน schema/membership gate ผ่าน
+- ห้าม decode/verify token ใน `server.js` หรือใน handler; ต้องผ่าน `middleware/auth.js`/`socket-auth.js` เท่านั้น
+- ห้ามยืด `ACCESS_TTL` หรือข้าม exp/revoke check เพื่อลด friction ของ socket
+- ห้ามเปิด `MIN_APP_VERSION_ENFORCE` หรือบังคับ force-update กับผู้ใช้จริงใน phase นี้
+- ห้ามเปิด strict enforcement มากกว่าหนึ่ง wave พร้อมกันโดยยังไม่ผ่าน gate ของ wave ก่อนหน้า
+- ห้าม log token, refresh token, password, JWT secret หรือ payload ที่มี PII ใน security events
+- ห้ามอ้างว่า production-ready
+
+- **จุดหยุดที่ปลอดภัย:** หยุดหลัง P0 HTTP หรือ P0 WebSocket ได้โดยไม่เปิด room/private enforcement; หยุดหลัง P1 room gate ได้ก่อน Fitness gateway/cutover ของ Phase 13.4
+- **Deliverable:** verified HTTP middleware, `socket-auth`, BOLA refactor, room authorization adapter/policy, Flutter Bearer waves, security tests, compatibility metrics และ rollback evidence
+- **Final gate:** forged/unsigned/expired/wrong-issuer-audience/revoked token → 401; missing/conflicting identity → 401; actor mismatch → ปฏิเสธ; unauthorized room/message/history → ปฏิเสธ; revoke → force-leave/หยุด private access; public/anonymous allowlist ไม่ fallback ไป protected
 
 ### Phase 13.4 — Fitness Gateway canary (Decision Q10 = B, Q8 = A)
 - เพิ่ม Backend endpoints ตามตาราง "Fitness secure endpoint/RPC mapping"; ทุก mutation ใช้ Supabase direct-pool adapter ผ่าน `sheserved_gateway` → `SET LOCAL ROLE sheserved_app` → `SET LOCAL app.*` → secure RPC/query ใน transaction เดียว
