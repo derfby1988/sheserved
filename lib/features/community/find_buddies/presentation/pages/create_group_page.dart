@@ -46,6 +46,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   bool _allowPop = false;
   bool _sportsLoadFailed = false;
   List<String> _recentGroupNames = [];
+  bool _showImageSection = false;
+  bool _showSettingsSection = false;
   gm.GoogleMapController? _mapController;
   bool _mapLoadLogged = false;
   final _searchPlaceCtrl = TextEditingController();
@@ -499,9 +501,13 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               ),
                             ),
                             const SizedBox(height: 24),
-                            _buildModernSection(
+                            _buildCollapsibleSection(
                               title: 'รูปภาพ',
                               icon: Icons.image_outlined,
+                              expanded: _showImageSection,
+                              onToggle: () => setState(
+                                () => _showImageSection = !_showImageSection,
+                              ),
                               child: Column(
                                 children: [
                                   ImageUploadField(
@@ -529,9 +535,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               ),
                             ),
                             const SizedBox(height: 24),
-                            _buildModernSection(
+                            _buildCollapsibleSection(
                               title: 'การตั้งค่าก๊วน',
                               icon: Icons.settings_outlined,
+                              expanded: _showSettingsSection,
+                              onToggle: () => setState(
+                                () => _showSettingsSection =
+                                    !_showSettingsSection,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -626,6 +637,67 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           ),
           child: child,
         ),
+      ],
+    );
+  }
+
+  Widget _buildCollapsibleSection({
+    required String title,
+    required IconData icon,
+    required bool expanded,
+    required VoidCallback onToggle,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(icon, size: 20, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (!expanded) ...[
+                    const Text(
+                      'แตะเพื่อเปิด',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.primary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (expanded)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.backgroundCream.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+            ),
+            child: child,
+          ),
       ],
     );
   }
