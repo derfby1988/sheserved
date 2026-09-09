@@ -1955,6 +1955,17 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 
 > UI ระบบค่าใช้จ่าย 2 ระดับ ยึดตามมติ [ระบบค่าใช้จ่าย 2 ระดับ (ตัดสินใจแล้ว 2026-09-08)](#ระบบค่าใช้จ่าย-2-ระดับ-ตัดสินใจแล้ว-2026-09-08) และใช้ pattern เดียวกับ Phase 14.1–14.3: section แบบ `_buildModernSection`, การแก้ไขรายการผ่าน Modal Bottom Sheet, live validation, บันทึกลง Draft และป้องกันข้อมูลหายร่วมกับ Unsaved Changes Guard ของ 14.2.1
 
+- **14.4.0 Database, Security & Data Contract Foundation:**
+  - สร้าง migration แยกสำหรับ `fitness_group_cost_standards` และ `fitness_group_session_cost_items`; ยังไม่สร้าง `fitness_group_cost_obligations` จนกว่าจะเปิด payment phase ตามมติเดิม
+  - `fitness_group_cost_standards` ต้องมี `standard_type`, `category`, `amount`, `billing_period`, `pricing_unit`, `default_quantity`, `payment_timing`, `currency`, `is_active`, `created_by`, `created_at`, `updated_at` พร้อม foreign key, index และ cross-field CHECK constraints ตาม contract ใน Phase 13.0
+  - `fitness_group_session_cost_items` ต้องเก็บ snapshot ของ `name/category/pricing_unit/unit_amount/quantity/payment_timing/currency` และ `standard_id/source_type`; template ที่แก้ภายหลังต้องไม่เปลี่ยนข้อมูลของ session เดิม
+  - เพิ่ม partial unique index ป้องกันชื่อรายการ active ซ้ำภายในก๊วนและ `standard_type` เดียวกัน โดยใช้ `lower(name)` เพื่อป้องกัน race condition ที่ UI ตรวจไม่ทัน
+  - ใช้ `is_active=false` แทนการลบ standard ที่เคยถูกเลือกใช้แล้ว; ห้ามเปิด mutation ให้ `anon` หรือ `authenticated` โดยตรงหาก mutation path ของ Fitness ใช้ Gateway ตาม Q7-C
+  - เพิ่ม RLS/secure RPC ตรวจ owner/manager และ `group_id` ของ standard/session ทุกครั้ง; ห้ามเชื่อ `group_id` จาก client เพียงอย่างเดียว และห้ามผู้ใช้ต่างก๊วนอ่านหรือแก้ไขข้อมูล
+  - เพิ่ม public views ตาม data contract: active `group_fee` เท่านั้นสำหรับ browse และ session cost snapshot สำหรับรอบที่เปิดเผย; ห้ามเปิด `created_by`, `standard_id`, source metadata, payment status, payer identity หรือ obligation fields ใน public view
+  - เพิ่ม `created_by`, `updated_by`, `updated_at` และ audit trail สำหรับการสร้าง แก้ไข และปิดใช้งานรายการ เพื่อให้ตรวจสอบการเปลี่ยนข้อมูลด้านเงินได้
+  - ใช้ `NUMERIC(10,2)`/decimal semantics สำหรับเงิน, รับทศนิยมไม่เกิน 2 ตำแหน่ง, currency เป็น `THB` ใน Phase นี้ และกำหนดความหมายของ `quantity` สำหรับ `per_item`/`per_hour` ให้ตรงกันทั้ง UI, repository และ database
+
 - **14.4.1 Section "ค่าใช้จ่ายของก๊วน" ในหน้าสร้าง/แก้ไขก๊วน (ระดับที่ 1):**
   - เพิ่ม `_buildModernSection(title: 'ค่าใช้จ่ายของก๊วน', icon: Icons.payments_outlined)` วางระหว่าง section "การตั้งค่าก๊วน" กับ "สถานที่และพิกัด" ใน `create_group_page.dart` (ใช้ร่วมกันหน้าแก้ไขก๊วน, แสดงเฉพาะผู้จัดการก๊วนตาม policy เดิม)
   - แบ่งเป็น 2 sub-section ภายในการ์ดเดียว:
@@ -1975,7 +1986,27 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
   - หน้าแก้ไขก๊วน: เพิ่ม/แก้/ปิดใช้งาน standard ยิง repository ทันทีต่อรายการ พร้อม optimistic update + rollback UI เมื่อล้มเหลว
   - Draft (`create_group_draft`) ต้อง serialize/restore รายการ cost standards ทั้งสองประเภทครบ (ชื่อ, ประเภท, หมวด, ยอด, หน่วย/รอบเรียกเก็บ, จำนวนเริ่มต้น, payment_timing) และรายการเหล่านี้ต้องถือเป็น "ข้อมูลที่กรอกแล้ว" ที่ทำให้ Unsaved Changes Guard ของ 14.2.1 เด้งเตือน
   - เตรียม UI ระดับที่ 2 (ค่าใช้จ่ายเฉพาะรอบใน `_showCreateSessionSheet()`) ให้สอดคล้อง pattern เดียวกัน: ปุ่ม "เลือกจากค่ามาตรฐานก๊วน" แสดงเฉพาะ `round_expense` active, ปุ่ม "เพิ่มค่าใช้จ่ายกำหนดเอง" ใช้ฟอร์มเดียวกับ 14.4.2, แสดงยอดประมาณการรวมของรอบ — รายละเอียด validation ตามหัวข้อ "สร้างรอบนัด (Bottom Sheet)"
+  - การบันทึกหลายรายการต้องแสดงผลแยกรายการ: ถ้าบางรายการสำเร็จและบางรายการล้มเหลว ให้ retry เฉพาะรายการที่ล้มเหลว, ใช้ idempotency/client request key ป้องกันการกดซ้ำสร้างข้อมูลซ้ำ และห้ามแสดงสถานะสำเร็จรวมเมื่อยังมีรายการค้าง
+  - เพิ่ม Dart model/repository ที่ typed สำหรับ list/create/update/deactivate standards และ create session cost snapshot; repository ต้องตรวจ `group_id`, `standard_type`, `is_active` และความเป็นเจ้าของซ้ำที่ server boundary
+  - Draft ต้องมี schema version และ restore ค่าเดิมของ draft รุ่นเก่าที่ไม่มี `costStandards` เป็นลิสต์ว่าง; serialize/restore รายการทั้งสองประเภทครบโดยไม่เก็บ payment credentials หรือ provider data
+  - เมื่อเลือก standard สร้าง session ให้บันทึก snapshot แบบ atomic; ถ้า standard ถูก deactivate หรือแก้ไขระหว่างเปิดฟอร์ม ต้อง revalidate ก่อน commit และแจ้งให้ผู้ใช้เลือกใหม่
+- **14.4.3.1 กติกาความปลอดภัยของค่าใช้จ่ายเมื่อมีผู้เข้าร่วมรอบ:**
+  - เมื่อรอบมี booking/member ที่ active หรือมีผู้เข้าร่วมอย่างน้อยหนึ่งคน และ `starts_at > now()` ให้ถือว่า session อยู่ในสถานะ **locked for cost mutation**
+  - หลังเข้า locked state ห้ามเพิ่ม แก้ไข ลบ ปิดใช้งาน หรือเปลี่ยน `standard_id`, `source_type`, `name`, `category`, `pricing_unit`, `unit_amount`, `quantity`, `payment_timing`, `currency` ของ `fitness_group_session_cost_items` ผ่าน UI, repository หรือ API
+  - การตรวจ lock ต้องทำที่ database/secure RPC ภายใน transaction โดยตรวจ booking ที่สถานะ `pending` หรือ `confirmed` ตาม policy ของการเข้าร่วม ไม่ใช่ตรวจเฉพาะ client เพื่อป้องกัน race condition
+  - หากยังไม่มีผู้เข้าร่วม แต่มีการสร้างรายการค่าใช้จ่ายไว้แล้ว ผู้จัดการยังแก้ไขได้ก่อนมี booking active และก่อนเวลาเริ่มรอบ; เมื่อมี booking active แล้วต้องล็อกทันที แม้รอบยังไม่เริ่ม
+  - หลัง `ends_at <= now()` ห้ามแก้ไขรายการเดิมย้อนหลังเช่นกัน ให้ใช้ adjustment/reconciliation flow แยกใน payment phase; Phase 14.4 อนุญาตเฉพาะการดู snapshot และการยกเลิกรอบตาม policy เดิม
+  - หากผู้จัดการพยายามแก้ไขรายการที่ถูกล็อก ให้แสดงข้อความ inline/dialog ว่า "รอบนี้มีผู้เข้าร่วมแล้ว จึงไม่สามารถแก้ไขค่าใช้จ่ายได้" พร้อมแสดงข้อมูล snapshot ปัจจุบันและทางเลือกติดต่อผู้ดูแล; ห้ามใช้ SnackBar อย่างเดียว
+  - การเปลี่ยน template `fitness_group_cost_standards` หลังมีผู้เข้าร่วมใน session ไม่เปลี่ยนและไม่ปลดล็อก snapshot ของ session นั้น; template ใหม่มีผลเฉพาะ session ที่ยังไม่สร้างหรือยังไม่ถูกเลือกใช้
+  - เพิ่ม audit event เมื่อ session ถูก lock, เมื่อ mutation ถูกปฏิเสธ และเมื่อมีการสร้าง snapshot เพื่อรองรับการตรวจสอบข้อพิพาทด้านค่าใช้จ่าย
 - **14.4.4 Accessibility & Mobile Testing:**
-  - ตรวจสอบ Touch target (ขนาดปุ่ม ≥ 48x48 dp), รองรับ Screen Reader (Semantics) รวมถึงรายการค่าใช้จ่ายและ badge เงื่อนไขการชำระ
+  - ตรวจสอบ Touch target (ขนาดปุ่ม ≥ 48x48 dp), รองรับ Screen Reader (Semantics) รวมถึงรายการค่าใช้จ่าย, สถานะ active/inactive, สถานะ locked และ badge เงื่อนไขการชำระ
   - ทดสอบการทำงานร่วมกับคีย์บอร์ดบนอุปกรณ์จอเล็ก (Keyboard avoiding & auto-scroll to focused field) ทั้งในฟอร์มหลักและ Bottom Sheet ค่าใช้จ่าย
+  - ตรวจสอบสีและข้อความไม่พึ่งสีอย่างเดียว, รองรับ text scaling, focus order, keyboard navigation บน Web และข้อความ error ที่ผูกกับ field
+  - Test matrix ต้องครอบคลุม: เพิ่ม/แก้/ปิดใช้งานแต่ละ standard type, duplicate name, invalid decimal/quantity, old draft restore, unsaved guard, partial save + retry, idempotent retry, RLS ต่างก๊วน, snapshot isolation, inactive template filtering, session lock ก่อนเริ่มรอบ, session lock หลังมี `pending/confirmed` booking, mutation race ระหว่าง booking กับ cost update, และการดูข้อมูลหลัง `ends_at`
 - **เกณฑ์การตรวจรับ (Gate 14.4):** เพิ่ม/แก้ไข/ปิดใช้งาน `group_fee` และ `round_expense` จากหน้าสร้าง/แก้ไขก๊วนได้ครบตาม allowlist, validation แจ้งที่ฟิลด์ทันที, รายการรอดจาก Draft restore และ Unsaved Guard, standard ที่ถูกใช้แล้วไม่ถูกลบและแจ้งเตือน snapshot ก่อนแก้, คีย์บอร์ดไม่บังฟิลด์/ปุ่ม submit และผ่าน Accessibility inspection
+  - ต้องมี migration/schema, constraints, RLS/secure RPC, repository/model และ public views ครบตาม data contract; ผู้ใช้ต่างก๊วนอ่าน/แก้ไขไม่ได้ และไม่มี direct mutation ที่ข้าม Gateway policy
+  - ต้องพิสูจน์ว่า session cost item เป็น immutable snapshot หลังสร้าง และ template ที่แก้ไขภายหลังไม่กระทบ session เดิม
+  - เมื่อมี `pending` หรือ `confirmed` booking และรอบยังไม่สิ้นสุด ต้องแก้ไข/เพิ่ม/ลบ/ปิดใช้งานค่าใช้จ่ายไม่ได้ทั้งจาก UI และ server; race-condition test ต้องผ่าน
+  - retry หลัง network error ต้องไม่สร้างรายการซ้ำ และ partial failure ต้องรายงานสถานะรายรายการ
+  - ผ่าน Android/iOS จอเล็ก, Web ที่รองรับ keyboard navigation, accessibility inspection และ regression ของ create/edit group/session ก่อนประกาศ Phase 14.4 เสร็จ

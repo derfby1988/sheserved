@@ -255,9 +255,11 @@ class _SportClubPageState extends State<SportClubPage> {
         return;
       }
 
+      final intentUserId = AuthService.instance.currentUser?.id;
       final isGroupOwner =
-          group['created_by']?.toString() ==
-          AuthService.instance.currentUser?.id;
+          intentUserId != null &&
+          (group['created_by']?.toString() ?? '').isNotEmpty &&
+          group['created_by']?.toString() == intentUserId;
       final requiresOwnerApproval =
           group['requires_owner_approval'] == true && !isGroupOwner;
       _showSessionPickerSheet(
@@ -708,398 +710,141 @@ class _SportClubPageState extends State<SportClubPage> {
                               if (_canViewFullGroup(g))
                                 InkWell(
                                   onTap: () => _showGroupDetailSheet(g),
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.7),
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(
-                                        color: Colors.white.withOpacity(0.5),
-                                        width: 1,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.05),
-                                          blurRadius: 10,
-                                          offset: const Offset(0, 4),
+                                  child: Builder(
+                                    builder: (context) {
+                                      final coverUrl =
+                                          (g['cover_image_url']?.toString() ??
+                                                  '')
+                                              .trim();
+                                      final hasCover = coverUrl.isNotEmpty;
+                                      final genderPref =
+                                          g['gender_preference']?.toString() ??
+                                          'any';
+                                      final isMalePref = genderPref == 'male';
+                                      final genderChipColor = isMalePref
+                                          ? Colors.blue
+                                          : Colors.pink;
+                                      Widget textPill(Widget child) => hasCover
+                                          ? Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withOpacity(
+                                                  0.5,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: Colors.white
+                                                      .withOpacity(0.3),
+                                                ),
+                                              ),
+                                              child: child,
+                                            )
+                                          : child;
+                                      return Container(
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 8,
                                         ),
-                                      ],
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          if ((g['venue_photo_url']
-                                                      ?.toString() ??
-                                                  g['cover_image_url']
-                                                      ?.toString() ??
-                                                  '')
-                                              .isNotEmpty)
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: Image.network(
-                                                (g['venue_photo_url']
-                                                            ?.toString()
-                                                            .isNotEmpty ??
-                                                        false)
-                                                    ? g['venue_photo_url']
-                                                          .toString()
-                                                    : g['cover_image_url']
-                                                          .toString(),
-                                                height: 140,
-                                                width: double.infinity,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                          if ((g['venue_photo_url']
-                                                      ?.toString() ??
-                                                  g['cover_image_url']
-                                                      ?.toString() ??
-                                                  '')
-                                              .isNotEmpty)
-                                            const SizedBox(height: 8),
-                                          Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Expanded(
-                                                child: Row(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.center,
-                                                  children: [
-                                                    if ((g['sport_name']
-                                                                ?.toString() ??
-                                                            '')
-                                                        .isNotEmpty)
-                                                      _buildSportChipLabel(
-                                                        g['sport_icon']
-                                                            ?.toString(),
-                                                        g['sport_name']
-                                                            .toString(),
-                                                      ),
-                                                    if ((g['sport_name']
-                                                                ?.toString() ??
-                                                            '')
-                                                        .isNotEmpty)
-                                                      const SizedBox(width: 6),
-                                                    Expanded(
-                                                      child: Text(
-                                                        g['name']?.toString() ??
-                                                            '',
-                                                        style: const TextStyle(
-                                                          fontSize: 16,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              if (g['gender_preference'] !=
-                                                      null &&
-                                                  g['gender_preference']
-                                                          .toString() !=
-                                                      'any')
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                                  decoration: BoxDecoration(
-                                                    color: (g['gender_preference']
-                                                                .toString() ==
-                                                            'male'
-                                                        ? Colors.blue
-                                                        : Colors.pink).withOpacity(0.1),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                    border: Border.all(
-                                                      color: (g['gender_preference']
-                                                                  .toString() ==
-                                                              'male'
-                                                          ? Colors.blue
-                                                          : Colors.pink).withOpacity(0.2),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    g['gender_preference']
-                                                                .toString() ==
-                                                            'male'
-                                                        ? 'ช.'
-                                                        : 'ญ.',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: g['gender_preference']
-                                                                  .toString() ==
-                                                              'male'
-                                                          ? Colors.blue.shade700
-                                                          : Colors.pink.shade700,
-                                                    ),
-                                                  ),
-                                                )
-                                              else
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.green.withOpacity(0.1),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                    border: Border.all(
-                                                      color: Colors.green.withOpacity(0.2),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    'เสรี',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.green.shade700,
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
+                                        decoration: BoxDecoration(
+                                          color: hasCover
+                                              ? Colors.transparent
+                                              : Colors.white.withOpacity(0.7),
+                                          borderRadius: BorderRadius.circular(
+                                            24,
                                           ),
-                                          if ((g['description']?.toString() ??
-                                                  '')
-                                              .isNotEmpty)
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                top: 6,
-                                              ),
-                                              child: Text(
-                                                g['description'].toString(),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(
+                                              0.5,
                                             ),
-                                          if ((g['province']?.toString() ?? '')
-                                              .isNotEmpty)
-                                            Text(
-                                              'พื้นที่: ' +
-                                                  g['province'].toString() +
-                                                  (g['district'] != null &&
-                                                          g['district']
-                                                              .toString()
-                                                              .isNotEmpty
-                                                      ? ' · ' +
-                                                            g['district']
-                                                                .toString()
-                                                      : ''),
+                                            width: 1,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.05,
+                                              ),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
                                             ),
-                                          const SizedBox(height: 8),
-                                          FutureBuilder<List<dynamic>>(
-                                            future: Future.wait<dynamic>([
-                                              _repo.listUpcomingSessions(
-                                                g['id'].toString(),
-                                              ),
-                                              _repo.hasAnySessions(
-                                                g['id'].toString(),
-                                              ),
-                                            ]),
-                                            builder: (context, snapshot) {
-                                              final items =
-                                                  (snapshot.data?[0] as List?)
-                                                      ?.cast<
-                                                        Map<String, dynamic>
-                                                      >() ??
-                                                  const <
-                                                    Map<String, dynamic>
-                                                  >[];
-                                              final hasAnySessions =
-                                                  snapshot.data?[1] == true;
-                                              if (snapshot.connectionState !=
-                                                  ConnectionState.done) {
-                                                return const Padding(
-                                                  padding: EdgeInsets.all(8.0),
-                                                  child:
-                                                      LinearProgressIndicator(
-                                                        minHeight: 2,
-                                                      ),
-                                                );
-                                              }
-                                              if (snapshot.hasError) {
-                                                return Text(
-                                                  'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
-                                                  style: const TextStyle(
-                                                    color: Colors.red,
-                                                  ),
-                                                );
-                                              }
-                                              final gid =
-                                                  g['id']?.toString() ?? '';
-                                              if (items.isEmpty) {
-                                                return Column(
+                                          ],
+                                          gradient: hasCover
+                                              ? const LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Colors.black38,
+                                                    Colors.black87,
+                                                  ],
+                                                )
+                                              : null,
+                                          image: hasCover
+                                              ? DecorationImage(
+                                                  image: NetworkImage(coverUrl),
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : null,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: DefaultTextStyle(
+                                            style: TextStyle(
+                                              color: hasCover
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
-                                                    Text(
-                                                      hasAnySessions
-                                                          ? 'รอบนัดล่าสุดสิ้นสุดแล้ว'
-                                                          : 'ยังไม่มีรอบนัด',
-                                                    ),
-                                                    if (_myBlockedGroupIds
-                                                        .contains(gid))
-                                                      Align(
-                                                        alignment: Alignment
-                                                            .centerRight,
-                                                        child: TextButton.icon(
-                                                          onPressed: null,
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .hourglass_empty,
-                                                          ),
-                                                          label: const Text(
-                                                            'รอคิว',
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    if (AuthService
-                                                                .instance
-                                                                .currentUser
-                                                                ?.isAdmin ==
-                                                            true ||
-                                                        _myAdminGroups.contains(
-                                                          gid,
-                                                        ))
-                                                      Align(
-                                                        alignment: Alignment
-                                                            .centerRight,
-                                                        child: TextButton.icon(
-                                                          onPressed: () =>
-                                                              _showCreateSessionSheet(
-                                                                g['id']
-                                                                    .toString(),
-                                                              ),
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .add_circle_outline,
-                                                          ),
-                                                          label: const Text(
-                                                            'เพิ่มรอบนัด',
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                );
-                                              }
-                                              final isAdmin =
-                                                  AuthService
-                                                          .instance
-                                                          .currentUser
-                                                          ?.isAdmin ==
-                                                      true ||
-                                                  _myAdminGroups.contains(gid);
-                                              final isGroupOwner =
-                                                  g['created_by']?.toString() ==
-                                                  AuthService
-                                                      .instance
-                                                      .currentUser
-                                                      ?.id;
-                                              final hasJoined =
-                                                  _myJoinedGroupIds.contains(
-                                                    gid,
-                                                  );
-                                              final hasPending =
-                                                  _myPendingGroupIds.contains(
-                                                    gid,
-                                                  );
-                                              final hasBlocked =
-                                                  _myBlockedGroupIds.contains(
-                                                    gid,
-                                                  );
-                                              final requiresOwnerApproval =
-                                                  g['requires_owner_approval'] ==
-                                                      true &&
-                                                  !isGroupOwner;
-                                              final joinButton = hasBlocked
-                                                  ? TextButton.icon(
-                                                      onPressed: null,
-                                                      icon: const Icon(
-                                                        Icons.hourglass_empty,
-                                                      ),
-                                                      label: const Text(
-                                                        'รอคิว',
-                                                      ),
-                                                    )
-                                                  : hasJoined
-                                                  ? TextButton.icon(
-                                                      onPressed: null,
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .check_circle_outline,
-                                                      ),
-                                                      label: const Text(
-                                                        'เข้าร่วมก๊วนแล้ว',
-                                                      ),
-                                                    )
-                                                  : hasPending && !isGroupOwner
-                                                  ? TextButton.icon(
-                                                      onPressed: null,
-                                                      icon: const Icon(
-                                                        Icons.hourglass_empty,
-                                                      ),
-                                                      label: const Text(
-                                                        'รออนุมัติ',
-                                                      ),
-                                                    )
-                                                  : TextButton.icon(
-                                                      onPressed: () =>
-                                                          _showSessionPickerSheet(
-                                                            gid,
-                                                            requiresOwnerApproval:
-                                                                requiresOwnerApproval,
-                                                          ),
-                                                      icon: const Icon(
-                                                        Icons.event_available,
-                                                      ),
-                                                      label: Text(
-                                                        isGroupOwner
-                                                            ? 'กลับเข้าร่วมก๊วน'
-                                                            : requiresOwnerApproval
-                                                            ? 'ขอเข้าร่วมก๊วน'
-                                                            : 'เข้าร่วมก๊วน',
-                                                      ),
-                                                    );
-                                              return Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  for (final s in items.take(3))
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            bottom: 8,
-                                                          ),
-                                                      child: Column(
+                                                    Expanded(
+                                                      child: Row(
                                                         crossAxisAlignment:
                                                             CrossAxisAlignment
-                                                                .start,
+                                                                .center,
                                                         children: [
-                                                          Row(
-                                                            children: [
-                                                              const Text(
-                                                                'ห้วง: ',
-                                                                style: TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w500,
-                                                                ),
+                                                          if ((g['sport_name']
+                                                                      ?.toString() ??
+                                                                  '')
+                                                              .isNotEmpty)
+                                                            textPill(
+                                                              _buildSportChipLabel(
+                                                                g['sport_icon']
+                                                                    ?.toString(),
+                                                                g['sport_name']
+                                                                    .toString(),
                                                               ),
-                                                              Expanded(
-                                                                child: Text(
-                                                                  _formatThaiSessionRange(
-                                                                    DateTime.parse(
-                                                                      s['starts_at']
-                                                                          .toString(),
-                                                                    ).toLocal(),
-                                                                    DateTime.parse(
-                                                                      s['ends_at']
-                                                                          .toString(),
-                                                                    ).toLocal(),
+                                                            ),
+                                                          if ((g['sport_name']
+                                                                      ?.toString() ??
+                                                                  '')
+                                                              .isNotEmpty)
+                                                            const SizedBox(
+                                                              width: 6,
+                                                            ),
+                                                          Expanded(
+                                                            child: Align(
+                                                              alignment: Alignment
+                                                                  .centerLeft,
+                                                              child: textPill(
+                                                                Text(
+                                                                  g['name']
+                                                                          ?.toString() ??
+                                                                      '',
+                                                                  style: const TextStyle(
+                                                                    fontSize:
+                                                                        16,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
                                                                   ),
                                                                   maxLines: 1,
                                                                   overflow:
@@ -1107,65 +852,464 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                           .ellipsis,
                                                                 ),
                                                               ),
-                                                            ],
-                                                          ),
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  left: 40,
-                                                                  top: 2,
-                                                                ),
-                                                            child: Text(
-                                                              _sessionCapacitySummary(
-                                                                s,
-                                                              ),
-                                                              style:
-                                                                  const TextStyle(
-                                                                    fontSize:
-                                                                        12,
-                                                                    color: Colors
-                                                                        .grey,
-                                                                  ),
                                                             ),
                                                           ),
                                                         ],
                                                       ),
                                                     ),
-                                                  if (isAdmin)
-                                                    Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment.end,
-                                                      children: [
-                                                        joinButton,
-                                                        TextButton.icon(
-                                                          onPressed: () =>
-                                                              _showCreateSessionSheet(
-                                                                g['id']
-                                                                    .toString(),
+                                                    const SizedBox(width: 6),
+                                                    if (genderPref != 'any')
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 6,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color: hasCover
+                                                              ? Colors.black
+                                                                    .withOpacity(
+                                                                      0.5,
+                                                                    )
+                                                              : genderChipColor
+                                                                    .withOpacity(
+                                                                      0.1,
+                                                                    ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                12,
                                                               ),
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .add_circle_outline,
-                                                          ),
-                                                          label: const Text(
-                                                            'เพิ่มรอบนัด',
+                                                          border: Border.all(
+                                                            color: hasCover
+                                                                ? Colors.white
+                                                                      .withOpacity(
+                                                                        0.3,
+                                                                      )
+                                                                : genderChipColor
+                                                                      .withOpacity(
+                                                                        0.2,
+                                                                      ),
                                                           ),
                                                         ),
-                                                      ],
-                                                    )
-                                                  else
-                                                    Align(
-                                                      alignment:
-                                                          Alignment.centerRight,
-                                                      child: joinButton,
+                                                        child: Text(
+                                                          isMalePref
+                                                              ? 'ช.'
+                                                              : 'ญ.',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: hasCover
+                                                                ? Colors.white
+                                                                : isMalePref
+                                                                ? Colors
+                                                                      .blue
+                                                                      .shade700
+                                                                : Colors
+                                                                      .pink
+                                                                      .shade700,
+                                                          ),
+                                                        ),
+                                                      )
+                                                    else
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 6,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color: hasCover
+                                                              ? Colors.black
+                                                                    .withOpacity(
+                                                                      0.5,
+                                                                    )
+                                                              : Colors.green
+                                                                    .withOpacity(
+                                                                      0.1,
+                                                                    ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                12,
+                                                              ),
+                                                          border: Border.all(
+                                                            color: hasCover
+                                                                ? Colors.white
+                                                                      .withOpacity(
+                                                                        0.3,
+                                                                      )
+                                                                : Colors.green
+                                                                      .withOpacity(
+                                                                        0.2,
+                                                                      ),
+                                                          ),
+                                                        ),
+                                                        child: Text(
+                                                          'เสรี',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: hasCover
+                                                                ? Colors.white
+                                                                : Colors
+                                                                      .green
+                                                                      .shade700,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                                if ((g['description']
+                                                            ?.toString() ??
+                                                        '')
+                                                    .isNotEmpty)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          top: 6,
+                                                        ),
+                                                    child: textPill(
+                                                      Text(
+                                                        g['description']
+                                                            .toString(),
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
                                                     ),
-                                                ],
-                                              );
-                                            },
+                                                  ),
+                                                if ((g['province']
+                                                            ?.toString() ??
+                                                        '')
+                                                    .isNotEmpty)
+                                                  textPill(
+                                                    Text(
+                                                      'พื้นที่: ' +
+                                                          g['province']
+                                                              .toString() +
+                                                          (g['district'] !=
+                                                                      null &&
+                                                                  g['district']
+                                                                      .toString()
+                                                                      .isNotEmpty
+                                                              ? ' · ' +
+                                                                    g['district']
+                                                                        .toString()
+                                                              : ''),
+                                                    ),
+                                                  ),
+                                                const SizedBox(height: 8),
+                                                FutureBuilder<List<dynamic>>(
+                                                  future: Future.wait<dynamic>([
+                                                    _repo.listUpcomingSessions(
+                                                      g['id'].toString(),
+                                                    ),
+                                                    _repo.hasAnySessions(
+                                                      g['id'].toString(),
+                                                    ),
+                                                  ]),
+                                                  builder: (context, snapshot) {
+                                                    final items =
+                                                        (snapshot.data?[0]
+                                                                as List?)
+                                                            ?.cast<
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >() ??
+                                                        const <
+                                                          Map<String, dynamic>
+                                                        >[];
+                                                    final hasAnySessions =
+                                                        snapshot.data?[1] ==
+                                                        true;
+                                                    if (snapshot
+                                                            .connectionState !=
+                                                        ConnectionState.done) {
+                                                      return const Padding(
+                                                        padding: EdgeInsets.all(
+                                                          8.0,
+                                                        ),
+                                                        child:
+                                                            LinearProgressIndicator(
+                                                              minHeight: 2,
+                                                            ),
+                                                      );
+                                                    }
+                                                    if (snapshot.hasError) {
+                                                      return Text(
+                                                        'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
+                                                        style: const TextStyle(
+                                                          color: Colors.red,
+                                                        ),
+                                                      );
+                                                    }
+                                                    final gid =
+                                                        g['id']?.toString() ??
+                                                        '';
+                                                    if (items.isEmpty) {
+                                                      return Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          textPill(
+                                                            Text(
+                                                              hasAnySessions
+                                                                  ? 'รอบนัดล่าสุดสิ้นสุดแล้ว'
+                                                                  : 'ยังไม่มีรอบนัด',
+                                                            ),
+                                                          ),
+                                                          if (_myBlockedGroupIds
+                                                              .contains(gid))
+                                                            Align(
+                                                              alignment: Alignment
+                                                                  .centerRight,
+                                                              child: TextButton.icon(
+                                                                onPressed: null,
+                                                                icon: const Icon(
+                                                                  Icons
+                                                                      .hourglass_empty,
+                                                                ),
+                                                                label:
+                                                                    const Text(
+                                                                      'รอคิว',
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                          if (AuthService
+                                                                      .instance
+                                                                      .currentUser
+                                                                      ?.isAdmin ==
+                                                                  true ||
+                                                              _myAdminGroups
+                                                                  .contains(
+                                                                    gid,
+                                                                  ))
+                                                            Align(
+                                                              alignment: Alignment
+                                                                  .centerRight,
+                                                              child: TextButton.icon(
+                                                                onPressed: () =>
+                                                                    _showCreateSessionSheet(
+                                                                      g['id']
+                                                                          .toString(),
+                                                                    ),
+                                                                icon: const Icon(
+                                                                  Icons
+                                                                      .add_circle_outline,
+                                                                ),
+                                                                label: const Text(
+                                                                  'เพิ่มรอบนัด',
+                                                                ),
+                                                              ),
+                                                            ),
+                                                        ],
+                                                      );
+                                                    }
+                                                    final isAdmin =
+                                                        AuthService
+                                                                .instance
+                                                                .currentUser
+                                                                ?.isAdmin ==
+                                                            true ||
+                                                        _myAdminGroups.contains(
+                                                          gid,
+                                                        );
+                                                    final cardUserId =
+                                                        AuthService
+                                                            .instance
+                                                            .currentUser
+                                                            ?.id;
+                                                    final isGroupOwner =
+                                                        cardUserId != null &&
+                                                        (g['created_by']
+                                                                    ?.toString() ??
+                                                                '')
+                                                            .isNotEmpty &&
+                                                        g['created_by']
+                                                                ?.toString() ==
+                                                            cardUserId;
+                                                    final hasJoined =
+                                                        _myJoinedGroupIds
+                                                            .contains(gid);
+                                                    final hasPending =
+                                                        _myPendingGroupIds
+                                                            .contains(gid);
+                                                    final hasBlocked =
+                                                        _myBlockedGroupIds
+                                                            .contains(gid);
+                                                    final requiresOwnerApproval =
+                                                        g['requires_owner_approval'] ==
+                                                            true &&
+                                                        !isGroupOwner;
+                                                    final joinButton =
+                                                        hasBlocked
+                                                        ? TextButton.icon(
+                                                            onPressed: null,
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .hourglass_empty,
+                                                            ),
+                                                            label: const Text(
+                                                              'รอคิว',
+                                                            ),
+                                                          )
+                                                        : hasJoined
+                                                        ? TextButton.icon(
+                                                            onPressed: null,
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .check_circle_outline,
+                                                            ),
+                                                            label: const Text(
+                                                              'เข้าร่วมก๊วนแล้ว',
+                                                            ),
+                                                          )
+                                                        : hasPending &&
+                                                              !isGroupOwner
+                                                        ? TextButton.icon(
+                                                            onPressed: null,
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .hourglass_empty,
+                                                            ),
+                                                            label: const Text(
+                                                              'รออนุมัติ',
+                                                            ),
+                                                          )
+                                                        : TextButton.icon(
+                                                            onPressed: () =>
+                                                                _showSessionPickerSheet(
+                                                                  gid,
+                                                                  requiresOwnerApproval:
+                                                                      requiresOwnerApproval,
+                                                                ),
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .event_available,
+                                                            ),
+                                                            label: Text(
+                                                              isGroupOwner
+                                                                  ? 'กลับเข้าร่วมก๊วน'
+                                                                  : requiresOwnerApproval
+                                                                  ? 'ขอเข้าร่วมก๊วน'
+                                                                  : 'เข้าร่วมก๊วน',
+                                                            ),
+                                                          );
+                                                    return Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        for (final s
+                                                            in items.take(3))
+                                                          Padding(
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  bottom: 8,
+                                                                ),
+                                                            child: Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              children: [
+                                                                textPill(
+                                                                  Row(
+                                                                    children: [
+                                                                      const Text(
+                                                                        'ห้วง: ',
+                                                                        style: TextStyle(
+                                                                          fontWeight:
+                                                                              FontWeight.w500,
+                                                                        ),
+                                                                      ),
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          _formatThaiSessionRange(
+                                                                            DateTime.parse(
+                                                                              s['starts_at'].toString(),
+                                                                            ).toLocal(),
+                                                                            DateTime.parse(
+                                                                              s['ends_at'].toString(),
+                                                                            ).toLocal(),
+                                                                          ),
+                                                                          maxLines:
+                                                                              1,
+                                                                          overflow:
+                                                                              TextOverflow.ellipsis,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                                Padding(
+                                                                  padding:
+                                                                      const EdgeInsets.only(
+                                                                        left:
+                                                                            40,
+                                                                        top: 2,
+                                                                      ),
+                                                                  child: textPill(
+                                                                    Text(
+                                                                      _sessionCapacitySummary(
+                                                                        s,
+                                                                      ),
+                                                                      style: TextStyle(
+                                                                        fontSize:
+                                                                            12,
+                                                                        color:
+                                                                            hasCover
+                                                                            ? Colors.white70
+                                                                            : Colors.grey,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        if (isAdmin)
+                                                          Row(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .end,
+                                                            children: [
+                                                              joinButton,
+                                                              TextButton.icon(
+                                                                onPressed: () =>
+                                                                    _showCreateSessionSheet(
+                                                                      g['id']
+                                                                          .toString(),
+                                                                    ),
+                                                                icon: const Icon(
+                                                                  Icons
+                                                                      .add_circle_outline,
+                                                                ),
+                                                                label: const Text(
+                                                                  'เพิ่มรอบนัด',
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          )
+                                                        else
+                                                          Align(
+                                                            alignment: Alignment
+                                                                .centerRight,
+                                                            child: joinButton,
+                                                          ),
+                                                      ],
+                                                    );
+                                                  },
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ],
-                                      ),
-                                    ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ),
                           ],
@@ -1603,7 +1747,11 @@ class _SportClubPageState extends State<SportClubPage> {
     final currentUser = AuthService.instance.currentUser;
     final currentUserId = currentUser?.id;
     final groupOwnerId = group['created_by']?.toString();
-    final isGroupOwner = groupOwnerId == currentUserId;
+    final isGroupOwner =
+        currentUserId != null &&
+        groupOwnerId != null &&
+        groupOwnerId.isNotEmpty &&
+        groupOwnerId == currentUserId;
     final isSheservedAdmin = currentUser?.isAdmin == true;
     final isGroupAdmin =
         _myAdminGroups.contains(groupId) && !isGroupOwner && !isSheservedAdmin;
@@ -2067,9 +2215,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                             requiresOwnerApproval:
                                                 group['requires_owner_approval'] ==
                                                     true &&
-                                                group['created_by']
-                                                        ?.toString() !=
-                                                    currentUserId,
+                                                !isGroupOwner,
                                           );
                                         },
                                         backgroundColor: Colors.teal,
@@ -3634,10 +3780,7 @@ class _SportClubPageState extends State<SportClubPage> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.7),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.5),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.5), width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -3647,7 +3790,11 @@ class _SportClubPageState extends State<SportClubPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 120, height: 14, color: Colors.white.withOpacity(0.5)),
+              Container(
+                width: 120,
+                height: 14,
+                color: Colors.white.withOpacity(0.5),
+              ),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
@@ -3661,7 +3808,11 @@ class _SportClubPageState extends State<SportClubPage> {
                 color: Colors.white.withOpacity(0.5),
               ),
               const SizedBox(height: 6),
-              Container(width: 180, height: 12, color: Colors.white.withOpacity(0.5)),
+              Container(
+                width: 180,
+                height: 12,
+                color: Colors.white.withOpacity(0.5),
+              ),
             ],
           ),
         ),
