@@ -6,6 +6,8 @@
 
 > **สำคัญ:** หน้าจัดการ Subscription Tier นี้เป็น **หน้าภายใน Sheserved** เท่านั้น — ไม่ใช่หน้าที่องค์กรภายนอกเห็น
 
+> **UI Standard (SSOT):** แม้เป็นหน้า Sheserved Admin ภายใน แต่ทุกหน้าจอต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` — ห้าม hardcode สี/radius/AppBar เอง; ส่วนฝั่งองค์กร (locked module, badge "ต้องสมัคร") ให้ใช้ Tier Gating Pattern ใน SSOT section 13
+
 ---
 
 ## ลักษณะการทำงาน

@@ -1,5 +1,7 @@
 # ERP Dashboard Light/Dark Theme Plan
 
+> **⚠️ MERGED — Archive only:** เนื้อหาฉบับนี้ถูกรวมเข้า [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) (Single Source of Truth สำหรับ ERP UI) แล้ว — เก็บไว้เพื่ออ้างอิง preset/RPC เท่านั้น อย่าแก้ไข spec ที่นี่ ถ้าต้องเปลี่ยนค่าให้แก้ใน SSOT
+
 ERP Dashboard รองรับโหมดสว่าง (Light) และมืด (Dark) พร้อมกัน โดย Light Theme ให้ผู้ใช้ปรับแต่งสีได้ 8 presets + custom และถูกออกแบบให้มีโทน **iOS natural pastel**; ส่วน Dark Theme ใช้ preset เดียว fixed
 
 ## โครงสร้างธีม

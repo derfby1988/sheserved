@@ -48,12 +48,21 @@ ERP Modules (Sources)
 
 ตามมาตรฐานที่กำหนดไว้ใน [ERP_CORE_ARCHITECTURE.md](ERP_CORE_ARCHITECTURE.md):
 
-- **ตำแหน่ง:** บริเวณ **Headsector (มุมขวาบน)** ในหน้า Home ของแอปพลิเคชัน
+- **ตำแหน่ง:** บริเวณ **Headsector (มุมขวาบน)** — `HeadsectorNotificationBell` ใน AppBar actions ของหน้า Home และทุกหน้า ERP (ผ่าน `ErpPageScaffold` ตาม [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md))
 - **การเรียงลำดับ:** ล่าสุดอยู่ด้านบนเสมอ (Newest first)
-- **รูปแบบการแสดงผล:**
-  - พื้นหลังสีม่วงอ่อน (Light Purple)
+- **รูปแบบการแสดงผล (ปรับตาม SSOT):**
+  - Panel และการ์ดแจ้งเตือนใช้ **`GlassCard` (`GlassSection.dialog`)** ตาม Glassmorphism spec ใน [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) section 14 — ~~พื้นหลังสีม่วงอ่อน (Light Purple)~~ ยกเลิก ไม่ใช้พื้นหลังสีทึบแยก
   - โลโก้ขององค์กรนำหน้าข้อความเสมอ (ดึงจาก `professions.logo_url`)
+  - สถานะแสดงด้วย `StatusChip` กลางตาม `notification_type` (info/warning/success/error/urgent → erpSemanticColors)
   - Badge แสดงจำนวนการแจ้งเตือนที่ยังไม่อ่าน
+
+> **Canonical table:** ตาราง `notifications` ในฉบับนี้คือตารางกลางเพียงตัวเดียวสำหรับ In-App Notification ทั้ง ERP — ตาราง `platform_notifications` ใน [POS System_plan.md](POS%20System_plan.md) ถือเป็น **deprecated** ให้ยุบรวมเข้า `notifications` (ใช้ `source_module = 'pos'` + `notification_type`) — ดูรายละเอียดใน section "Canonical Table" ด้านล่าง
+
+### Canonical Table — `notifications` เท่านั้น
+
+- `notifications` คือตารางกลางเดียวสำหรับ in-app notification ของทุกโมดูล ERP (`source_module` ระบุต้นทาง)
+- `platform_notifications` (ใน POS plan) = **deprecated** — event เดิมของ POS (`pos_invitation`, `order_status`, `refund_status`, `appointment_update`) ให้ map เข้า `notifications` ด้วย `source_module='pos'` + `source_entity_type`/`source_entity_id` + `action_url`
+- ไม่มีการสร้างตาราง notification เพิ่มในแผนโมดูลอื่นอีก
 
 ### ฐานข้อมูล (Database Schema)
 

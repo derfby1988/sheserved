@@ -151,6 +151,9 @@
   - ✅ Zero-Mock testing: ทุก operation ใช้ RPC จริงกับ Supabase (ไม่ต้อง mock data)
 
 ### 2. หน้าจัดการแยกรายโมดูล (Module Management Pages)
+
+> **หมายเหตุ:** รายการโมดูลทั้งหมด (sidebar, dashboard board, feature flag, tier gating) ต้องอ้างอิงจาก **Module Catalog เดียว** (`dashboardModuleDefinitions`) ตาม [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) section 12 — ห้ามนิยามรายการโมดูลแยกในเอกสารอื่น และทุกหน้าจอต้องใช้ UI pattern กลาง (section 9–11) ในเอกสารเดียวกัน
+
 แต่ละโมดูลใน ERP จะมีหน้าจัดการของตัวเองภายใน Dashboard ขององค์กร ได้แก่:
 - 🛒 **POS Management** — จัดการสินค้า, ราคา, โปรโมชั่น
 - 📦 **Inventory Management** — จัดการคลังสินค้า, สต๊อก

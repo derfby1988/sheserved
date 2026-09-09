@@ -4,6 +4,8 @@
 
 ระบบจัดซื้อจัดจ้างสำหรับ Sheserved ERP รองรับ workflow แบบ **PR → PO → Goods Receipt → Back Order** ภายใต้การควบคุมสิทธิ์ระดับองค์กร (`profession_id`) และสาขา (`branch_id`) ตาม [ERP_CORE_ARCHITECTURE.md](ERP_CORE_ARCHITECTURE.md) พร้อมบันทึก **transaction saga observability** สำหรับ multi-step GR completion
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี PR/PO/GR/back_order status), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ระบบนี้ถูกออกแบบให้:
 - แยก **Purchase Requisition (PR)** กับ **Purchase Order (PO)** อย่างชัดเจน
 - มี **ระบบอนุมัติตาม Role + วงเงิน**

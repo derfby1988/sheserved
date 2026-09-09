@@ -3,6 +3,8 @@
 ## ภาพรวม (Overview)
 ระบบเชื่อมต่อและจัดการห้องปฏิบัติการ (External Lab Integration System) เป็นโมดูลหนึ่งภายใต้ Sheserved ERP ที่ออกแบบมาเพื่อเป็นตัวกลางระหว่าง คลินิก/ศูนย์บริการสุขภาพ กับ ห้องปฏิบัติการภายนอก (External Labs) โดยเน้นความยืดหยุ่นสูง เพื่อให้องค์กรสามารถกำหนดรูปแบบการเชื่อมต่อ การจัดเก็บสิ่งส่งตรวจ และระบบการเงินได้อย่างอิสระเป็นรายเคสหรือรายคู่ค้า
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี lab order status), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ## สิทธิ์การใช้งานและการเข้าถึงข้อมูล (Access Control & Tenant Isolation)
 - **Tenant-based Data:** ข้อมูลคู่ค้า (Lab Partners) คำสั่งตรวจ (Lab Orders) และผลตรวจ (Lab Results) จะถูกแยกระดับคลินิกอย่างเด็ดขาดด้วย `profession_id`
 - **Patient Data Governance:** การส่งข้อมูลคนไข้ไปยังแล็บภายนอกจะทำภายใต้การปกปิดข้อมูลที่ไม่จำเป็น และต้องมีการบันทึกประวัติการส่งข้อมูลเสมอตามหลัก PDPA

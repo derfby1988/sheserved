@@ -5,6 +5,8 @@
 
 ระบบนี้จะเชื่อมโยงกับฐานข้อมูลของ POS, Inventory, HR, และ CRM ที่ถูกพัฒนาไว้ก่อนหน้านี้ เพื่อลดการทำงานซ้ำซ้อน
 
+> **UI Standard (SSOT):** เมื่อออกแบบ UI ของ HIS/EMR (Phase สุดท้าย) ทุกหน้าต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors`, `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ## ฟีเจอร์หลัก (Core Features)
 
 ### 1. ระบบผู้ป่วยนอก (OPD - Outpatient Department)

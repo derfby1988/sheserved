@@ -3,6 +3,8 @@
 ## ภาพรวม (Overview)
 ระบบหลังบ้านสำหรับบันทึกเส้นทางการเงินของคลินิก เพื่อให้เห็นภาพรวมของรายได้ ค่าใช้จ่าย และผลกำไรขาดทุน
 ทุกองค์กรที่มีสิทธิ์ใช้งาน POS (`uses_pos_system = true`) จะได้รับระบบ Accounting ของตนเองโดยแยกตาม `profession_id` เพื่อให้ข้อมูลการเงินเป็นเอกเทศจากองค์กรอื่น.
+
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี account type 5 หมวด), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง สีเฉพาะหมวดให้ลงทะเบียนใน `erpSemanticColors` กลาง
 ## ฟีเจอร์หลักเบื้องต้น (Core Features)
 - **Chart of Accounts (ผังบัญชีมาตรฐานไทย):** รองรับการแยกหมวดหมู่บัญชี 5 หมวด (สินทรัพย์, หนี้สิน, ทุน, รายได้, ค่าใช้จ่าย) ตามมาตรฐานบัญชีไทยและอ้างอิงข้อกำหนดของ **กรมสรรพากร**
 - **General Ledger (บัญชีแยกประเภท/สมุดรายวันทั่วไป):** บันทึกทุก Transaction ทางการเงินแบบ Double-Entry (Debit/Credit) ที่สอดคล้องกับผังบัญชีมาตรฐาน

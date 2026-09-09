@@ -3,6 +3,8 @@
 ## ภาพรวม (Overview)
 ระบบคลังสินค้าสำหรับจัดการยาทั่วไป, ยาควบคุม, อุปกรณ์การแพทย์, และสินค้าขายปลีกภายในคลินิก/ศูนย์บริการ
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี low_stock/expiry/transfer status), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ## สิทธิ์การใช้งานและการเข้าถึงข้อมูล (Access Control & Tenant Isolation)
 - **Tenant-based Inventory:** ข้อมูลคลังสินค้าและสต๊อกทั้งหมดจะถูกแยกตามองค์กร (`profession_id`) อย่างเด็ดขาด
 - **Role-based Access:** ผู้ที่มีสิทธิ์บริหารจัดการคลังสินค้าขององค์กรนั้นๆ ได้แก่:

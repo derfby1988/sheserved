@@ -3,6 +3,8 @@
 ## ภาพรวม (Overview)
 ระบบบริหารจัดการบุคคลากรที่ออกแบบมาเพื่อรองรับทั้ง **การใช้งานภายในขององค์กร Sheserved** และ **การใช้งานขององค์กรภายนอก (Partner Clinics/Centers)** โดยองค์กรภายนอกแต่ละแห่งจะได้รับสิทธิ์ในการบริหารจัดการบุคลากร (HRM) ของตนเองได้อย่างอิสระ (Tenant-based HRM)
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors`, `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ## ฟีเจอร์หลัก (Core Features)
 - **External HRM Flag:** แยกสถานะกลุ่มอาชีพว่าเป็นองค์กรภายนอกที่มีระบบบริหารบุคลากรของตนเอง
 - **Employee Profiles & Branch Assignment:** ฐานข้อมูลพนักงาน ตำแหน่ง ประวัติการทำงาน และใบอนุญาตประกอบวิชาชีพ โดยพนักงานสามารถถูกระบุให้ทำงานเฉพาะสาขาหรือดูแลรวมทุกสาขาในองค์กร (HQ)

@@ -4,6 +4,8 @@
 
 **KPI Dashboard** คือศูนย์กลาง Executive View สำหรับ Owner/Manager ติดตามยอดขาย กำไร และประสิทธิภาพพนักงาน (Actual vs Target)
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี warning/critical alert), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ### มาตรฐานสถาปัตยกรรม
 - แยกข้อมูลตาม `profession_id` + `branch_id`
 - ไม่ใช้ PostgreSQL RLS `auth.uid()` — ควบคุมที่ Application Layer (Repository + ServiceLocator)

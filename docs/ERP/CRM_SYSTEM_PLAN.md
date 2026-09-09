@@ -4,6 +4,8 @@
 
 ระบบ CRM ของ Sheserved ERP ทำหน้าที่ดูแลลูกค้าและผู้รับบริการ เพื่อสร้างความภักดีต่อแบรนด์ (Customer Loyalty) กระตุ้นยอดขาย ติดตามผลการรักษา/การบริการ และ**จัดการการนัดหมายระหว่างศูนย์บริการสุขภาพกับผู้ป่วย** ครบวงจร
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors`, `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 > **Multi-Tenant Design:** ทุกข้อมูลใน CRM จะถูกแยกตาม `profession_id` (Tenant Isolation) ทำให้แต่ละองค์กรมีระบบแต้ม คูปอง และโปรโมชันที่เป็นอิสระจากกันอย่างสมบูรณ์ ลูกค้าของคลินิก A จะไม่เห็นแต้มหรือโปรโมชันของคลินิก B เด็ดขาด
 
 ### การยกระดับด้วย CDP (Customer Data Platform)

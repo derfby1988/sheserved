@@ -3,6 +3,8 @@
 
 > แผนนี้ปรับปรุงจาก `pos-system-plan-b88a9d.md` โดยรวมคำตอบจากผู้ออกแบบระบบและการตรวจสอบโค้ดจริง
 
+> **UI Standard (SSOT):** ทุกหน้าจอของโมดูลนี้ (รวม Mode C: ERP Dashboard POS) ต้องใช้ pattern กลางจาก [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) เท่านั้น — `ErpPageScaffold`, `GlassCard`/`showGlassDialog`, `StatusChip`/`erpSemanticColors` (รวมสี order/payment/refund status), `LockedModuleBadge` — ห้าม hardcode สี/radius/AppBar เอง
+
 ---
 
 ## 1. Goals & Scope (ไม่เปลี่ยนแปลง)
@@ -258,8 +260,14 @@ CREATE TABLE IF NOT EXISTS refund_requests (
 -- Query filters applied in POS Repository: patient sees own, staff sees clinic-scoped, admin sees all
 
 -- ============================================
--- IN-APP NOTIFICATIONS (Platform notifications — ไม่ใช้ external push)
+-- IN-APP NOTIFICATIONS — ⚠️ DEPRECATED
+-- ตารางนี้ถูกยุบรวมเข้า `notifications` (canonical) ตาม
+-- ERP_NOTIFICATION_SYSTEM_PLAN.md / ERP_DASHBOARD_UI_PLAN.md section 14
+-- event POS (pos_invitation, order_status, refund_status, appointment_update)
+-- ให้ map เข้า notifications ด้วย source_module='pos' + source_entity_type/id
+-- เก็บ schema ไว้เพื่อ reference เท่านั้น ห้ามสร้างตารางนี้ใหม่
 -- ============================================
+-- DEPRECATED (reference only):
 CREATE TABLE IF NOT EXISTS platform_notifications (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id           UUID NOT NULL REFERENCES users(id),

@@ -1,5 +1,7 @@
 # ERP Sidebar Nav Items — Device & Orientation Wireframes
 
+> **⚠️ MERGED — Archive only:** Spec หลักถูกรวมเข้า [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) (Single Source of Truth สำหรับ ERP UI) แล้ว — ไฟล์นี้เก็บไว้สำหรับ **wireframe รายอุปกรณ์, Root Cause & Fix notes (section 13–15) และโครงสร้าง sidebar ปัจจุบัน (section 16)** เท่านั้น อย่าแก้ไข spec ที่นี่ ถ้าต้องเปลี่ยนค่าให้แก้ใน SSOT
+
 ร่าง Nav Items ใน Collapsible Sidebar ตามอุปกรณ์ (Mobile/Tablet/Desktop) และแนวตั้ง/แนวนอน โดยรองรับทั้ง Light/Dark Theme + Badge + Active State
 
 > **Light mode update:** ใช้ drawer โทน natural pastel + active pill แบบนุ่ม และสอดคล้องกับ dashboard mixed-size cards

@@ -1,6 +1,6 @@
 # หาเพื่อนออกกำลังกาย (Find Fitness Buddies) — แผนพัฒนา
 
-สรุปหนึ่งบรรทัด: สร้างฟีเจอร์ชุมชนสำหรับค้นหา/เข้าร่วมก๊วนกีฬาแบบเปิดดูได้โดยไม่ต้องล็อกอิน แต่บังคับล็อกอินเมื่อกดเข้าร่วม พร้อม redirect กลับหน้าที่ตั้งใจเข้าหลังสำเร็จ รวมตัวกรองสถานที่/ระยะทาง แผนที่ และห้องแชทของก๊วน
+สรุปหนึ่งบรรทัด: สร้างฟีเจอร์ชุมชนสำหรับค้นหา/เข้าร่วมก๊วนกีฬาแบบเปิดดูได้โดยไม่ต้องล็อกอิน แต่บังคับล็อกอินเมื่อกดเข้าร่วม พร้อม redirect กลับหน้าที่ตั้งใจเข้าหลังสำเร็จ รวมตัวกรองสถานที่/ระยะทาง แผนที่ ห้องแชทของก๊วน ค่าใช้จ่ายมาตรฐานของก๊วน และค่าใช้จ่ายเฉพาะรอบเพื่อรองรับ payment ภายหลัง
 
 ---
 
@@ -25,14 +25,15 @@
 - การจัดวางปุ่ม: ลดจำนวนปุ่มหลักเพื่อรักษาพื้นที่ชื่อหน้า โดยเก็บ action ที่ใช้รองลงมาไว้ใน `PopupMenuButton` (`more_vert`)
 - หน้า "รายการก๊วน"
   - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม (เฉพาะ admin `role == 'admin'`; ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้) — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
-  - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **สรุปจำนวนที่ว่างของรอบนัดถัดไป**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับผู้จัดการก๊วน)
+  - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **สรุปค่าก๊วนมาตรฐานและค่าใช้จ่ายของรอบนัดถัดไปพร้อมจำนวนที่ว่าง**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับผู้จัดการก๊วน)
   - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนที่เข้าร่วมได้ทันที" (กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก; ก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ)
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
 - หน้า “แผนที่”
   - แสดง Marker ของก๊วนตามตัวกรอง, คลิก Marker เปิดแผ่นสรุปและนำทางไปหน้ารายละเอียด
 - หน้า “รายละเอียดก๊วน” (เปิดเป็น Bottom Sheet `sport_club_page.dart`)
   - Header: ชื่อก๊วนกึ่งกลาง และแสดง `สิทธิ์ของคุณ` ระดับก๊วน (เจ้าของก๊วน/ผู้ดูแลก๊วน/ผู้ดูแล Sheserved/สมาชิกก๊วน/ผู้ขอเข้าร่วม/ผู้เยี่ยมชม)
-  - รายการรอบนัด: แต่ละรอบเป็นหัวข้อ expandable แสดงช่วงเวลา (`รอบที่ N · ...`), `ผู้เข้าร่วม N / capacity คน · รออนุมัติ N คน · เหลือ N ที่` และรายชื่อ **ผู้เข้าร่วมรอบนี้** แยกจากรอบอื่น
+  - Section “ค่าใช้จ่ายมาตรฐานก๊วน”: แสดงค่าก๊วน/ค่าสมาชิกที่ active แยกตามรอบเรียกเก็บ (`รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ`) ก่อนรายการรอบนัด; ผู้จัดการก๊วนเห็น action แก้ไขผ่านหน้าจัดการก๊วน ไม่แก้จากส่วนผู้เข้าร่วม
+  - รายการรอบนัด: แต่ละรอบเป็นหัวข้อ expandable แสดงช่วงเวลา (`รอบที่ N · ...`), รายการค่าใช้จ่ายเฉพาะรอบแบบแยกรายการ (ชื่อ, หน่วยคิด, ยอด/จำนวน, ยอดประมาณการ และเงื่อนไขชำระ), `ผู้เข้าร่วม N / capacity คน · รออนุมัติ N คน · เหลือ N ที่` และรายชื่อ **ผู้เข้าร่วมรอบนี้** แยกจากรอบอื่น
   - ผู้จัดการก๊วนเห็นคำขอรออนุมัติอยู่ใต้รอบที่ผู้ขอเลือก โดยแต่ละรายแสดงสถานะและ **เวลาที่ส่งคำขอ** จาก `fitness_group_bookings.created_at`; ปัดซ้ายเพื่อ **อนุมัติ/ปฏิเสธ booking รอบนั้น** หรือ **บล็อกผู้ใช้ระดับก๊วน**
   - สมาชิก/ผู้ขอเข้าร่วมเห็นเฉพาะ section `คำขอของฉัน` ของตนเองใต้รอบที่ขอ และไม่เห็นชื่อหรือเวลาของผู้ขอรายอื่น
   - สรุปสมาชิกก๊วน: `สมาชิกก๊วนรวม (ไม่ซ้ำ) N คน` เป็น section แยก/ย่อด้านล่าง ใช้บอกสิทธิ์ระดับก๊วน ไม่ใช้แทนรายชื่อผู้เข้าร่วมรายรอบ
@@ -66,8 +67,23 @@
   - **นิยาม “ก๊วนส่วนตัว”:** คือก๊วนที่ `requires_owner_approval = true` — ยังแสดงในรายการเปิดรับเหมือนก๊วนทั่วไป แต่ผู้เข้าร่วมต้องรอเจ้าของก๊วนอนุมัติก่อนเข้าร่วม (ไม่ใช้ฟิลด์ `visibility` แยกอีกต่อไป; `public`/`private` เป็นสิ่งเดียวกันกับ toggle อนุมัติ)
   - `venue_photo_url`: รูปถ่ายสนาม/สถานที่จริงที่ใช้นัดเล่น (แยกจาก `cover_image_url` ซึ่งเป็นภาพปกของก๊วน)
   - `gender_preference`: เพศที่กำลังชวนเข้าร่วมก๊วน — `'male'` (ชาย), `'female'` (หญิง), `'any'` (เสรี/ไม่จำกัด — ค่าเริ่มต้น)
+- `fitness_group_cost_standards` (id UUID DEFAULT gen_random_uuid(), group_id UUID NOT NULL REFERENCES fitness_groups(id) ON DELETE CASCADE, standard_type VARCHAR(20) NOT NULL CHECK(standard_type IN ('group_fee','round_expense')), category VARCHAR(20) NOT NULL CHECK(category IN ('membership','venue','equipment','other')), name VARCHAR(100) NOT NULL, amount NUMERIC(10,2) NOT NULL CHECK(amount >= 0), billing_period VARCHAR(12), pricing_unit VARCHAR(12), default_quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(default_quantity > 0), payment_timing VARCHAR(32) NOT NULL DEFAULT 'at_venue' CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', is_active BOOLEAN NOT NULL DEFAULT true, created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())
+  - `standard_type='group_fee'`: ใช้กับค่าก๊วน/ค่าสมาชิก ต้องมี `category='membership'` และ `billing_period` เป็น `per_use/per_day/per_week/per_month/per_year/lifetime`; ไม่ใช้ `pricing_unit`
+  - `standard_type='round_expense'`: ใช้เป็น template ให้รอบนัด ต้องมี `category='venue'|'equipment'|'other'` และ `pricing_unit` เป็น `flat/per_item/per_round/per_hour`; ไม่ใช้ `billing_period`
+  - เพิ่ม cross-field CHECK: `group_fee` ต้องมี `billing_period` และ `pricing_unit IS NULL`; `round_expense` ต้องมี `pricing_unit` และ `billing_period IS NULL`; enum/category ต้องสัมพันธ์กับ standard type
+  - `payment_timing`: เงื่อนไขของค่าใช้จ่ายรายการนั้น (`before_round_approval` = จ่ายก่อนอนุมัติเข้าร่วมรอบ, `before_group_join` = จ่ายก่อนเข้าร่วมก๊วน, `at_venue` = จ่ายภายหลังที่สนาม); ค่าเริ่มต้นคือ `at_venue`
+  - ชื่อ, amount, unit, period และ payment timing เป็นค่ามาตรฐานที่แก้ไขได้โดยผู้จัดการก๊วน; การปิดใช้งานแทนการลบเมื่อเคยถูกเลือกใช้ เพื่อรักษาประวัติ
 - `fitness_group_sessions` (id, group_id UUID REFERENCES fitness_groups(id) ON DELETE CASCADE, starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, capacity INTEGER NOT NULL DEFAULT 5 CHECK(capacity BETWEEN 1 AND 30), place_name VARCHAR(200), lat DOUBLE PRECISION, lng DOUBLE PRECISION, note VARCHAR(500), CHECK(ends_at > starts_at))
   - `capacity`: จำนวนผู้เข้าร่วมสูงสุดของรอบนัดนั้น ๆ; ไม่ใช่จำนวนสมาชิกสูงสุดของก๊วน
+  - session ไม่เก็บค่าใช้จ่ายเป็นคอลัมน์เดียว เพราะหนึ่งรอบมีค่าใช้จ่ายได้หลายรายการผ่าน `fitness_group_session_cost_items`
+- `fitness_group_session_cost_items` (id UUID DEFAULT gen_random_uuid(), session_id UUID REFERENCES fitness_group_sessions(id) ON DELETE CASCADE, standard_id UUID NULL REFERENCES fitness_group_cost_standards(id) ON DELETE SET NULL, source_type VARCHAR(10) NOT NULL CHECK(source_type IN ('standard','custom')), name VARCHAR(100) NOT NULL, category VARCHAR(20) NOT NULL CHECK(category IN ('venue','equipment','other')), pricing_unit VARCHAR(12) NOT NULL CHECK(pricing_unit IN ('flat','per_item','per_round','per_hour')), unit_amount NUMERIC(10,2) NOT NULL CHECK(unit_amount >= 0), quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(quantity > 0), payment_timing VARCHAR(32) NOT NULL CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', note VARCHAR(200), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+  - เมื่อเลือก standard ให้เก็บ `standard_id` พร้อม snapshot `name/category/pricing_unit/unit_amount/quantity/payment_timing`; ถ้า custom ให้ `standard_id=NULL`; การแก้ template ภายหลังไม่เปลี่ยนรายการของ session เดิม
+  - `payment_timing` ของ line item เป็น snapshot ที่ใช้กำหนด gate ในอนาคต; `at_venue` ไม่บล็อกการจอง/อนุมัติ ส่วนอีกสองแบบต้องสร้าง payment obligation ก่อนผ่าน gate ที่ระบุเมื่อเปิด payment flow
+  - เพิ่ม cross-field CHECK ให้ `source_type='standard'` ต้องมี `standard_id` และ `source_type='custom'` ต้องไม่มี `standard_id`; repository ตรวจว่า standard อยู่ในก๊วนเดียวกับ session และ active ตอนสร้าง snapshot
+  - `flat`/`per_round`: คิดเป็นยอดต่อรายการหรือรอบ (`quantity=1`), `per_item`: `unit_amount × quantity`, `per_hour`: `unit_amount × quantity` ชั่วโมง; Bottom Sheet แสดงยอดประมาณการต่อรายการและผลรวมของรอบ
+  - รอบหนึ่งมีรายการค่าใช้จ่ายได้ 0..N รายการ; ไม่มีรายการ = ไม่มีค่าใช้จ่ายเฉพาะรอบ
+- `fitness_group_cost_obligations` (แผนระยะ payment phase; **ไม่สร้างใน Phase 9.1**) (id UUID DEFAULT gen_random_uuid(), group_id UUID REFERENCES fitness_groups(id), session_id UUID NULL REFERENCES fitness_group_sessions(id), booking_id UUID NULL REFERENCES fitness_group_bookings(id), user_id UUID REFERENCES users(id), standard_id UUID NULL REFERENCES fitness_group_cost_standards(id), session_cost_item_id UUID NULL REFERENCES fitness_group_session_cost_items(id), payment_timing VARCHAR(32) NOT NULL CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), amount NUMERIC(10,2) NOT NULL CHECK(amount >= 0), currency CHAR(3) NOT NULL DEFAULT 'THB', status VARCHAR(16) NOT NULL CHECK(status IN ('unpaid','pending','paid','failed','cancelled','refunded','pay_at_venue','waived')), due_at TIMESTAMPTZ, paid_at TIMESTAMPTZ, provider_ref VARCHAR(200), created_at TIMESTAMPTZ DEFAULT now())
+  - obligation ต้องอ้างต้นทางเพียงหนึ่งแบบ (`standard_id` หรือ `session_cost_item_id`), snapshot amount/currency/payment timing ตอนสร้าง obligation และไม่เปิด `provider_ref`/payment status ใน public view; ใช้เชื่อมต่อ payment/ledger ภายหลัง
 - `fitness_group_members` (group_id UUID, user_id UUID REFERENCES users(id), role VARCHAR(10) CHECK(role IN ('member','admin')), is_active BOOLEAN DEFAULT true, joined_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY(group_id, user_id))
   - หมายเหตุ: แถวสมาชิกของผู้จอง **สร้าง/อัปเดตอัตโนมัติโดยระบบ** เมื่อจองรอบนัดครั้งแรก — ไม่มีฟอร์ม "สมัครสมาชิก" แยก; owner ที่ `owner_auto_join=true` จะมี booking `confirmed` ในทุก upcoming session, ส่วน owner ที่ปิด auto-join จะ active เมื่อคงหรือสร้าง booking ของตนเองไว้; สิทธิ์ควบคุมก๊วนยังอ้างอิง `fitness_groups.created_by` ได้แม้ owner ไม่ active (ดูหัวข้อ "เข้าร่วมก๊วน = จองรอบนัด")
 - `fitness_group_bookings` (id UUID DEFAULT gen_random_uuid(), session_id UUID REFERENCES fitness_group_sessions(id), user_id UUID REFERENCES users(id), status VARCHAR(10) CHECK(status IN ('pending','confirmed','cancelled','rejected')), created_at TIMESTAMPTZ DEFAULT now(), cancelled_at TIMESTAMPTZ, cancelled_by VARCHAR(10) CHECK(cancelled_by IN ('user','owner','system')), cancel_reason VARCHAR(200), UNIQUE(session_id, user_id))
@@ -85,6 +101,7 @@
 - owner (`created_by`) ยังคงจัดการก๊วนได้แม้ membership inactive; active membership ของ owner เกิดจาก auto-join หรือมี explicit confirmed booking ที่คงอยู่
 - `fitness_groups.capacity` เดิมยังคงอยู่ชั่วคราวเพื่อรองรับข้อมูลเก่าและใช้ backfill เท่านั้น ไม่ใช้กับ flow ใหม่ และไม่ควรเรียกว่า group capacity อีกต่อไป
 - **Migration:** เพิ่ม `fitness_group_sessions.capacity`, backfill จากค่า legacy ใน `fitness_groups.capacity`, เพิ่ม owner booking สำหรับ upcoming sessions เดิม และปรับ RPC/trigger ให้ใช้กติกาใหม่ผ่าน migration `20260825130000_fitness_buddies_session_capacity.sql`
+- **Migration ค่าใช้จ่าย (งานถัดไป):** สร้างตาราง `fitness_group_cost_standards` และ `fitness_group_session_cost_items` แบบ idempotent พร้อม `payment_timing`/snapshot, ไม่เพิ่ม `cost_mode`/`cost_amount` เดี่ยวบน session, อัปเดต public views สำหรับค่าก๊วนและรายการค่าใช้จ่ายรอบ และแก้ `fitness_sessions_public` ให้ใช้ `s.capacity`; `fitness_group_cost_obligations` ยังไม่สร้างจนกว่าจะเข้า payment phase; มาตรฐาน/รายการเดิมต้อง backfill เป็นรายการว่างอย่างปลอดภัยโดยไม่สร้างค่าใช้จ่ายย้อนหลัง และห้ามแก้หรือรัน migration เดิมซ้ำ
 - **สิทธิ์:** owner (`created_by`) เป็นผู้เปลี่ยน owner participation; active group admin/admin Sheserved จัดการข้อมูลก๊วนและรอบนัดได้ตาม manager policy แต่ไม่เปลี่ยน participation ของ owner
 - ผู้จัดการก๊วนสามารถ `ถอดจากรอบนี้` ได้เฉพาะ confirmed booking ของสมาชิกที่ไม่ใช่ owner; การถอดนี้ไม่กระทบ membership/booking ของรอบอื่น และไม่เปลี่ยน owner participation
 
@@ -127,6 +144,8 @@
 - **Owner auto-booking:** trigger/RPC สร้าง booking `confirmed` ของ owner ในทุก upcoming session เมื่อเปิด auto-join; ต้อง reject การเปิดแบบทั้งชุดถ้ามี session เต็มหรือ session ของก๊วนทับเวลา
 - **ป้องกันจองซ้อนเวลา (overlap):** สร้าง Postgres function `check_booking_overlap(p_user_id, p_starts_at, p_ends_at)` ตรวจ `fitness_group_bookings JOIN fitness_group_sessions` ที่ status ไม่ใช่ `cancelled`/`rejected` และช่วงเวลาทับซ้อน — เรียกจากภายใน `book_fitness_session()` ก่อน insert เพื่อความ atomic
 - Booking mutation (จอง/ยกเลิก/อนุมัติ) เรียกผ่าน Supabase RPC จาก Flutter แทนการทำ SELECT แล้ว INSERT แยกฝั่ง client; session capacity/owner auto-booking ใช้ database trigger/guard และ Repository manager check เพื่อปิดช่องว่าง race condition
+- **Cost standard/item integrity:** ตอนเลือก standard ต้องตรวจว่าอยู่ใน `group_id` เดียวกันและยัง active ก่อนสร้าง snapshot; update/disable standard ห้าม cascade ไปแก้ `fitness_group_session_cost_items` เดิม; ลบ session ให้ลบ line items ผ่าน `ON DELETE CASCADE` และห้ามให้ cost item orphan
+- **Payment gate integrity (future payment phase):** สร้าง obligation แบบ idempotent ต่อ user + source item + booking/join intent; ตรวจ payment timing จาก snapshot, ห้าม approve/auto-confirm ก่อน gate ที่บังคับผ่าน และ `at_venue` ต้องไม่ถูกตีความเป็น unpaid online ที่บล็อก booking
 
 ### Indexes ที่ต้องสร้าง
 - `idx_fitness_sessions_group_starts` ON `fitness_group_sessions(group_id, starts_at)`
@@ -134,6 +153,11 @@
 - `idx_fitness_bookings_session_active` ON `fitness_group_bookings(session_id) WHERE status IN ('pending','confirmed')`
 - `idx_fitness_groups_sport_province` ON `fitness_groups(sport_id, province, district)`
 - `idx_fitness_members_group_active` ON `fitness_group_members(group_id) WHERE is_active = true`
+- `idx_fitness_group_cost_standards_group_active` ON `fitness_group_cost_standards(group_id, standard_type) WHERE is_active = true`
+- `idx_fitness_session_cost_items_session` ON `fitness_group_session_cost_items(session_id, created_at)`
+- `idx_fitness_session_cost_items_standard` ON `fitness_group_session_cost_items(standard_id) WHERE standard_id IS NOT NULL`
+- `idx_fitness_cost_obligations_user_status` ON `fitness_group_cost_obligations(user_id, status, due_at)` (future payment phase)
+- `idx_fitness_cost_obligations_booking` ON `fitness_group_cost_obligations(booking_id) WHERE booking_id IS NOT NULL (future payment phase)
 
 ### RLS Policy (compatibility ก่อน Phase 13.5)
 > โปรเจกต์ไม่ใช้ Supabase Auth และ `auth.uid()` เป็น `null`; ระหว่าง compatibility window ยังคง `USING(true)` + App Layer เพื่อไม่ทำให้ Flutter ปัจจุบันเสีย แต่ยังไม่ใช่ security boundary สำหรับ direct client
@@ -142,7 +166,10 @@
 |-------|----------------------|------------------------|
 | `sports` | `USING(true)` (public reference) | service-role/system path เดิมระหว่าง compatibility |
 | `fitness_groups` | `USING(true)` (ก๊วนทั้งหมดแสดงในรายการเปิดรับ รวมก๊วนส่วนตัว) | App Layer ตรวจสิทธิ์: owner/active group admin หรือ admin Sheserved |
+| `fitness_group_cost_standards` | active `group_fee` ผ่าน public VIEW; `round_expense`/inactive ผ่าน manager path | App Layer: เฉพาะ owner/active group admin/admin Sheserved |
 | `fitness_group_sessions` | `USING(true)` | App Layer: เฉพาะ owner/active group admin/admin Sheserved |
+| `fitness_group_session_cost_items` | public VIEW เฉพาะรายการของ public session; private ผ่าน member/manager policy | App Layer: เฉพาะ owner/active group admin/admin Sheserved |
+| `fitness_group_cost_obligations` | ผู้ใช้เห็นเฉพาะ obligation ของตน; manager เห็นของ session/group | Future payment service/backend เท่านั้น; ไม่ให้ client เปลี่ยนสถานะ paid |
 | `fitness_group_members` | `USING(true)` | App Layer: สมาชิกเข้าร่วมเอง / owner/active group admin/admin Sheserved จัดการ |
 | `fitness_group_bookings` | `USING(true)` | App Layer: ผู้จองสร้าง/ยกเลิกของตน; owner/active group admin/admin Sheserved อนุมัติ/จัดการ |
 | `fitness_group_blocklist` | `USING(true)` | App Layer: เฉพาะ owner/active group admin/admin Sheserved |
@@ -152,6 +179,7 @@
 ## ฟังก์ชันหลัก
 - สร้างก๊วน: ทุกคนที่ล็อกอิน
 - แก้ไข/จัดการก๊วน: owner/controller (`created_by`), active group admin (`fitness_group_members.role='admin'`) หรือ admin Sheserved (`users.role='admin'`) — owner ยังคงจัดการได้แม้เลือกไม่เป็นสมาชิก active
+- จัดการค่ามาตรฐานก๊วนและรายการค่าใช้จ่ายเฉพาะรอบ: ใช้ policy ผู้จัดการก๊วนเดียวกัน; standard จัดการจากหน้า create/edit group และ session line item จัดการจาก Bottom Sheet สร้าง/แก้ไขรอบ
 - เพิ่ม/แก้ไขหมวดหมู่กีฬา: เฉพาะแอดมินก๊วน/ผู้ดูแลระบบ (ผู้ใช้อื่นเสนอคำขอได้)
 - เข้าร่วม/ออกก๊วน (= จองรอบนัด/ยกเลิกจอง ดู "เข้าร่วมก๊วน = จองรอบนัด"), owner participation toggle, เปิดแชทก๊วน
 - ตัวกรองสถานที่/ค้นหา + cache ข้อมูลหน้าแรก
@@ -174,11 +202,16 @@
   - ~~วันที่และเวลา: DatePicker + TimePicker ต้องเป็นอนาคต ≥ ปัจจุบัน + 30 นาที~~ → **ย้ายไป Bottom Sheet "สร้างรอบนัด" แยกต่างหาก** (ดูหัวข้อ "สร้างรอบนัด (Bottom Sheet)" ด้านล่าง)
   - จำนวนสมาชิกก๊วน: ไม่ต้องระบุในขั้นตอนสร้างก๊วน; จำนวนสมาชิกแสดงตามผู้ใช้แบบไม่ซ้ำที่มี membership/confirmed booking
   - การเข้าร่วมของเจ้าของ: Toggle “เข้าร่วมทุกรอบอัตโนมัติ” ค่าเริ่มต้น **เปิด** — เปิดแล้วสร้าง owner booking `confirmed` และนับ 1 ที่นั่งในทุก upcoming session; ปิดแล้ว owner ยังเป็นผู้ควบคุมก๊วนและจองเฉพาะรอบเองได้
+  - **ค่าใช้จ่ายมาตรฐานของก๊วน:** section แบบรายการเพิ่ม/แก้ไข/ปิดใช้งานได้ เฉพาะผู้จัดการก๊วนเมื่ออยู่หน้าแก้ไข; แบ่งเป็น (1) ค่าก๊วน/ค่าสมาชิก และ (2) template ค่าใช้จ่ายรอบ เช่น สนาม/อุปกรณ์ เพื่อให้ Bottom Sheet รอบนัดเลือกใช้ภายหลัง
+    - ค่าก๊วน/ค่าสมาชิก: ชื่อรายการ, จำนวนเงิน, หน่วยรอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` และเงื่อนไขการชำระ `ก่อนเข้าร่วมก๊วน/ก่อนอนุมัติเข้าร่วมรอบ/จ่ายที่สนาม`
+    - template ค่าใช้จ่ายรอบ: ชื่อรายการ, หมวด `สนาม/อุปกรณ์/อื่นๆ`, จำนวนเงินต่อหน่วย, หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้นถ้ามี และเงื่อนไขการชำระเดียวกัน
   - รายละเอียด: TextArea 2–5 บรรทัด (ไม่บังคับ, สูงสุด ~500 ตัวอักษร)
   - การจองและการอนุมัติ: Toggle “ก๊วนส่วนตัว (ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง)” — ค่าเริ่มต้น: ปิด = ก๊วนเปิด (ยอมรับอัตโนมัติ); เปิด = ก๊วนส่วนตัว (รออนุมัติ) — ฟิลด์เดียวนี้คือตัวกำหนดสถานะก๊วนส่วนตัว ไม่มีฟิลด์ visibility แยก
 
 - สถานะ/การโต้ตอบ
-  - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng (วันเวลาย้ายไป Bottom Sheet แยก)
+  - Validation ระหว่างพิมพ์และก่อนส่ง: ต้องเลือกกีฬา, ชื่อก๊วนยาวพอ, มีพิกัด lat/lng (วันเวลาย้ายไป Bottom Sheet แยก); รายการค่ามาตรฐานต้องมีชื่อ, จำนวนเงิน/หน่วยคิดถูกต้อง และไม่ซ้ำรายการ active ตามกติกาที่กำหนด
+  - ค่าก๊วนต้องใช้ period allowlist `per_use/per_day/per_week/per_month/per_year/lifetime`; template รอบต้องใช้ category/unit allowlist, `payment_timing` allowlist และ amount เป็นเงินบาททศนิยมไม่เกิน 2 ตำแหน่ง
+  - เมื่อแก้ไข/ปิดใช้งานค่ามาตรฐานที่ถูกใช้ในรอบเดิม ต้องไม่แก้ snapshot ของรอบเดิม และต้องแสดงคำเตือนก่อนเปลี่ยนค่า
   - สิทธิ์ตำแหน่ง: ถ้าไม่อนุญาต ปุ่ม “ใช้ตำแหน่งฉัน” disabled พร้อมคำอธิบายสั้น ๆ
   - สิทธิ์กล้อง/คลังภาพ: ถ้าไม่อนุญาต ปุ่ม “เพิ่มรูปสนาม” แสดง SnackBar อธิบายวิธีเปิดสิทธิ์ในตั้งค่าเครื่อง
   - บังคับล็อกอินเมื่อส่ง: ถ้าไม่ล็อกอิน เมื่อกด “สร้างก๊วน” → ไปหน้า Login พร้อม redirect `{ route: '/community/find-buddies/create', args: draft }` และกลับมาดำเนินการต่อ
@@ -202,6 +235,10 @@ Scaffold
       // DateTimeRow ย้ายไป Bottom Sheet "สร้างรอบนัด"
       CapacityStepper(min: 1, max: 30, ...),
       OwnerAutoJoinToggle(value: true, ...),
+      GroupCostStandardsSection(
+        membershipFees: [...],
+        roundExpenseTemplates: [...],
+      ),
       MultilineTextField(label: 'รายละเอียด')
     ])
   )
@@ -219,26 +256,60 @@ Scaffold
   - เวลาเริ่มต้น: Material `showTimePicker` ค่าเริ่มต้น = ปัดขึ้นครึ่งชั่วโมงถัดไป
   - เวลาสิ้นสุด: Material `showTimePicker` ค่าเริ่มต้น = เวลาเริ่ม + 1 ชั่วโมง
   - จำนวนผู้เข้าร่วมสูงสุดของรอบ (`capacity`): slider/field ช่วง 1–30 คน ค่าเริ่มต้น 5
+  - **รายการค่าใช้จ่ายเฉพาะรอบ:** repeatable list 0..N รายการ แต่ละแถวแสดงชื่อ หมวด หน่วยคิด จำนวน ยอดต่อหน่วย และยอดประมาณการ
+  - ปุ่ม “เลือกจากค่ามาตรฐานก๊วน”: เปิดรายการ `round_expense` ที่ active และเติมค่าลงแถวใหม่; ไม่แสดง `group_fee` ใน selector นี้
+  - ปุ่ม “เพิ่มค่าใช้จ่ายกำหนดเอง”: เปิดฟอร์มชื่อรายการ, หมวด `สนาม/อุปกรณ์/อื่นๆ`, หน่วย `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเงินต่อหน่วย, จำนวน และเงื่อนไขการชำระ
+  - `payment_timing` ใช้ ChoiceChip/Dropdown 3 ตัวเลือก “ก่อนอนุมัติเข้าร่วมรอบ / ก่อนเข้าร่วมก๊วน / จ่ายภายหลังที่สนาม”; เมื่อเลือก standard ให้เติมค่า timing จาก standard แต่แอดมินแก้เฉพาะรอบได้และต้องบันทึกเป็น snapshot
+  - `per_hour` ตั้งจำนวนเริ่มต้นจาก duration ของรอบได้ แต่แอดมินต้องเห็นและยืนยันจำนวนชั่วโมงก่อนบันทึก; `flat`/`per_round` บังคับจำนวนเป็น 1
+  - แสดง “ยอดประมาณการค่าใช้จ่ายของรอบ” จากผลรวมทุก line item; ไม่แสดงเป็นยอดต่อคนและไม่รวมค่าก๊วน/ค่าสมาชิกในยอดรอบ
   - หมายเหตุ (`note`): ไม่บังคับ, สูงสุด ~500 ตัวอักษรตาม schema
   - ปัจจุบัน Bottom Sheet ใช้ข้อมูลสถานที่ของก๊วนเดิม (`place_name/lat/lng` ไม่ได้กรอกจาก UI); หน้า fallback ยังรองรับฟิลด์สถานที่ตาม schema
 - **Validation:**
   - เวลาเริ่มต้น ≥ ตอนนี้ + 15 นาที
   - `capacity` ของรอบอยู่ระหว่าง 1–30 และลดต่ำกว่า confirmed participants ไม่ได้
+  - แต่ละรายการต้องมีชื่อยาวไม่เกิน 100 ตัวอักษร, หมวดและ `pricing_unit` อยู่ใน allowlist, `unit_amount` เป็นเงินบาทมากกว่าหรือเท่ากับ 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง
+  - `payment_timing` ต้องเป็น `before_round_approval`, `before_group_join` หรือ `at_venue` เท่านั้น; ต้องแสดงคำอธิบายภาษาไทยใน UI และเก็บค่าเดียวกันใน standard/snapshot
+  - `before_round_approval` และ `before_group_join` เป็น payment gate สำหรับ payment phase; ใน Phase 9.1 ยังบันทึก/แสดงเงื่อนไขโดยไม่เรียกเก็บเงินจริง ส่วน `at_venue` ต้องไม่ทำให้ booking ติดค้างเพราะยังไม่ชำระออนไลน์
+  - `per_item` ต้องมี `quantity` เป็นจำนวนเต็มมากกว่า 0; `per_hour` ต้องมีจำนวนชั่วโมงมากกว่า 0; `flat`/`per_round` ต้องมี `quantity = 1`
+  - เมื่อเลือก standard ต้องอ้างอิงเฉพาะ `standard_type='round_expense' AND is_active=true`; ค่า snapshot ที่ส่งไปต้องสอดคล้องกับ standard ณ เวลาที่เลือก และ custom ต้องมี `standard_id=NULL`
+  - ต้องป้องกันการส่งรายการซ้ำโดยไม่ได้ตั้งใจ และเมื่อไม่มีรายการค่าใช้จ่ายต้องบันทึกได้ตามปกติในฐานะรอบที่ไม่มีค่าใช้จ่ายเฉพาะรอบ
   - เวลาสิ้นสุด > เวลาเริ่มต้น
   - หากเวลาที่เลือกไม่ผ่านเงื่อนไข (`เริ่ม < ตอนนี้ + 15 นาที` หรือ `สิ้นสุด ≤ เริ่ม`) ระบบต้องขยับเวลาอัตโนมัติ และจะต้องอัปเดต `startTime`/`endTime` บนหน้าจอพร้อม `selectedDate` ไม่ใช่ปรับเฉพาะตัวแปรทีจะส่งเข้า repository เท่านั้น มิเช่นนั้นเวลาสิ้นสุดบนหน้าจอจะไม่เลื่อนตามทำให้ผู้ใช้สับสน
   - การเลื่อนเวลาให้รักษาระยะห่าง (duration) เดิมของรอบนัด หรือถ้าข้ามเที่ยงคืนหรือไม่ผ่านเงื่อนไขให้ตั้ง `สิ้นสุด = เริ่ม + 1 ชั่วโมง`
-  - Repository ตรวจซ้ำก่อน insert ว่า actor เป็น owner/แอดมินก๊วนที่ active/admin Sheserved, `capacity` อยู่ในช่วง 1–30 และเวลาเริ่มต้องห่างจากปัจจุบันอย่างน้อย 15 นาที
+  - Repository ตรวจซ้ำก่อน insert/update ว่า actor เป็น owner/แอดมินก๊วนที่ active/admin Sheserved, `capacity` อยู่ในช่วง 1–30, line items ถูกต้อง และเวลาเริ่มต้องห่างจากปัจจุบันอย่างน้อย 15 นาที
   - เมื่อ `owner_auto_join=true` การสร้างรอบใหม่ต้องสร้าง owner booking `confirmed` อัตโนมัติ; ถ้ารอบใหม่ทับกับรอบ upcoming เดิมของ owner ให้ปฏิเสธ
 - **ระหว่างรอ reload:** เมื่อ Bottom Sheet ถูกเปิดพร้อม `refreshFuture` ปุ่ม "บันทึกรอบนัด" แสดง `CircularProgressIndicator` และ disabled; เมื่อ reload สำเร็จ/ล้มเหลวจึงเปิดให้กดบันทึกได้ เพราะ `groupId` ถูกสร้างสำเร็จแล้ว
 - **หลังบันทึกสำเร็จ:** ปิด Bottom Sheet, แสดง SnackBar "สร้างรอบนัดสำเร็จ" และให้ parent เรียก `_reload()` อีกครั้งเพื่ออัปเดตจำนวนรอบ/ข้อมูลการ์ด; การ์ดก๊วนถูกรีเฟรชและแสดงได้ตั้งแต่สร้างก๊วนสำเร็จก่อนเปิด sheet นี้แล้ว
 - **Root cause เคสปัญหาเวลาสิ้นสุดไม่เลื่อนตาม:** `setModalState()` อัปเดตแค่ `startsAt/endsAt` ที่บันทึก แต่ไม่อัปเดต `startTime`/`endTime` บนหน้าจอ ทำให้ผู้ใช้เห็นเวลาเก่าขณะทีส่งค่าไป DB เป็นค่าใหม่อยู่; แก้ไขโดย `setModalState(() { startTime = TimeOfDay.fromDateTime(actualStart); endTime = TimeOfDay.fromDateTime(actualEnd); })` ทุกครั้งทีมีการขยับเวลา
 - **ไฟล์ที่เกี่ยวข้อง:**
-  - `lib/features/community/find_buddies/presentation/pages/sport_club_page.dart` — `_showCreateSessionSheet()`, ปุ่ม "เพิ่มรอบนัด"/"เข้าร่วมก๊วน"
+  - `lib/features/community/find_buddies/presentation/pages/sport_club_page.dart` — `_showCreateSessionSheet()`, `_showEditGroupSheet()`, ปุ่ม "เพิ่มรอบนัด"/"เข้าร่วมก๊วน" และ Phase 9.1 UI
   - `lib/features/community/find_buddies/presentation/pages/create_session_page.dart` — หน้าสร้างรอบนัด fallback (หลัง `createGroup()`)
-  - `lib/features/community/find_buddies/presentation/pages/create_group_page.dart` — redirect หลังสร้างก๊วน
-  - `lib/features/community/find_buddies/data/fitness_buddies_repository.dart` — `createSession()`
+  - `lib/features/community/find_buddies/presentation/pages/create_group_page.dart` — redirect หลังสร้างก๊วน และ Phase 9.1 section จัดการค่ามาตรฐานก๊วน
+  - `lib/features/community/find_buddies/data/fitness_buddies_repository.dart` — `createSession()`/`updateSession()` และ Phase 9.1 methods สำหรับ standard/line item cost พร้อมตรวจ allowlist/snapshot/ยอดเงินซ้ำฝั่ง repository
   - `lib/shared/widgets/thai_buddhist_date_picker.dart` — `ThaiBuddhistDatePickerField`
 - **อนาคต:** หากต้องการแผนที่โต้ตอบ ให้เพิ่ม dependency `flutter_map`/`latlong2` และอ้างอิงพิกัด `fitness_groups.lat/lng` โดยตรง ไม่ต้องกรอกพิกัดซ้ำในรอบนัด
+
+## ระบบค่าใช้จ่าย 2 ระดับ (ตัดสินใจแล้ว 2026-09-08)
+- **ระดับที่ 1 — ค่าใช้จ่ายมาตรฐานของก๊วน:** กำหนดผ่านหน้าสร้างก๊วนและแก้ไขก๊วน (`Create/Edit Group`) โดยผู้จัดการก๊วน/แอดมินตาม policy เดิม ใช้เป็นรายการอ้างอิงซ้ำได้ ไม่ผูกกับรอบใดรอบหนึ่งโดยอัตโนมัติ
+  - **ค่าก๊วน/ค่าสมาชิก (`group_fee`):** ชื่อรายการ เช่น “ค่าสมาชิกก๊วน” หรือชื่อที่แอดมินกำหนดเอง, จำนวนเงิน และรอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` (`per_use/per_day/per_week/per_month/per_year/lifetime`)
+  - **template ค่าใช้จ่ายรอบ (`round_expense`):** รายการมาตรฐาน เช่น ค่าสนาม/ค่าอุปกรณ์/อื่นๆ, จำนวนเงินต่อหน่วย และหน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง` (`flat/per_item/per_round/per_hour`); กำหนดจำนวนเริ่มต้นได้ถ้าต้องใช้ต่อชิ้นหรือต่อชั่วโมง
+  - รายการมาตรฐานมีสถานะ active/inactive; เมื่อถูกใช้กับรอบแล้วให้ปิดใช้งานแทนการลบ เพื่อไม่ทำลายประวัติ
+- **ระดับที่ 2 — ค่าใช้จ่ายเฉพาะรอบ:** กำหนดผ่าน Bottom Sheet สร้าง/แก้ไขรอบนัด (`_showCreateSessionSheet()` และ sheet แก้ไข session) โดยหนึ่งรอบมีรายการค่าใช้จ่ายได้ 0..N รายการ
+  - ปุ่ม “เลือกจากค่ามาตรฐานก๊วน” แสดงเฉพาะ template `round_expense`; เมื่อเลือกให้เติมชื่อ หมวด หน่วยคิด จำนวนเงิน และจำนวนเริ่มต้นลงในรายการ
+  - ปุ่ม “เพิ่มค่าใช้จ่ายกำหนดเอง” ให้แอดมินตั้งชื่อรายการ หมวด หน่วยคิด จำนวนเงิน และจำนวนเองได้; รายการ custom ใช้เฉพาะรอบนั้น และจะไม่กลายเป็นมาตรฐานโดยอัตโนมัติ
+  - ถ้าต้องการนำรายการ custom ไปใช้ซ้ำ ต้องสร้างเป็นค่ามาตรฐานผ่านหน้าสร้าง/แก้ไขก๊วน หรือมี action บันทึกเป็น template อย่างชัดเจน; ห้ามสร้าง standard แอบแฝงจากการบันทึกรอบ
+  - การเลือก standard ต้องเก็บ `standard_id` เพื่ออ้างอิงต้นทางและเก็บ snapshot ชื่อ/หน่วย/ยอด/จำนวน/เงื่อนไขการชำระไว้ในรายการรอบ; การแก้ standard ภายหลังไม่เปลี่ยนรายการของรอบเดิม
+  - **เงื่อนไขการชำระต่อรายการ:** `before_round_approval` = ต้องชำระก่อนผู้จัดการอนุมัติหรือก่อนระบบยืนยัน booking ของรอบ, `before_group_join` = ต้องชำระก่อนทำให้ผู้ใช้เข้าร่วมก๊วน/เป็นสมาชิกที่มีผล, `at_venue` = อนุมัติ/จองได้โดยไม่ต้องชำระออนไลน์และไปจ่ายภายหลังที่สนาม
+  - ถ้ารอบมีหลายรายการที่ใช้ timing ต่างกัน ให้แสดง payment checklist แยกตามรายการ; ใน payment phase ต้องผ่าน gate ที่ถึงก่อนตามลำดับ `before_group_join` → `before_round_approval` ส่วน `at_venue` เปลี่ยนเป็น obligation ที่รอชำระหน้างาน
+- **กติกาหน่วยคิดของค่ารอบ:** `flat`/เหมา = ยอดรวมของรายการ, `per_item`/ต่อชิ้น = ยอดต่อชิ้น × จำนวน, `per_round`/ต่อรอบ = ยอดต่อรอบโดยจำนวนเป็น 1, `per_hour`/ต่อชั่วโมง = ยอดต่อชั่วโมง × จำนวนชั่วโมง; รอบนัดแสดงยอดประมาณการแยกรายการและผลรวม แต่ยังไม่หารเป็นยอดต่อคนอัตโนมัติ
+- **การแสดงผล:** การ์ด/รายละเอียดก๊วนแสดงค่าก๊วนมาตรฐานที่ active แยกจากค่าใช้จ่ายของรอบ; session picker และ Bottom Sheet รายละเอียดแสดงรายการค่าใช้จ่ายของรอบ พร้อมชื่อ หน่วยคิด จำนวน ยอดต่อหน่วย ยอดประมาณการ และ badge เงื่อนไขการชำระ (“ก่อนอนุมัติรอบ”/“ก่อนเข้าก๊วน”/“จ่ายที่สนาม”); ไม่มีค่าก๊วนให้แสดง “ยังไม่ได้กำหนด” แทนช่องว่าง
+- **ขอบเขตรอบแรก:** เก็บและแสดงข้อมูลค่าใช้จ่ายพร้อม `payment_timing` เพื่อให้ผู้ใช้เห็นเงื่อนไขก่อนเข้าร่วม/จอง และเตรียม contract สำหรับ payment ภายหลัง; ยังไม่รับชำระเงิน, ไม่สร้างใบเสร็จ, ไม่แบ่งบิล, ไม่คืนเงิน และไม่เพิ่ม `payment_status` ให้ booking
+- **ผลต่อการจองใน Phase 9.1:** ค่าก๊วนมาตรฐานและค่ารอบไม่กระทบ `capacity`, `available_count`, approval, overlap หรือสถานะ `pending/confirmed`; การกดเข้าร่วม/ส่งคำขอไม่ตัดเงิน และ timing เป็นข้อมูลประกอบการตัดสินใจเท่านั้น
+- **กติกาเมื่อเปิด payment phase:** `before_group_join` ต้องชำระก่อนทำให้ membership/การเข้าร่วมก๊วนมีผล, `before_round_approval` ต้องชำระก่อน owner approve หรือ auto-confirm รอบ, `at_venue` อนุญาต booking/approval และสร้าง obligation สถานะ `pay_at_venue` เพื่อชำระที่สนาม; ห้ามใช้การเปลี่ยน booking status แทน payment status
+- **การแก้ไข:** แก้ standard ได้เฉพาะผู้จัดการก๊วน; แก้รายการรอบได้เฉพาะผู้จัดการก๊วน; ถ้ามี booking `pending`/`confirmed` ให้แสดงคำเตือนและขอการยืนยันก่อนแก้ไข โดยไม่แก้ snapshot ของรอบเดิม, ไม่เปลี่ยน payment timing ของ obligation เดิม และไม่เรียกเก็บ/คืนเงินย้อนหลัง
+- **Audit/traceability:** บันทึกการสร้าง/แก้ไข/ปิดใช้งาน standard และการเพิ่ม/แก้ไข/ลบรายการค่าใช้จ่ายรอบ พร้อมค่าเดิม/ค่าใหม่/payment timing, actor, group/session และ timestamp ใน structured/audit log; ห้ามบันทึกข้อมูลบัตรหรือ secret
+- **สกุลเงินและความแม่นยำ:** รอบแรกใช้เงินบาท (`THB`) เท่านั้น, จำนวนเงินและจำนวนหน่วยเก็บเป็น `NUMERIC(10,2)` และรับทศนิยมไม่เกิน 2 ตำแหน่ง; payment ในอนาคตต้อง snapshot รายการและยอดตอนสร้าง charge ไม่อ้าง standard/session ที่แก้ไขได้
+- **ข้อมูลเดิมและ public contract:** migration ใหม่เพิ่มสองตารางค่าใช้จ่ายแบบ idempotent โดยไม่สร้างรายการย้อนหลังให้กลุ่ม/รอบเดิม, แก้ `fitness_sessions_public.capacity` ให้มาจาก `fitness_group_sessions.capacity`, เพิ่ม public view สำหรับค่าก๊วนที่ active และรายการค่าใช้จ่ายที่ผูกกับรอบ; ฟีเจอร์นี้ยังเป็นงานถัดไป ไม่ถือว่า public view migration เดิม implement แล้ว
 
 ## ปรับตำแหน่ง TLZBottomNavigationBar บน Android (2026-08-06)
 - **สาเหตุ:** Android ที่มี gesture bar (`bottomSafeArea > 0`) ตกเงื่อนไขเดียวกับ iOS ทำให้ใช้ค่า `14.0` แทนค่า Android ที่ตั้งไว้
@@ -250,9 +321,12 @@ Scaffold
 
 ## กติกาธุรกิจ — การจอง อนุมัติ และการแจ้งเตือน
 - ประเภทการจอง: ผู้ใช้จอง “เข้าร่วมรอบนัด (session)” ที่ `fitness_group_sessions`
+- **ค่าใช้จ่าย 2 ระดับไม่ใช่ขั้นตอนการชำระเงิน:** ค่าก๊วนมาตรฐานและรายการค่าใช้จ่ายรอบเป็นข้อมูลประกอบการตัดสินใจ การกดเข้าร่วม/ส่งคำขอไม่ตัดเงินและไม่สร้าง payment record; booking ยังคงใช้เฉพาะสถานะ `pending/confirmed/cancelled/rejected` และค่าใช้จ่ายไม่ถูกนำไปคำนวณ capacity หรือจำนวนว่าง
+- **ก่อนเข้าร่วม:** รายละเอียดก๊วนต้องแสดงค่าก๊วน/ค่าสมาชิกมาตรฐานที่ active ส่วน session picker/รายละเอียดรอบต้องแสดงรายการค่าใช้จ่ายเฉพาะรอบแบบแยกรายการและยอดประมาณการ; ไม่รวมสองระดับเป็นยอดเดียวและไม่คำนวณหารต่อคนอัตโนมัติ
 - การอนุมัติ:
   - ก๊วนเปิด (`requires_owner_approval=false`): ยอมรับอัตโนมัติ → สถานะ `confirmed` โดยไม่แจ้งเตือนผู้จองหรือเจ้าของก๊วน
   - ก๊วนส่วนตัว (`requires_owner_approval=true`): บันทึกเป็น `pending` รอเจ้าของอนุมัติ และส่ง event แจ้งเตือนเจ้าของก๊วนทันทีเมื่อมีผู้ขอเข้าร่วม; เมื่อ `confirm` หรือ `reject` สำเร็จ ให้แจ้งผู้จองเท่านั้น
+  - **เมื่อเปิด payment phase:** ถ้ามี obligation `before_group_join` ต้องชำระก่อนทำให้สมาชิก/booking มีผล; ถ้ามี `before_round_approval` ต้องชำระก่อน owner approve หรือก่อนก๊วนเปิด auto-confirm; `at_venue` ไม่บล็อกการอนุมัติ
 - การยกเลิก:
   - ผู้จองยกเลิกเมื่อใดก็ได้ → เปลี่ยนเป็น `cancelled` และแจ้ง “เจ้าของก๊วน”
   - เจ้าของก๊วนยกเลิกรอบ/ก๊วนทั้งหมด → แจ้งผู้จองทุกคนที่มีสถานะไม่ใช่ `cancelled`
@@ -295,7 +369,7 @@ Scaffold
 
 ## ไม่ใช่ขอบเขต (รอบแรก)
 - ระบบนัดหมายซับซ้อน (เช่น วนรายสัปดาห์พร้อมกติกา), ระบบเช็คอิน, คะแนนความน่าเชื่อถือ
-- ระบบชำระเงิน/จองสนาม
+- การรับชำระเงิน/คืนเงิน/แบ่งบิล/ออกใบเสร็จ/จองสนาม — ทั้งค่าก๊วนมาตรฐานและค่าใช้จ่ายเฉพาะรอบในแผนนี้เป็นข้อมูลที่ผู้จัดการประกาศและผู้เข้าร่วมเห็นเท่านั้น; payment/ledger ทำในเฟสถัดไป
 
 ## ความปลอดภัยและสิทธิ์
 - อ่านข้อมูล: public (ทุกก๊วนแสดงในรายการเปิดรับ รวมก๊วนส่วนตัว)
@@ -336,12 +410,22 @@ Scaffold
   - `lat`: numeric range -90 ถึง 90
   - `lng`: numeric range -180 ถึง 180
   - `capacity`: integer 1–30
+  - `standard_type`: enum allowlist `['group_fee','round_expense']`
+  - `category`: `membership` สำหรับ group fee หรือ `venue|equipment|other` สำหรับ round expense
+  - `name`: ชื่อ standard/line item ความยาว 1–100 ตัวอักษร
+  - `billing_period`: enum `['per_use','per_day','per_week','per_month','per_year','lifetime']` เฉพาะ `group_fee`
+  - `pricing_unit`: enum `['flat','per_item','per_round','per_hour']` เฉพาะ `round_expense`
+  - `unit_amount`: decimal เงินบาท `0..99999999.99`, scale ไม่เกิน 2; รายการ active ที่เป็นค่าใช้จ่ายต้องมากกว่า `0`
+  - `quantity`: decimal `> 0`, `per_item` ต้องเป็น integer และ `flat/per_round` ต้องเท่ากับ `1`
+  - `payment_timing`: enum `['before_round_approval','before_group_join','at_venue']`; ต้อง snapshot ลง session cost item
+  - `source_type`: enum `['standard','custom']`; custom ห้ามส่ง `standard_id`, standard ต้องอ้าง standard ที่อยู่ใน group เดียวกันและ active
+  - `obligation.status` (future payment phase): enum `['unpaid','pending','paid','failed','cancelled','refunded','pay_at_venue','waived']`; client ห้ามเปลี่ยนเป็น `paid`
   - `owner_auto_join`: boolean; แก้ไขได้เฉพาะ owner
   - `status`: enum allowlist `['pending','confirmed','cancelled','rejected']`
   - `role`: enum allowlist `['member','admin']`
   - `cancelled_by`: enum allowlist `['user','owner','system']`
   - `cancel_reason`: สูงสุด 200 ตัวอักษร
-- DB constraints (CHECK, VARCHAR length, FK) เป็น defense layer สำรอง; constraint capacity 1–30 และ `owner_auto_join` ถูก apply แล้วผ่าน migration ของ Phase 9; ถ้า environment ใดยังไม่ apply migration ต้อง migrate ก่อนใช้งาน
+- DB constraints (CHECK, VARCHAR length, FK) เป็น defense layer สำรอง; constraint capacity 1–30 และ `owner_auto_join` ถูก apply แล้วผ่าน migration ของ Phase 9 ส่วน standard/line item cost ต้องเพิ่มใน migration ของ Phase 9.1; ถ้า environment ใดยังไม่ apply migration ที่เกี่ยวข้องต้อง migrate ก่อนใช้งาน
 
 ### Rate Limiting (`docs/secure/03_rate_limiting_resource_exhaustion.md`)
 - ใช้ Redis rate limiter ที่มีอยู่ (`middleware/rate-limiter.js`) สำหรับ endpoint ใหม่:
@@ -422,9 +506,15 @@ Scaffold
 - DB schema มี CHECK constraints สำหรับ enum fields และ numeric range สำหรับ lat/lng
 - Endpoint ใหม่มี rate limiter และ idempotency middleware
 - Google Maps API key ไม่ถูก hardcode ใน source code (ใช้ dart-define/config)
-- Security events (สร้างก๊วน, จอง, ยกเลิก, บล็อก) ถูก log แบบ structured logging
+- Security events (สร้างก๊วน, สร้าง/แก้ไข/ปิด standard, เพิ่ม/แก้ไข/ลบ session cost item, สร้าง/อัปเดต cost obligation ใน payment phase, จอง, ยกเลิก, บล็อก) ถูก log แบบ structured logging
 - กด "เข้าร่วมก๊วน" สร้าง booking โดยตรง (ไม่มีขั้นตอนสมัครสมาชิกแยก) และ `fitness_group_members` ถูก upsert อัตโนมัติในธุรกรรมเดียวกัน
 - การสร้างรอบนัดรับ `capacity` ของรอบในขั้นตอนสร้าง/แก้ไข session; การ์ดและ Bottom Sheet แสดง confirmed/pending/available แยกต่อรอบ และไม่ใช้ผลรวม capacity หลายรอบแทนจำนวนสมาชิกก๊วน
+- หน้าสร้าง/แก้ไขก๊วนให้ผู้จัดการกำหนดค่ามาตรฐานได้ทั้ง `group_fee` และ `round_expense`; ค่าก๊วนรองรับ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ`, template รอบรองรับ `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง` และทุกค่าใช้จ่ายเลือก `before_round_approval`/`before_group_join`/`at_venue` ได้
+- Bottom Sheet สร้าง/แก้ไขรอบให้แอดมินเลือก template `round_expense` หรือเพิ่มรายการ custom พร้อมชื่อเองได้หลายรายการ; รายการที่เลือกเก็บ snapshot และสองรอบสามารถใช้ template/ยอด/จำนวน/เงื่อนไขชำระต่างกันได้
+- แต่ละค่าใช้จ่ายแสดง timing ภาษาไทยและ payment checklist แยกรายการ; payment phase ในอนาคตต้อง gate ตาม timing โดยไม่ใช้ booking status แทน payment status
+- ระบบคำนวณยอดประมาณการแต่ละรายการและผลรวมรอบถูกต้องตามหน่วยคิด; `per_item`/`per_hour` ใช้ quantity, `flat`/`per_round` ใช้ quantity=1; ไม่มีรายการรอบได้และไม่ถือเป็น error
+- Phase 9.1 ไม่ถูกหักเงิน ไม่สร้างใบเสร็จ และไม่เปลี่ยน capacity/approval/booking status; public views แสดงค่าก๊วน/รายการรอบพร้อม timing แต่ไม่เปิดข้อมูล payer/payment
+- แก้/ปิด standard แล้วรายการ snapshot ของรอบเดิมไม่เปลี่ยน; standard ที่เคยถูกใช้ห้ามลบแบบทำลายประวัติ; migration ใหม่ไม่สร้างค่าใช้จ่ายย้อนหลังให้ข้อมูลเดิม
 - `book_fitness_session()` RPC ป้องกันทั้งการจองซ้ำ (`UNIQUE`), เกิน session capacity (`FOR UPDATE`), และจองซ้อนเวลา (`check_booking_overlap()`) แบบ atomic; pending ไม่กินที่นั่งและ approval ตรวจซ้ำก่อน confirm
 - `owner_auto_join=true` สร้าง owner booking `confirmed` ในทุก upcoming session; การเปิด auto-join ตรวจ capacity และ overlap แบบ all-or-nothing
 - Migration เพิ่ม `room_type`/`room_ref_id` ใน `chat_rooms` สำเร็จ และ `participant_ids` sync ถูกต้องเมื่อสมาชิก join/leave
@@ -474,7 +564,7 @@ Scaffold
 
 ## Roadmap ปรับปรุงจากผลวิเคราะห์ Gap (2026-08-22) — เรียงตามความสำคัญ
 
-> ผลตรวจสอบโค้ดจริง ณ 2026-08-25: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage, swipe actions ในรายละเอียดก๊วน และ owner participation/owner rejoin ตาม Phase 9 ทำครบแล้ว — ช่องว่างที่เหลือคือการทดสอบ E2E (Phase 6) และการทดสอบ regression บน environment จริง
+> ผลตรวจสอบโค้ดจริง ณ 2026-08-25: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage, swipe actions ในรายละเอียดก๊วน และ owner participation/owner rejoin ตาม Phase 9 ทำครบแล้ว — **ระบบค่าใช้จ่ายมาตรฐานก๊วน + ค่าใช้จ่ายเฉพาะรอบตาม Phase 9.1 (ปรับรายละเอียด 2026-09-08) ยังไม่ implement**; ช่องว่างเดิมที่เหลือคือการทดสอบ E2E (Phase 6) และการทดสอบ regression บน environment จริง
 
 ### Phase 1 — ปักหมุดพิกัดตอนสร้างก๊วน + Pagination ✅ เสร็จแล้ว (ปรับ page size 10 และ filtered-page loading 2026-08-30)
 - ปัญหา: ฟอร์ม `create_group_page.dart` ไม่มีการเก็บ `lat/lng` เลย → ก๊วนใหม่ไม่มีพิกัด, มุมมองแผนที่ใน `sport_club_page.dart` ไม่มี marker, ตัวกรองรัศมี (กม.) ไม่ทำงานจริง
@@ -490,7 +580,7 @@ Scaffold
 - **เลือกรอบนัดเอง (ตัดสินใจแล้ว 2026-08-22):** เปลี่ยนปุ่ม "เข้าร่วมก๊วน" จากจองรอบใกล้สุดอัตโนมัติ → เปิด bottom sheet รายการรอบนัดให้ผู้ใช้เลือกรอบก่อน แล้วค่อยเรียก `bookSession()`
 - **สถานะ "รออนุมัติ" บน CTA:** ผู้จองก๊วนส่วนตัวที่ booking ยัง `pending` ให้การ์ด/bottom sheet แสดง "รออนุมัติ" (disabled) แทน "เข้าร่วมก๊วนแล้ว"
 - **Redirect + intent:** หลัง login สำเร็จ ให้กลับมาที่ก๊วนเดิมพร้อม `intent=join_group` เพื่อเปิด sheet เลือกรอบต่อทันที (ปัจจุบัน redirect กลับแค่ `/community/sport-club` ระดับ list)
-- **Draft ฟอร์มสร้างก๊วน:** ถ้าโดนพาไป login ระหว่างกด "บันทึก" ให้ serialize text/scalar fields (ชื่อ, คำอธิบาย, sportId, เพศ, toggle, จังหวัด/อำเภอ, lat/lng, coverImageUrl, venuePhotoUrl) ลง `SharedPreferences` key `create_group_draft` เป็น JSON — ไม่เก็บ session capacity ใน draft ก๊วน — บันทึกเฉพาะตอน redirect ไป login (ไม่ auto-save ทุก keystroke) — restore ใน `initState`/`didChangeDependencies` เมื่อกลับจาก login — ลบ draft ทันทีหลังสร้างสำเร็จหรือ restore แล้ว — ใส่ TTL 1 ชั่วโมงกัน draft ค้าง
+- **Draft ฟอร์มสร้างก๊วน:** ถ้าโดนพาไป login ระหว่างกด "บันทึก" ให้ serialize text/scalar fields และ `costStandards` (ชื่อ, คำอธิบาย, sportId, เพศ, toggle, จังหวัด/อำเภอ, lat/lng, coverImageUrl, venuePhotoUrl, ค่าก๊วน/ค่า template รอบ) ลง `SharedPreferences` key `create_group_draft` เป็น JSON — ไม่เก็บ session capacity หรือ session cost items ใน draft ก๊วน — บันทึกเฉพาะตอน redirect ไป login (ไม่ auto-save ทุก keystroke) — restore ใน `initState`/`didChangeDependencies` เมื่อกลับจาก login — ลบ draft ทันทีหลังสร้างสำเร็จหรือ restore แล้ว — ใส่ TTL 1 ชั่วโมงกัน draft ค้าง
 - สถานะ: ✅ ทำครบ — `_showSessionPickerSheet()` เปิดรายการรอบนัดก่อนจอง, CTA แสดง "รออนุมัติ" disabled (ไอคอน hourglass) จาก `_myPendingGroupIds`, `_handleIntent()` อ่าน `intent=join_group` เปิด sheet ต่อหลัง login, `_saveDraft()`/`_restoreDraft()`/`_clearDraft()` ใน `create_group_page.dart` (TTL 1 ชม.)
 
 ### Phase 3 — แชทก๊วน (Milestone 4 เดิม) ✅ เสร็จแล้ว
@@ -504,6 +594,7 @@ Scaffold
 
 ### Phase 4 — จัดการก๊วน + หน้าก๊วนของฉัน ✅ เสร็จแล้ว (2026-08-23)
 - **แก้ไขก๊วน:** หน้า/sheet แก้ไข (ชื่อ, คำอธิบาย, ภาพ, เพศ, toggle `requires_owner_approval`, พิกัด) เฉพาะผู้จัดการก๊วน — owner/controller ผ่าน `created_by`, active group admin ผ่าน membership หรือ admin Sheserved (`users.role='admin'`); ไม่แก้ session capacity จากหน้าแก้ไขก๊วน
+- **ค่าใช้จ่ายมาตรฐานก๊วน:** การเพิ่ม/แก้ไข/ปิดใช้งาน `group_fee` และ `round_expense` ยังเป็น scope ของ Phase 9.1 ไม่ถือว่ารวมอยู่ใน implementation ของ Phase 4 เดิม
 - **Owner participation:** เพิ่ม toggle “เข้าร่วมทุกรอบอัตโนมัติ” ใน create/edit ค่าเริ่มต้นเปิด; เมื่อเปิดจะสร้าง owner booking `confirmed` ให้ทุก upcoming session; เมื่อปิดระบบถามว่าจะคงหรือยกเลิก booking อนาคต
 - **Owner auto-join guard:** เปิดกลับได้แบบ all-or-nothing เมื่อทุก upcoming session มีที่ว่างและรอบ upcoming ของก๊วนไม่ทับเวลา; ถ้าไม่ผ่านจะไม่เปลี่ยน flag และไม่สร้าง booking บางส่วน
 - **ปุ่มถอนเจ้าของ:** ในแถวสมาชิกของ owner ให้แสดงปุ่ม “ถอน” ผ่านเมนู swipe เดียวกับ “แชท”/เมนูจัดการอื่น; การถอนยกเลิก booking owner ในรอบอนาคตและคงสิทธิ์ผู้ดูแลผ่าน `created_by`; owner ที่ opt-out แล้วจองเฉพาะรอบได้เองโดยไม่เปิด auto-join กลับ
@@ -802,6 +893,17 @@ Scaffold
 - ปิด owner auto-join แล้วถามว่าจะคงหรือยกเลิก booking อนาคต; owner จองเฉพาะรอบเองได้โดยไม่เปิด auto-join กลับ
 - เปิด owner auto-join กลับเมื่อมี session เต็มหรือ session ทับเวลา ต้องไม่เปลี่ยนสถานะและไม่สร้าง booking บางส่วน
 - ตรวจ CTA, member count, จำนวนว่างรายรอบ, pending/confirmed, หน้า “ก๊วนของฉัน”, สิทธิ์แชท และสิทธิ์ admin ให้ตรงกัน
+
+### Phase 9.1 — Group Cost Standards + Session Cost Items ⏳ รอ implement (ปรับรายละเอียด 2026-09-08)
+- **เป้าหมาย:** แยกค่าใช้จ่ายเป็น (1) ค่ามาตรฐานของก๊วนที่จัดการผ่านหน้าสร้าง/แก้ไขก๊วน และ (2) ค่าใช้จ่ายเฉพาะรอบที่จัดการผ่าน Bottom Sheet; แอดมินเลือก standard หรือสร้างชื่อ/รายการ custom ได้ พร้อมกำหนดเงื่อนไขชำระต่อรายการ โดยยังไม่รับ payment จริงใน phase นี้
+- **DB/Migration:** สร้าง `fitness_group_cost_standards` สำหรับ `group_fee`/`round_expense` และ `fitness_group_session_cost_items` สำหรับรายการของแต่ละรอบ; เพิ่ม `payment_timing` ใน standard และ snapshot line item, ใช้ `NUMERIC(10,2)`, CHECK แบบแยก period/unit/timing, FK/soft-disable และ snapshot; migration ต้อง idempotent, ไม่แก้ migration ที่ apply แล้ว และไม่สร้างค่าใช้จ่ายย้อนหลังให้ข้อมูลเดิม
+- **Group Create/Edit UI:** เพิ่ม section “ค่าใช้จ่ายมาตรฐานของก๊วน” ให้เพิ่ม/แก้ไข/ปิดใช้งานค่าก๊วนและ template รอบ; ค่าก๊วนรองรับ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ`, template รอบรองรับ `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง` และ selector เงื่อนไขชำระ 3 แบบ
+- **Session Bottom Sheet:** เพิ่มรายการค่าใช้จ่ายแบบหลายแถว, ปุ่มเลือกเฉพาะ template `round_expense` ที่ active, ปุ่มเพิ่มรายการ custom, แก้จำนวน/หน่วย/ยอด/เงื่อนไขชำระ/ลบรายการ และสรุปยอดประมาณการของรอบ; `group_fee` ไม่ถูกนำมาเลือกเป็นค่าใช้จ่ายรอบ
+- **Repository:** เพิ่ม CRUD สำหรับ group standards และ session cost items พร้อม manager authorization, allowlist, source/snapshot/payment-timing validation, quantity/unit calculation และตรวจซ้ำฝั่ง server/DB; เมื่อแก้ standard ต้องไม่ mutate snapshot ของ session เดิม
+- **Public/Guest:** เพิ่ม public view สำหรับ group fee ที่ active และ session cost items ที่ผูกกับรอบ พร้อม `payment_timing`; card/detail/session picker อ่านข้อมูลจาก view เหล่านี้, ไม่เปิด standard รอบที่ยังไม่ได้ใช้หรือข้อมูล payer/payment และ guest เห็นราคา/เงื่อนไขได้แต่ยังจองไม่ได้จนกว่าจะ login
+- **Payment contract:** กำหนด transition สำหรับอนาคตให้ `before_group_join` gate membership, `before_round_approval` gate owner approval/auto-confirm และ `at_venue` สร้าง obligation `pay_at_venue`; ใช้ `fitness_group_cost_obligations` ใน payment phase ไม่เพิ่ม payment status ลงใน booking
+- **ไม่ทำใน phase นี้:** หักเงิน, payment status, receipt, split bill, refund, escrow หรือ notification การชำระจริง; Phase 9.1 เก็บ/แสดง timing และทดสอบ contract เท่านั้น
+- **Regression/QA:** ทดสอบค่าก๊วนทุก period, template สนาม/อุปกรณ์ทุก pricing unit, payment timing ทั้ง 3 แบบ, เลือก standard, custom name, หลายรายการต่อรอบและ timing ต่างกัน, quantity/ยอดประมาณการ, standard ถูกปิดหลังถูกใช้, snapshot/timing ไม่เปลี่ยน, รอบไม่มีค่าใช้จ่าย, public/guest view และไม่ให้ค่าใช้จ่ายกระทบ capacity/approval/overlap/booking status
 
 ---
 
@@ -1206,7 +1308,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | **C** | reuse `transaction_audit_log` ที่มีอยู่ | ไม่เพิ่มตาราง | schema ออกแบบมาเพื่อ procurement; ปนความหมาย |
 
 **คำแนะนำ: B** — สร้างตารางเดียวแต่เริ่ม populate แค่ scope ที่จำเป็น
-**Event ขั้นต่ำที่ต้อง log ใน 13.2:** `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`
+**Event ขั้นต่ำที่ต้อง log ใน 13.2:** `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.group_cost_standard.created/updated/disabled`, `fitness.session_cost_item.created/updated/deleted`, `fitness.cost_obligation.created/paid/failed/waived`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`
 **ข้อกำหนด implementation:** ถ้า partition ตาม `occurred_at` ต้องออกแบบ primary/unique key ให้รวม partition key เช่น `(occurred_at, id)` หรือใช้ index strategy ที่ถูกต้องกับ PostgreSQL; ห้ามใช้ primary key `id` เดี่ยวบน partitioned parent โดยไม่ตรวจสอบ
 **การเขียน audit:** auth handler/HTTP request ห้ามถือ service_role เพื่อเขียนโดยตรง; ส่ง event เข้า durable queue/outbox แล้ว `audit-worker` ที่มี `sheserved_worker` เป็นผู้เขียน; compliance event เขียน transaction เดียวกับ operation; ต้อง redaction PII/secret และมี retry/dead-letter
 **ข้อบังคับ:** ต้อง `REVOKE UPDATE, DELETE ON audit_logs` จาก app role ตั้งแต่ migration แรก (แผน 05 และ 12 ระบุตรงกัน)
@@ -1265,8 +1367,11 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **Public data contract:** ตาราง classification ต่อคอลัมน์ของทุกตาราง Fitness (`public / member / manager / server-only`)
 - **Decision Q5 = B (public VIEW):** สร้าง public VIEW ต่อ use case โดย expose เฉพาะคอลัมน์ที่ตั้งใจ:
   - `fitness_groups_public` — รายการการ์ด: id, sport_id, name, description, province, district, lat/lng (ปัดถ้าจำเป็น), gender_preference, cover_image_url, venue_photo_url, created_at, aggregate รอบ upcoming/confirmed/pending โดยไม่เปิดรายชื่อ
+  - `fitness_group_cost_standards_public` — ค่าก๊วน/ค่าสมาชิกมาตรฐานที่ active: id, group_id, name, billing_period, amount, `payment_timing`, currency; เปิดเฉพาะ `standard_type='group_fee'` และไม่เปิด template ค่าใช้จ่ายรอบที่ยังไม่ได้ถูกใช้
   - `fitness_sessions_public` — รายละเอียดรอบ: id, group_id, starts_at, ends_at, capacity, confirmed_count, available_count, place_name, lat/lng, note
-  - **ห้าม** expose ใน public view: `created_by`, รายชื่อ members/bookings, blocklist, owner_auto_join หรือข้อมูลส่วนตัว
+  - `fitness_session_costs_public` — รายการค่าใช้จ่ายที่ผูกกับรอบ: id, session_id, name, category, pricing_unit, unit_amount, quantity, estimated_amount, `payment_timing`, currency; ไม่เปิด `standard_id`/source metadata ที่ไม่จำเป็น
+  - ค่าใช้จ่าย public เป็นข้อมูลที่ตั้งใจให้ผู้ใช้เห็นก่อนจอง; ห้ามเพิ่ม payment status, payer identity หรือข้อมูลธุรกรรมลงใน public view
+  - **ห้าม** expose ใน public view: `created_by`, รายชื่อ members/bookings, blocklist, owner_auto_join, inactive standards, round templates ที่ยังไม่ถูกเลือก หรือข้อมูลส่วนตัว
   - ตั้งค่า view เป็น security model ที่ตรวจสอบแล้ว (ไม่เปิดทางอ้อมให้ anon อ่านตารางจริง); anon อ่านได้เฉพาะ view และตารางจริงจะปิด anon SELECT ใน migration cutover 13.5
   - Flutter repository เปลี่ยน query browse ไปชี้ view; count/aggregate ต้องทดสอบว่าไม่เปิด row ของ member
   - Grant `SELECT` เฉพาะ view ให้ `anon`/`authenticated`; ห้าม grant mutation ให้ `authenticated` เพราะ Q7-C ให้ mutation ผ่าน gateway เท่านั้น
@@ -1315,9 +1420,17 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 | | place_name | public | ✅ |
 | | lat / lng | public | ✅ |
 | | note | public | ✅ |
-| | capacity (from group) | public | ✅ |
+| | capacity (per session) | public | ✅ |
 | | confirmed_count (aggregate) | public | ✅ |
 | | available_count (aggregate) | public | ✅ |
+| fitness_group_cost_standards | id/group_id | public for active `group_fee`; manager for `round_expense` | ✅ conditional views |
+| | name/billing_period/amount/payment_timing/currency | public for active `group_fee`; manager for `round_expense` | ✅/❌ by scope |
+| | standard_type/category/pricing_unit/default_quantity/payment_timing | public only where needed; manager for templates | ✅/❌ by scope |
+| | is_active/created_by/updated_at | manager | ❌ |
+| fitness_group_session_cost_items | id/session_id | public when session is public | ✅ fitness_session_costs_public |
+| | name/category/pricing_unit/unit_amount/quantity/estimated_amount/payment_timing/currency | public | ✅ |
+| | standard_id/source_type/created_by | manager/server-only | ❌ |
+| fitness_group_cost_obligations | all columns | user/manager/private | ❌ public; private payment path only |
 | fitness_group_members | user_id | member/manager | ❌ |
 | | role | member/manager | ❌ |
 | | is_active | member/manager | ❌ |
@@ -1334,7 +1447,9 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 > **หมายเหตุ:** anon อ่านได้เฉพาะ public VIEW; member/manager columns จะถูกจำกัดด้วย RLS ใน Phase 13.1/13.5; การ revoke anon SELECT จากตารางจริงจะทำใน migration cutover 13.5
 
 #### Phase 13.0 — Implementation status (2026-09-03; residual ปิด 2026-09-05)
-- ✅ **Public view migration:** `20260903110900_phase_13_0_fitness_public_views.sql` — `fitness_groups_public` (exposes id, sport_id, name, description, province, district, lat/lng, gender_preference, requires_owner_approval, capacity, cover_image_url, venue_photo_url, created_at + aggregate counts: upcoming_sessions_count, upcoming_confirmed_count, upcoming_pending_count; filters `visibility='public'`); `fitness_sessions_public` (exposes id, group_id, starts_at, ends_at, capacity, place_name, lat/lng, note, confirmed_count, available_count; joins group for capacity, filters `visibility='public'`); `GRANT SELECT TO anon, authenticated`
+- ✅ **Public view migration:** `20260903110900_phase_13_0_fitness_public_views.sql` — `fitness_groups_public` (exposes id, sport_id, name, description, province, district, lat/lng, gender_preference, requires_owner_approval, capacity, cover_image_url, venue_photo_url, created_at + aggregate counts: upcoming_sessions_count, upcoming_confirmed_count, upcoming_pending_count; filters `visibility='public'`); `fitness_sessions_public` (exposes id, group_id, starts_at, ends_at, capacity, place_name, lat/lng, note, confirmed_count, available_count; current view joins group for capacity, filters `visibility='public'`); `GRANT SELECT TO anon, authenticated`
+- ⚠️ **Capacity follow-up:** public view เดิมยังดึง `capacity` จาก group; ต้องเปลี่ยนเป็น `s.capacity` พร้อมงาน Phase 9.1 เพื่อไม่ให้การแสดงค่าใช้จ่ายและจำนวนที่ว่างของแต่ละรอบอ้างข้อมูลผิดระดับ
+- ⏳ **ส่วนขยายค่าใช้จ่าย 2 ระดับ:** `fitness_group_cost_standards`, `fitness_group_session_cost_items`, `fitness_group_cost_standards_public` และ `fitness_session_costs_public` ยังไม่อยู่ใน migration/view นี้; ต้องเพิ่ม migration และอัปเดต repository/UI ตามหัวข้อ “ระบบค่าใช้จ่าย 2 ระดับ” ก่อนจึงจะนับว่า feature นี้เสร็จ
 - ✅ **Flutter browse query:** `fitness_buddies_repository.dart` `listGroups()` ชี้ไป `fitness_groups_public` แล้ว
 - ✅ **Fitness browse UX (guest mode):** ปุ่ม 'สร้างก๊วน' บน `SportClubPage` แสดงใน guest mode; กดแล้ว push `/login` พร้อม `arguments: {'returnAfterLogin': true}`; หลัง login สำเร็จ `LoginPage` pop กลับยัง `SportClubPage` เดิม (state และแถบ bottom nav สูงเพิ่ง) แล้วเปิดหน้า create group ต่อทันที
 - ✅ **`.env.example`:** เพิ่ม `SUPABASE_JWT_SECRET`, `JWT_ACTIVE_KID/SECRET`, `JWT_PREVIOUS_KID/SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `ACCESS_TTL`, `REFRESH_TTL`, `SUPABASE_SERVICE_KEY` template (สำหรับ services ที่ลบ fallback แล้ว); เพิ่ม `CADDY_STAGING_DOMAIN`/`CADDY_ACME_EMAIL` template สำหรับ Caddyfile.staging
@@ -1408,7 +1523,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - เพิ่ม `routes/auth.js`: `login`, `social/:provider`, `refresh`, `logout`, `logout-all`, `me`, `sessions`, `sessions/:id`
 - เพิ่ม dependency: `jsonwebtoken`, `argon2` (fallback `bcrypt` cost 12), `helmet`; ตรวจ published date ≥ 7 วันตามกฎ supply chain
 - **Decision Q11 = B (audit_logs):** reuse/extend `public.sessions` เป็น refresh registry และสร้าง `audit_logs` ตาม schema แผน 05 ตั้งแต่ migration แรกของ 13.2 พร้อม index `(actor_id, occurred_at DESC)`, `(resource_type, resource_id, occurred_at DESC)`, `(event_type, occurred_at DESC)`; ถ้า partition ตาม `occurred_at` ให้ใช้ primary/unique key ที่รวม partition key เช่น `(occurred_at, id)` หรือ index strategy ที่ PostgreSQL รองรับ — ห้ามใช้ primary key `id` เดี่ยวบน partitioned parent โดยไม่ตรวจสอบ; `REVOKE UPDATE, DELETE` จาก app role ตั้งแต่แรก; retention security event 1 ปี online / 3 ปี archive
-- Audit events ขั้นต่ำ: `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`; auth handler ส่งผ่าน durable queue/outbox ไป `audit-worker` ที่ใช้ `sheserved_worker`, ไม่ถือ service_role ใน HTTP request; compliance event เขียนใน transaction เดียวกับ operation; redaction ห้ามเก็บ password/token/OTP/secret/PII ที่ไม่จำเป็น
+- Audit events ขั้นต่ำ: `auth.login.success/failure`, `auth.refresh.success/reuse_detected`, `auth.logout`, `auth.session.revoked`, `auth.password.changed`, `authz.denied`, และ Fitness: `fitness.session.created/cancelled`, `fitness.group_cost_standard.created/updated/disabled`, `fitness.session_cost_item.created/updated/deleted`, `fitness.cost_obligation.created/paid/failed/waived`, `fitness.booking.approved/rejected`, `fitness.member.removed`, `fitness.user.blocked`; auth handler ส่งผ่าน durable queue/outbox ไป `audit-worker` ที่ใช้ `sheserved_worker`, ไม่ถือ service_role ใน HTTP request; compliance event เขียนใน transaction เดียวกับ operation; redaction ห้ามเก็บ password/token/OTP/secret/PII ที่ไม่จำเป็น
 - **Decision Q4 = B (lazy rehash + backstop):** เพิ่ม `password_algo VARCHAR(20)`, `password_updated_at TIMESTAMPTZ`, `password_migrated_at TIMESTAMPTZ` และ `requires_password_reset BOOLEAN` บน `users`; verify `argon2id` ก่อน, legacy SHA-256 ต่อเมื่อยังอยู่ใน compatibility window แล้ว rehash เป็น Argon2id ทันที; backstop ใช้ `argon2(sha256(pw))` เฉพาะแถว legacy SHA-256 ที่ตรวจรูปแบบได้และไม่มี plaintext; แถว plaintext ให้บังคับ reset ห้าม hash ค่าเดิมอัตโนมัติ; ครบ 90 วันหลัง password cutover ผู้ใช้ที่ยังไม่เป็น `argon2id` ต้อง reset ผ่าน OTP
 - **OTP ในช่วง development (2026-09-02):** สำหรับ forced-reset ผ่าน OTP (Q4-B) ใน dev ให้ใช้ console mock ของ `OtpService` (`AppConfig.useConsoleOtp`) ต่อได้ฟรี — แสดง OTP ใน terminal ไม่ส่ง SMS จริง ไม่มีค่าใช้จ่าย; ⚠️ เงื่อนไขบังคับก่อน production: (1) เปลี่ยนเป็น server-side OTP provider (generate + verify ฝั่ง Backend, audit ผ่าน `auth.password.changed`/reset event) (2) ปิด `useConsoleOtp` ใน release — แนะนำผูกกับ `kDebugMode`/`--dart-define` ไม่ใช่ hardcode `true` (3) รับรู้ว่า OTP ที่ฝั่ง client ปัจจุบัน generate+verify ใน `_otpStorage` (memory) เป็น mock สำหรับ dev เท่านั้น ไม่ใช่ security
 - Social: verify provider token ฝั่ง server ก่อน map `public.users` (ปัจจุบันเชื่อ SDK ทั้งหมด)

@@ -1,5 +1,7 @@
 # Full Glassmorphism + Per-Section Opacity Control — ERP Dashboard
 
+> **⚠️ MERGED — Archive only:** เนื้อหาฉบับนี้ถูกรวมเข้า [ERP_DASHBOARD_UI_PLAN.md](ERP_DASHBOARD_UI_PLAN.md) (Single Source of Truth สำหรับ ERP UI) แล้ว — เก็บไว้เพื่ออ้างอิงตัวอย่างโค้ด/widget เท่านั้น อย่าแก้ไข spec ที่นี่ ถ้าต้องเปลี่ยนค่าให้แก้ใน SSOT
+
 ใช้แก้วโปร่งใส (Glassmorphism) เต็มรูปแบบใน ERP Dashboard พร้อมให้ผู้ใช้งานปรับระดับความโปร่งใส (opacity) แยกตามส่วนได้ในหน้า Dashboard Settings ช่วง 0-50% ค่าเริ่มต้น 12%
 
 Light mode ของ dashboard ใช้โทน **iOS natural pastel** พร้อม background blobs เบลอ และการ์ดโมดูลแบบ **mixed-size / capsule / rounded cards** เพื่อให้ใกล้ reference image มากที่สุด
