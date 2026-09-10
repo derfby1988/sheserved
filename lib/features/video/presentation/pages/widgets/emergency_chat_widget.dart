@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../../../../../config/app_config.dart';
 import '../../../../../services/websocket_service.dart';
@@ -48,6 +49,18 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
   // ── Scroll-to-bottom button state ──
   bool _showScrollToBottom = false;
   bool _isNearBottom = true;
+
+  // ── Reply state ──
+  Map<String, dynamic>? _replyingTo;
+
+  void _startReply(Map<String, dynamic> message) {
+    HapticFeedback.mediumImpact();
+    setState(() => _replyingTo = message);
+  }
+
+  void _cancelReply() {
+    if (mounted) setState(() => _replyingTo = null);
+  }
 
   @override
   void initState() {
@@ -308,8 +321,12 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       content: text,
       profileImageUrl: widget.profileImageUrl,
       professionName: widget.professionName,
+      replyToId: _replyingTo?['id']?.toString(),
+      replyToContent: _replyingTo?['content']?.toString(),
+      replyToUserName: _replyingTo?['userName']?.toString(),
     );
     _messageController.clear();
+    _cancelReply();
   }
 
   String _formatShortName(String rawName) {
@@ -596,206 +613,260 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
 
     final bool isViewerOrThaimhung = role == 'viewer' || role == 'thaimhung';
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: 2, top: showLabel ? 6 : 0),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Column(
-          crossAxisAlignment: isMe
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── sender label ──
-            if (showLabel)
-              Padding(
-                padding: EdgeInsets.only(
-                  left: isMe ? 0 : 4,
-                  right: isMe ? 4 : 0,
-                  bottom: 2,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!isMe) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                            fontFamily: 'Sukhumvit Set',
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (!isViewerOrThaimhung) ...[
-                        const SizedBox(width: 4),
-                        Text(
-                          shortName,
-                          style: TextStyle(
-                            fontFamily: 'Sukhumvit Set',
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.8),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ] else ...[
-                      if (!isViewerOrThaimhung) ...[
-                        Text(
-                          shortName,
-                          style: TextStyle(
-                            fontFamily: 'Sukhumvit Set',
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.8),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                            fontFamily: 'Sukhumvit Set',
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-            // ── bubble body ──
-            // ✅ กว้างพอดีข้อความ (fit-content) — เดิม width: double.infinity
-            // ทำให้พื้นหลังฟองเต็มความกว้างแนวนอนเสมอ ตอนนี้จำกัด maxWidth
-            // ~78% ของจอ ฟองสั้นหุ้มข้อความพอดี ฟองยาวขยายถึงเพดานแล้วตัดคำ
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.78,
-              ),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-                decoration: BoxDecoration(
-                  color: isMe
-                      ? color.withOpacity(0.15)
-                      : Colors.black.withOpacity(0.52),
-                  borderRadius: BorderRadius.only(
-                    topLeft: showLabel && !isMe
-                        ? Radius.zero
-                        : const Radius.circular(14),
-                    topRight: showLabel && isMe
-                        ? Radius.zero
-                        : const Radius.circular(14),
-                    bottomLeft: const Radius.circular(14),
-                    bottomRight: const Radius.circular(14),
+    return GestureDetector(
+      onLongPress: () => _startReply(msg),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: 2, top: showLabel ? 6 : 0),
+        child: Align(
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: Column(
+            crossAxisAlignment: isMe
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── sender label ──
+              if (showLabel)
+                Padding(
+                  padding: EdgeInsets.only(
+                    left: isMe ? 0 : 4,
+                    right: isMe ? 4 : 0,
+                    bottom: 2,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: isMe
-                        ? color.withOpacity(0.4)
-                        : Colors.white.withOpacity(0.12),
-                    width: 0.5,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      content,
-                      maxLines: _expandedMessages[index] == true ? null : 3,
-                      overflow: _expandedMessages[index] == true
-                          ? TextOverflow.visible
-                          : TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Sukhumvit Set',
-                        color: color,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        height: 1.15,
-                        shadows: const [
-                          Shadow(color: Colors.black54, blurRadius: 3),
-                        ],
-                      ),
-                    ),
-                    if (content.length > 60 &&
-                        _expandedMessages[index] != true)
-                      GestureDetector(
-                        onTap: () =>
-                            setState(() => _expandedMessages[index] = true),
-                        child: const Padding(
-                          padding: EdgeInsets.only(top: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!isMe) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                           child: Text(
-                            '...อ่านเพิ่มเติม',
-                            style: TextStyle(
+                            label,
+                            style: const TextStyle(
+                              fontFamily: 'Sukhumvit Set',
                               color: Colors.white,
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                        if (!isViewerOrThaimhung) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            shortName,
+                            style: TextStyle(
+                              fontFamily: 'Sukhumvit Set',
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.8),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        if (!isViewerOrThaimhung) ...[
+                          Text(
+                            shortName,
+                            style: TextStyle(
+                              fontFamily: 'Sukhumvit Set',
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.8),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              fontFamily: 'Sukhumvit Set',
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
 
-            // ── timestamp ──
-            Padding(
-              padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-              child: Text(
-                time,
-                style: TextStyle(
-                  fontFamily: 'Sukhumvit Set',
-                  color: Colors.white.withOpacity(0.55),
-                  fontSize: 9,
-                  shadows: [
-                    Shadow(color: Colors.black.withOpacity(0.7), blurRadius: 3),
-                  ],
+              // ── bubble body ──
+              // ✅ กว้างพอดีข้อความ (fit-content) — เดิม width: double.infinity
+              // ทำให้พื้นหลังฟองเต็มความกว้างแนวนอนเสมอ ตอนนี้จำกัด maxWidth
+              // ~78% ของจอ ฟองสั้นหุ้มข้อความพอดี ฟองยาวขยายถึงเพดานแล้วตัดคำ
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.78,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isMe
+                        ? color.withOpacity(0.15)
+                        : Colors.black.withOpacity(0.52),
+                    borderRadius: BorderRadius.only(
+                      topLeft: showLabel && !isMe
+                          ? Radius.zero
+                          : const Radius.circular(14),
+                      topRight: showLabel && isMe
+                          ? Radius.zero
+                          : const Radius.circular(14),
+                      bottomLeft: const Radius.circular(14),
+                      bottomRight: const Radius.circular(14),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: isMe
+                          ? color.withOpacity(0.4)
+                          : Colors.white.withOpacity(0.12),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (msg['replyToId'] != null) _buildReplyReference(msg),
+                      Text(
+                        content,
+                        maxLines: _expandedMessages[index] == true ? null : 3,
+                        overflow: _expandedMessages[index] == true
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Sukhumvit Set',
+                          color: color,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.15,
+                          shadows: const [
+                            Shadow(color: Colors.black54, blurRadius: 3),
+                          ],
+                        ),
+                      ),
+                      if (content.length > 60 &&
+                          _expandedMessages[index] != true)
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _expandedMessages[index] = true),
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              '...อ่านเพิ่มเติม',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+
+              // ── timestamp ──
+              Padding(
+                padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                child: Text(
+                  time,
+                  style: TextStyle(
+                    fontFamily: 'Sukhumvit Set',
+                    color: Colors.white.withOpacity(0.55),
+                    fontSize: 9,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.7),
+                        blurRadius: 3,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  // ── กล่องอ้างอิงข้อความต้นฉบับภายใน bubble ──
+  Widget _buildReplyReference(Map<String, dynamic> msg) {
+    final replyName = _formatShortName(
+      msg['replyToUserName']?.toString() ?? 'Unknown',
+    );
+    final replyContent = (msg['replyToContent'] ?? '').toString();
+    final accent = _roleColor(msg['role'] ?? 'viewer');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        border: Border(left: BorderSide(color: accent, width: 2.5)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'ตอบกลับ ${_formatShortName(replyName)}',
+            style: TextStyle(
+              fontFamily: 'Sukhumvit Set',
+              color: accent,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            replyContent.isEmpty ? '[ข้อความ]' : replyContent,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Sukhumvit Set',
+              color: Colors.white.withOpacity(0.75),
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -806,85 +877,159 @@ class _EmergencyChatWidgetState extends State<EmergencyChatWidget> {
       alignment: Alignment.centerRight,
       child: FractionallySizedBox(
         widthFactor: 0.56,
-        child: Container(
-          height: inputHeight,
-          margin: const EdgeInsets.only(top: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors
-                .white, // เปลี่ยนพื้นหลังเป็นสีขาวเพื่อให้ตัวหนังสือสีดำเห็นชัด
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.white.withOpacity(0.8)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _messageController,
-                  style: const TextStyle(
-                    fontFamily: 'Sukhumvit Set',
-                    color: Colors.black,
-                    fontSize: 13,
-                  ), // เปลี่ยนตัวอักษรเป็นสีดำ
-                  maxLines: 1,
-                  enableInteractiveSelection:
-                      false, // 🚫 ป้องกันการกดค้างเพื่อ Paste
-                  contextMenuBuilder: (context, editableTextState) =>
-                      const SizedBox.shrink(), // 🚫 ซ่อน Context Menu (Cut, Copy, Paste)
-                  decoration: InputDecoration(
-                    hintText: 'พิมพ์ข้อความ...',
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Sukhumvit Set',
-                      color: Colors.black54,
-                      fontSize: 13,
-                    ), // เปลี่ยนสี hint เป็นเทาเข้ม
-                    counterText: '', // ซ่อน counter default
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
-                  maxLength: _maxChars,
-                  onSubmitted: (_) => _sendMessage(),
-                ),
-              ),
-              GestureDetector(
-                onTap: _sendMessage,
-                child: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF007AFF), Color(0xFF0051D5)],
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF007AFF).withOpacity(0.4),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.send_rounded,
-                    color: Colors.white,
-                    size: 17,
-                  ),
-                ),
-              ),
-            ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (_replyingTo != null) _buildReplyPreview(),
+            _buildInputField(inputHeight),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview() {
+    final reply = _replyingTo!;
+    final replyName = _formatShortName(
+      reply['userName']?.toString() ?? 'Unknown',
+    );
+    final replyContent = (reply['content'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 4),
+      padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        border: Border(
+          left: BorderSide(
+            color: _roleColor(reply['role'] ?? 'viewer'),
+            width: 3,
           ),
         ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'ตอบกลับ ${_formatShortName(replyName)}',
+                  style: const TextStyle(
+                    fontFamily: 'Sukhumvit Set',
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  replyContent.isEmpty ? '[ข้อความ]' : replyContent,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Sukhumvit Set',
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _cancelReply,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close, color: Colors.white70, size: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputField(double inputHeight) {
+    return Container(
+      height: inputHeight,
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors
+            .white, // เปลี่ยนพื้นหลังเป็นสีขาวเพื่อให้ตัวหนังสือสีดำเห็นชัด
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              style: const TextStyle(
+                fontFamily: 'Sukhumvit Set',
+                color: Colors.black,
+                fontSize: 13,
+              ), // เปลี่ยนตัวอักษรเป็นสีดำ
+              maxLines: 1,
+              enableInteractiveSelection:
+                  false, // 🚫 ป้องกันการกดค้างเพื่อ Paste
+              contextMenuBuilder: (context, editableTextState) =>
+                  const SizedBox.shrink(), // 🚫 ซ่อน Context Menu (Cut, Copy, Paste)
+              decoration: InputDecoration(
+                hintText: 'พิมพ์ข้อความ...',
+                hintStyle: const TextStyle(
+                  fontFamily: 'Sukhumvit Set',
+                  color: Colors.black54,
+                  fontSize: 13,
+                ), // เปลี่ยนสี hint เป็นเทาเข้ม
+                counterText: '', // ซ่อน counter default
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
+              maxLength: _maxChars,
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF007AFF), Color(0xFF0051D5)],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF007AFF).withOpacity(0.4),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.send_rounded,
+                color: Colors.white,
+                size: 17,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

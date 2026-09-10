@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -54,6 +55,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   RealtimeChannel? _healthPermissionChannel;
 
   List<ChatMessage> _messages = [];
+  ChatMessage? _replyingTo;
   bool _isLoading = true;
   List<ChatParticipant> _otherParticipants = [];
   bool _isOtherTyping = false;
@@ -549,6 +551,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           attachmentUrl: url,
           attachmentType: 'image/jpeg',
           status: MessageStatus.sent,
+          replyToId: _replyingTo?.id,
+          replyToContent: _replyingTo?.content,
+          replyToSenderId: _replyingTo?.senderId,
         );
 
         final success = await _chatRepository.sendMessage(
@@ -559,6 +564,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('ส่งรูปภาพไม่สำเร็จ')));
+        } else if (success && mounted) {
+          setState(() => _replyingTo = null);
         }
       } else if (mounted) {
         ScaffoldMessenger.of(
@@ -645,12 +652,16 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             attachmentUrl: url,
             attachmentType: 'audio/m4a',
             status: MessageStatus.sent,
+            replyToId: _replyingTo?.id,
+            replyToContent: _replyingTo?.content,
+            replyToSenderId: _replyingTo?.senderId,
           );
 
-          await _chatRepository.sendMessage(
+          final success = await _chatRepository.sendMessage(
             newMessage,
             callerId: _currentUser?.id ?? '',
           );
+          if (success && mounted) setState(() => _replyingTo = null);
         }
       }
     } catch (e) {
@@ -825,6 +836,69 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     });
   }
 
+  void _startReply(ChatMessage message) {
+    setState(() => _replyingTo = message);
+  }
+
+  Future<void> _showMessageActions(ChatMessage message) async {
+    HapticFeedback.mediumImpact();
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: Text(
+                message.content.replaceAll(RegExp(r'\s+'), ' ').trim(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.black54,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.reply, color: AppColors.primary),
+              title: const Text('ตอบกลับ'),
+              onTap: () => Navigator.pop(ctx, 'reply'),
+            ),
+            if (message.type == 'text')
+              ListTile(
+                leading: const Icon(Icons.copy, color: Colors.grey),
+                title: const Text('คัดลอกข้อความ'),
+                onTap: () => Navigator.pop(ctx, 'copy'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'reply':
+        _startReply(message);
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: message.content));
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('คัดลอกข้อความแล้ว')));
+        }
+    }
+  }
+
+  void _cancelReply() {
+    if (mounted) setState(() => _replyingTo = null);
+  }
+
   Future<void> _sendMessage() async {
     final user = _currentUser;
     if (_msgController.text.trim().isEmpty || user == null) return;
@@ -835,6 +909,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         ? '@$mentionTargetName\n$rawContent'
         : rawContent;
     _msgController.clear();
+    final reply = _replyingTo;
+    if (mounted) setState(() => _replyingTo = null);
 
     final newMessage = ChatMessage(
       id: const Uuid().v4(),
@@ -843,6 +919,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       content: content,
       createdAt: DateTime.now(),
       status: MessageStatus.sent,
+      replyToId: reply?.id,
+      replyToContent: reply?.content,
+      replyToSenderId: reply?.senderId,
     );
 
     final success = await _chatRepository.sendMessage(
@@ -850,6 +929,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       callerId: user.id,
     );
     if (!success && mounted) {
+      setState(() => _replyingTo = reply);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('ส่งข้อความไม่สำเร็จ')));
@@ -1124,6 +1204,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                               consultationId: _consultationId ?? '',
                               isProvider: _isProvider,
                               currentUserId: _currentUser?.id ?? '',
+                              onReply: () => _showMessageActions(msg),
                             ),
                           );
                         },
@@ -1182,78 +1263,140 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         ],
       ),
       child: SafeArea(
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              onPressed: _pickAndSendImage,
-              icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
-            ),
-            if (_isProvider)
-              IconButton(
-                onPressed: _showMedicalToolsBottomSheet,
-                icon: Icon(Icons.medical_information, color: AppColors.primary),
-              ),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F0F0),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: TextField(
-                  controller: _msgController,
-                  decoration: const InputDecoration(
-                    hintText: 'พิมพ์ข้อความ...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    fillColor: Colors.transparent,
+            if (_replyingTo != null) _buildReplyComposerPreview(),
+            Row(
+              children: [
+                IconButton(
+                  onPressed: _pickAndSendImage,
+                  icon: Icon(
+                    Icons.add_circle_outline,
+                    color: AppColors.primary,
                   ),
-                  onChanged: (text) {
-                    final user = _currentUser;
-                    if (user == null) return;
-                    _chatRepository.sendTypingStatus(
-                      widget.roomId,
-                      user.id,
-                      true,
-                    );
-                    _typingTimer?.cancel();
-                    _typingTimer = Timer(const Duration(seconds: 2), () {
-                      _chatRepository.sendTypingStatus(
-                        widget.roomId,
-                        user.id,
-                        false,
-                      );
-                    });
-                  },
-                  onSubmitted: (_) => _sendMessage(),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: () {
-                  _sendMessage();
-                  final user = _currentUser;
-                  if (user != null) {
-                    _chatRepository.sendTypingStatus(
-                      widget.roomId,
-                      user.id,
-                      false,
-                    );
-                  }
-                },
-                tooltip: 'ส่งข้อความ',
-                icon: const Icon(Icons.send, color: Colors.white, size: 20),
-              ),
+                if (_isProvider)
+                  IconButton(
+                    onPressed: _showMedicalToolsBottomSheet,
+                    icon: Icon(
+                      Icons.medical_information,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: TextField(
+                      controller: _msgController,
+                      decoration: const InputDecoration(
+                        hintText: 'พิมพ์ข้อความ...',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        fillColor: Colors.transparent,
+                      ),
+                      onChanged: (text) {
+                        final user = _currentUser;
+                        if (user == null) return;
+                        _chatRepository.sendTypingStatus(
+                          widget.roomId,
+                          user.id,
+                          true,
+                        );
+                        _typingTimer?.cancel();
+                        _typingTimer = Timer(const Duration(seconds: 2), () {
+                          _chatRepository.sendTypingStatus(
+                            widget.roomId,
+                            user.id,
+                            false,
+                          );
+                        });
+                      },
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    onPressed: () {
+                      _sendMessage();
+                      final user = _currentUser;
+                      if (user != null) {
+                        _chatRepository.sendTypingStatus(
+                          widget.roomId,
+                          user.id,
+                          false,
+                        );
+                      }
+                    },
+                    tooltip: 'ส่งข้อความ',
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReplyComposerPreview() {
+    final message = _replyingTo!;
+    final senderName = message.senderId == _currentUser?.id
+        ? 'คุณ'
+        : (_senderDisplayName(message) ?? 'ผู้ส่งข้อความ');
+    final preview = message.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ตอบกลับ $senderName',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  preview.isEmpty ? '[ข้อความ]' : preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: _cancelReply,
+            tooltip: 'ยกเลิกการตอบกลับ',
+            icon: const Icon(Icons.close, size: 18),
+          ),
+        ],
       ),
     );
   }
@@ -1284,6 +1427,7 @@ class _MessageBubble extends StatelessWidget {
   final String consultationId;
   final bool isProvider;
   final String currentUserId;
+  final VoidCallback onReply;
 
   const _MessageBubble({
     required this.message,
@@ -1293,6 +1437,7 @@ class _MessageBubble extends StatelessWidget {
     required this.consultationId,
     required this.isProvider,
     required this.currentUserId,
+    required this.onReply,
   });
 
   String? get _mentionTargetName {
@@ -1322,174 +1467,237 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
+  Widget _buildReplyReference(BuildContext context) {
+    final sender = otherParticipants.firstWhere(
+      (p) => p.id == message.replyToSenderId,
+      orElse: () => ChatParticipant(
+        id: message.replyToSenderId ?? '',
+        firstName: 'ผู้ส่งข้อความ',
+        lastName: '',
+      ),
+    );
+    final senderName = message.replyToSenderId == currentUserId
+        ? 'คุณ'
+        : sender.firstName;
+    final content = (message.replyToContent ?? '').trim();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isMe
+            ? Colors.white.withOpacity(0.18)
+            : Colors.black.withOpacity(0.05),
+        border: Border(
+          left: BorderSide(
+            color: isMe ? Colors.white : AppColors.primary,
+            width: 3,
+          ),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ตอบกลับ $senderName',
+            style: TextStyle(
+              color: isMe ? Colors.white : AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            content.isEmpty ? '[ข้อความ]' : content,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isMe ? Colors.white70 : Colors.black54,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Column(
-        crossAxisAlignment: isMe
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          if (senderDisplayName != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3, left: 4, right: 4),
-              child: Text(
-                senderDisplayName!,
-                style: TextStyle(
-                  color: isMe ? AppColors.primary : AppColors.primary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (isMe && _mentionTargetName != null) _buildMentionLabel(),
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.75,
-                ),
-                decoration: BoxDecoration(
-                  gradient: isMe ? AppColors.primaryGradient : null,
-                  color: isMe ? null : Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(20),
-                    topRight: const Radius.circular(20),
-                    bottomLeft: Radius.circular(isMe ? 20 : 4),
-                    bottomRight: Radius.circular(isMe ? 4 : 20),
+    return GestureDetector(
+      onLongPress: onReply,
+      behavior: HitTestBehavior.opaque,
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            if (senderDisplayName != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3, left: 4, right: 4),
+                child: Text(
+                  senderDisplayName!,
+                  style: TextStyle(
+                    color: isMe ? AppColors.primary : AppColors.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isMe
-                          ? AppColors.primary.withOpacity(0.25)
-                          : Colors.black.withOpacity(0.05),
-                      offset: const Offset(0, 4),
-                      blurRadius: 10,
-                    ),
-                  ],
-                  border: isMe
-                      ? null
-                      : Border.all(color: Colors.grey.shade100, width: 1),
-                ),
-                child: Column(
-                  crossAxisAlignment: isMe
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
-                  children: [
-                    if (message.type == 'image' &&
-                        message.attachmentUrl != null)
-                      _buildImageContent(context),
-                    if (message.type == 'voice' &&
-                        message.attachmentUrl != null)
-                      _VoiceMessageBubble(
-                        url: message.attachmentUrl!,
-                        isMe: isMe,
-                      ),
-                    if (message.type == 'note')
-                      _buildMedicalCard(
-                        context,
-                        icon: Icons.edit_document,
-                        title: 'บันทึกการตรวจ',
-                        color: Colors.blue,
-                        isMe: isMe,
-                      ),
-                    if (message.type == 'prescription')
-                      _buildMedicalCard(
-                        context,
-                        icon: Icons.medication,
-                        title: 'ใบสั่งยา',
-                        color: Colors.green,
-                        isMe: isMe,
-                        onTap: () {
-                          final prescriptionId = message.attachmentUrl;
-                          if (prescriptionId == null || prescriptionId.isEmpty)
-                            return;
-                          if (isProvider) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (ctx) => PrescriptionEditorPage(
-                                  consultationId: consultationId,
-                                  patientId: currentUserId,
-                                ),
-                              ),
-                            );
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (ctx) => PrescriptionChoicePage(
-                                  consultationId: consultationId,
-                                  patientId: currentUserId,
-                                  prescriptionId: prescriptionId,
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                    if (message.type == 'text' ||
-                        (message.type != 'note' &&
-                            message.type != 'prescription' &&
-                            message.content.isNotEmpty &&
-                            message.content != '[รูปภาพ]' &&
-                            message.content != '[ข้อความเสียง]'))
-                      Text(
-                        _displayContent,
-                        style: TextStyle(
-                          color: isMe ? Colors.white : Colors.black87,
-                          fontSize: 15,
-                        ),
-                      ),
-                  ],
                 ),
               ),
-              if (!isMe && _mentionTargetName != null) _buildMentionLabel(),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-            child: Row(
+            Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(color: Colors.black45, fontSize: 10),
-                ),
-                if (isMe) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    message.readBy.isNotEmpty ? Icons.done_all : Icons.done,
-                    size: 12,
-                    color: message.readBy.isNotEmpty
-                        ? Colors.blueAccent
-                        : Colors.black45,
+                if (isMe && _mentionTargetName != null) _buildMentionLabel(),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
                   ),
-                ],
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: isMe ? AppColors.primaryGradient : null,
+                    color: isMe ? null : Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(20),
+                      topRight: const Radius.circular(20),
+                      bottomLeft: Radius.circular(isMe ? 20 : 4),
+                      bottomRight: Radius.circular(isMe ? 4 : 20),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isMe
+                            ? AppColors.primary.withOpacity(0.25)
+                            : Colors.black.withOpacity(0.05),
+                        offset: const Offset(0, 4),
+                        blurRadius: 10,
+                      ),
+                    ],
+                    border: isMe
+                        ? null
+                        : Border.all(color: Colors.grey.shade100, width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: isMe
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      if (message.replyToId != null)
+                        _buildReplyReference(context),
+                      if (message.type == 'image' &&
+                          message.attachmentUrl != null)
+                        _buildImageContent(context),
+                      if (message.type == 'voice' &&
+                          message.attachmentUrl != null)
+                        _VoiceMessageBubble(
+                          url: message.attachmentUrl!,
+                          isMe: isMe,
+                        ),
+                      if (message.type == 'note')
+                        _buildMedicalCard(
+                          context,
+                          icon: Icons.edit_document,
+                          title: 'บันทึกการตรวจ',
+                          color: Colors.blue,
+                          isMe: isMe,
+                        ),
+                      if (message.type == 'prescription')
+                        _buildMedicalCard(
+                          context,
+                          icon: Icons.medication,
+                          title: 'ใบสั่งยา',
+                          color: Colors.green,
+                          isMe: isMe,
+                          onTap: () {
+                            final prescriptionId = message.attachmentUrl;
+                            if (prescriptionId == null ||
+                                prescriptionId.isEmpty)
+                              return;
+                            if (isProvider) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (ctx) => PrescriptionEditorPage(
+                                    consultationId: consultationId,
+                                    patientId: currentUserId,
+                                  ),
+                                ),
+                              );
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (ctx) => PrescriptionChoicePage(
+                                    consultationId: consultationId,
+                                    patientId: currentUserId,
+                                    prescriptionId: prescriptionId,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      if (message.type == 'text' ||
+                          (message.type != 'note' &&
+                              message.type != 'prescription' &&
+                              message.content.isNotEmpty &&
+                              message.content != '[รูปภาพ]' &&
+                              message.content != '[ข้อความเสียง]'))
+                        Text(
+                          _displayContent,
+                          style: TextStyle(
+                            color: isMe ? Colors.white : Colors.black87,
+                            fontSize: 15,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (!isMe && _mentionTargetName != null) _buildMentionLabel(),
               ],
             ),
-          ),
-          if (isMe && message.readBy.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-              child: Text(
-                '${_getReaderNames()} อ่าน',
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: Colors.black45,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${message.createdAt.hour}:${message.createdAt.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(color: Colors.black45, fontSize: 10),
+                  ),
+                  if (isMe) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      message.readBy.isNotEmpty ? Icons.done_all : Icons.done,
+                      size: 12,
+                      color: message.readBy.isNotEmpty
+                          ? Colors.blueAccent
+                          : Colors.black45,
+                    ),
+                  ],
+                ],
               ),
             ),
-        ],
+            if (isMe && message.readBy.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                child: Text(
+                  '${_getReaderNames()} อ่าน',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

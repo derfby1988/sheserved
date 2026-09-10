@@ -62,10 +62,16 @@ class ChatRoom {
       packageId: json['package_id'] ?? json['packageId'],
       title: json['title'],
       isActive: json['is_active'] ?? json['isActive'] ?? true,
-      expiresAt: (json['expires_at'] ?? json['expiresAt']) != null ? DateTime.parse(json['expires_at'] ?? json['expiresAt']) : null,
+      expiresAt: (json['expires_at'] ?? json['expiresAt']) != null
+          ? DateTime.parse(json['expires_at'] ?? json['expiresAt'])
+          : null,
       sessionMinutes: json['session_minutes'] ?? json['sessionMinutes'],
-      startedAt: (json['started_at'] ?? json['startedAt']) != null ? DateTime.parse(json['started_at'] ?? json['startedAt']) : null,
-      endedAt: (json['ended_at'] ?? json['endedAt']) != null ? DateTime.parse(json['ended_at'] ?? json['endedAt']) : null,
+      startedAt: (json['started_at'] ?? json['startedAt']) != null
+          ? DateTime.parse(json['started_at'] ?? json['startedAt'])
+          : null,
+      endedAt: (json['ended_at'] ?? json['endedAt']) != null
+          ? DateTime.parse(json['ended_at'] ?? json['endedAt'])
+          : null,
     );
   }
 
@@ -90,23 +96,23 @@ class ChatRoom {
 }
 
 @HiveType(typeId: 1)
-enum MessageStatus { 
+enum MessageStatus {
   @HiveField(0)
-  sent, 
+  sent,
   @HiveField(1)
-  delivered, 
+  delivered,
   @HiveField(2)
-  read 
+  read,
 }
 
 @HiveType(typeId: 4)
-enum RequiredStatus { 
+enum RequiredStatus {
   @HiveField(0)
-  unread, 
+  unread,
   @HiveField(1)
-  reading, 
+  reading,
   @HiveField(2)
-  answered 
+  answered,
 }
 
 @HiveType(typeId: 2)
@@ -143,6 +149,12 @@ class ChatMessage {
   final DateTime? requiredAnsweredAt;
   @HiveField(15)
   final String? requiredOwnerId;
+  @HiveField(16)
+  final String? replyToId;
+  @HiveField(17)
+  final String? replyToContent;
+  @HiveField(18)
+  final String? replyToSenderId;
 
   ChatMessage({
     required this.id,
@@ -161,6 +173,9 @@ class ChatMessage {
     this.requiredAnswer,
     this.requiredAnsweredAt,
     this.requiredOwnerId,
+    this.replyToId,
+    this.replyToContent,
+    this.replyToSenderId,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -177,7 +192,8 @@ class ChatMessage {
       type: json['type'] ?? 'text',
       attachmentUrl: json['attachment_url'],
       attachmentType: json['attachment_type'],
-      readBy: (json['read_by'] as Map<String, dynamic>?)?.map(
+      readBy:
+          (json['read_by'] as Map<String, dynamic>?)?.map(
             (k, v) => MapEntry(k, DateTime.parse(v)),
           ) ??
           {},
@@ -194,6 +210,9 @@ class ChatMessage {
           ? DateTime.parse(json['required_answered_at'])
           : null,
       requiredOwnerId: json['required_owner_id'],
+      replyToId: json['reply_to_id'],
+      replyToContent: json['reply_to_content'],
+      replyToSenderId: json['reply_to_sender_id'],
     );
   }
 
@@ -215,6 +234,9 @@ class ChatMessage {
       'required_answer': requiredAnswer,
       'required_answered_at': requiredAnsweredAt?.toIso8601String(),
       'required_owner_id': requiredOwnerId,
+      'reply_to_id': replyToId,
+      'reply_to_content': replyToContent,
+      'reply_to_sender_id': replyToSenderId,
     };
   }
 
@@ -235,6 +257,9 @@ class ChatMessage {
     String? requiredAnswer,
     DateTime? requiredAnsweredAt,
     String? requiredOwnerId,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToSenderId,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -253,6 +278,9 @@ class ChatMessage {
       requiredAnswer: requiredAnswer ?? this.requiredAnswer,
       requiredAnsweredAt: requiredAnsweredAt ?? this.requiredAnsweredAt,
       requiredOwnerId: requiredOwnerId ?? this.requiredOwnerId,
+      replyToId: replyToId ?? this.replyToId,
+      replyToContent: replyToContent ?? this.replyToContent,
+      replyToSenderId: replyToSenderId ?? this.replyToSenderId,
     );
   }
 }
@@ -284,7 +312,8 @@ class ChatParticipant {
   /// ถือว่า online ถ้า last_seen_at อัปเดตภายใน 2 นาทีที่ผ่านมา และไม่อยู่ในสถานะ busy/offline
   bool get isOnline {
     if (lastSeenAt == null) return false;
-    if (availabilityStatus == 'busy' || availabilityStatus == 'offline') return false;
+    if (availabilityStatus == 'busy' || availabilityStatus == 'offline')
+      return false;
     return DateTime.now().toUtc().difference(lastSeenAt!).inMinutes < 2;
   }
 
@@ -298,7 +327,9 @@ class ChatParticipant {
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       profileImageUrl: json['profile_image_url'],
-      lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at']) : null,
+      lastSeenAt: json['last_seen_at'] != null
+          ? DateTime.parse(json['last_seen_at'])
+          : null,
       availabilityStatus: json['availability_status'] ?? 'online',
     );
   }

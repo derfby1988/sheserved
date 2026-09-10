@@ -106,13 +106,16 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       requiredAnswer: fields[13] as String?,
       requiredAnsweredAt: fields[14] as DateTime?,
       requiredOwnerId: fields[15] as String?,
+      replyToId: fields[16] as String?,
+      replyToContent: fields[17] as String?,
+      replyToSenderId: fields[18] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(19)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -144,7 +147,13 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(14)
       ..write(obj.requiredAnsweredAt)
       ..writeByte(15)
-      ..write(obj.requiredOwnerId);
+      ..write(obj.requiredOwnerId)
+      ..writeByte(16)
+      ..write(obj.replyToId)
+      ..writeByte(17)
+      ..write(obj.replyToContent)
+      ..writeByte(18)
+      ..write(obj.replyToSenderId);
   }
 
   @override

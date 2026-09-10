@@ -789,6 +789,13 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get cumulativeViewerCountStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#cumulativeViewerCountStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   _i3.Stream<Map<String, dynamic>> get donationStatusStream =>
       (super.noSuchMethod(
         Invocation.getter(#donationStatusStream),
@@ -843,6 +850,23 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
         Invocation.getter(#emergencyHealthDeadManTriggeredStream),
         returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
       ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get fitnessBookingAlertStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#fitnessBookingAlertStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  void publishFitnessBookingAlert(Map<String, dynamic>? alert) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #publishFitnessBookingAlert,
+          [alert],
+        ),
+        returnValueForMissingStub: null,
+      );
 
   @override
   void setEnabled(bool? enabled) => super.noSuchMethod(
@@ -1210,6 +1234,15 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
   void leaveVideoRoom(String? videoId) => super.noSuchMethod(
         Invocation.method(
           #leaveVideoRoom,
+          [videoId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void recordVideoView(String? videoId) => super.noSuchMethod(
+        Invocation.method(
+          #recordVideoView,
           [videoId],
         ),
         returnValueForMissingStub: null,

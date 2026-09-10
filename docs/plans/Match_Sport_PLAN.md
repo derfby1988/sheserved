@@ -2010,3 +2010,96 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
   - เมื่อมี `pending` หรือ `confirmed` booking และรอบยังไม่สิ้นสุด ต้องแก้ไข/เพิ่ม/ลบ/ปิดใช้งานค่าใช้จ่ายไม่ได้ทั้งจาก UI และ server; race-condition test ต้องผ่าน
   - retry หลัง network error ต้องไม่สร้างรายการซ้ำ และ partial failure ต้องรายงานสถานะรายรายการ
   - ผ่าน Android/iOS จอเล็ก, Web ที่รองรับ keyboard navigation, accessibility inspection และ regression ของ create/edit group/session ก่อนประกาศ Phase 14.4 เสร็จ
+
+---
+
+## Phase 14.5 — Hybrid Group Filters บนหน้า Sport Club ⏳ รอ implement
+
+> แผนนี้เลือก **ทางเลือกที่ 3: Hybrid** — ใช้ Quick Filter Chips สำหรับตัวกรองที่ใช้บ่อย และใช้ Advanced Filter Bottom Sheet สำหรับตัวกรองรายละเอียด โดยวางพื้นที่ตัวกรองไว้ถัดจากแถบประเภทกีฬาใน `sport_club_page.dart` ไม่แทนที่แถบกีฬาเดิมและไม่ลบ Search action เดิมในระยะแรก
+
+### เป้าหมายและขอบเขต
+- ทำให้ผู้ใช้กรองก๊วนสำคัญได้จากหน้าหลักโดยไม่ต้องเปิด Search Dialog ทุกครั้ง
+- คงการเลือกประเภทกีฬาเป็นตัวกรองหลักลำดับแรก และให้ filter อื่นทำงานร่วมกับ `_sportId`, pagination, map view และ refresh ได้ถูกต้อง
+- รองรับตัวกรองหลัก 4 กลุ่ม:
+  1. **ยังเปิดรับ** — ก๊วนที่ไม่ต้องรอเจ้าของอนุมัติ (`requires_owner_approval = false`)
+  2. **เป็นสมาชิก** — ก๊วนที่ผู้ใช้เป็น active member หรือมี confirmed participation ตามนิยาม membership ของระบบ
+  3. **ก๊วนที่ดูแล** — ก๊วนที่ผู้ใช้เป็น owner/admin (`_myAdminGroups`)
+  4. **รัศมี** — ก๊วนภายในระยะจากตำแหน่งปัจจุบัน โดยมีตัวเลือก 1–50 กม.
+- คงตัวกรองค้นหาชื่อ, จังหวัด และอำเภอไว้ใน Advanced Filter sheet ในช่วงแรก เพื่อไม่ให้แถวใต้แถบกีฬายาวเกินไป
+- ไม่เพิ่มตัวกรองค่าใช้จ่าย, เพศ หรือจำนวนสมาชิกใน Phase นี้จนกว่า data contract และ use case จะชัดเจน
+
+### 14.5.1 UX/UI — Quick Filter Row
+- วางแถว Quick Filter **ต่อจากแถวปุ่มแถบประเภทกีฬา** และก่อนรายการก๊วนตามตำแหน่งใน widget tree ปัจจุบัน (หลังแถวที่แสดง `_buildSportChip(...)`)
+- รูปแบบแนะนำ:
+  - แถวแรก: แถบประเภทกีฬาแนวนอนเดิม `[ทั้งหมด] [กีฬา...]`
+  - แถวถัดไป: `[ตัวกรองทั้งหมด] [ยังเปิดรับ] [เป็นสมาชิก] [รัศมี]`
+  - แสดง chip แบบ horizontal scroll และไม่บีบปุ่ม `สร้างก๊วน`/FAB ของประเภทกีฬา
+- `ตัวกรองทั้งหมด` เปิด `showModalBottomSheet(isScrollControlled: true)` แบบเต็มความสูงประมาณ 85–90% พร้อมปุ่ม `ล้างทั้งหมด` และ `แสดงผลลัพธ์`
+- Quick chip มีสถานะชัดเจน:
+  - inactive: พื้นหลังปกติ
+  - active: สี primary พร้อม check icon และข้อความค่าปัจจุบัน เช่น `รัศมี 10 กม.`
+  - filter ที่ต้อง login แต่ยังไม่ login: แตะแล้วแสดงคำอธิบาย/นำไป Login ตาม policy เดิม ไม่เปิดข้อมูล private เพิ่มเอง
+- แสดง summary ใต้หรือใน chip `ตัวกรองทั้งหมด` เช่น `เปิดใช้งาน 2 รายการ`; ถ้าไม่มี filter ให้ใช้ข้อความ `ตัวกรอง`
+- เมื่อผลลัพธ์เป็นศูนย์ ให้แสดง empty state ที่บอก filter ที่ใช้อยู่และปุ่ม `ล้างตัวกรอง` ไม่แสดงเป็น error ทั่วไป
+- ถ้าเปิด Map View ให้ใช้ชุด filter เดียวกับ List View และไม่แสดง Quick Filter ซ้ำทับแผนที่; filter state ต้องคงอยู่เมื่อสลับมุมมอง
+
+### 14.5.2 Advanced Filter Bottom Sheet
+- ย้าย/รวมฟังก์ชันของ `_showSearchDialog()` มาเป็น `_showAdvancedFilterSheet()`; ระยะแรกคง `_showSearchDialog()` ได้จนกว่า Bottom Sheet จะผ่าน regression แล้วจึงลบ Dialog เดิม
+- เนื้อหา sheet:
+  - ช่องค้นหา: ชื่อก๊วน/สถานที่ (`_q`)
+  - จังหวัด (`_province`)
+  - อำเภอ (`_district`)
+  - `เฉพาะก๊วนที่เข้าร่วมได้ทันที` (`_filterOpenOnly`)
+  - `เฉพาะก๊วนที่เป็นสมาชิก` (`_filterJoinedOnly`)
+  - `เฉพาะก๊วนที่ดูแล` (`_filterManagedOnly`)
+  - ใช้ตำแหน่งปัจจุบัน (`_locationEnabled`)
+  - Slider รัศมี 1–50 กม. (`_radiusKm`) แสดงเมื่อเปิด location
+- ใช้ draft state ภายใน sheet แล้ว commit เมื่อกด `แสดงผลลัพธ์`; ปุ่ม `ยกเลิก` ต้องคืนค่าก่อนเปิด sheet และไม่ reload
+- Quick chip ที่เปิด/ปิดจากหน้าแรกให้ commit ทันทีและเรียก `_reload()` หนึ่งครั้งต่อการกด โดยป้องกัน duplicate reload ระหว่าง request เดิม
+- ถ้าผู้ใช้ปิด location filter ให้ล้าง `_radiusKm` หรือเก็บค่าเดิมโดยไม่ใช้กรอง; UX ต้องแสดงว่า radius ไม่มีผลเมื่อ location ปิด
+
+### 14.5.3 State และ Filter Contract
+- เพิ่ม state ใน `_SportClubPageState`:
+  - `bool _filterJoinedOnly = false;`
+  - `bool _filterManagedOnly = false;`
+  - อาจเพิ่ม model แบบ immutable เช่น `GroupFilterState` หากจำนวน filter เพิ่มขึ้น เพื่อไม่ให้ state กระจายหลายตัวแปร
+- นิยาม `เป็นสมาชิก` ให้ชัดก่อน implement: ใช้ `_myJoinedGroupIds` เป็นหลัก และไม่รวม pending/blocked; `ก๊วนที่ดูแล` ใช้ `_myAdminGroups`; หาก owner ไม่ถูกเก็บใน admin set ต้องรวม owner IDs จาก repository ให้ครบ
+- ตัวกรอง membership ต้องทำหลังโหลดข้อมูลและก่อนเติม `_GroupPageResult.groups`; ห้ามใช้เฉพาะการซ่อน card ใน build เพราะจะทำให้ pagination และจำนวนผลลัพธ์ผิด
+- ลำดับการกรองใน `_fetchGroupPage()`:
+  1. ส่ง `_sportId`, `_q`, `_province`, `_district`, `_filterOpenOnly` ให้ repository
+  2. กรอง membership/managed จาก ID sets ใน client ตาม session ของผู้ใช้
+  3. กรองระยะทางด้วย `_applyLocationFilter()` หากเปิดใช้งาน
+  4. ใช้กฎ visibility เดิมสำหรับกลุ่มที่ไม่มี upcoming session โดยห้ามเปิดเผยก๊วน private แก่ผู้ไม่มีสิทธิ์
+- ถ้าเปิดทั้ง `เป็นสมาชิก` และ `ก๊วนที่ดูแล` ให้ใช้ความหมาย **OR** เพื่อให้เห็นก๊วนที่เป็นสมาชิกหรือดูแล; ถ้าต้องการ AND ต้องระบุใน UI ให้ชัดเจน ไม่ใช้พฤติกรรมเดาเอง
+- ถ้าไม่ login แล้วเลือก membership filter ให้ไม่เรียก list ส่วนตัวจาก client; แสดง login prompt/redirect และคง filter เป็นปิด
+
+### 14.5.4 Data Loading, Pagination และ Repository
+- `listGroups()` รองรับ server-side filter ที่มีอยู่แล้ว (`sportId`, `q`, `province`, `district`, `openOnly`) ต่อไป ไม่เปลี่ยน public view contract ในงานแรก
+- ปรับ `_fetchGroupPage()` ให้ดึงหน้าถัดไปต่อเนื่องจนกว่าจะได้ `_pageSize` รายการที่ผ่าน membership/location filter หรือหมดข้อมูล เพื่อไม่ให้หน้าจอแสดงผลน้อยผิดปกติเมื่อ filter ตัดข้อมูลออกมาก
+- เมื่อเปลี่ยน filter ให้ reset `_currentOffset = 0`, `_hasMore = true`, ล้าง `_groups` ก่อนเริ่ม reload และยกเลิก/ป้องกันผลตอบกลับจาก request เก่าทับ request ใหม่
+- รัศมีปัจจุบันกรองที่ client เพราะข้อมูลตำแหน่งอยู่ใน group rows; ให้บันทึกข้อจำกัดนี้ไว้ และเตรียม migration/RPC/PostGIS หรือ bounding-box query เมื่อจำนวนก๊วนมากจน pagination client-side ไม่คุ้ม
+- ไม่โหลดข้อมูลสมาชิกทั้งหมดในแต่ละ card เพิ่มจากที่ repository ทำอยู่แล้ว; ใช้ ID sets ที่ `_init()` โหลดไว้ และ refresh sets เมื่อ session/login state เปลี่ยน
+
+### 14.5.5 Accessibility และ Feedback
+- Quick chips ต้องมี Semantics label เช่น `ตัวกรองก๊วนที่ยังเปิดรับ ปิดอยู่` และ `ตัวกรองรัศมี 10 กิโลเมตร เปิดอยู่`
+- Touch target ทุก chip/ปุ่มไม่น้อยกว่า 48x48 dp, รองรับ text scaling และ horizontal keyboard navigation บน Web
+- แสดง loading state ระหว่าง reload โดยคงแถว filter ไว้ไม่ให้ layout กระโดด
+- แสดง active filter summary ใน empty state และรองรับ `ล้างทั้งหมด` จากทั้ง Quick Row และ Advanced Sheet
+- เมื่อขอ location ไม่สำเร็จ ให้แสดงเหตุผลและปุ่มลองใหม่ โดยไม่เปิด radius filter แบบหลอกว่าทำงานแล้ว
+
+### 14.5.6 Test Plan และ Acceptance Criteria
+- Widget test:
+  - แสดง Quick Filter Row ใต้แถบกีฬา
+  - chip เปิด/ปิดได้และไม่ทำให้ sport selection เปลี่ยน
+  - `เป็นสมาชิก` และ `ก๊วนที่ดูแล` กรองด้วย ID set ถูกต้อง
+  - เปิด `เป็นสมาชิก` + `ก๊วนที่ดูแล` ใช้ OR ตาม contract
+  - Advanced sheet ยกเลิกแล้วไม่เปลี่ยน state; กดแสดงผลลัพธ์แล้ว reload ครั้งเดียว
+  - แสดง active summary, empty state และ clear filters ถูกต้อง
+- Repository/integration test:
+  - `openOnly` ส่งค่าไป query ถูกต้อง
+  - pagination ดึงต่อจนได้ page size หลัง client-side filter
+  - เปลี่ยน filter ระหว่าง request ไม่ให้ stale response ทับรายการใหม่
+  - location/radius ตัด group ที่ไม่มีพิกัดตาม policy ที่กำหนด
+  - anonymous user ไม่สามารถใช้ membership filter เพื่ออ่านข้อมูล private
+- Manual test matrix: Android/iOS จอเล็ก, Web keyboard, สลับ List/Map, permission location denied/deniedForever, no result, network retry, login/logout ระหว่างอยู่หน้า Sport Club
+- **Gate 14.5:** Quick Filter Row อยู่ถัดจากแถบกีฬาและใช้งานได้จริง, filter `ยังเปิดรับ/เป็นสมาชิก/ก๊วนที่ดูแล/รัศมี` ทำงานร่วมกันและ pagination ไม่ผิด, Advanced sheet รองรับค้นหา/จังหวัด/อำเภอ, filter state คงอยู่เมื่อสลับ List/Map, มี clear/empty/loading/accessibility states และผ่าน regression เดิมของหน้า Sport Club

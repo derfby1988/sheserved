@@ -1406,7 +1406,7 @@ io.on('connection', (socket) => {
 
   socket.on('send-emergency-message', async (data) => {
     if (!socketRateLimit(socket, 'send-emergency-message')) return;
-    const { videoId, userId, role, userName, content, profileImageUrl, professionName } = data;
+    const { videoId, userId, role, userName, content, profileImageUrl, professionName, replyToId, replyToContent, replyToUserName } = data;
     console.log(`[Chat] Message in ${videoId} from ${userName} (${role}/${professionName || 'no-prof'}): ${content}`);
 
     const messagePayload = {
@@ -1418,6 +1418,9 @@ io.on('connection', (socket) => {
       content,
       profileImageUrl,
       professionName,
+      replyToId: replyToId || null,
+      replyToContent: replyToContent ?? null,
+      replyToUserName: replyToUserName ?? null,
       timestamp: new Date().toISOString()
     };
 
@@ -1449,7 +1452,7 @@ io.on('connection', (socket) => {
         await pool.query(
           `INSERT INTO chat_messages (id, room_id, sender_id, content, created_at, metadata)
            VALUES ($1, $2, $3, $4, NOW(), $5)`,
-          [messagePayload.id, roomId, userId, content, JSON.stringify({ role, userName, profileImageUrl, professionName })]
+          [messagePayload.id, roomId, userId, content, JSON.stringify({ role, userName, profileImageUrl, professionName, replyToId, replyToContent, replyToUserName })]
         );
 
         // Update room's last message
@@ -1531,7 +1534,10 @@ app.get('/api/videos/:videoId/chat', async (req, res) => {
            m.metadata->>'role'         AS role,
            m.metadata->>'userName'     AS "userName",
            m.metadata->>'profileImageUrl' AS "profileImageUrl",
-           m.metadata->>'professionName' AS "professionName"
+           m.metadata->>'professionName' AS "professionName",
+           m.metadata->>'replyToId'    AS "replyToId",
+           m.metadata->>'replyToContent' AS "replyToContent",
+           m.metadata->>'replyToUserName' AS "replyToUserName"
          FROM chat_messages m
          JOIN chat_rooms r ON m.room_id = r.id
          WHERE r.video_id = $1
@@ -1567,7 +1573,10 @@ app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
            a.metadata->>'role'         AS role,
            a.metadata->>'userName'     AS "userName",
            a.metadata->>'profileImageUrl' AS "profileImageUrl",
-           a.metadata->>'professionName' AS "professionName"
+           a.metadata->>'professionName' AS "professionName",
+           a.metadata->>'replyToId'    AS "replyToId",
+           a.metadata->>'replyToContent' AS "replyToContent",
+           a.metadata->>'replyToUserName' AS "replyToUserName"
          FROM chat_messages_archive a
          WHERE a.video_id = $1
          ORDER BY a.created_at ASC

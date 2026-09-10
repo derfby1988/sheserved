@@ -722,6 +722,9 @@ class WebSocketService {
     required String content,
     String? profileImageUrl,
     String? professionName,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToUserName,
   }) {
     if (!_isConnected || _socket == null) return;
     _socket!.emit('send-emergency-message', {
@@ -732,6 +735,9 @@ class WebSocketService {
       'content': content,
       'profileImageUrl': profileImageUrl,
       'professionName': professionName,
+      'replyToId': replyToId,
+      'replyToContent': replyToContent,
+      'replyToUserName': replyToUserName,
     });
   }
 
