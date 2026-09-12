@@ -78,6 +78,15 @@ class _HomePageState extends ConsumerState<HomePage>
   double _mapHeight = 500; // ค่าเริ่มต้น จะถูกอัปเดตหลัง build
   bool _showTopBarBorderRadius = false;
 
+  /// ระยะห่างจากขอบบนของ Inner Stack ถึงจุดเริ่มต้นของแผนที่
+  /// iOS: ใต้ header เต็มๆ (ป้องกัน platform view ทับ header gradient)
+  /// Android: กึ่งกลาง header (ให้แผนที่ลอดผ่านส่วนโปร่งใสของ header)
+  /// ใช้ getter เดียวทุกจุดเพื่อป้องกัน regression จากการแก้เฉพาะบางจุด
+  double get _mapTopOffset =>
+      (defaultTargetPlatform == TargetPlatform.iOS)
+          ? _headerSectionHeight
+          : (_headerSectionHeight / 2);
+
   // === Snap-to-Corner State ===
   ConsultationPosition _consultPosition = ConsultationPosition.center;
   bool _isConsultationMini =
@@ -229,6 +238,17 @@ class _HomePageState extends ConsumerState<HomePage>
     _consultationAlertSub?.cancel();
     _consultationPollTimer?.cancel();
     super.dispose();
+  }
+
+  /// Re-measure เมื่อหน้าจอเปลี่ยนขนาด/หมุน เพื่อให้ _mapHeight และตำแหน่ง
+  /// floating widget ถูกต้องใน landscape และหลัง orientation change
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureHeaderSectionHeight();
+    });
   }
 
   @override
@@ -1893,10 +1913,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_headerSectionHeight > 0 &&
         _consultationHeight > 0 &&
         _pharmacyHeight > 0) {
-      final double mapStartOffset =
-          (defaultTargetPlatform == TargetPlatform.iOS)
-          ? _headerSectionHeight
-          : (_headerSectionHeight / 2);
+      final double mapStartOffset = _mapTopOffset;
       final double targetBottomPoint =
           _headerSectionHeight +
           16 +
@@ -1985,11 +2002,7 @@ class _HomePageState extends ConsumerState<HomePage>
                                   // iOS: เลื่อนแผนที่ลงมาเริ่มที่ใต้ header เต็มๆ เพื่อไม่ให้ platform view ทับ header gradient
                                   // Android: เริ่มที่กึ่งกลาง header เพื่อให้เห็นแผนที่ลอดผ่านส่วนโปร่งใสของ header
                                   SizedBox(
-                                    height:
-                                        (defaultTargetPlatform ==
-                                            TargetPlatform.iOS)
-                                        ? _headerSectionHeight
-                                        : _headerSectionHeight / 2,
+                                    height: _mapTopOffset,
                                   ),
                                   SizedBox(
                                     key: _mapAreaKey,
@@ -2323,10 +2336,7 @@ class _HomePageState extends ConsumerState<HomePage>
                               // Floating Stacked Alerts - Layered above Pharmacy but below Consultation
                               if (_professionalAlerts.isNotEmpty)
                                 Positioned(
-                                  top:
-                                      (_headerSectionHeight / 2) +
-                                      _mapHeight -
-                                      110,
+                                  top: _mapTopOffset + _mapHeight - 110,
                                   left: 16,
                                   right: 16,
                                   child: _buildStackedAlerts(),
@@ -2370,8 +2380,8 @@ class _HomePageState extends ConsumerState<HomePage>
     final mapWidth = mapBox?.size.width ?? MediaQuery.of(context).size.width;
     final mapSize = Size(mapWidth, _mapHeight);
 
-    // Map อยู่ห่างจากขอบ Inner Stack ลงมา = headerHeight / 2
-    final double mapTopOffset = _headerSectionHeight / 2;
+    // Map อยู่ห่างจากขอบ Inner Stack ลงมาตาม platform (ดู _mapTopOffset)
+    final double mapTopOffset = _mapTopOffset;
 
     // ขณะลาก: ใช้ Positioned ตรง ไม่มี Animation เพื่อให้ติดนิ้ว
     if (_isDraggingConsultation && _dragOffset != null) {
@@ -2466,6 +2476,9 @@ class _HomePageState extends ConsumerState<HomePage>
           _canAccessErp = false;
           _erpAccessChecked = true;
         });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _measureHeaderSectionHeight();
+      });
       return;
     }
 
@@ -2478,6 +2491,11 @@ class _HomePageState extends ConsumerState<HomePage>
           _canAccessErp = canAccess;
           _erpAccessChecked = true;
         });
+        // Re-measure หลัง placeholder ถูกแทนด้วยการ์ดจริง (HomeErpCard/HomePharmacyCard)
+        // เพราะ _pharmacyKey ย้ายไปอยู่บนการ์ดจริงหลัง frame นี้
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _measureHeaderSectionHeight();
+        });
       }
       // Load pending employee invitations for current user (invitee side)
       // ไม่ขึ้นกับ ERP access — ผู้ถูกเชิญอาจยังไม่มี employee_roles
@@ -2489,6 +2507,9 @@ class _HomePageState extends ConsumerState<HomePage>
           _canAccessErp = false;
           _erpAccessChecked = true;
         });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _measureHeaderSectionHeight();
+      });
     }
   }
 
