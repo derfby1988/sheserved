@@ -158,6 +158,26 @@ function broadcastFitnessBookingStatus(recipientUserIds, payload) {
 }
 
 /**
+ * Broadcast a persisted application notification to selected users.
+ * The caller must resolve recipients through the database before calling this.
+ * @param {string[]} recipientUserIds
+ * @param {object} payload
+ */
+function broadcastApplicationNotification(recipientUserIds, payload) {
+    if (!io || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0) return;
+
+    const uniqueUserIds = [...new Set(recipientUserIds.map((id) => `${id}`.trim()).filter(Boolean))];
+    if (uniqueUserIds.length === 0) return;
+
+    uniqueUserIds.forEach((userId) => {
+        io.to(`user-${userId}`).emit('application-notification', {
+            recipient_id: userId,
+            ...payload,
+        });
+    });
+}
+
+/**
  * Broadcast photo blur completion to all viewers in the incident room
  * Phase 6.12: Async Thai Mhung Face Blur — Gallery refreshes when blur completes
  * @param {string} incidentId
@@ -185,6 +205,7 @@ module.exports = {
     broadcastEmergencyHealthDeadManReminder,
     broadcastEmergencyHealthDeadManTriggered,
     broadcastFitnessBookingStatus,
+    broadcastApplicationNotification,
     broadcastPhotoBlurComplete,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,

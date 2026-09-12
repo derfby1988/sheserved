@@ -44,7 +44,8 @@ class AppConfig {
   /// Supabase Anon Key (P1 — Public key, protected by RLS)
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzeGNnZHdjd2pkYnBhZW1rb3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyNDQzNDQsImV4cCI6MjA4NTgyMDM0NH0.O2OP-tLPW214hQeFUWAFWMTYEn-_RA1MK6TAEJnKGfU',
   );
 
   /// ตรวจสอบว่า Supabase configured หรือยัง
@@ -171,7 +172,8 @@ class AppConfig {
       databaseMode == DatabaseMode.unified;
 
   /// Get current time in Thailand (GMT+7) forced
-  static DateTime get thailandNow => DateTime.now().toUtc().add(const Duration(hours: 7));
+  static DateTime get thailandNow =>
+      DateTime.now().toUtc().add(const Duration(hours: 7));
 
   /// Get current UTC time
   static DateTime get currentUtc => DateTime.now().toUtc();

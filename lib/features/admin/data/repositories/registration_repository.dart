@@ -9,15 +9,19 @@ class RegistrationRepository {
   RegistrationRepository(this._client);
 
   /// ดึงใบสมัครตามสถานะ
-  Future<List<RegistrationApplication>> getApplications(VerificationStatus status) async {
+  Future<List<RegistrationApplication>> getApplications(
+    VerificationStatus status,
+  ) async {
     try {
       final response = await _client
           .from('registration_applications')
-          .select('*, profession:professions(*)')
+          .select('*, profession:professions!profession_id(*)')
           .eq('status', status.value)
           .order('created_at', ascending: false);
 
-      return (response as List).map((json) => RegistrationApplication.fromJson(json)).toList();
+      return (response as List)
+          .map((json) => RegistrationApplication.fromJson(json))
+          .toList();
     } catch (e) {
       debugPrint('RegistrationRepository.getApplications error: $e');
       return [];
@@ -25,7 +29,9 @@ class RegistrationRepository {
   }
 
   /// Fetch attachments for a registration application
-  Future<List<Map<String, dynamic>>> getApplicationAttachments(String applicationId) async {
+  Future<List<Map<String, dynamic>>> getApplicationAttachments(
+    String applicationId,
+  ) async {
     try {
       final response = await _client
           .from('registration_application_attachments')
@@ -47,12 +53,17 @@ class RegistrationRepository {
 
     try {
       // 1. Update application status — guard: ต้องเป็น pending เท่านั้น (กัน race condition)
-      final updatedRows = await _client.from('registration_applications').update({
-        'status': 'approved',
-        'reviewed_by': reviewedBy,
-        'reviewed_at': now,
-        'updated_at': now,
-      }).eq('id', application.id).eq('status', 'pending').select();
+      final updatedRows = await _client
+          .from('registration_applications')
+          .update({
+            'status': 'approved',
+            'reviewed_by': reviewedBy,
+            'reviewed_at': now,
+            'updated_at': now,
+          })
+          .eq('id', application.id)
+          .eq('status', 'pending')
+          .select();
 
       if ((updatedRows as List).isEmpty) {
         throw Exception(
@@ -68,24 +79,29 @@ class RegistrationRepository {
           .single();
 
       if (userRes['profession_id'] != application.professionId) {
-        // user เปลี่ยนอาชีพไปแล้ว → auto-cancel และแจ้ง admin
-        await _client.from('registration_applications').update({
-          'status': 'cancelled',
-          'cancelled_by': 'auto_profession_change',
-          'cancelled_at': now,
-          'updated_at': now,
-        }).eq('id', application.id);
+        // user ย้ายไปอาชีพอื่นหลังสร้างใบสมัคร → trigger auto_cancel ยกเลิก
+        // ใบสมัครไปแล้ว แต่ถ้ายังเหลืออยู่ (race) ให้ cancel ที่นี่
+        await _client
+            .from('registration_applications')
+            .update({
+              'status': 'cancelled',
+              'cancelled_by': 'auto_profession_change',
+              'cancelled_at': now,
+              'updated_at': now,
+            })
+            .eq('id', application.id);
         throw Exception(
           'ผู้สมัครเปลี่ยนอาชีพไปแล้ว ใบสมัครนี้ถูกยกเลิกอัตโนมัติ',
         );
       }
 
-      // 3. Update user's profession and verification status
-      await _client.from('users').update({
-        'profession_id': application.professionId,
-        'verification_status': 'verified',
-        'updated_at': now,
-      }).eq('id', application.oderId);
+      // 3. Update user's verification status
+      //    Note: profession_id ถูกย้ายโดย create_registration_application RPC
+      //    ไปแล้ว จึงไม่ต้องตั้งซ้ำ (การตั้งซ้ำจะทำให้ trigger sync_role ยิงไม่จำเป็น)
+      await _client
+          .from('users')
+          .update({'verification_status': 'verified', 'updated_at': now})
+          .eq('id', application.oderId);
 
       // 4. Create provider profile and credentials if profession requires verification
       final profession = application.profession;
@@ -98,7 +114,9 @@ class RegistrationRepository {
           'verified_at': now,
           'updated_at': now,
         };
-        await _client.from('provider_profiles').upsert(profileData, onConflict: 'user_id');
+        await _client
+            .from('provider_profiles')
+            .upsert(profileData, onConflict: 'user_id');
 
         // Fetch attachments to create credentials
         final attachments = await getApplicationAttachments(application.id);
@@ -111,13 +129,17 @@ class RegistrationRepository {
 
           // Map attachment to credential types based on field_key / group_key
           String credentialType = 'license';
-          if (fieldKey.contains('telemedicine') || groupKey.contains('telemedicine')) {
+          if (fieldKey.contains('telemedicine') ||
+              groupKey.contains('telemedicine')) {
             credentialType = 'telemedicine_license';
-          } else if (fieldKey.contains('id_card') || groupKey.contains('id_card')) {
+          } else if (fieldKey.contains('id_card') ||
+              groupKey.contains('id_card')) {
             credentialType = 'id_card';
-          } else if (profession.approvalRequiredLicenseTypes?.isNotEmpty ?? false) {
+          } else if (profession.approvalRequiredLicenseTypes?.isNotEmpty ??
+              false) {
             // Check if this attachment matches any required license type
-            for (final requiredType in profession.approvalRequiredLicenseTypes!) {
+            for (final requiredType
+                in profession.approvalRequiredLicenseTypes!) {
               if (fieldKey.toLowerCase().contains(requiredType.toLowerCase()) ||
                   groupKey.toLowerCase().contains(requiredType.toLowerCase())) {
                 credentialType = requiredType;
@@ -139,17 +161,17 @@ class RegistrationRepository {
         }
 
         if (credentials.isNotEmpty) {
-          await _client.from('provider_credentials').upsert(
-            credentials,
-            onConflict: 'provider_id,credential_type',
-          );
+          await _client
+              .from('provider_credentials')
+              .upsert(credentials, onConflict: 'provider_id,credential_type');
         }
       }
 
       // 5. Fallback/Local handling: If DB trigger doesn't run, ensure Owner role is bound
-      final isOwnerReq = application.registrationData['is_owner_request'] == 'true' ||
+      final isOwnerReq =
+          application.registrationData['is_owner_request'] == 'true' ||
           application.registrationData['is_owner_request'] == true;
-      
+
       if (isOwnerReq) {
         try {
           // Find owner role
@@ -159,10 +181,10 @@ class RegistrationRepository {
               .eq('profession_id', application.professionId)
               .eq('role_name', 'owner')
               .limit(1);
-          
+
           if (roleRes != null && (roleRes as List).isNotEmpty) {
             final ownerRoleId = roleRes[0]['id'];
-            
+
             // Find main branch
             final branchRes = await _client
                 .from('organization_branches')
@@ -170,11 +192,12 @@ class RegistrationRepository {
                 .eq('profession_id', application.professionId)
                 .order('is_main_branch', ascending: false)
                 .limit(1);
-            
-            final branchId = (branchRes != null && (branchRes as List).isNotEmpty)
+
+            final branchId =
+                (branchRes != null && (branchRes as List).isNotEmpty)
                 ? branchRes[0]['id']
                 : null;
-            
+
             // Insert employee role
             await _client.from('employee_roles').insert({
               'profession_id': application.professionId,
@@ -183,10 +206,14 @@ class RegistrationRepository {
               'role_id': ownerRoleId,
               'is_active': true,
             });
-            debugPrint('Successfully assigned Owner role to user: ${application.oderId}');
+            debugPrint(
+              'Successfully assigned Owner role to user: ${application.oderId}',
+            );
           }
         } catch (e) {
-          debugPrint('Error assigning Owner role in repository: $e (This is expected if Supabase trigger already did it)');
+          debugPrint(
+            'Error assigning Owner role in repository: $e (This is expected if Supabase trigger already did it)',
+          );
         }
       }
 
@@ -203,10 +230,7 @@ class RegistrationRepository {
     try {
       await _client.rpc(
         'cancel_registration_application',
-        params: {
-          'p_application_id': applicationId,
-          'p_user_id': userId,
-        },
+        params: {'p_application_id': applicationId, 'p_user_id': userId},
       );
       debugPrint('Cancelled application $applicationId for user $userId');
     } on PostgrestException catch (e) {
@@ -224,11 +248,13 @@ class RegistrationRepository {
   }
 
   /// ดึงใบสมัคร pending ล่าสุดของ user (สำหรับแสดงในหน้า Profile)
-  Future<RegistrationApplication?> getPendingApplicationForUser(String userId) async {
+  Future<RegistrationApplication?> getPendingApplicationForUser(
+    String userId,
+  ) async {
     try {
       final response = await _client
           .from('registration_applications')
-          .select('*, profession:professions(*)')
+          .select('*, profession:professions!profession_id(*)')
           .eq('user_id', userId)
           .eq('status', 'pending')
           .order('created_at', ascending: false)
@@ -237,7 +263,9 @@ class RegistrationRepository {
       if ((response as List).isEmpty) return null;
       return RegistrationApplication.fromJson(response[0]);
     } catch (e) {
-      debugPrint('RegistrationRepository.getPendingApplicationForUser error: $e');
+      debugPrint(
+        'RegistrationRepository.getPendingApplicationForUser error: $e',
+      );
       return null;
     }
   }
@@ -281,7 +309,7 @@ class RegistrationRepository {
       // 1. ดึงใบสมัครที่ขอเป็น Owner ทุกสถานะ ยกเว้น cancelled
       final appsRes = await _client
           .from('registration_applications')
-          .select('*, profession:professions(*)')
+          .select('*, profession:professions!profession_id(*)')
           .eq('registration_data->>is_owner_request', 'true')
           .neq('status', 'cancelled')
           .order('created_at', ascending: false);
@@ -298,8 +326,10 @@ class RegistrationRepository {
         cancelledInfo[row['id']] = row;
       }
 
-      final professionIds =
-          applications.map((a) => a.professionId).toSet().toList();
+      final professionIds = applications
+          .map((a) => a.professionId)
+          .toSet()
+          .toList();
       final userIds = applications.map((a) => a.oderId).toSet().toList();
 
       // 2. ดึง owner role id ของแต่ละ profession
@@ -328,8 +358,7 @@ class RegistrationRepository {
             .eq('is_active', true);
 
         for (final row in (empRolesRes as List)) {
-          hasOwnerRoleKeys
-              .add('${row['profession_id']}_${row['user_id']}');
+          hasOwnerRoleKeys.add('${row['profession_id']}_${row['user_id']}');
         }
       }
 

@@ -23,7 +23,7 @@ class ProfessionRepository {
           .eq('is_active', true)
           .order('display_order', ascending: true)
           .order('name', ascending: true);
-      
+
       return (response as List).map((e) => UserCategory.fromJson(e)).toList();
     } catch (e) {
       debugPrint('ProfessionRepository.getAllUserCategories error: $e');
@@ -48,7 +48,10 @@ class ProfessionRepository {
   }
 
   /// อัปเดตหมวดหมู่ผู้ใช้
-  Future<UserCategory> updateUserCategory(String id, Map<String, dynamic> data) async {
+  Future<UserCategory> updateUserCategory(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     data['updated_at'] = DateTime.now().toIso8601String();
     final response = await _client
         .from('user_categories')
@@ -65,7 +68,7 @@ class ProfessionRepository {
     if (id == UserCategory.consumerId || id == UserCategory.providerId) {
       throw Exception('ไม่สามารถลบหมวดหมู่พื้นฐานได้');
     }
-    
+
     await _client
         .from('user_categories')
         .update({
@@ -79,11 +82,12 @@ class ProfessionRepository {
   Future<void> reorderUserCategories(List<UserCategory> categories) async {
     final now = DateTime.now().toIso8601String();
     final data = <Map<String, dynamic>>[];
-    
+
     for (int i = 0; i < categories.length; i++) {
       data.add({
         'id': categories[i].id,
-        'name': categories[i].name, // เพิ่มฟิลด์นี้เพื่อไม่ให้ติด Not-Null Constraint
+        'name': categories[i]
+            .name, // เพิ่มฟิลด์นี้เพื่อไม่ให้ติด Not-Null Constraint
         'display_order': i,
         'updated_at': now,
       });
@@ -92,7 +96,6 @@ class ProfessionRepository {
     // ใช้ upsert เพื่ออัปเดตข้อมูลหลายบรรทัดในคำสั่งเดียว
     await _client.from('user_categories').upsert(data);
   }
-
 
   // =====================================================
   // PROFESSION CRUD
@@ -111,7 +114,7 @@ class ProfessionRepository {
       if (activeOnly) {
         query = query.eq('is_active', true);
       }
-      
+
       final response = await query
           .order('display_order', ascending: true)
           .order('name', ascending: true)
@@ -119,15 +122,19 @@ class ProfessionRepository {
 
       return (response as List).map((json) {
         // Handle field_count
-        if (json['field_count'] is List && (json['field_count'] as List).isNotEmpty) {
-          json['field_count'] = (json['field_count'] as List).first['count'] ?? 0;
+        if (json['field_count'] is List &&
+            (json['field_count'] as List).isNotEmpty) {
+          json['field_count'] =
+              (json['field_count'] as List).first['count'] ?? 0;
         } else {
           json['field_count'] = 0;
         }
-        
+
         // Handle member_count
-        if (json['member_count'] is List && (json['member_count'] as List).isNotEmpty) {
-          json['member_count'] = (json['member_count'] as List).first['count'] ?? 0;
+        if (json['member_count'] is List &&
+            (json['member_count'] as List).isNotEmpty) {
+          json['member_count'] =
+              (json['member_count'] as List).first['count'] ?? 0;
         } else {
           json['member_count'] = 0;
         }
@@ -138,10 +145,13 @@ class ProfessionRepository {
       debugPrint('ProfessionRepository.getAllProfessions error: $e');
       // If aggregate fails, try simple select as fallback to at least show professions
       try {
-        final simpleResponse = await _client.from('professions')
+        final simpleResponse = await _client
+            .from('professions')
             .select()
             .order('display_order');
-        return (simpleResponse as List).map((e) => Profession.fromJson(e)).toList();
+        return (simpleResponse as List)
+            .map((e) => Profession.fromJson(e))
+            .toList();
       } catch (e2) {
         debugPrint('Fallback getAllProfessions error: $e2');
         rethrow;
@@ -154,7 +164,9 @@ class ProfessionRepository {
     try {
       final response = await _client
           .from('professions')
-          .select('*, category_data:user_categories!professions_category_fkey(*)')
+          .select(
+            '*, category_data:user_categories!professions_category_fkey(*)',
+          )
           .eq('id', id)
           .single();
       return Profession.fromJson(response);
@@ -164,7 +176,9 @@ class ProfessionRepository {
   }
 
   /// ดึงอาชีพตาม category
-  Future<List<Profession>> getProfessionsByCategory(UserCategory category) async {
+  Future<List<Profession>> getProfessionsByCategory(
+    UserCategory category,
+  ) async {
     final response = await _client
         .from('professions')
         .select()
@@ -229,14 +243,20 @@ class ProfessionRepository {
       return Profession.fromJson(response as Map<String, dynamic>);
     } catch (e) {
       debugPrint('RPC create failed: $e, falling back to direct insert');
-      final response =
-          await _client.from('professions').insert(data).select().single();
+      final response = await _client
+          .from('professions')
+          .insert(data)
+          .select()
+          .single();
       return Profession.fromJson(response);
     }
   }
 
   /// อัพเดทอาชีพ
-  Future<Profession> updateProfession(String id, Map<String, dynamic> data) async {
+  Future<Profession> updateProfession(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     data['updated_at'] = DateTime.now().toIso8601String();
     try {
       final response = await _client.rpc(
@@ -257,7 +277,9 @@ class ProfessionRepository {
           .select()
           .maybeSingle();
       if (response == null) {
-        throw Exception('ไม่พบอาชีพที่ต้องการอัปเดต (id: $id) — ตรวจสอบ RLS policy');
+        throw Exception(
+          'ไม่พบอาชีพที่ต้องการอัปเดต (id: $id) — ตรวจสอบ RLS policy',
+        );
       }
       return Profession.fromJson(response);
     }
@@ -284,7 +306,7 @@ class ProfessionRepository {
   Future<void> reorderProfessions(List<Profession> professions) async {
     final now = DateTime.now().toIso8601String();
     final data = <Map<String, dynamic>>[];
-    
+
     for (int i = 0; i < professions.length; i++) {
       data.add({
         'id': professions[i].id,
@@ -418,10 +440,13 @@ class ProfessionRepository {
     int limit = 50,
     int offset = 0,
   }) async {
-    var query = _client.from('registration_applications').select('''
+    var query = _client
+        .from('registration_applications')
+        .select('''
       *,
-      profession:professions(*)
-    ''').eq('status', 'pending');
+      profession:professions!profession_id(*)
+    ''')
+        .eq('status', 'pending');
 
     if (professionId != null) {
       query = query.eq('profession_id', professionId);
@@ -445,7 +470,7 @@ class ProfessionRepository {
   }) async {
     var query = _client.from('registration_applications').select('''
       *,
-      profession:professions(*)
+      profession:professions!profession_id(*)
     ''');
 
     if (status != null) {
@@ -471,7 +496,7 @@ class ProfessionRepository {
           .from('registration_applications')
           .select('''
             *,
-            profession:professions(*)
+            profession:professions!profession_id(*)
           ''')
           .eq('id', id)
           .single();
@@ -575,13 +600,21 @@ class ProfessionRepository {
         throw Exception(
           'คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว ไม่สามารถสมัครซ้ำได้ หากต้องการเปลี่ยนสิทธิ์กรุณาติดต่อผู้ดูแลระบบ',
         );
+      } else if (msg.contains('FORBIDDEN')) {
+        throw Exception('ไม่มีสิทธิ์สร้างใบสมัครให้ผู้ใช้อื่น');
+      } else if (msg.contains('USER_NOT_FOUND')) {
+        throw Exception('ไม่พบบัญชีผู้ใช้ กรุณาเข้าสู่ระบบใหม่');
+      } else if (msg.contains('ADMIN_CANNOT_APPLY')) {
+        throw Exception('ผู้ดูแลระบบไม่สามารถสมัครเปลี่ยนอาชีพได้');
       }
       rethrow;
     }
   }
 
   /// อนุมัติใบสมัคร (Deprecated — ใช้ RegistrationRepository.approveApplication แทน)
-  @Deprecated('ใช้ RegistrationRepository.approveApplication แทน เพื่อรองรับ race-condition guard')
+  @Deprecated(
+    'ใช้ RegistrationRepository.approveApplication แทน เพื่อรองรับ race-condition guard',
+  )
   Future<void> approveApplication(
     String applicationId, {
     String? reviewNote,
@@ -595,7 +628,9 @@ class ProfessionRepository {
   }
 
   /// ปฏิเสธใบสมัคร (Deprecated — ใช้ RegistrationRepository.rejectApplication แทน)
-  @Deprecated('ใช้ RegistrationRepository.rejectApplication แทน เพื่อรองรับ race-condition guard')
+  @Deprecated(
+    'ใช้ RegistrationRepository.rejectApplication แทน เพื่อรองรับ race-condition guard',
+  )
   Future<void> rejectApplication(
     String applicationId, {
     required String reviewNote,
@@ -604,7 +639,11 @@ class ProfessionRepository {
     final regRepo = RegistrationRepository(_client);
     final application = await getApplicationById(applicationId);
     if (application != null) {
-      await regRepo.rejectApplication(application, reviewNote, reviewedBy: reviewedBy);
+      await regRepo.rejectApplication(
+        application,
+        reviewNote,
+        reviewedBy: reviewedBy,
+      );
     }
   }
 

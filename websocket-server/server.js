@@ -124,10 +124,25 @@ socketService.init(io);
 io.use(async (socket, next) => {
   try {
     // 1. Extract identity from handshake
-    let userId = socket.handshake.auth?.token
+    // The Flutter client sends both userId and token. Prefer the explicit
+    // compatibility identity, then decode the verified-token path below.
+    let userId = socket.handshake.auth?.userId
       || socket.handshake.headers?.['x-user-id'];
 
-    // 2. Try Bearer token payload (unsigned decode, same as HTTP middleware)
+    // 2. Try the handshake JWT, then the Bearer header, for compatibility.
+    const handshakeToken = socket.handshake.auth?.token;
+    if (!userId && handshakeToken) {
+      try {
+        const parts = `${handshakeToken}`.split('.');
+        if (parts.length === 3) {
+          const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
+          const claims = JSON.parse(payload);
+          if (claims.sub) userId = claims.sub;
+        }
+      } catch (_) {
+        // malformed token
+      }
+    }
     if (!userId && socket.handshake.headers?.authorization) {
       const authHeader = socket.handshake.headers.authorization;
       if (authHeader.startsWith('Bearer ')) {
@@ -145,16 +160,29 @@ io.use(async (socket, next) => {
       }
     }
 
-    // 3. Verify against DB (if pool available)
-    if (pool && userId) {
-      const result = await pool.query(
-        'SELECT id, is_active, role FROM users WHERE id = $1',
-        [userId]
-      );
-      if (result.rows.length === 0) {
+    // 3. Verify against Supabase (source of truth for users), falling back to
+    //    the local pool only when the Supabase client is not configured.
+    if (userId) {
+      let userRow = null;
+      if (supabaseForSync) {
+        const { data, error } = await supabaseForSync
+          .from('users')
+          .select('id, is_active, role')
+          .eq('id', userId)
+          .maybeSingle();
+        if (error) throw error;
+        userRow = data;
+      } else if (pool) {
+        const result = await pool.query(
+          'SELECT id, is_active, role FROM users WHERE id = $1',
+          [userId]
+        );
+        userRow = result.rows[0] || null;
+      }
+
+      if (!userRow) {
         return next(new Error('Authentication failed: User not found'));
       }
-      const userRow = result.rows[0];
       if (!userRow.is_active) {
         return next(new Error('Authentication failed: User is inactive'));
       }
@@ -164,7 +192,7 @@ io.use(async (socket, next) => {
       };
       socket.userId = userRow.id;
       socket.userRole = userRow.role || 'consumer';
-    } else if (!userId) {
+    } else {
       // Anonymous connections allowed for public features (video viewing, etc.)
       socket.user = null;
       socket.userId = null;
@@ -352,7 +380,225 @@ if (pool) {
   // Start victim retention cron jobs
   victimRetentionCountdownStarter.start(pool);
   victimRetentionAnonymizer.start(pool);
+
 }
+
+// Custom-auth notification and profession-change APIs.
+// Supabase is the source of truth for users/applications/notifications, so
+// these routes use the service-role client while identity comes only from
+// req.userId (verified by verifyToken). Actor IDs from the body are ignored.
+const NOTIFICATION_COLUMNS =
+  'id, profession_id, recipient_id, category, event_type, title, body, payload, is_read, read_at, dismissed_at, created_at';
+
+function requireNotificationStore(res) {
+  if (!supabaseForSync) {
+    res.status(503).json({ error: 'Notification store not available' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/notifications', verifyToken(pool), async (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Login required' });
+  if (!requireNotificationStore(res)) return;
+
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+  try {
+    let query = supabaseForSync
+      .from('app_notifications')
+      .select(NOTIFICATION_COLUMNS)
+      .eq('recipient_id', req.userId)
+      .is('dismissed_at', null);
+    if (category) query = query.eq('category', category);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(limit);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (error) {
+    console.error('[Notifications] List failed:', error.message);
+    res.status(500).json({ error: 'Failed to load notifications' });
+  }
+});
+
+app.get('/api/notifications/unread-count', verifyToken(pool), async (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Login required' });
+  if (!requireNotificationStore(res)) return;
+
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+  try {
+    let query = supabaseForSync
+      .from('app_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', req.userId)
+      .eq('is_read', false)
+      .is('dismissed_at', null);
+    if (category) query = query.eq('category', category);
+    const { count, error } = await query;
+    if (error) throw error;
+    res.json({ count: count || 0 });
+  } catch (error) {
+    console.error('[Notifications] Unread count failed:', error.message);
+    res.status(500).json({ error: 'Failed to load unread count' });
+  }
+});
+
+async function updateOwnNotification(req, res, patch) {
+  if (!req.userId) return res.status(401).json({ error: 'Login required' });
+  if (!requireNotificationStore(res)) return;
+  try {
+    const { data, error } = await supabaseForSync
+      .from('app_notifications')
+      .update(patch)
+      .eq('id', req.params.id)
+      .eq('recipient_id', req.userId)
+      .select('id');
+    if (error) throw error;
+    res.json({ success: Array.isArray(data) && data.length === 1 });
+  } catch (error) {
+    console.error('[Notifications] Update failed:', error.message);
+    res.status(500).json({ error: 'Failed to update notification' });
+  }
+}
+
+app.post('/api/notifications/:id/read', verifyToken(pool), (req, res) =>
+  updateOwnNotification(req, res, { is_read: true, read_at: new Date().toISOString() }));
+
+app.post('/api/notifications/:id/dismiss', verifyToken(pool), (req, res) =>
+  updateOwnNotification(req, res, {
+    is_read: true,
+    read_at: new Date().toISOString(),
+    dismissed_at: new Date().toISOString(),
+  }));
+
+app.post('/api/profession-change', verifyToken(pool), async (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Login required' });
+  if (!requireNotificationStore(res)) return;
+
+  const {
+    professionId,
+    firstName,
+    lastName,
+    username,
+    phone,
+    profileImageUrl,
+    registrationData = {},
+  } = req.body || {};
+  if (!professionId || !firstName || !username) {
+    return res.status(400).json({ error: 'professionId, firstName and username are required' });
+  }
+
+  try {
+    const { data: profession, error: professionError } = await supabaseForSync
+      .from('professions')
+      .select('id, name, requires_verification, category')
+      .eq('id', professionId)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (professionError) throw professionError;
+    if (!profession) return res.status(404).json({ error: 'Profession not found' });
+
+    if (!profession.requires_verification) {
+      const { error: updateError } = await supabaseForSync
+        .from('users')
+        .update({
+          profession_id: professionId,
+          role: profession.category === 'consumer' ? 'consumer' : 'provider',
+          verification_status: 'verified',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', req.userId)
+        .neq('role', 'admin');
+      if (updateError) throw updateError;
+      return res.json({ requiresVerification: false });
+    }
+
+    // The RPC enforces PENDING_EXISTS / APPROVED_EXISTS / ROLE_EXISTS atomically.
+    const { data: application, error: rpcError } = await supabaseForSync.rpc(
+      'create_registration_application',
+      {
+        p_user_id: req.userId,
+        p_profession_id: professionId,
+        p_first_name: firstName,
+        p_last_name: lastName || '',
+        p_username: username,
+        p_phone: phone || null,
+        p_profile_image_url: profileImageUrl || null,
+        p_registration_data: registrationData,
+      },
+    );
+    if (rpcError) {
+      if (rpcError.message.includes('PENDING_EXISTS')) {
+        return res.status(409).json({ error: 'คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว' });
+      }
+      if (rpcError.message.includes('APPROVED_EXISTS')) {
+        return res.status(409).json({ error: 'คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว' });
+      }
+      if (rpcError.message.includes('ROLE_EXISTS')) {
+        return res.status(409).json({ error: 'คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว' });
+      }
+      if (rpcError.message.includes('FORBIDDEN')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (rpcError.message.includes('USER_NOT_FOUND')) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      if (rpcError.message.includes('ADMIN_CANNOT_APPLY')) {
+        return res
+          .status(403)
+          .json({ error: 'ผู้ดูแลระบบไม่สามารถสมัครเปลี่ยนอาชีพได้' });
+      }
+      throw rpcError;
+    }
+
+    // create_registration_application snapshots users.profession_id into
+    // previous_profession_id and moves the user to the pending profession in
+    // the same transaction — no separate users update needed here.
+
+    const { data: admins, error: adminError } = await supabaseForSync
+      .from('users')
+      .select('id')
+      .eq('role', 'admin')
+      .eq('is_active', true);
+    if (adminError) throw adminError;
+
+    const applicantName = `${firstName} ${lastName || ''}`.trim();
+    const title = 'มีคำขอเปลี่ยนอาชีพใหม่';
+    const body = `${applicantName} ขอสมัครเป็น ${profession.name}`;
+    const notificationPayload = {
+      applicationId: application.id,
+      userId: application.user_id,
+      professionId: application.profession_id,
+      route: '/admin/applications',
+    };
+    const recipientIds = (admins || []).map((admin) => admin.id);
+    if (recipientIds.length > 0) {
+      const { data: inserted, error: notifyError } = await supabaseForSync
+        .from('app_notifications')
+        .insert(recipientIds.map((recipientId) => ({
+          profession_id: professionId,
+          recipient_id: recipientId,
+          category: 'admin',
+          event_type: 'profession_application.created',
+          title,
+          body,
+          payload: notificationPayload,
+        })))
+        .select(NOTIFICATION_COLUMNS);
+      if (notifyError) {
+        console.error('[ProfessionChange] Admin notification failed:', notifyError.message);
+      } else {
+        for (const notification of inserted || []) {
+          socketService.broadcastApplicationNotification([notification.recipient_id], notification);
+        }
+      }
+    }
+
+    res.status(201).json({ requiresVerification: true, application });
+  } catch (error) {
+    console.error('[ProfessionChange] Failed:', error.message);
+    res.status(500).json({ error: 'Failed to submit profession change' });
+  }
+});
 
 // Phase 2: Health Check Endpoint for BullMQ Queues
 const queueRegistry = require('./queues');
@@ -629,6 +875,63 @@ io.on('connection', (socket) => {
 
   socket.on('fitness_booking_status', relayFitnessBookingStatus);
   socket.on('fitness-booking-status', relayFitnessBookingStatus);
+
+  // Admin review result notification. The server resolves the applicant and
+  // current application status from Supabase; client payload is not trusted
+  // for recipient identity or authorization.
+  socket.on('application-review-notification', async (data) => {
+    if (!socket.userId || socket.userRole !== 'admin') return;
+    const applicationId = data?.applicationId?.toString();
+    const status = data?.status?.toString();
+    if (!applicationId || !['approved', 'rejected'].includes(status)) return;
+    if (!supabaseForSync) return;
+
+    try {
+      const { data: application, error } = await supabaseForSync
+        .from('registration_applications')
+        .select('id, user_id, profession_id, status, profession:professions!profession_id(name)')
+        .eq('id', applicationId)
+        .maybeSingle();
+      if (error || !application || application.status !== status) return;
+
+      const professionName = application.profession?.name || 'อาชีพที่ร้องขอ';
+      const isApproved = status === 'approved';
+      const payload = {
+        application_id: application.id,
+        profession_id: application.profession_id,
+        status,
+        route: '/profile',
+      };
+      const title = isApproved
+        ? 'คำขอเปลี่ยนอาชีพได้รับการอนุมัติ'
+        : 'คำขอเปลี่ยนอาชีพถูกปฏิเสธ';
+      const body = isApproved
+        ? `คำขออาชีพ ${professionName} ของคุณได้รับการอนุมัติแล้ว`
+        : `คำขออาชีพ ${professionName} ของคุณถูกปฏิเสธ กรุณาตรวจสอบรายละเอียด`;
+
+      const { data: notification, error: notificationError } = await supabaseForSync
+        .from('app_notifications')
+        .insert({
+          profession_id: application.profession_id,
+          recipient_id: application.user_id,
+          category: 'system',
+          event_type: `profession_application.${status}`,
+          title,
+          body,
+          payload,
+        })
+        .select(NOTIFICATION_COLUMNS)
+        .single();
+      if (notificationError) {
+        console.error('[Notifications] Review notification failed:', notificationError.message);
+        return;
+      }
+
+      socketService.broadcastApplicationNotification([application.user_id], notification);
+    } catch (error) {
+      console.error('[Notifications] Review event failed:', error.message);
+    }
+  });
 
   // Location update event
   socket.on('location-update', async (data) => {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import '../../../../features/consultation/presentation/pages/my_consultations_page.dart';
@@ -15,9 +16,12 @@ import 'package:intl/intl.dart';
 import 'package:sheserved/features/consultation/presentation/pages/manage_quick_replies_page.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../core/network/authenticated_http_client.dart';
+import '../../../../config/app_config.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/websocket_service.dart';
 import '../../../admin/models/profession.dart' as prof;
 import '../../../admin/models/registration_field_config.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
@@ -38,7 +42,6 @@ import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_approver_settings_widget.dart';
 import 'package:sheserved/features/donation/presentation/widgets/donation_request_management_panel.dart';
 import 'package:sheserved/features/donation/presentation/pages/leader_verification_page.dart';
-import 'package:sheserved/config/app_config.dart';
 import '../../../auth/data/models/password_change_result.dart';
 import '../widgets/change_password_bottom_sheet.dart';
 
@@ -117,6 +120,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   // ใบสมัครรอตรวจสอบ (Pending Application)
   prof.RegistrationApplication? _pendingApplication;
   bool _isCancellingApplication = false;
+  StreamSubscription<Map<String, dynamic>>?
+  _applicationNotificationSubscription;
 
   String? _highlightRequestId; // สำหรับ auto-focus เมื่อเพิ่งสร้างคำร้องขอเสร็จ
 
@@ -165,6 +170,18 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     _repository = ProfileRepository(Supabase.instance.client);
     _donationRepository = DonationRepository(Supabase.instance.client);
     _deadManRepo = EmergencyDeadManRepository();
+
+    // Refresh profession/application state when the admin review result arrives.
+    _applicationNotificationSubscription = WebSocketService()
+        .applicationNotificationStream
+        .listen((event) {
+          if (!mounted) return;
+          final eventType = event['event_type']?.toString() ?? '';
+          if (eventType.startsWith('profession_application.')) {
+            _loadProfile();
+            _loadPendingApplication();
+          }
+        });
 
     // Auth re-verify as per login_navigation_guide
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -355,6 +372,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   @override
   void dispose() {
+    _applicationNotificationSubscription?.cancel();
     dashboardRouteObserver.unsubscribe(this);
     _tabScrollController.dispose();
     for (var controller in _controllers.values) {
@@ -1243,6 +1261,11 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final isOwnerRequest =
         app.registrationData['is_owner_request'] == 'true' ||
         app.registrationData['is_owner_request'] == true;
+    final previousProfessionName = app
+        .registrationData['previous_profession_name']
+        ?.toString()
+        .trim();
+    final requestedProfessionName = app.profession?.name ?? 'ไม่ระบุ';
     final createdDate =
         '${app.createdAt.day}/${app.createdAt.month}/${app.createdAt.year + 543}';
 
@@ -1273,7 +1296,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           ),
           const SizedBox(height: 8),
           Text(
-            'อาชีพ: ${app.profession?.name ?? 'ไม่ระบุ'}${isOwnerRequest ? ' (สมัครเป็นเจ้าขององค์กร)' : ''}',
+            previousProfessionName != null && previousProfessionName.isNotEmpty
+                ? 'เดิมอาชีพ $previousProfessionName กำลังขออนุมัติเพื่อเปลี่ยนเป็น $requestedProfessionName'
+                : 'อาชีพ: $requestedProfessionName${isOwnerRequest ? ' (สมัครเป็นเจ้าขององค์กร)' : ''}',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -1724,6 +1749,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   Future<void> _onProfessionSelected(prof.Profession newProfession) async {
     if (newProfession.id == _user?.professionId) return;
 
+    final previousProfessionId = _profession?.id ?? _user?.professionId;
+    final previousProfessionName = _profession?.name;
     bool isOwnerRequest = false;
     if (newProfession.requiresVerification) {
       // Show confirmation dialog for verification-required professions
@@ -1812,21 +1839,28 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         }
       }
 
-      // 1. Update user profession and role
-      // หมายเหตุ: ตาราง users ใช้ column `role` (consumer/provider/admin) ไม่ใช่ `user_type`
-      final newRole = newProfession.category.id == prof.UserCategory.consumerId
-          ? 'consumer'
-          : 'provider';
-      await userRepo.updateUser(_user!.id, {
-        'profession_id': newProfession.id,
-        'role': newRole,
-        'verification_status': newProfession.requiresVerification
-            ? VerificationStatus.pending.value
-            : VerificationStatus.verified.value,
-      });
-
-      // 2. If requires verification, create registration application
-      if (newProfession.requiresVerification) {
+      // 1. Gateway path: update user + create application + notify admins atomically.
+      // Legacy mode keeps the existing direct Supabase path during compatibility.
+      if (AppConfig.useBackendAuth && newProfession.requiresVerification) {
+        AuthenticatedHttpClient.instance.configure(
+          baseUrl: AppConfig.backendApiUrl,
+        );
+        await AuthenticatedHttpClient.instance.submitProfessionChange(
+          professionId: newProfession.id,
+          firstName: _user!.firstName,
+          lastName: _user!.lastName,
+          username: _user!.username,
+          phone: _user!.phone,
+          profileImageUrl: _user!.profileImageUrl,
+          registrationData: {
+            'is_owner_request': isOwnerRequest ? 'true' : 'false',
+            'previous_profession_id': previousProfessionId,
+            'previous_profession_name': previousProfessionName,
+          },
+        );
+      } else if (newProfession.requiresVerification) {
+        // RPC สร้างใบสมัคร + snapshot อาชีพเดิมฝั่ง server +
+        // ย้าย user ไปอาชีพใหม่ (pending) ใน transaction เดียว
         await profRepo.createApplication(
           oderId: _user!.id,
           professionId: newProfession.id,
@@ -1837,8 +1871,20 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           profileImageUrl: _user!.profileImageUrl,
           registrationData: {
             'is_owner_request': isOwnerRequest ? 'true' : 'false',
+            'previous_profession_name': previousProfessionName,
           },
         );
+      } else {
+        // หมายเหตุ: ตาราง users ใช้ column `role` (consumer/provider/admin) ไม่ใช่ `user_type`
+        final newRole =
+            newProfession.category.id == prof.UserCategory.consumerId
+            ? 'consumer'
+            : 'provider';
+        await userRepo.updateUser(_user!.id, {
+          'profession_id': newProfession.id,
+          'role': newRole,
+          'verification_status': VerificationStatus.verified.value,
+        });
       }
 
       // 3. Reload profile

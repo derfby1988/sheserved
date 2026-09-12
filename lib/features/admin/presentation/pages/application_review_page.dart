@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../services/websocket_service.dart';
 import '../../models/profession.dart';
 import '../../models/owner_onboarding_tracking.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,17 +34,28 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   final _repo = ServiceLocator.instance.registrationRepository;
   List<RegistrationApplication> _applications = [];
   bool _isLoading = true;
-  VerificationStatus _selectedStatus = VerificationStatus.approved;
+  VerificationStatus _selectedStatus = VerificationStatus.pending;
   Set<String> _usersWithPendingBeneficiary = {};
   bool _showSheservedOnly = false;
 
   List<OwnerOnboardingTracking> _ownerTracking = [];
   bool _isLoadingOwnerTracking = true;
+  StreamSubscription<Map<String, dynamic>>?
+  _applicationNotificationSubscription;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _applicationNotificationSubscription = WebSocketService()
+        .applicationNotificationStream
+        .listen((_) {
+          if (mounted) _loadApplications();
+        });
+    _tabController = TabController(
+      length: 5,
+      vsync: this,
+      initialIndex: _tabStatusOrder.indexOf(_selectedStatus),
+    );
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         if (_tabController.index == _ownerTrackingTabIndex) {
@@ -48,7 +63,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
         } else {
           setState(() {
             _selectedStatus = _tabStatusOrder[_tabController.index];
-            _showSheservedOnly = _selectedStatus == VerificationStatus.pending;
+            _showSheservedOnly = false;
           });
           _loadApplications();
         }
@@ -76,6 +91,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
   @override
   void dispose() {
+    _applicationNotificationSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -86,7 +102,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
     try {
       final apps = await _repo.getApplications(_selectedStatus);
-      
+
       // ดึงข้อมูล owner_user_id ที่มีมูลนิธิรอตรวจสอบ (is_verified = false) แบบรวดเร็ว
       Set<String> pendingOrgsUserIds = {};
       try {
@@ -95,7 +111,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
             .select('owner_user_id')
             .eq('is_verified', false)
             .not('owner_user_id', 'is', null);
-        
+
         for (var row in res) {
           pendingOrgsUserIds.add(row['owner_user_id'].toString());
         }
@@ -130,7 +146,10 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
               SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: TlzAppTopBar.onPrimary(
                     searchHintText: 'ค้นหาผู้สมัคร...',
                     notificationCategory: 'admin',
@@ -142,7 +161,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 isScrollable: true,
                 indicatorColor: AppColors.textOnPrimary,
                 labelColor: AppColors.textOnPrimary,
-                unselectedLabelColor: AppColors.textOnPrimary.withValues(alpha:0.6),
+                unselectedLabelColor: AppColors.textOnPrimary.withValues(
+                  alpha: 0.6,
+                ),
                 tabs: [
                   const Tab(text: 'อนุมัติแล้ว'),
                   const Tab(text: 'ถูกปฏิเสธ'),
@@ -151,7 +172,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('คัดกรองชั้น 2'),
+                        const Text('รอตรวจสอบ'),
                         const SizedBox(width: 4),
                         _buildBadge(_getSheservedQueueCount()),
                       ],
@@ -161,7 +182,10 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.admin_panel_settings_outlined, size: 16),
+                        const Icon(
+                          Icons.admin_panel_settings_outlined,
+                          size: 16,
+                        ),
                         const SizedBox(width: 4),
                         const Text('สถานะการอนุมัติผู้ดูแล ERP'),
                         const SizedBox(width: 4),
@@ -216,15 +240,18 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
   int _getSheservedQueueCount() {
     return _applications
-        .where((a) =>
-            a.status == VerificationStatus.pending &&
-            a.profession?.requiresSheservedApproval == true)
+        .where(
+          (a) =>
+              a.status == VerificationStatus.pending &&
+              a.profession?.requiresSheservedApproval == true,
+        )
         .length;
   }
 
   Widget _buildApplicationList() {
-    var filteredApps =
-        _applications.where((a) => a.status == _selectedStatus).toList();
+    var filteredApps = _applications
+        .where((a) => a.status == _selectedStatus)
+        .toList();
 
     // Sheserved approval filter (only meaningful in pending tab)
     final isPendingTab = _selectedStatus == VerificationStatus.pending;
@@ -250,10 +277,10 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     _selectedStatus == VerificationStatus.pending
                         ? Icons.inbox_outlined
                         : _selectedStatus == VerificationStatus.approved
-                            ? Icons.check_circle_outline
-                            : _selectedStatus == VerificationStatus.rejected
-                                ? Icons.cancel_outlined
-                                : Icons.remove_circle_outline,
+                        ? Icons.check_circle_outline
+                        : _selectedStatus == VerificationStatus.rejected
+                        ? Icons.cancel_outlined
+                        : Icons.remove_circle_outline,
                     size: 64,
                     color: AppColors.textHint,
                   ),
@@ -262,12 +289,12 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     _showSheservedOnly && isPendingTab
                         ? 'ไม่มีผู้สมัครที่ต้องอนุมัติจาก Sheserved'
                         : _selectedStatus == VerificationStatus.pending
-                            ? 'ไม่มีผู้สมัครคัดกรองชั้น 2'
-                            : _selectedStatus == VerificationStatus.approved
-                                ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
-                                : _selectedStatus == VerificationStatus.rejected
-                                    ? 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ'
-                                    : 'ยังไม่มีใบสมัครที่ถูกยกเลิก',
+                        ? 'ไม่มีใบสมัครที่รอตรวจสอบ'
+                        : _selectedStatus == VerificationStatus.approved
+                        ? 'ยังไม่มีผู้สมัครที่อนุมัติ'
+                        : _selectedStatus == VerificationStatus.rejected
+                        ? 'ยังไม่มีผู้สมัครที่ถูกปฏิเสธ'
+                        : 'ยังไม่มีใบสมัครที่ถูกยกเลิก',
                     style: AppTextStyles.bodyLarge.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -302,52 +329,63 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   Widget _buildSheservedFilterChips(int sheservedCount) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          FilterChip(
-            label: const Text('ทั้งหมด'),
-            selected: !_showSheservedOnly,
-            onSelected: (_) {
-              setState(() => _showSheservedOnly = false);
-            },
-            selectedColor: AppColors.primary.withValues(alpha:0.15),
-            checkmarkColor: AppColors.primary,
-            labelStyle: AppTextStyles.bodySmall.copyWith(
-              color: !_showSheservedOnly ? AppColors.primary : AppColors.textSecondary,
-              fontWeight: !_showSheservedOnly ? FontWeight.w600 : FontWeight.normal,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FilterChip(
+              label: const Text('ทั้งหมด'),
+              selected: !_showSheservedOnly,
+              onSelected: (_) {
+                setState(() => _showSheservedOnly = false);
+              },
+              selectedColor: AppColors.primary.withValues(alpha: 0.15),
+              checkmarkColor: AppColors.primary,
+              labelStyle: AppTextStyles.bodySmall.copyWith(
+                color: !_showSheservedOnly
+                    ? AppColors.primary
+                    : AppColors.textSecondary,
+                fontWeight: !_showSheservedOnly
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          FilterChip(
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.fact_check_outlined, size: 14, color: Colors.deepOrange),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved)',
-                    overflow: TextOverflow.ellipsis,
+            const SizedBox(width: 8),
+            FilterChip(
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.fact_check_outlined,
+                    size: 14,
+                    color: Colors.deepOrange,
                   ),
-                ),
-                if (sheservedCount > 0) ...[
                   const SizedBox(width: 4),
-                  _buildBadge(sheservedCount),
+                  const Text('เฉพาะคำขอ Sheserved'),
+                  if (sheservedCount > 0) ...[
+                    const SizedBox(width: 4),
+                    _buildBadge(sheservedCount),
+                  ],
                 ],
-              ],
+              ),
+              selected: _showSheservedOnly,
+              onSelected: (_) {
+                setState(() => _showSheservedOnly = true);
+              },
+              selectedColor: Colors.deepOrange.withValues(alpha: 0.15),
+              checkmarkColor: Colors.deepOrange,
+              labelStyle: AppTextStyles.bodySmall.copyWith(
+                color: _showSheservedOnly
+                    ? Colors.deepOrange
+                    : AppColors.textSecondary,
+                fontWeight: _showSheservedOnly
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+              ),
             ),
-            selected: _showSheservedOnly,
-            onSelected: (_) {
-              setState(() => _showSheservedOnly = true);
-            },
-            selectedColor: Colors.deepOrange.withValues(alpha:0.15),
-            checkmarkColor: Colors.deepOrange,
-            labelStyle: AppTextStyles.bodySmall.copyWith(
-              color: _showSheservedOnly ? Colors.deepOrange : AppColors.textSecondary,
-              fontWeight: _showSheservedOnly ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -412,23 +450,27 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     children: [
                       Text(
                         tracking.fullName,
-                        style: AppTextStyles.bodyMedium
-                            .copyWith(fontWeight: FontWeight.w600),
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       Text(
                         '@${tracking.username} • ${tracking.professionName}',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textSecondary),
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 if (tracking.isRejected)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha:0.1),
+                      color: AppColors.error.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -441,10 +483,12 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   )
                 else if (tracking.isCancelled)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha:0.1),
+                      color: Colors.grey.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -457,18 +501,26 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   )
                 else if (tracking.isStuck)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha:0.15),
+                      color: Colors.orange.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.orange.shade600, width: 0.5),
+                      border: Border.all(
+                        color: Colors.orange.shade600,
+                        width: 0.5,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.warning_amber_rounded,
-                            size: 12, color: Colors.orange.shade800),
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 12,
+                          color: Colors.orange.shade800,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'ค้างขั้นตอนที่ $currentStep',
@@ -482,10 +534,12 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                   )
                 else if (tracking.isFullyCompleted)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha:0.1),
+                      color: AppColors.success.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -509,7 +563,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                       tracking.reviewNote?.isNotEmpty == true
                           ? 'ใบสมัครถูกปฏิเสธ: ${tracking.reviewNote}'
                           : 'ใบสมัครถูกปฏิเสธ',
-                      style: AppTextStyles.caption.copyWith(color: AppColors.error),
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
                   ),
                 ],
@@ -517,14 +573,20 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
             else if (tracking.isCancelled)
               Row(
                 children: [
-                  Icon(Icons.remove_circle_outline, size: 16, color: Colors.grey[600]),
+                  Icon(
+                    Icons.remove_circle_outline,
+                    size: 16,
+                    color: Colors.grey[600],
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       tracking.cancelledAt != null
                           ? '${tracking.cancelledByLabel} (${_formatDate(tracking.cancelledAt!)})'
                           : tracking.cancelledByLabel,
-                      style: AppTextStyles.caption.copyWith(color: Colors.grey[600]),
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ),
                 ],
@@ -534,13 +596,14 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 children: List.generate(steps.length * 2 - 1, (i) {
                   if (i.isOdd) {
                     final leftStepDone =
-                        currentStep != null && steps[i ~/ 2].stepNumber <= currentStep;
+                        currentStep != null &&
+                        steps[i ~/ 2].stepNumber <= currentStep;
                     return Expanded(
                       child: Container(
                         height: 2,
                         color: leftStepDone
                             ? AppColors.success
-                            : AppColors.textHint.withValues(alpha:0.3),
+                            : AppColors.textHint.withValues(alpha: 0.3),
                       ),
                     );
                   }
@@ -559,18 +622,26 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: isDone
-                                ? (isCurrent ? AppColors.primary : AppColors.success)
+                                ? (isCurrent
+                                      ? AppColors.primary
+                                      : AppColors.success)
                                 : Colors.transparent,
                             border: Border.all(
                               color: isDone
-                                  ? (isCurrent ? AppColors.primary : AppColors.success)
+                                  ? (isCurrent
+                                        ? AppColors.primary
+                                        : AppColors.success)
                                   : AppColors.textHint,
                               width: 2,
                             ),
                           ),
                           child: Center(
                             child: isDone
-                                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 16,
+                                    color: Colors.white,
+                                  )
                                 : Text(
                                     '${step.stepNumber}',
                                     style: AppTextStyles.caption.copyWith(
@@ -589,18 +660,22 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
               const SizedBox(height: 8),
               Row(
                 children: steps
-                    .map((s) => Expanded(
-                          child: Text(
-                            s.label,
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.caption.copyWith(
-                              fontSize: 10,
-                              color: currentStep != null && s.stepNumber <= currentStep
-                                  ? AppColors.textPrimary
-                                  : AppColors.textHint,
-                            ),
+                    .map(
+                      (s) => Expanded(
+                        child: Text(
+                          s.label,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.caption.copyWith(
+                            fontSize: 10,
+                            color:
+                                currentStep != null &&
+                                    s.stepNumber <= currentStep
+                                ? AppColors.textPrimary
+                                : AppColors.textHint,
                           ),
-                        ))
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ],
@@ -619,9 +694,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
   Widget _buildApplicationCard(RegistrationApplication application) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => _showApplicationDetail(application),
         borderRadius: BorderRadius.circular(12),
@@ -637,7 +710,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha:0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -682,7 +755,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha:0.1),
+                                color: AppColors.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -693,21 +766,33 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                 ),
                               ),
                             ),
-                            if (application.profession?.requiresSheservedApproval == true)
+                            if (application
+                                    .profession
+                                    ?.requiresSheservedApproval ==
+                                true)
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.deepOrange.withValues(alpha:0.12),
+                                  color: Colors.deepOrange.withValues(
+                                    alpha: 0.12,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: Colors.deepOrange.shade300, width: 0.5),
+                                  border: Border.all(
+                                    color: Colors.deepOrange.shade300,
+                                    width: 0.5,
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.fact_check_outlined, size: 10, color: Colors.deepOrange),
+                                    Icon(
+                                      Icons.fact_check_outlined,
+                                      size: 10,
+                                      color: Colors.deepOrange,
+                                    ),
                                     const SizedBox(width: 3),
                                     Flexible(
                                       child: Text(
@@ -723,22 +808,33 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                                   ],
                                 ),
                               ),
-                            if (application.registrationData['is_owner_request'] == 'true' ||
-                                application.registrationData['is_owner_request'] == true)
+                            if (application
+                                        .registrationData['is_owner_request'] ==
+                                    'true' ||
+                                application
+                                        .registrationData['is_owner_request'] ==
+                                    true)
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.amber.withValues(alpha:0.15),
+                                  color: Colors.amber.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: Colors.amber.shade600, width: 0.5),
+                                  border: Border.all(
+                                    color: Colors.amber.shade600,
+                                    width: 0.5,
+                                  ),
                                 ),
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.stars, size: 10, color: Colors.orange),
+                                    Icon(
+                                      Icons.stars,
+                                      size: 10,
+                                      color: Colors.orange,
+                                    ),
                                     SizedBox(width: 3),
                                     Text(
                                       '👑 ขอจดทะเบียน Owner',
@@ -763,7 +859,8 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                     children: [
                       _buildStatusBadge(
                         application.status,
-                        cancelledBy: application.status == VerificationStatus.cancelled
+                        cancelledBy:
+                            application.status == VerificationStatus.cancelled
                             ? application.cancelledBy
                             : null,
                       ),
@@ -786,7 +883,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha:0.1),
+                    color: AppColors.error.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -811,7 +908,9 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
               ],
 
               // ปุ่มพิเศษตรวจสอบบัญชีมูลนิธิถ้าตรวจสอบเจอ
-              if (_usersWithPendingBeneficiary.contains(application.oderId)) ...[
+              if (_usersWithPendingBeneficiary.contains(
+                application.oderId,
+              )) ...[
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
@@ -828,14 +927,22 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                       const Expanded(
                         child: Text(
                           'ตรวจพบเอกสารตัวแทนมูลนิธิ/MOU รอการอนุมัติอยู่',
-                          style: TextStyle(color: Colors.deepOrange, fontSize: 13, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.deepOrange,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       ElevatedButton(
                         onPressed: () {
-                           ScaffoldMessenger.of(context).showSnackBar(
-                             const SnackBar(content: Text('กรุณาอนุมัติวิชาชีพก่อน แล้วจึงคลิกไปตรวจมูลนิธิ'))
-                           );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'กรุณาอนุมัติวิชาชีพก่อน แล้วจึงคลิกไปตรวจมูลนิธิ',
+                              ),
+                            ),
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.orange,
@@ -923,7 +1030,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha:0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -981,9 +1088,13 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
 
   void _approveApplication(RegistrationApplication application) async {
     try {
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      final currentUserId = AuthService.instance.currentUser?.id;
       await _repo.approveApplication(application, reviewedBy: currentUserId);
-      
+      WebSocketService().sendApplicationReviewNotification(
+        applicationId: application.id,
+        status: 'approved',
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -994,7 +1105,8 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
         _loadApplications(); // Refresh list
 
         // Owner Request Check & Success Dialog
-        final isOwnerReq = application.registrationData['is_owner_request'] == 'true' ||
+        final isOwnerReq =
+            application.registrationData['is_owner_request'] == 'true' ||
             application.registrationData['is_owner_request'] == true;
 
         if (isOwnerReq) {
@@ -1009,7 +1121,7 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
                 ],
               ),
               content: const Text(
-                  'อนุมัติผู้ดูแลระบบ/Owner รายแรกขององค์กรสำเร็จ! ระบบได้เปิดใช้งานสิทธิ์จัดการองค์กรและผูกบทบาท \'Owner\' เรียบร้อยแล้ว'
+                'อนุมัติผู้ดูแลระบบ/Owner รายแรกขององค์กรสำเร็จ! ระบบได้เปิดใช้งานสิทธิ์จัดการองค์กรและผูกบทบาท \'Owner\' เรียบร้อยแล้ว',
               ),
               actions: [
                 TextButton(
@@ -1024,13 +1136,22 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
             context: context,
             builder: (ctx) => AlertDialog(
               title: const Text('อนุมัติวิชาชีพสำเร็จ'),
-              content: const Text('ผู้ใช้นี้มี "เอกสารมูลนิธิ/MOU" รอตรวจสอบอยู่ ต้องการไปยังหน้าผู้รับมรดกเพื่อตรวจสอบต่อเลยหรือไม่?'),
+              content: const Text(
+                'ผู้ใช้นี้มี "เอกสารมูลนิธิ/MOU" รอตรวจสอบอยู่ ต้องการไปยังหน้าผู้รับมรดกเพื่อตรวจสอบต่อเลยหรือไม่?',
+              ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ไว้ทีหลัง')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('ไว้ทีหลัง'),
+                ),
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    Navigator.pushNamed(context, '/admin/donations', arguments: {'initialIndex': 4}); // ไปที่ Beneficiary Tab
+                    Navigator.pushNamed(
+                      context,
+                      '/admin/donations',
+                      arguments: {'initialIndex': 4},
+                    ); // ไปที่ Beneficiary Tab
                   },
                   child: const Text('ไปตรวจสอบเลย'),
                 ),
@@ -1102,11 +1223,22 @@ class _ApplicationReviewPageState extends State<ApplicationReviewPage>
     );
   }
 
-  void _rejectApplication(RegistrationApplication application, String note) async {
+  void _rejectApplication(
+    RegistrationApplication application,
+    String note,
+  ) async {
     try {
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-      await _repo.rejectApplication(application, note, reviewedBy: currentUserId);
-      
+      final currentUserId = AuthService.instance.currentUser?.id;
+      await _repo.rejectApplication(
+        application,
+        note,
+        reviewedBy: currentUserId,
+      );
+      WebSocketService().sendApplicationReviewNotification(
+        applicationId: application.id,
+        status: 'rejected',
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1142,7 +1274,8 @@ class _ApplicationDetailSheet extends StatefulWidget {
   });
 
   @override
-  State<_ApplicationDetailSheet> createState() => _ApplicationDetailSheetState();
+  State<_ApplicationDetailSheet> createState() =>
+      _ApplicationDetailSheetState();
 }
 
 class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
@@ -1158,7 +1291,9 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
   Future<void> _loadAttachments() async {
     try {
       final repo = ServiceLocator.instance.registrationRepository;
-      final attachments = await repo.getApplicationAttachments(widget.application.id);
+      final attachments = await repo.getApplicationAttachments(
+        widget.application.id,
+      );
       if (mounted) {
         setState(() {
           _attachments = attachments;
@@ -1182,7 +1317,8 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
     final normalized = requirement.toLowerCase();
     return _attachments.any((attachment) {
       final fieldKey = (attachment['field_key'] as String? ?? '').toLowerCase();
-      final groupKey = (attachment['attachment_group_key'] as String? ?? '').toLowerCase();
+      final groupKey = (attachment['attachment_group_key'] as String? ?? '')
+          .toLowerCase();
       return fieldKey.contains(normalized) || groupKey.contains(normalized);
     });
   }
@@ -1213,7 +1349,9 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
     return 'ยังขาดเอกสาร/หลักฐานตามข้อกำหนด: ${missingRequirements.join(', ')}';
   }
 
-  Future<void> _copyMissingCredentialReason(List<String> missingRequirements) async {
+  Future<void> _copyMissingCredentialReason(
+    List<String> missingRequirements,
+  ) async {
     final text = _buildMissingCredentialReasonText(missingRequirements);
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
@@ -1242,7 +1380,7 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppColors.textHint.withValues(alpha:0.3),
+              color: AppColors.textHint.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -1253,7 +1391,9 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
               children: [
                 Text(
                   'รายละเอียดผู้สมัคร',
-                  style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.heading4.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -1271,402 +1411,484 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-            // Owner Highlight Alert
-            if (widget.application.registrationData['is_owner_request'] == 'true' ||
-                widget.application.registrationData['is_owner_request'] == true) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.amber.shade300, width: 1),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.stars, color: Colors.orange, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'คำขอสิทธิ์ผู้ดูแลระบบ/Owner รายแรก',
-                            style: TextStyle(
-                              color: Colors.orange,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'ผู้ใช้ท่านนี้ขอจดทะเบียนองค์กรใหม่ในฐานะ Owner คนแรก ระบบจะเปิดใช้งาน Feature Flags และแต่งตั้งสิทธิ์จัดการให้เมื่อทำการอนุมัติ',
-                            style: TextStyle(
-                              color: Colors.orange.shade800,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            // Profile Card
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    // Avatar
+                  // Owner Highlight Alert
+                  if (widget.application.registrationData['is_owner_request'] ==
+                          'true' ||
+                      widget.application.registrationData['is_owner_request'] ==
+                          true) ...[
                     Container(
-                      width: 80,
-                      height: 80,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha:0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          widget.application.firstName.isNotEmpty
-                              ? widget.application.firstName[0].toUpperCase()
-                              : '?',
-                          style: AppTextStyles.heading2.copyWith(
-                            color: AppColors.primary,
-                          ),
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.amber.shade300,
+                          width: 1,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.application.fullName,
-                      style: AppTextStyles.heading4.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '@${widget.application.username}',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.stars,
+                            color: Colors.orange,
+                            size: 28,
                           ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha:0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            widget.application.profession?.name ?? 'ไม่ระบุ',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (widget.application.profession?.requiresSheservedApproval == true)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.deepOrange.withValues(alpha:0.12),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.deepOrange.shade300, width: 0.5),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.fact_check_outlined, size: 12, color: Colors.deepOrange),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved) ระบบ Consultation',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.deepOrange.shade700,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 2,
+                                const Text(
+                                  'คำขอสิทธิ์ผู้ดูแลระบบ/Owner รายแรก',
+                                  style: TextStyle(
+                                    color: Colors.orange,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'ผู้ใช้ท่านนี้ขอจดทะเบียนองค์กรใหม่ในฐานะ Owner คนแรก ระบบจะเปิดใช้งาน Feature Flags และแต่งตั้งสิทธิ์จัดการให้เมื่อทำการอนุมัติ',
+                                  style: TextStyle(
+                                    color: Colors.orange.shade800,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Registration Data
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ข้อมูลลงทะเบียน',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
+                        ],
                       ),
                     ),
-                    const Divider(height: 24),
-                    if (widget.application.phone != null)
-                      _buildInfoRow('เบอร์โทร', widget.application.phone!),
-                    ...widget.application.registrationData.entries.map((entry) {
-                      if (entry.value == 'uploaded') {
-                        return _buildImageRow(entry.key);
-                      }
-                      return _buildInfoRow(
-                        _formatFieldKey(entry.key),
-                        entry.value.toString(),
-                      );
-                    }),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Images Section
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'รูปภาพที่อัพโหลด',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  // Profile Card
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const Divider(height: 24),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: _attachments.isNotEmpty
-                          ? _attachments.map((a) => _buildAttachmentPreview(context, a)).toList()
-                          : widget.application.registrationData.entries
-                              .where((e) => e.value == 'uploaded')
-                              .map((e) => _buildImagePreview(context, e.key))
-                              .toList(),
-                    ),
-                    if (_attachments.isEmpty && widget.application.registrationData.entries
-                        .where((e) => e.value == 'uploaded')
-                        .isEmpty)
-                      Text(
-                        'ไม่มีรูปภาพ',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textHint,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // License Requirement Status Section
-            if (_requiresCredentialCheck) ...[
-              Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
                         children: [
-                          Icon(Icons.verified_user, color: AppColors.primary),
-                          const SizedBox(width: 8),
+                          // Avatar
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                widget.application.firstName.isNotEmpty
+                                    ? widget.application.firstName[0]
+                                          .toUpperCase()
+                                    : '?',
+                                style: AppTextStyles.heading2.copyWith(
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                           Text(
-                            'สถานะหลักฐานใบอนุญาต',
+                            widget.application.fullName,
+                            style: AppTextStyles.heading4.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '@${widget.application.username}',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  widget.application.profession?.name ??
+                                      'ไม่ระบุ',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (widget
+                                      .application
+                                      .profession
+                                      ?.requiresSheservedApproval ==
+                                  true)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.deepOrange.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.deepOrange.shade300,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.fact_check_outlined,
+                                        size: 12,
+                                        color: Colors.deepOrange,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          'คัดกรองและขอรับอนุมัติ(ชั้น 2/sheserved) ระบบ Consultation',
+                                          style: AppTextStyles.bodySmall
+                                              .copyWith(
+                                                color:
+                                                    Colors.deepOrange.shade700,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Registration Data
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ข้อมูลลงทะเบียน',
                             style: AppTextStyles.bodyLarge.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                          const Divider(height: 24),
+                          if (widget.application.phone != null)
+                            _buildInfoRow(
+                              'เบอร์โทร',
+                              widget.application.phone!,
+                            ),
+                          ...widget.application.registrationData.entries.map((
+                            entry,
+                          ) {
+                            if (entry.value == 'uploaded') {
+                              return _buildImageRow(entry.key);
+                            }
+                            return _buildInfoRow(
+                              _formatFieldKey(entry.key),
+                              entry.value.toString(),
+                            );
+                          }),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'แสดงหลักฐานที่แนบและสถานะข้อกำหนดสำหรับการตัดสินใจของผู้ตรวจสอบ ระบบยังไม่บล็อกการอนุมัติอัตโนมัติในหน้านี้',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const Divider(height: 24),
-                      if (widget.application.profession?.requiresTelemedicineLicense == true)
-                        _buildCredentialCheckRow(
-                          'Telemedicine License',
-                          _attachments.any((a) {
-                            final fieldKey = (a['field_key'] as String? ?? '').toLowerCase();
-                            final groupKey = (a['attachment_group_key'] as String? ?? '').toLowerCase();
-                            return fieldKey.contains('telemedicine') || groupKey.contains('telemedicine');
-                          }),
-                        ),
-                      ...(widget.application.profession?.approvalRequiredLicenseTypes ?? []).map((type) {
-                        final hasAttachment = _attachments.any((a) =>
-                          (a['field_key'] as String? ?? '').toLowerCase().contains(type.toLowerCase()) ||
-                          (a['attachment_group_key'] as String? ?? '').toLowerCase().contains(type.toLowerCase())
-                        );
-                        return _buildCredentialCheckRow(type, hasAttachment);
-                      }),
-                      if (_attachments.isEmpty && _isLoadingAttachments)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: LinearProgressIndicator(),
-                        ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
-              if (!_isLoadingAttachments && _getMissingCredentialRequirements().isNotEmpty) ...[
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  color: Colors.orange.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
-                            const SizedBox(width: 8),
+                  // Images Section
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'รูปภาพที่อัพโหลด',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: _attachments.isNotEmpty
+                                ? _attachments
+                                      .map(
+                                        (a) =>
+                                            _buildAttachmentPreview(context, a),
+                                      )
+                                      .toList()
+                                : widget.application.registrationData.entries
+                                      .where((e) => e.value == 'uploaded')
+                                      .map(
+                                        (e) =>
+                                            _buildImagePreview(context, e.key),
+                                      )
+                                      .toList(),
+                          ),
+                          if (_attachments.isEmpty &&
+                              widget.application.registrationData.entries
+                                  .where((e) => e.value == 'uploaded')
+                                  .isEmpty)
                             Text(
-                              'รายการที่ยังขาด',
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: Colors.orange.shade800,
+                              'ไม่มีรูปภาพ',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textHint,
                               ),
                             ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // License Requirement Status Section
+                  if (_requiresCredentialCheck) ...[
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.verified_user,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'สถานะหลักฐานใบอนุญาต',
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'แสดงหลักฐานที่แนบและสถานะข้อกำหนดสำหรับการตัดสินใจของผู้ตรวจสอบ ระบบยังไม่บล็อกการอนุมัติอัตโนมัติในหน้านี้',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const Divider(height: 24),
+                            if (widget
+                                    .application
+                                    .profession
+                                    ?.requiresTelemedicineLicense ==
+                                true)
+                              _buildCredentialCheckRow(
+                                'Telemedicine License',
+                                _attachments.any((a) {
+                                  final fieldKey =
+                                      (a['field_key'] as String? ?? '')
+                                          .toLowerCase();
+                                  final groupKey =
+                                      (a['attachment_group_key'] as String? ??
+                                              '')
+                                          .toLowerCase();
+                                  return fieldKey.contains('telemedicine') ||
+                                      groupKey.contains('telemedicine');
+                                }),
+                              ),
+                            ...(widget
+                                        .application
+                                        .profession
+                                        ?.approvalRequiredLicenseTypes ??
+                                    [])
+                                .map((type) {
+                                  final hasAttachment = _attachments.any(
+                                    (a) =>
+                                        (a['field_key'] as String? ?? '')
+                                            .toLowerCase()
+                                            .contains(type.toLowerCase()) ||
+                                        (a['attachment_group_key'] as String? ??
+                                                '')
+                                            .toLowerCase()
+                                            .contains(type.toLowerCase()),
+                                  );
+                                  return _buildCredentialCheckRow(
+                                    type,
+                                    hasAttachment,
+                                  );
+                                }),
+                            if (_attachments.isEmpty && _isLoadingAttachments)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: LinearProgressIndicator(),
+                              ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _buildMissingCredentialReasonText(_getMissingCredentialRequirements()),
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.orange.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    if (!_isLoadingAttachments &&
+                        _getMissingCredentialRequirements().isNotEmpty) ...[
+                      Card(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        color: Colors.orange.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'รายการที่ยังขาด',
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _buildMissingCredentialReasonText(
+                                  _getMissingCredentialRequirements(),
+                                ),
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: Colors.orange.shade900,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ..._getMissingCredentialRequirements().map(
+                                (item) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: _buildCredentialCheckRow(item, false),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _copyMissingCredentialReason(
+                                    _getMissingCredentialRequirements(),
+                                  ),
+                                  icon: const Icon(Icons.copy),
+                                  label: const Text('คัดลอกเหตุผล'),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        ..._getMissingCredentialRequirements().map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: _buildCredentialCheckRow(item, false),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _copyMissingCredentialReason(
-                              _getMissingCredentialRequirements(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ],
+
+                  // Action Buttons
+                  if (widget.application.status ==
+                      VerificationStatus.pending) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: OutlinedButton(
+                              onPressed: () => _showRejectDialog(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.error,
+                                side: BorderSide(
+                                  color: AppColors.error,
+                                  width: 2,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(26),
+                                ),
+                              ),
+                              child: Text(
+                                'ปฏิเสธ',
+                                style: AppTextStyles.button.copyWith(
+                                  color: AppColors.error,
+                                ),
+                              ),
                             ),
-                            icon: const Icon(Icons.copy),
-                            label: const Text('คัดลอกเหตุผล'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: widget.onApprove,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.success,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(26),
+                                ),
+                              ),
+                              child: Text(
+                                'อนุมัติ',
+                                style: AppTextStyles.button.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-            ],
-
-            // Action Buttons
-            if (widget.application.status == VerificationStatus.pending) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: OutlinedButton(
-                        onPressed: () => _showRejectDialog(context),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.error,
-                          side: BorderSide(color: AppColors.error, width: 2),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(26),
-                          ),
-                        ),
-                        child: Text(
-                          'ปฏิเสธ',
-                          style: AppTextStyles.button.copyWith(
-                            color: AppColors.error,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: widget.onApprove,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(26),
-                          ),
-                        ),
-                        child: Text(
-                          'อนุมัติ',
-                          style: AppTextStyles.button.copyWith(
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  ],
+                  const SizedBox(height: 24),
                 ],
               ),
-            ],
-            const SizedBox(height: 24),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
-    ],
-  ),
-);
+    );
   }
 
-  Widget _buildAttachmentPreview(BuildContext context, Map<String, dynamic> attachment) {
+  Widget _buildAttachmentPreview(
+    BuildContext context,
+    Map<String, dynamic> attachment,
+  ) {
     final url = attachment['file_url'] as String?;
     final fieldKey = attachment['field_key'] as String? ?? 'attachment';
     return GestureDetector(
@@ -1683,21 +1905,14 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
           image: url != null && url.isNotEmpty
-              ? DecorationImage(
-                  image: NetworkImage(url),
-                  fit: BoxFit.cover,
-                )
+              ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover)
               : null,
         ),
         child: url == null || url.isEmpty
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.image,
-                    color: AppColors.textHint,
-                    size: 32,
-                  ),
+                  Icon(Icons.image, color: AppColors.textHint, size: 32),
                   const SizedBox(height: 4),
                   Text(
                     _formatFieldKey(fieldKey),
@@ -1737,7 +1952,9 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: hasAttachment ? AppColors.success.withValues(alpha:0.1) : AppColors.error.withValues(alpha:0.1),
+              color: hasAttachment
+                  ? AppColors.success.withValues(alpha: 0.1)
+                  : AppColors.error.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -1799,9 +2016,7 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
           const SizedBox(width: 4),
           Text(
             'อัพโหลดแล้ว',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.success,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.success),
           ),
         ],
       ),
@@ -1824,17 +2039,11 @@ class _ApplicationDetailSheetState extends State<_ApplicationDetailSheet> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.image,
-              color: AppColors.textHint,
-              size: 32,
-            ),
+            Icon(Icons.image, color: AppColors.textHint, size: 32),
             const SizedBox(height: 4),
             Text(
               _formatFieldKey(key),
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.textHint,
-              ),
+              style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

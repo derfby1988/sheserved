@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../../services/websocket_service.dart';
 
 import '../../data/models/app_notification.dart';
 import '../../data/repositories/notification_repository.dart';
@@ -12,10 +16,7 @@ class NotificationCategorySummary {
   final int unreadCount;
   final DateTime? latestAt;
 
-  const NotificationCategorySummary({
-    this.unreadCount = 0,
-    this.latestAt,
-  });
+  const NotificationCategorySummary({this.unreadCount = 0, this.latestAt});
 }
 
 class NotificationState {
@@ -48,8 +49,35 @@ class NotificationState {
 
 class NotificationNotifier extends StateNotifier<NotificationState> {
   final NotificationRepository _repo;
+  late final StreamSubscription<Map<String, dynamic>>
+  _applicationNotificationSubscription;
 
-  NotificationNotifier(this._repo) : super(const NotificationState());
+  NotificationNotifier(this._repo) : super(const NotificationState()) {
+    _applicationNotificationSubscription = WebSocketService()
+        .applicationNotificationStream
+        .listen(_receiveApplicationNotification);
+  }
+
+  void _receiveApplicationNotification(Map<String, dynamic> data) {
+    try {
+      final notification = AppNotification.fromJson(data);
+      state = state.copyWith(
+        notifications: [
+          notification,
+          ...state.notifications.where((item) => item.id != notification.id),
+        ],
+        unreadCount: state.unreadCount + (notification.isRead ? 0 : 1),
+      );
+    } catch (_) {
+      // Ignore malformed realtime payloads; the next gateway refresh repairs state.
+    }
+  }
+
+  @override
+  void dispose() {
+    _applicationNotificationSubscription.cancel();
+    super.dispose();
+  }
 
   Future<void> loadNotifications({String? category}) async {
     state = state.copyWith(isLoading: true);
@@ -72,7 +100,10 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     await loadNotifications(category: category);
   }
 
-  Future<bool> dismissNotification(String notificationId, {String? category}) async {
+  Future<bool> dismissNotification(
+    String notificationId, {
+    String? category,
+  }) async {
     final success = await _repo.dismissNotification(notificationId);
     if (!success) return false;
 
@@ -93,28 +124,38 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
 final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
-  return NotificationNotifier(ref.read(notificationRepositoryProvider));
-});
+      return NotificationNotifier(ref.read(notificationRepositoryProvider));
+    });
 
-final notificationUnreadCountProvider =
-    StreamProvider.family<int, String?>((ref, category) {
-  return ref
-      .watch(notificationRepositoryProvider)
-      .watchUnreadCount(category: category);
+final notificationUnreadCountProvider = StreamProvider.family<int, String?>((
+  ref,
+  category,
+) async* {
+  final repository = ref.watch(notificationRepositoryProvider);
+  yield await repository.getUnreadCount(category: category);
+
+  await for (final event in WebSocketService().applicationNotificationStream) {
+    if (category == null || event['category']?.toString() == category) {
+      yield await repository.getUnreadCount(category: category);
+    }
+  }
 });
 
 final notificationCategorySummaryProvider =
-    StreamProvider.family<NotificationCategorySummary, String?>(
-  (ref, category) {
-    final repository = ref.watch(notificationRepositoryProvider);
-    return repository
-        .watchNotifications(category: category)
-        .asyncMap((notifications) async {
-      final unreadCount = await repository.getUnreadCount(category: category);
-      return NotificationCategorySummary(
-        unreadCount: unreadCount,
-        latestAt: notifications.isEmpty ? null : notifications.first.createdAt,
-      );
+    StreamProvider.family<NotificationCategorySummary, String?>((
+      ref,
+      category,
+    ) {
+      final repository = ref.watch(notificationRepositoryProvider);
+      return repository.watchNotifications(category: category).asyncMap((
+        notifications,
+      ) async {
+        final unreadCount = await repository.getUnreadCount(category: category);
+        return NotificationCategorySummary(
+          unreadCount: unreadCount,
+          latestAt: notifications.isEmpty
+              ? null
+              : notifications.first.createdAt,
+        );
+      });
     });
-  },
-);

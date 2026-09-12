@@ -965,6 +965,7 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
     String? note,
+    List<Map<String, dynamic>>? costItems,
   }) async {
     await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
     if (capacity < 1 || capacity > 30) {
@@ -991,7 +992,25 @@ class FitnessBuddiesRepository {
         .insert(data)
         .select('id')
         .single();
-    return res['id'].toString();
+    final sessionId = res['id'].toString();
+    if (costItems != null && costItems.isNotEmpty) {
+      try {
+        await replaceSessionCostItems(
+          sessionId: sessionId,
+          actorUserId: actorUserId,
+          items: costItems,
+        );
+      } catch (_) {
+        // Compensate: remove the session so a failed cost write never
+        // leaves a half-created round.
+        await _client
+            .from('fitness_group_sessions')
+            .delete()
+            .eq('id', sessionId);
+        rethrow;
+      }
+    }
+    return sessionId;
   }
 
   Future<String> proposeSport({
@@ -1118,6 +1137,7 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
     String? note,
+    List<Map<String, dynamic>>? costItems,
   }) async {
     if (capacity != null && (capacity < 1 || capacity > 30)) {
       throw ArgumentError('capacity must be between 1 and 30');
@@ -1131,13 +1151,462 @@ class FitnessBuddiesRepository {
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
     if (note != null) data['note'] = note;
-    if (data.isEmpty) return;
+    if (data.isEmpty && costItems == null) return;
     final groupId = await _getSessionGroupId(sessionId);
     await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    if (data.isNotEmpty) {
+      await _client
+          .from('fitness_group_sessions')
+          .update(data)
+          .eq('id', sessionId);
+    }
+    if (costItems != null) {
+      await replaceSessionCostItems(
+        sessionId: sessionId,
+        actorUserId: actorUserId,
+        items: costItems,
+      );
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Phase 9.1: Two-level expense system
+  // Level 1 — fitness_group_cost_standards (group_fee / round_expense
+  //           templates, managed from group create/edit)
+  // Level 2 — fitness_group_session_cost_items (per-session line items that
+  //           snapshot a standard or are custom)
+  // No charging, receipts, split-bill or payment_status in this phase.
+  // ══════════════════════════════════════════════════════════════════
+
+  static const costStandardTypes = ['group_fee', 'round_expense'];
+  static const roundExpenseCategories = [
+    'venue',
+    'equipment',
+    'coach',
+    'insurance',
+    'competition',
+    'uniform',
+    'other',
+  ];
+  static const billingPeriods = [
+    'per_use',
+    'per_day',
+    'per_week',
+    'per_month',
+    'per_year',
+    'lifetime',
+  ];
+  static const pricingUnits = ['flat', 'per_item', 'per_round', 'per_hour'];
+  static const paymentTimings = [
+    'before_round_approval',
+    'before_group_join',
+    'at_venue',
+  ];
+
+  static double _toDouble(num? v) => v?.toDouble() ?? 0;
+
+  /// Estimated amount of one line item: flat/per_round use unit_amount
+  /// (quantity forced to 1), per_item/per_hour use unit_amount × quantity.
+  static double sessionCostItemEstimate(Map<String, dynamic> item) {
+    return _toDouble(item['unit_amount'] as num?) *
+        _toDouble(item['quantity'] as num? ?? 1);
+  }
+
+  static double sessionCostItemsTotal(Iterable<Map<String, dynamic>> items) {
+    var total = 0.0;
+    for (final item in items) {
+      total += sessionCostItemEstimate(item);
+    }
+    return total;
+  }
+
+  void _validateMoney(String field, Object? value) {
+    final amount = value is num ? value.toDouble() : double.tryParse('$value');
+    if (amount == null || amount <= 0 || amount > 99999999.99) {
+      throw ArgumentError('$field must be > 0 and <= 99999999.99');
+    }
+    // At most 2 decimal places
+    if ((amount * 100).roundToDouble() != amount * 100) {
+      throw ArgumentError('$field must have at most 2 decimal places');
+    }
+  }
+
+  void _validatePaymentTiming(Object? timing) {
+    if (!paymentTimings.contains(timing)) {
+      throw ArgumentError('payment_timing must be one of $paymentTimings');
+    }
+  }
+
+  void _validateCostStandardInput({
+    required String standardType,
+    required String category,
+    required String name,
+    required Object? amount,
+    String? billingPeriod,
+    String? pricingUnit,
+    required Object? defaultQuantity,
+    required Object? paymentTiming,
+  }) {
+    if (!costStandardTypes.contains(standardType)) {
+      throw ArgumentError('invalid standard_type');
+    }
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed.length > 100) {
+      throw ArgumentError('name must be 1-100 characters');
+    }
+    _validateMoney('amount', amount);
+    _validatePaymentTiming(paymentTiming);
+    final qty = defaultQuantity is num
+        ? defaultQuantity.toDouble()
+        : double.tryParse('$defaultQuantity');
+    if (qty == null || qty <= 0) {
+      throw ArgumentError('default_quantity must be > 0');
+    }
+    if (standardType == 'group_fee') {
+      if (category != 'membership') {
+        throw ArgumentError('group_fee requires category membership');
+      }
+      if (!billingPeriods.contains(billingPeriod)) {
+        throw ArgumentError('group_fee requires a valid billing_period');
+      }
+      if (pricingUnit != null) {
+        throw ArgumentError('group_fee must not set pricing_unit');
+      }
+    } else {
+      if (!roundExpenseCategories.contains(category)) {
+        throw ArgumentError('round_expense requires an expense category');
+      }
+      if (!pricingUnits.contains(pricingUnit)) {
+        throw ArgumentError('round_expense requires a valid pricing_unit');
+      }
+      if (billingPeriod != null) {
+        throw ArgumentError('round_expense must not set billing_period');
+      }
+    }
+  }
+
+  void _validateSessionCostItemInput(Map<String, dynamic> item) {
+    final name = item['name']?.toString().trim() ?? '';
+    if (name.isEmpty || name.length > 100) {
+      throw ArgumentError('item name must be 1-100 characters');
+    }
+    if (!roundExpenseCategories.contains(item['category'])) {
+      throw ArgumentError('invalid cost item category');
+    }
+    final unit = item['pricing_unit']?.toString();
+    if (!pricingUnits.contains(unit)) {
+      throw ArgumentError('invalid pricing_unit');
+    }
+    _validateMoney('unit_amount', item['unit_amount']);
+    final qty = item['quantity'] is num
+        ? (item['quantity'] as num).toDouble()
+        : double.tryParse('${item['quantity']}');
+    if (qty == null || qty <= 0) {
+      throw ArgumentError('quantity must be > 0');
+    }
+    if (unit == 'flat' || unit == 'per_round') {
+      if (qty != 1) {
+        throw ArgumentError('flat/per_round items require quantity = 1');
+      }
+    } else if (unit == 'per_item' && qty != qty.roundToDouble()) {
+      throw ArgumentError('per_item quantity must be an integer');
+    }
+    _validatePaymentTiming(item['payment_timing']);
+    final sourceType = item['source_type']?.toString();
+    final standardId = item['standard_id']?.toString();
+    if (sourceType == 'standard') {
+      if (standardId == null || standardId.isEmpty) {
+        throw ArgumentError('standard items require standard_id');
+      }
+    } else if (sourceType == 'custom') {
+      if (standardId != null && standardId.isNotEmpty) {
+        throw ArgumentError('custom items must not set standard_id');
+      }
+    } else {
+      throw ArgumentError('invalid source_type');
+    }
+    final note = item['note']?.toString();
+    if (note != null && note.length > 200) {
+      throw ArgumentError('note must be <= 200 characters');
+    }
+  }
+
+  /// Manager view: all cost standards of a group (active and inactive).
+  Future<List<Map<String, dynamic>>> listGroupCostStandards(
+    String groupId, {
+    String? standardType,
+    bool activeOnly = false,
+  }) async {
+    var query = _client
+        .from('fitness_group_cost_standards')
+        .select('*')
+        .eq('group_id', groupId);
+    if (standardType != null) query = query.eq('standard_type', standardType);
+    if (activeOnly) query = query.eq('is_active', true);
+    final res = await query.order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Public view: active group_fee standards of a group.
+  Future<List<Map<String, dynamic>>> listPublicGroupFees(String groupId) async {
+    final res = await _client
+        .from('fitness_group_fees_public')
+        .select('*')
+        .eq('group_id', groupId);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<String> createGroupCostStandard({
+    required String groupId,
+    required String actorUserId,
+    required String standardType,
+    required String category,
+    required String name,
+    required double amount,
+    String? billingPeriod,
+    String? pricingUnit,
+    double defaultQuantity = 1,
+    required String paymentTiming,
+  }) async {
+    _validateCostStandardInput(
+      standardType: standardType,
+      category: category,
+      name: name,
+      amount: amount,
+      billingPeriod: billingPeriod,
+      pricingUnit: pricingUnit,
+      defaultQuantity: defaultQuantity,
+      paymentTiming: paymentTiming,
+    );
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    final res = await _client
+        .from('fitness_group_cost_standards')
+        .insert({
+          'group_id': groupId,
+          'standard_type': standardType,
+          'category': category,
+          'name': name.trim(),
+          'amount': amount,
+          'billing_period': billingPeriod,
+          'pricing_unit': pricingUnit,
+          'default_quantity': defaultQuantity,
+          'payment_timing': paymentTiming,
+          'created_by': actorUserId,
+        })
+        .select('id')
+        .single();
+    return res['id'].toString();
+  }
+
+  Future<void> updateGroupCostStandard({
+    required String standardId,
+    required String actorUserId,
+    String? name,
+    double? amount,
+    String? billingPeriod,
+    String? pricingUnit,
+    double? defaultQuantity,
+    String? paymentTiming,
+  }) async {
+    final existing = await _client
+        .from('fitness_group_cost_standards')
+        .select('*')
+        .eq('id', standardId)
+        .maybeSingle();
+    if (existing == null) throw StateError('STANDARD_NOT_FOUND');
+    await _requireGroupManager(
+      groupId: existing['group_id'].toString(),
+      actorUserId: actorUserId,
+    );
+    _validateCostStandardInput(
+      standardType: existing['standard_type'].toString(),
+      category: existing['category'].toString(),
+      name: name ?? existing['name'].toString(),
+      amount: amount ?? existing['amount'],
+      billingPeriod: billingPeriod ?? existing['billing_period']?.toString(),
+      pricingUnit: pricingUnit ?? existing['pricing_unit']?.toString(),
+      defaultQuantity: defaultQuantity ?? existing['default_quantity'],
+      paymentTiming: paymentTiming ?? existing['payment_timing'].toString(),
+    );
+    final data = <String, dynamic>{};
+    if (name != null) data['name'] = name.trim();
+    if (amount != null) data['amount'] = amount;
+    if (billingPeriod != null) data['billing_period'] = billingPeriod;
+    if (pricingUnit != null) data['pricing_unit'] = pricingUnit;
+    if (defaultQuantity != null) data['default_quantity'] = defaultQuantity;
+    if (paymentTiming != null) data['payment_timing'] = paymentTiming;
+    if (data.isEmpty) return;
+    // Snapshot rows in fitness_group_session_cost_items are not mutated.
     await _client
-        .from('fitness_group_sessions')
+        .from('fitness_group_cost_standards')
         .update(data)
-        .eq('id', sessionId);
+        .eq('id', standardId);
+  }
+
+  /// Disable instead of deleting — keeps history once a standard has been
+  /// used by a session line item.
+  Future<void> setGroupCostStandardActive({
+    required String standardId,
+    required String actorUserId,
+    required bool isActive,
+  }) async {
+    final existing = await _client
+        .from('fitness_group_cost_standards')
+        .select('group_id')
+        .eq('id', standardId)
+        .maybeSingle();
+    if (existing == null) throw StateError('STANDARD_NOT_FOUND');
+    await _requireGroupManager(
+      groupId: existing['group_id'].toString(),
+      actorUserId: actorUserId,
+    );
+    await _client
+        .from('fitness_group_cost_standards')
+        .update({'is_active': isActive})
+        .eq('id', standardId);
+  }
+
+  /// Hard delete is allowed only while no session item references it;
+  /// otherwise the caller must disable it instead.
+  Future<void> deleteGroupCostStandard({
+    required String standardId,
+    required String actorUserId,
+  }) async {
+    final existing = await _client
+        .from('fitness_group_cost_standards')
+        .select('group_id')
+        .eq('id', standardId)
+        .maybeSingle();
+    if (existing == null) throw StateError('STANDARD_NOT_FOUND');
+    await _requireGroupManager(
+      groupId: existing['group_id'].toString(),
+      actorUserId: actorUserId,
+    );
+    final used = await _client
+        .from('fitness_group_session_cost_items')
+        .select('id')
+        .eq('standard_id', standardId)
+        .limit(1);
+    if ((used as List).isNotEmpty) {
+      throw StateError('STANDARD_IN_USE');
+    }
+    await _client
+        .from('fitness_group_cost_standards')
+        .delete()
+        .eq('id', standardId);
+  }
+
+  /// Manager view: all line items of a session.
+  Future<List<Map<String, dynamic>>> listSessionCostItems(
+    String sessionId,
+  ) async {
+    final res = await _client
+        .from('fitness_group_session_cost_items')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Public view: line items of the given sessions (public groups only).
+  Future<List<Map<String, dynamic>>> listPublicSessionCostItems(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return [];
+    final res = await _client
+        .from('fitness_session_cost_items_public')
+        .select('*')
+        .inFilter('session_id', sessionIds)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Public view: all line items of every session in a group (public groups).
+  Future<List<Map<String, dynamic>>> listPublicSessionCostItemsForGroup(
+    String groupId,
+  ) async {
+    final res = await _client
+        .from('fitness_session_cost_items_public')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Replaces all line items of a session with [items] (each item must carry
+  /// source_type/standard_id consistently; standard items are re-validated
+  /// against an active standard of the same group).
+  Future<void> replaceSessionCostItems({
+    required String sessionId,
+    required String actorUserId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final groupId = await _getSessionGroupId(sessionId);
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    for (final item in items) {
+      _validateSessionCostItemInput(item);
+    }
+    // Guard against accidentally duplicated line items.
+    final fingerprints = <String>{};
+    for (final item in items) {
+      final fp = [
+        item['standard_id'] ?? '',
+        item['name'],
+        item['category'],
+        item['pricing_unit'],
+        item['unit_amount'],
+        item['quantity'],
+        item['payment_timing'],
+      ].join('|');
+      if (!fingerprints.add(fp)) {
+        throw ArgumentError('duplicate cost item');
+      }
+    }
+    // Every standard reference must point at an active round_expense
+    // standard of the same group.
+    final standardIds = items
+        .where((i) => i['source_type'] == 'standard')
+        .map((i) => i['standard_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (standardIds.isNotEmpty) {
+      final rows = await _client
+          .from('fitness_group_cost_standards')
+          .select('id')
+          .inFilter('id', standardIds)
+          .eq('group_id', groupId)
+          .eq('standard_type', 'round_expense')
+          .eq('is_active', true);
+      final validIds = (rows as List)
+          .map((r) => r['id']?.toString() ?? '')
+          .toSet();
+      if (standardIds.any((id) => !validIds.contains(id))) {
+        throw StateError('STANDARD_NOT_AVAILABLE');
+      }
+    }
+    await _client
+        .from('fitness_group_session_cost_items')
+        .delete()
+        .eq('session_id', sessionId);
+    if (items.isEmpty) return;
+    await _client.from('fitness_group_session_cost_items').insert([
+      for (final item in items)
+        {
+          'session_id': sessionId,
+          'standard_id': item['standard_id'],
+          'source_type': item['source_type'],
+          'name': item['name'].toString().trim(),
+          'category': item['category'],
+          'pricing_unit': item['pricing_unit'],
+          'unit_amount': item['unit_amount'],
+          'quantity': item['quantity'],
+          'payment_timing': item['payment_timing'],
+          if (item['note'] != null && item['note'].toString().trim().isNotEmpty)
+            'note': item['note'].toString().trim(),
+          'created_by': actorUserId,
+        },
+    ]);
   }
 
   // ── Phase 4: Leave group (RPC for atomic cascade) ──

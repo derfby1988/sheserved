@@ -14,7 +14,8 @@ import 'package:sheserved/config/app_config.dart';
 /// - If refresh fails, logs out user
 /// - Never logs token strings
 class AuthenticatedHttpClient {
-  static final AuthenticatedHttpClient _instance = AuthenticatedHttpClient._internal();
+  static final AuthenticatedHttpClient _instance =
+      AuthenticatedHttpClient._internal();
   static AuthenticatedHttpClient get instance => _instance;
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -31,9 +32,9 @@ class AuthenticatedHttpClient {
   /// Headers ที่ต้องส่งทุก backend call — Content-Type + app version
   /// (min-version gate ฝั่ง server fail-closed ถ้าไม่มี x-app-version)
   Map<String, String> get _baseHeaders => {
-        'Content-Type': 'application/json',
-        'x-app-version': AppConfig.appVersion,
-      };
+    'Content-Type': 'application/json',
+    'x-app-version': AppConfig.appVersion,
+  };
 
   /// Base URL of the backend API (e.g. 'https://api.sheserved.com')
   void configure({required String baseUrl}) {
@@ -78,10 +79,14 @@ class AuthenticatedHttpClient {
     Map<String, dynamic>? queryParams,
   }) async {
     if (_baseUrl == null) {
-      throw StateError('AuthenticatedHttpClient not configured — call configure() first');
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
     }
 
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
+    final uri = Uri.parse(
+      '$_baseUrl$path',
+    ).replace(queryParameters: queryParams);
     final reqHeaders = Map<String, String>.from(headers ?? {});
     reqHeaders.putIfAbsent('x-app-version', () => AppConfig.appVersion);
 
@@ -96,11 +101,13 @@ class AuthenticatedHttpClient {
         response = await http.get(uri, headers: reqHeaders);
         break;
       case 'POST':
-        reqHeaders['Content-Type'] = reqHeaders['Content-Type'] ?? 'application/json';
+        reqHeaders['Content-Type'] =
+            reqHeaders['Content-Type'] ?? 'application/json';
         response = await http.post(uri, headers: reqHeaders, body: body);
         break;
       case 'PUT':
-        reqHeaders['Content-Type'] = reqHeaders['Content-Type'] ?? 'application/json';
+        reqHeaders['Content-Type'] =
+            reqHeaders['Content-Type'] ?? 'application/json';
         response = await http.put(uri, headers: reqHeaders, body: body);
         break;
       case 'DELETE':
@@ -174,6 +181,45 @@ class AuthenticatedHttpClient {
     }
   }
 
+  /// Submit a profession change and application atomically through the gateway.
+  Future<Map<String, dynamic>> submitProfessionChange({
+    required String professionId,
+    required String firstName,
+    required String username,
+    String? lastName,
+    String? phone,
+    String? profileImageUrl,
+    Map<String, dynamic>? registrationData,
+  }) async {
+    if (_baseUrl == null) {
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
+    }
+
+    final response = await request(
+      'POST',
+      '/api/profession-change',
+      body: jsonEncode({
+        'professionId': professionId,
+        'firstName': firstName,
+        'lastName': lastName,
+        'username': username,
+        'phone': phone,
+        'profileImageUrl': profileImageUrl,
+        'registrationData': registrationData ?? <String, dynamic>{},
+      }),
+    );
+    final data = _safeDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthException(
+        data['error']?.toString() ?? 'Profession change failed',
+        statusCode: response.statusCode,
+      );
+    }
+    return data;
+  }
+
   /// Login via backend — stores tokens on success.
   /// [identifier] may be a phone number or a username (backend resolves both).
   Future<Map<String, dynamic>> login({
@@ -181,7 +227,9 @@ class AuthenticatedHttpClient {
     required String password,
   }) async {
     if (_baseUrl == null) {
-      throw StateError('AuthenticatedHttpClient not configured — call configure() first');
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
     }
 
     // Backend accepts { phone } or { username } — detect which one we have.
@@ -204,7 +252,10 @@ class AuthenticatedHttpClient {
       return data;
     } else {
       final error = _safeDecode(response.body);
-      throw AuthException(error['error'] ?? 'Login failed', statusCode: response.statusCode);
+      throw AuthException(
+        error['error'] ?? 'Login failed',
+        statusCode: response.statusCode,
+      );
     }
   }
 
@@ -219,7 +270,9 @@ class AuthenticatedHttpClient {
     String? email,
   }) async {
     if (_baseUrl == null) {
-      throw StateError('AuthenticatedHttpClient not configured — call configure() first');
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
     }
 
     final response = await http.post(
@@ -258,7 +311,9 @@ class AuthenticatedHttpClient {
     String? nonce,
   }) async {
     if (_baseUrl == null) {
-      throw StateError('AuthenticatedHttpClient not configured — call configure() first');
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
     }
 
     final response = await http.post(
@@ -291,7 +346,10 @@ class AuthenticatedHttpClient {
     if (response.statusCode == 200) {
       return _safeDecode(response.body);
     }
-    throw AuthException('Failed to restore session', statusCode: response.statusCode);
+    throw AuthException(
+      'Failed to restore session',
+      statusCode: response.statusCode,
+    );
   }
 
   /// Restore session on app start: load tokens from secure storage, then

@@ -67,16 +67,16 @@
   - **นิยาม “ก๊วนส่วนตัว”:** คือก๊วนที่ `requires_owner_approval = true` — ยังแสดงในรายการเปิดรับเหมือนก๊วนทั่วไป แต่ผู้เข้าร่วมต้องรอเจ้าของก๊วนอนุมัติก่อนเข้าร่วม (ไม่ใช้ฟิลด์ `visibility` แยกอีกต่อไป; `public`/`private` เป็นสิ่งเดียวกันกับ toggle อนุมัติ)
   - `venue_photo_url`: รูปถ่ายสนาม/สถานที่จริงที่ใช้นัดเล่น (แยกจาก `cover_image_url` ซึ่งเป็นภาพปกของก๊วน)
   - `gender_preference`: เพศที่กำลังชวนเข้าร่วมก๊วน — `'male'` (ชาย), `'female'` (หญิง), `'any'` (เสรี/ไม่จำกัด — ค่าเริ่มต้น)
-- `fitness_group_cost_standards` (id UUID DEFAULT gen_random_uuid(), group_id UUID NOT NULL REFERENCES fitness_groups(id) ON DELETE CASCADE, standard_type VARCHAR(20) NOT NULL CHECK(standard_type IN ('group_fee','round_expense')), category VARCHAR(20) NOT NULL CHECK(category IN ('membership','venue','equipment','other')), name VARCHAR(100) NOT NULL, amount NUMERIC(10,2) NOT NULL CHECK(amount >= 0), billing_period VARCHAR(12), pricing_unit VARCHAR(12), default_quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(default_quantity > 0), payment_timing VARCHAR(32) NOT NULL DEFAULT 'at_venue' CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', is_active BOOLEAN NOT NULL DEFAULT true, created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())
+- `fitness_group_cost_standards` (id UUID DEFAULT gen_random_uuid(), group_id UUID NOT NULL REFERENCES fitness_groups(id) ON DELETE CASCADE, standard_type VARCHAR(20) NOT NULL CHECK(standard_type IN ('group_fee','round_expense')), category VARCHAR(20) NOT NULL CHECK(category IN ('membership','venue','equipment','coach','insurance','competition','uniform','other')), name VARCHAR(100) NOT NULL, amount NUMERIC(10,2) NOT NULL CHECK(amount >= 0), billing_period VARCHAR(12), pricing_unit VARCHAR(12), default_quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(default_quantity > 0), payment_timing VARCHAR(32) NOT NULL DEFAULT 'at_venue' CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', is_active BOOLEAN NOT NULL DEFAULT true, created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())
   - `standard_type='group_fee'`: ใช้กับค่าก๊วน/ค่าสมาชิก ต้องมี `category='membership'` และ `billing_period` เป็น `per_use/per_day/per_week/per_month/per_year/lifetime`; ไม่ใช้ `pricing_unit`
-  - `standard_type='round_expense'`: ใช้เป็น template ให้รอบนัด ต้องมี `category='venue'|'equipment'|'other'` และ `pricing_unit` เป็น `flat/per_item/per_round/per_hour`; ไม่ใช้ `billing_period`
+  - `standard_type='round_expense'`: ใช้เป็น template ให้รอบนัด ต้องมี `category='venue'|'equipment'|'coach'|'insurance'|'competition'|'uniform'|'other'` และ `pricing_unit` เป็น `flat/per_item/per_round/per_hour`; ไม่ใช้ `billing_period`
   - เพิ่ม cross-field CHECK: `group_fee` ต้องมี `billing_period` และ `pricing_unit IS NULL`; `round_expense` ต้องมี `pricing_unit` และ `billing_period IS NULL`; enum/category ต้องสัมพันธ์กับ standard type
   - `payment_timing`: เงื่อนไขของค่าใช้จ่ายรายการนั้น (`before_round_approval` = จ่ายก่อนอนุมัติเข้าร่วมรอบ, `before_group_join` = จ่ายก่อนเข้าร่วมก๊วน, `at_venue` = จ่ายภายหลังที่สนาม); ค่าเริ่มต้นคือ `at_venue`
   - ชื่อ, amount, unit, period และ payment timing เป็นค่ามาตรฐานที่แก้ไขได้โดยผู้จัดการก๊วน; การปิดใช้งานแทนการลบเมื่อเคยถูกเลือกใช้ เพื่อรักษาประวัติ
 - `fitness_group_sessions` (id, group_id UUID REFERENCES fitness_groups(id) ON DELETE CASCADE, starts_at TIMESTAMPTZ, ends_at TIMESTAMPTZ, capacity INTEGER NOT NULL DEFAULT 5 CHECK(capacity BETWEEN 1 AND 30), place_name VARCHAR(200), lat DOUBLE PRECISION, lng DOUBLE PRECISION, note VARCHAR(500), CHECK(ends_at > starts_at))
   - `capacity`: จำนวนผู้เข้าร่วมสูงสุดของรอบนัดนั้น ๆ; ไม่ใช่จำนวนสมาชิกสูงสุดของก๊วน
   - session ไม่เก็บค่าใช้จ่ายเป็นคอลัมน์เดียว เพราะหนึ่งรอบมีค่าใช้จ่ายได้หลายรายการผ่าน `fitness_group_session_cost_items`
-- `fitness_group_session_cost_items` (id UUID DEFAULT gen_random_uuid(), session_id UUID REFERENCES fitness_group_sessions(id) ON DELETE CASCADE, standard_id UUID NULL REFERENCES fitness_group_cost_standards(id) ON DELETE SET NULL, source_type VARCHAR(10) NOT NULL CHECK(source_type IN ('standard','custom')), name VARCHAR(100) NOT NULL, category VARCHAR(20) NOT NULL CHECK(category IN ('venue','equipment','other')), pricing_unit VARCHAR(12) NOT NULL CHECK(pricing_unit IN ('flat','per_item','per_round','per_hour')), unit_amount NUMERIC(10,2) NOT NULL CHECK(unit_amount >= 0), quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(quantity > 0), payment_timing VARCHAR(32) NOT NULL CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', note VARCHAR(200), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
+- `fitness_group_session_cost_items` (id UUID DEFAULT gen_random_uuid(), session_id UUID REFERENCES fitness_group_sessions(id) ON DELETE CASCADE, standard_id UUID NULL REFERENCES fitness_group_cost_standards(id) ON DELETE SET NULL, source_type VARCHAR(10) NOT NULL CHECK(source_type IN ('standard','custom')), name VARCHAR(100) NOT NULL, category VARCHAR(20) NOT NULL CHECK(category IN ('venue','equipment','coach','insurance','competition','uniform','other')), pricing_unit VARCHAR(12) NOT NULL CHECK(pricing_unit IN ('flat','per_item','per_round','per_hour')), unit_amount NUMERIC(10,2) NOT NULL CHECK(unit_amount >= 0), quantity NUMERIC(10,2) NOT NULL DEFAULT 1 CHECK(quantity > 0), payment_timing VARCHAR(32) NOT NULL CHECK(payment_timing IN ('before_round_approval','before_group_join','at_venue')), currency CHAR(3) NOT NULL DEFAULT 'THB', note VARCHAR(200), created_by UUID REFERENCES users(id), created_at TIMESTAMPTZ DEFAULT now())
   - เมื่อเลือก standard ให้เก็บ `standard_id` พร้อม snapshot `name/category/pricing_unit/unit_amount/quantity/payment_timing`; ถ้า custom ให้ `standard_id=NULL`; การแก้ template ภายหลังไม่เปลี่ยนรายการของ session เดิม
   - `payment_timing` ของ line item เป็น snapshot ที่ใช้กำหนด gate ในอนาคต; `at_venue` ไม่บล็อกการจอง/อนุมัติ ส่วนอีกสองแบบต้องสร้าง payment obligation ก่อนผ่าน gate ที่ระบุเมื่อเปิด payment flow
   - เพิ่ม cross-field CHECK ให้ `source_type='standard'` ต้องมี `standard_id` และ `source_type='custom'` ต้องไม่มี `standard_id`; repository ตรวจว่า standard อยู่ในก๊วนเดียวกับ session และ active ตอนสร้าง snapshot
@@ -204,7 +204,7 @@
   - การเข้าร่วมของเจ้าของ: Toggle “เข้าร่วมทุกรอบอัตโนมัติ” ค่าเริ่มต้น **เปิด** — เปิดแล้วสร้าง owner booking `confirmed` และนับ 1 ที่นั่งในทุก upcoming session; ปิดแล้ว owner ยังเป็นผู้ควบคุมก๊วนและจองเฉพาะรอบเองได้
   - **ค่าใช้จ่ายมาตรฐานของก๊วน:** section แบบรายการเพิ่ม/แก้ไข/ปิดใช้งานได้ เฉพาะผู้จัดการก๊วนเมื่ออยู่หน้าแก้ไข; แบ่งเป็น (1) ค่าก๊วน/ค่าสมาชิก และ (2) template ค่าใช้จ่ายรอบ เช่น สนาม/อุปกรณ์ เพื่อให้ Bottom Sheet รอบนัดเลือกใช้ภายหลัง
     - ค่าก๊วน/ค่าสมาชิก: ชื่อรายการ, จำนวนเงิน, หน่วยรอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` และเงื่อนไขการชำระ `ก่อนเข้าร่วมก๊วน/ก่อนอนุมัติเข้าร่วมรอบ/จ่ายที่สนาม`
-    - template ค่าใช้จ่ายรอบ: ชื่อรายการ, หมวด `สนาม/อุปกรณ์/อื่นๆ`, จำนวนเงินต่อหน่วย, หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้นถ้ามี และเงื่อนไขการชำระเดียวกัน
+    - template ค่าใช้จ่ายรอบ: ชื่อรายการ, หมวด `สนาม/อุปกรณ์/ครูฝึก/ประกัน/ลงแข่ง/ชุด/อื่นๆ`, จำนวนเงินต่อหน่วย, หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้นถ้ามี และเงื่อนไขการชำระเดียวกัน
   - รายละเอียด: TextArea 2–5 บรรทัด (ไม่บังคับ, สูงสุด ~500 ตัวอักษร)
   - การจองและการอนุมัติ: Toggle “ก๊วนส่วนตัว (ต้องให้เจ้าของก๊วนอนุมัติก่อนจึงมีผลต่อการจอง)” — ค่าเริ่มต้น: ปิด = ก๊วนเปิด (ยอมรับอัตโนมัติ); เปิด = ก๊วนส่วนตัว (รออนุมัติ) — ฟิลด์เดียวนี้คือตัวกำหนดสถานะก๊วนส่วนตัว ไม่มีฟิลด์ visibility แยก
 
@@ -259,7 +259,7 @@ Scaffold
   - จำนวนผู้เข้าร่วมสูงสุดของรอบ (`capacity`): slider/field ช่วง 1–30 คน ค่าเริ่มต้น 5
   - **รายการค่าใช้จ่ายเฉพาะรอบ:** repeatable list 0..N รายการ แต่ละแถวแสดงชื่อ หมวด หน่วยคิด จำนวน ยอดต่อหน่วย และยอดประมาณการ
   - ปุ่ม “เลือกจากค่ามาตรฐานก๊วน”: เปิดรายการ `round_expense` ที่ active และเติมค่าลงแถวใหม่; ไม่แสดง `group_fee` ใน selector นี้
-  - ปุ่ม “เพิ่มค่าใช้จ่ายกำหนดเอง”: เปิดฟอร์มชื่อรายการ, หมวด `สนาม/อุปกรณ์/อื่นๆ`, หน่วย `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเงินต่อหน่วย, จำนวน และเงื่อนไขการชำระ
+  - ปุ่ม “เพิ่มค่าใช้จ่ายกำหนดเอง”: เปิดฟอร์มชื่อรายการ, หมวด `สนาม/อุปกรณ์/ครูฝึก/ประกัน/ลงแข่ง/ชุด/อื่นๆ`, หน่วย `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเงินต่อหน่วย, จำนวน และเงื่อนไขการชำระ
   - `payment_timing` ใช้ ChoiceChip/Dropdown 3 ตัวเลือก “ก่อนอนุมัติเข้าร่วมรอบ / ก่อนเข้าร่วมก๊วน / จ่ายภายหลังที่สนาม”; เมื่อเลือก standard ให้เติมค่า timing จาก standard แต่แอดมินแก้เฉพาะรอบได้และต้องบันทึกเป็น snapshot
   - `per_hour` ตั้งจำนวนเริ่มต้นจาก duration ของรอบได้ แต่แอดมินต้องเห็นและยืนยันจำนวนชั่วโมงก่อนบันทึก; `flat`/`per_round` บังคับจำนวนเป็น 1
   - แสดง “ยอดประมาณการค่าใช้จ่ายของรอบ” จากผลรวมทุก line item; ไม่แสดงเป็นยอดต่อคนและไม่รวมค่าก๊วน/ค่าสมาชิกในยอดรอบ
@@ -293,7 +293,7 @@ Scaffold
 ## ระบบค่าใช้จ่าย 2 ระดับ (ตัดสินใจแล้ว 2026-09-08)
 - **ระดับที่ 1 — ค่าใช้จ่ายมาตรฐานของก๊วน:** กำหนดผ่านหน้าสร้างก๊วนและแก้ไขก๊วน (`Create/Edit Group`) โดยผู้จัดการก๊วน/แอดมินตาม policy เดิม ใช้เป็นรายการอ้างอิงซ้ำได้ ไม่ผูกกับรอบใดรอบหนึ่งโดยอัตโนมัติ
   - **ค่าก๊วน/ค่าสมาชิก (`group_fee`):** ชื่อรายการ เช่น “ค่าสมาชิกก๊วน” หรือชื่อที่แอดมินกำหนดเอง, จำนวนเงิน และรอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` (`per_use/per_day/per_week/per_month/per_year/lifetime`)
-  - **template ค่าใช้จ่ายรอบ (`round_expense`):** รายการมาตรฐาน เช่น ค่าสนาม/ค่าอุปกรณ์/อื่นๆ, จำนวนเงินต่อหน่วย และหน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง` (`flat/per_item/per_round/per_hour`); กำหนดจำนวนเริ่มต้นได้ถ้าต้องใช้ต่อชิ้นหรือต่อชั่วโมง
+  - **template ค่าใช้จ่ายรอบ (`round_expense`):** รายการมาตรฐาน เช่น ค่าสนาม/ค่าอุปกรณ์/ค่าครูฝึก/ค่าประกัน/ค่าลงแข่ง/ค่าชุด/อื่นๆ, จำนวนเงินต่อหน่วย และหน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง` (`flat/per_item/per_round/per_hour`); กำหนดจำนวนเริ่มต้นได้ถ้าต้องใช้ต่อชิ้นหรือต่อชั่วโมง
   - รายการมาตรฐานมีสถานะ active/inactive; เมื่อถูกใช้กับรอบแล้วให้ปิดใช้งานแทนการลบ เพื่อไม่ทำลายประวัติ
 - **ระดับที่ 2 — ค่าใช้จ่ายเฉพาะรอบ:** กำหนดผ่าน Bottom Sheet สร้าง/แก้ไขรอบนัด (`_showCreateSessionSheet()` และ sheet แก้ไข session) โดยหนึ่งรอบมีรายการค่าใช้จ่ายได้ 0..N รายการ
   - ปุ่ม “เลือกจากค่ามาตรฐานก๊วน” แสดงเฉพาะ template `round_expense`; เมื่อเลือกให้เติมชื่อ หมวด หน่วยคิด จำนวนเงิน และจำนวนเริ่มต้นลงในรายการ
@@ -303,6 +303,7 @@ Scaffold
   - **เงื่อนไขการชำระต่อรายการ:** `before_round_approval` = ต้องชำระก่อนผู้จัดการอนุมัติหรือก่อนระบบยืนยัน booking ของรอบ, `before_group_join` = ต้องชำระก่อนทำให้ผู้ใช้เข้าร่วมก๊วน/เป็นสมาชิกที่มีผล, `at_venue` = อนุมัติ/จองได้โดยไม่ต้องชำระออนไลน์และไปจ่ายภายหลังที่สนาม
   - ถ้ารอบมีหลายรายการที่ใช้ timing ต่างกัน ให้แสดง payment checklist แยกตามรายการ; ใน payment phase ต้องผ่าน gate ที่ถึงก่อนตามลำดับ `before_group_join` → `before_round_approval` ส่วน `at_venue` เปลี่ยนเป็น obligation ที่รอชำระหน้างาน
 - **กติกาหน่วยคิดของค่ารอบ:** `flat`/เหมา = ยอดรวมของรายการ, `per_item`/ต่อชิ้น = ยอดต่อชิ้น × จำนวน, `per_round`/ต่อรอบ = ยอดต่อรอบโดยจำนวนเป็น 1, `per_hour`/ต่อชั่วโมง = ยอดต่อชั่วโมง × จำนวนชั่วโมง; รอบนัดแสดงยอดประมาณการแยกรายการและผลรวม แต่ยังไม่หารเป็นยอดต่อคนอัตโนมัติ
+- **Split mode (future contract — ตัดสินใจตอนเปิด payment phase):** ยอดที่เก็บใน Phase 9.1 เป็นยอดรวม/ยอดต่อหน่วยของรายการ ยังไม่นิยาม "ใครจ่ายเท่าไหร่"; เมื่อเปิด payment phase ต้องกำหนด `split_mode` ต่อรายการ (`per_group` = ยอดรวมกลุ่ม, `per_participant` = ยอดต่อผู้เข้าร่วม) และนิยามให้ชัดว่า `group_fee` เป็นต่อคน ส่วน `round_expense flat` เป็นยอดรวมกลุ่ม ก่อนสร้าง obligation; ในระหว่างนี้ UI ต้องแสดงให้ชัดว่าราคาที่เห็นคือยอดรวมของรายการ (หรือต่อหน่วยสำหรับ `per_item`/`per_hour`) ไม่ใช่ยอดที่แต่ละคนต้องจ่ายเว้นแต่รายการนั้นเป็น per_participant โดยธรรมชาติ
 - **การแสดงผล:** การ์ด/รายละเอียดก๊วนแสดงค่าก๊วนมาตรฐานที่ active แยกจากค่าใช้จ่ายของรอบ; session picker และ Bottom Sheet รายละเอียดแสดงรายการค่าใช้จ่ายของรอบ พร้อมชื่อ หน่วยคิด จำนวน ยอดต่อหน่วย ยอดประมาณการ และ badge เงื่อนไขการชำระ (“ก่อนอนุมัติรอบ”/“ก่อนเข้าก๊วน”/“จ่ายที่สนาม”); ไม่มีค่าก๊วนให้แสดง “ยังไม่ได้กำหนด” แทนช่องว่าง
 - **ขอบเขตรอบแรก:** เก็บและแสดงข้อมูลค่าใช้จ่ายพร้อม `payment_timing` เพื่อให้ผู้ใช้เห็นเงื่อนไขก่อนเข้าร่วม/จอง และเตรียม contract สำหรับ payment ภายหลัง; ยังไม่รับชำระเงิน, ไม่สร้างใบเสร็จ, ไม่แบ่งบิล, ไม่คืนเงิน และไม่เพิ่ม `payment_status` ให้ booking
 - **ผลต่อการจองใน Phase 9.1:** ค่าก๊วนมาตรฐานและค่ารอบไม่กระทบ `capacity`, `available_count`, approval, overlap หรือสถานะ `pending/confirmed`; การกดเข้าร่วม/ส่งคำขอไม่ตัดเงิน และ timing เป็นข้อมูลประกอบการตัดสินใจเท่านั้น
@@ -412,7 +413,7 @@ Scaffold
   - `lng`: numeric range -180 ถึง 180
   - `capacity`: integer 1–30
   - `standard_type`: enum allowlist `['group_fee','round_expense']`
-  - `category`: `membership` สำหรับ group fee หรือ `venue|equipment|other` สำหรับ round expense
+  - `category`: `membership` สำหรับ group fee หรือ `venue|equipment|coach|insurance|competition|uniform|other` สำหรับ round expense/session cost item
   - `name`: ชื่อ standard/line item ความยาว 1–100 ตัวอักษร
   - `billing_period`: enum `['per_use','per_day','per_week','per_month','per_year','lifetime']` เฉพาะ `group_fee`
   - `pricing_unit`: enum `['flat','per_item','per_round','per_hour']` เฉพาะ `round_expense`
@@ -904,7 +905,7 @@ Scaffold
 - **Public/Guest:** เพิ่ม public view สำหรับ group fee ที่ active และ session cost items ที่ผูกกับรอบ พร้อม `payment_timing`; card/detail/session picker อ่านข้อมูลจาก view เหล่านี้, ไม่เปิด standard รอบที่ยังไม่ได้ใช้หรือข้อมูล payer/payment และ guest เห็นราคา/เงื่อนไขได้แต่ยังจองไม่ได้จนกว่าจะ login
 - **Payment contract:** กำหนด transition สำหรับอนาคตให้ `before_group_join` gate membership, `before_round_approval` gate owner approval/auto-confirm และ `at_venue` สร้าง obligation `pay_at_venue`; ใช้ `fitness_group_cost_obligations` ใน payment phase ไม่เพิ่ม payment status ลงใน booking
 - **ไม่ทำใน phase นี้:** หักเงิน, payment status, receipt, split bill, refund, escrow หรือ notification การชำระจริง; Phase 9.1 เก็บ/แสดง timing และทดสอบ contract เท่านั้น
-- **Regression/QA:** ทดสอบค่าก๊วนทุก period, template สนาม/อุปกรณ์ทุก pricing unit, payment timing ทั้ง 3 แบบ, เลือก standard, custom name, หลายรายการต่อรอบและ timing ต่างกัน, quantity/ยอดประมาณการ, standard ถูกปิดหลังถูกใช้, snapshot/timing ไม่เปลี่ยน, รอบไม่มีค่าใช้จ่าย, public/guest view และไม่ให้ค่าใช้จ่ายกระทบ capacity/approval/overlap/booking status
+- **Regression/QA:** ทดสอบค่าก๊วนทุก period, template ทุกหมวด (สนาม/อุปกรณ์/ครูฝึก/ประกัน/ลงแข่ง/ชุด/อื่นๆ) ทุก pricing unit, payment timing ทั้ง 3 แบบ, เลือก standard, custom name, หลายรายการต่อรอบและ timing ต่างกัน, quantity/ยอดประมาณการ, standard ถูกปิดหลังถูกใช้, snapshot/timing ไม่เปลี่ยน, รอบไม่มีค่าใช้จ่าย, public/guest view และไม่ให้ค่าใช้จ่ายกระทบ capacity/approval/overlap/booking status
 
 ---
 
@@ -1962,7 +1963,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
   - เพิ่ม partial unique index ป้องกันชื่อรายการ active ซ้ำภายในก๊วนและ `standard_type` เดียวกัน โดยใช้ `lower(name)` เพื่อป้องกัน race condition ที่ UI ตรวจไม่ทัน
   - ใช้ `is_active=false` แทนการลบ standard ที่เคยถูกเลือกใช้แล้ว; ห้ามเปิด mutation ให้ `anon` หรือ `authenticated` โดยตรงหาก mutation path ของ Fitness ใช้ Gateway ตาม Q7-C
   - เพิ่ม RLS/secure RPC ตรวจ owner/manager และ `group_id` ของ standard/session ทุกครั้ง; ห้ามเชื่อ `group_id` จาก client เพียงอย่างเดียว และห้ามผู้ใช้ต่างก๊วนอ่านหรือแก้ไขข้อมูล
-  - เพิ่ม public views ตาม data contract: active `group_fee` เท่านั้นสำหรับ browse และ session cost snapshot สำหรับรอบที่เปิดเผย; ห้ามเปิด `created_by`, `standard_id`, source metadata, payment status, payer identity หรือ obligation fields ใน public view
+  - เพิ่ม public views ตาม data contract: active `group_fee` เท่านั้นสำหรับ browse และ session cost snapshot สำหรับรอบที่เปิดเผย; allowlist ต้องระบุชัดเจนเป็นข้อมูลที่ผู้ใช้ต้องเห็น เช่น `id`, `group_id`, `standard_type`, `category`, `name`, `amount`, `billing_period`, `pricing_unit`, `default_quantity`, `payment_timing`, `currency` และ snapshot fields ที่จำเป็น; ห้ามเปิด `created_by`, `updated_by`, `standard_id`, source metadata, payment status, payer identity หรือ obligation fields ใน public view และห้ามเปิด inactive standard
   - เพิ่ม `created_by`, `updated_by`, `updated_at` และ audit trail สำหรับการสร้าง แก้ไข และปิดใช้งานรายการ เพื่อให้ตรวจสอบการเปลี่ยนข้อมูลด้านเงินได้
   - ใช้ `NUMERIC(10,2)`/decimal semantics สำหรับเงิน, รับทศนิยมไม่เกิน 2 ตำแหน่ง, currency เป็น `THB` ใน Phase นี้ และกำหนดความหมายของ `quantity` สำหรับ `per_item`/`per_hour` ให้ตรงกันทั้ง UI, repository และ database
 
@@ -1970,14 +1971,14 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
   - เพิ่ม `_buildModernSection(title: 'ค่าใช้จ่ายของก๊วน', icon: Icons.payments_outlined)` วางระหว่าง section "การตั้งค่าก๊วน" กับ "สถานที่และพิกัด" ใน `create_group_page.dart` (ใช้ร่วมกันหน้าแก้ไขก๊วน, แสดงเฉพาะผู้จัดการก๊วนตาม policy เดิม)
   - แบ่งเป็น 2 sub-section ภายในการ์ดเดียว:
     1. **ค่าก๊วน/ค่าสมาชิก (`group_fee`)** — รายการแสดงชื่อ, ยอดเงิน (บาท), chip รอบเรียกเก็บ `รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ` และ badge เงื่อนไขการชำระ
-    2. **Template ค่าใช้จ่ายรอบ (`round_expense`)** — รายการแสดงชื่อ, chip หมวด `สนาม/อุปกรณ์/อื่นๆ`, ยอดต่อหน่วย + หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้น (ถ้ามี) และ badge เงื่อนไขการชำระ
+    2. **Template ค่าใช้จ่ายรอบ (`round_expense`)** — รายการแสดงชื่อ, chip หมวด `สนาม/อุปกรณ์/ครูฝึก/ประกัน/ลงแข่ง/ชุด/อื่นๆ`, ยอดต่อหน่วย + หน่วยคิด `เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`, จำนวนเริ่มต้น (ถ้ามี) และ badge เงื่อนไขการชำระ
   - แต่ละรายการเป็น card row ที่แตะเพื่อแก้ไข และมี action ปิดใช้งาน (deactivate) — standard ที่เคยถูกใช้ในรอบต้องปิดใช้งานแทนการลบ เพื่อไม่ทำลาย snapshot ของรอบเดิม; รายการ inactive แสดงจางและยุบไว้ท้ายลิสต์
   - ปุ่มเพิ่มรายการ 2 ปุ่มแยกตามประเภท: "+ เพิ่มค่าก๊วน/ค่าสมาชิก" และ "+ เพิ่ม template ค่ารอบ" (touch target ≥ 48dp)
   - Empty state: แสดง "ยังไม่ได้กำหนดค่าใช้จ่าย" พร้อมข้อความอธิบายสั้นว่าสมาชิกจะเห็น "ยังไม่ได้กำหนด" — ไม่ใช่ error และบันทึกก๊วนได้ปกติ (ค่าใช้จ่ายไม่บังคับ)
 - **14.4.2 ฟอร์มเพิ่ม/แก้ไขรายการผ่าน Modal Bottom Sheet:**
   - ใช้ `showModalBottomSheet(isScrollControlled: true)` + padding ตาม `viewInsets` เพื่อไม่ให้คีย์บอร์ดบังฟิลด์ (สอดคล้อง 14.4.4)
   - **ฟอร์ม `group_fee`:** ชื่อรายการ (≤100 ตัวอักษร), จำนวนเงิน (≥0, ทศนิยม ≤2 ตำแหน่ง), Dropdown รอบเรียกเก็บ allowlist `per_use/per_day/per_week/per_month/per_year/lifetime` แสดงป้ายไทย, และเงื่อนไขการชำระ
-  - **ฟอร์ม `round_expense`:** ชื่อรายการ, หมวด `venue/equipment/other` (`สนาม/อุปกรณ์/อื่นๆ`), ยอดต่อหน่วย, หน่วยคิด `flat/per_item/per_round/per_hour` (`เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`), จำนวนเริ่มต้น (เปิดกรอกเฉพาะ `per_item`/`per_hour`; `flat`/`per_round` ล็อกเป็น 1) และเงื่อนไขการชำระ
+  - **ฟอร์ม `round_expense`:** ชื่อรายการ, หมวด `venue/equipment/coach/insurance/competition/uniform/other` (`สนาม/อุปกรณ์/ครูฝึก/ประกัน/ลงแข่ง/ชุด/อื่นๆ`), ยอดต่อหน่วย, หน่วยคิด `flat/per_item/per_round/per_hour` (`เหมา/ต่อชิ้น/ต่อรอบ/ต่อชั่วโมง`), จำนวนเริ่มต้น (เปิดกรอกเฉพาะ `per_item`/`per_hour`; `flat`/`per_round` ล็อกเป็น 1) และเงื่อนไขการชำระ
   - `payment_timing` ใช้ ChoiceChip 3 ตัวเลือก "ก่อนอนุมัติเข้าร่วมรอบ / ก่อนเข้าร่วมก๊วน / จ่ายที่สนาม" (ค่าเริ่มต้น `at_venue`) พร้อมข้อความอธิบายใต้ chip ว่าแต่ละเงื่อนไขมีผลอย่างไรเมื่อเปิด payment phase ภายหลัง — ใน Phase นี้เก็บ/แสดงเงื่อนไขเท่านั้น ยังไม่เรียกเก็บเงินจริง
   - Live validation ภายใน sheet: ชื่อห้ามว่างและห้ามซ้ำรายการ active ประเภทเดียวกัน, ยอดเงินต้อง parse ได้และไม่เกิน 2 ตำแหน่งทศนิยม, จำนวนเริ่มต้นต้อง >0 — แสดง error ใต้ฟิลด์ทันทีตามแนว 14.1.2 ไม่ใช้ SnackBar อย่างเดียว
   - แก้ไข standard ที่เคยถูกเลือกใช้ในรอบแล้ว → แสดง confirmation เตือนว่า "การเปลี่ยนแปลงไม่กระทบรอบนัดที่สร้างไปแล้ว (เก็บเป็น snapshot)" ก่อนบันทึก ตามกติกา Cost standard/item integrity
@@ -1986,19 +1987,28 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
   - หน้าแก้ไขก๊วน: เพิ่ม/แก้/ปิดใช้งาน standard ยิง repository ทันทีต่อรายการ พร้อม optimistic update + rollback UI เมื่อล้มเหลว
   - Draft (`create_group_draft`) ต้อง serialize/restore รายการ cost standards ทั้งสองประเภทครบ (ชื่อ, ประเภท, หมวด, ยอด, หน่วย/รอบเรียกเก็บ, จำนวนเริ่มต้น, payment_timing) และรายการเหล่านี้ต้องถือเป็น "ข้อมูลที่กรอกแล้ว" ที่ทำให้ Unsaved Changes Guard ของ 14.2.1 เด้งเตือน
   - เตรียม UI ระดับที่ 2 (ค่าใช้จ่ายเฉพาะรอบใน `_showCreateSessionSheet()`) ให้สอดคล้อง pattern เดียวกัน: ปุ่ม "เลือกจากค่ามาตรฐานก๊วน" แสดงเฉพาะ `round_expense` active, ปุ่ม "เพิ่มค่าใช้จ่ายกำหนดเอง" ใช้ฟอร์มเดียวกับ 14.4.2, แสดงยอดประมาณการรวมของรอบ — รายละเอียด validation ตามหัวข้อ "สร้างรอบนัด (Bottom Sheet)"
-  - การบันทึกหลายรายการต้องแสดงผลแยกรายการ: ถ้าบางรายการสำเร็จและบางรายการล้มเหลว ให้ retry เฉพาะรายการที่ล้มเหลว, ใช้ idempotency/client request key ป้องกันการกดซ้ำสร้างข้อมูลซ้ำ และห้ามแสดงสถานะสำเร็จรวมเมื่อยังมีรายการค้าง
+  - การบันทึกหลายรายการต้องแสดงผลแยกรายการ: ถ้าบางรายการสำเร็จและบางรายการล้มเหลว ให้ retry เฉพาะรายการที่ล้มเหลว, ใช้ idempotency/client request key ที่ผูกกับ `user/session/resource/action` และ operation เดิม เพื่อป้องกันการกดซ้ำสร้างข้อมูลซ้ำโดยไม่ dedupe คนละรายการที่มีค่าธุรกิจเหมือนกัน และห้ามแสดงสถานะสำเร็จรวมเมื่อยังมีรายการค้าง
   - เพิ่ม Dart model/repository ที่ typed สำหรับ list/create/update/deactivate standards และ create session cost snapshot; repository ต้องตรวจ `group_id`, `standard_type`, `is_active` และความเป็นเจ้าของซ้ำที่ server boundary
-  - Draft ต้องมี schema version และ restore ค่าเดิมของ draft รุ่นเก่าที่ไม่มี `costStandards` เป็นลิสต์ว่าง; serialize/restore รายการทั้งสองประเภทครบโดยไม่เก็บ payment credentials หรือ provider data
+  - Draft ต้องมี schema version แบบเพิ่มทีละลำดับ และ restore ค่าเดิมของ draft รุ่นเก่าที่ไม่มี `costStandards` เป็นลิสต์ว่าง; ตอน implement ต้องตรวจ version ที่ code รองรับอยู่แล้วและ bump เป็นเลขถัดไปอย่างชัดเจน ห้ามเดาหรือ reuse version เดิม; serialize/restore รายการทั้งสองประเภทครบโดยไม่เก็บ payment credentials หรือ provider data
   - เมื่อเลือก standard สร้าง session ให้บันทึก snapshot แบบ atomic; ถ้า standard ถูก deactivate หรือแก้ไขระหว่างเปิดฟอร์ม ต้อง revalidate ก่อน commit และแจ้งให้ผู้ใช้เลือกใหม่
 - **14.4.3.1 กติกาความปลอดภัยของค่าใช้จ่ายเมื่อมีผู้เข้าร่วมรอบ:**
-  - เมื่อรอบมี booking/member ที่ active หรือมีผู้เข้าร่วมอย่างน้อยหนึ่งคน และ `starts_at > now()` ให้ถือว่า session อยู่ในสถานะ **locked for cost mutation**
+  - เมื่อรอบมี booking สถานะ `pending` หรือ `confirmed` อย่างน้อย 1 รายการ ให้ถือว่า session อยู่ในสถานะ **locked for cost mutation** ทันที ไม่ขึ้นกับว่า `starts_at` ผ่านไปแล้วหรือยัง; `cancelled` และ `rejected` ไม่ใช่ active booking
   - หลังเข้า locked state ห้ามเพิ่ม แก้ไข ลบ ปิดใช้งาน หรือเปลี่ยน `standard_id`, `source_type`, `name`, `category`, `pricing_unit`, `unit_amount`, `quantity`, `payment_timing`, `currency` ของ `fitness_group_session_cost_items` ผ่าน UI, repository หรือ API
-  - การตรวจ lock ต้องทำที่ database/secure RPC ภายใน transaction โดยตรวจ booking ที่สถานะ `pending` หรือ `confirmed` ตาม policy ของการเข้าร่วม ไม่ใช่ตรวจเฉพาะ client เพื่อป้องกัน race condition
-  - หากยังไม่มีผู้เข้าร่วม แต่มีการสร้างรายการค่าใช้จ่ายไว้แล้ว ผู้จัดการยังแก้ไขได้ก่อนมี booking active และก่อนเวลาเริ่มรอบ; เมื่อมี booking active แล้วต้องล็อกทันที แม้รอบยังไม่เริ่ม
-  - หลัง `ends_at <= now()` ห้ามแก้ไขรายการเดิมย้อนหลังเช่นกัน ให้ใช้ adjustment/reconciliation flow แยกใน payment phase; Phase 14.4 อนุญาตเฉพาะการดู snapshot และการยกเลิกรอบตาม policy เดิม
+  - การตรวจ lock ต้องทำที่ database/secure RPC ภายใน transaction เดียวกับ cost mutation และ booking mutation ที่เกี่ยวข้อง เพื่อป้องกัน race condition; ห้ามตรวจเฉพาะ client
+  - หากไม่มี booking `pending`/`confirmed` เหลืออยู่ session อาจปลดล็อกได้เฉพาะก่อน `ends_at`; หลัง `ends_at <= now()` ให้ถือเป็น **historical lock** ถาวร แม้ booking จะถูกยกเลิกภายหลัง
+  - หากยังไม่มี active booking และยังไม่ถึง `ends_at` ผู้จัดการแก้ไขรายการได้ตาม authorization เดิม; เมื่อมี booking active ใหม่เข้ามาต้องล็อกทันที
+  - หลัง `ends_at <= now()` ห้ามแก้ไขรายการเดิมย้อนหลัง ให้ใช้ adjustment/reconciliation flow แยกใน payment phase; Phase 14.4 อนุญาตเฉพาะการดู snapshot และการยกเลิกรอบตาม policy เดิม
   - หากผู้จัดการพยายามแก้ไขรายการที่ถูกล็อก ให้แสดงข้อความ inline/dialog ว่า "รอบนี้มีผู้เข้าร่วมแล้ว จึงไม่สามารถแก้ไขค่าใช้จ่ายได้" พร้อมแสดงข้อมูล snapshot ปัจจุบันและทางเลือกติดต่อผู้ดูแล; ห้ามใช้ SnackBar อย่างเดียว
   - การเปลี่ยน template `fitness_group_cost_standards` หลังมีผู้เข้าร่วมใน session ไม่เปลี่ยนและไม่ปลดล็อก snapshot ของ session นั้น; template ใหม่มีผลเฉพาะ session ที่ยังไม่สร้างหรือยังไม่ถูกเลือกใช้
-  - เพิ่ม audit event เมื่อ session ถูก lock, เมื่อ mutation ถูกปฏิเสธ และเมื่อมีการสร้าง snapshot เพื่อรองรับการตรวจสอบข้อพิพาทด้านค่าใช้จ่าย
+  - เพิ่ม audit event ใน `public.audit_logs` เมื่อ session ถูก lock, เมื่อ mutation ถูกปฏิเสธ และเมื่อมีการสร้าง snapshot โดยบันทึก event type, actor, group/session/item resource, reason, previous/new values ที่ไม่ใช่ secret และ timestamp
+- **ลำดับการ implement และ readiness gate:**
+  1. Migration/schema: สร้างตาราง, CHECK/FK, partial unique index, lock helper/secure RPC และ public views แบบ idempotent โดยไม่แก้ migration ที่ apply แล้ว
+  2. Repository/model: เพิ่ม typed models, CRUD, manager authorization, snapshot validation, lock enforcement และ operation-scoped idempotency
+  3. UI ระดับที่ 1: Create/Edit Group section, modal form, live validation, draft migration/versioning และ unsaved-changes guard
+  4. UI ระดับที่ 2: Session cost sheet, standard/custom selection, snapshot save และ locked-state read-only explanation
+  5. Audit/observability: เขียน `public.audit_logs` ใน transaction เดียวกับ mutation และเพิ่ม metrics/log ที่ไม่เปิดเผยข้อมูลลับ
+  6. Tests/gates: DB/RPC race, cross-group isolation, retry/partial failure, snapshot immutability, draft restore, accessibility และ Android/iOS/Web regression
+  - ห้ามประกาศ Phase 9.1/14.4 พร้อมใช้งานก่อน migration, secure mutation path, public views, typed repository, UI และ test gates ครบ; ปัจจุบันแผนนี้ยังเป็น specification และยังไม่มี cost migration/repository/UI implementation ใน repository
 - **14.4.4 Accessibility & Mobile Testing:**
   - ตรวจสอบ Touch target (ขนาดปุ่ม ≥ 48x48 dp), รองรับ Screen Reader (Semantics) รวมถึงรายการค่าใช้จ่าย, สถานะ active/inactive, สถานะ locked และ badge เงื่อนไขการชำระ
   - ทดสอบการทำงานร่วมกับคีย์บอร์ดบนอุปกรณ์จอเล็ก (Keyboard avoiding & auto-scroll to focused field) ทั้งในฟอร์มหลักและ Bottom Sheet ค่าใช้จ่าย
@@ -2007,7 +2017,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 - **เกณฑ์การตรวจรับ (Gate 14.4):** เพิ่ม/แก้ไข/ปิดใช้งาน `group_fee` และ `round_expense` จากหน้าสร้าง/แก้ไขก๊วนได้ครบตาม allowlist, validation แจ้งที่ฟิลด์ทันที, รายการรอดจาก Draft restore และ Unsaved Guard, standard ที่ถูกใช้แล้วไม่ถูกลบและแจ้งเตือน snapshot ก่อนแก้, คีย์บอร์ดไม่บังฟิลด์/ปุ่ม submit และผ่าน Accessibility inspection
   - ต้องมี migration/schema, constraints, RLS/secure RPC, repository/model และ public views ครบตาม data contract; ผู้ใช้ต่างก๊วนอ่าน/แก้ไขไม่ได้ และไม่มี direct mutation ที่ข้าม Gateway policy
   - ต้องพิสูจน์ว่า session cost item เป็น immutable snapshot หลังสร้าง และ template ที่แก้ไขภายหลังไม่กระทบ session เดิม
-  - เมื่อมี `pending` หรือ `confirmed` booking และรอบยังไม่สิ้นสุด ต้องแก้ไข/เพิ่ม/ลบ/ปิดใช้งานค่าใช้จ่ายไม่ได้ทั้งจาก UI และ server; race-condition test ต้องผ่าน
+  - เมื่อมี `pending` หรือ `confirmed` booking ต้องแก้ไข/เพิ่ม/ลบ/ปิดใช้งานค่าใช้จ่ายไม่ได้ทั้งจาก UI และ server; หลัง `ends_at` เป็น historical lock ถาวร; race-condition test ต้องครอบคลุมอย่างน้อย booking เกิดระหว่างเปิดฟอร์มกับ commit ค่าใช้จ่าย, booking ถูก confirm พร้อมกับ mutation ค่าใช้จ่าย, และการยกเลิก booking ระหว่าง mutation โดยยังมี booking active อื่นเหลืออยู่
   - retry หลัง network error ต้องไม่สร้างรายการซ้ำ และ partial failure ต้องรายงานสถานะรายรายการ
   - ผ่าน Android/iOS จอเล็ก, Web ที่รองรับ keyboard navigation, accessibility inspection และ regression ของ create/edit group/session ก่อนประกาศ Phase 14.4 เสร็จ
 

@@ -13,6 +13,7 @@ import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../find_buddies/presentation/widgets/group_chat_popup.dart';
+import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 
 class _GroupPageResult {
   final List<Map<String, dynamic>> groups;
@@ -316,6 +317,20 @@ class _SportClubPageState extends State<SportClubPage> {
     required bool requiresOwnerApproval,
   }) async {
     final sessions = await _repo.listUpcomingSessions(groupId);
+    final sessionIds = sessions
+        .map((s) => s['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    var costItemsBySession = <String, List<Map<String, dynamic>>>{};
+    try {
+      final allItems = await _repo.listPublicSessionCostItems(sessionIds);
+      for (final item in allItems) {
+        final sid = item['session_id']?.toString() ?? '';
+        if (sid.isNotEmpty) {
+          costItemsBySession.putIfAbsent(sid, () => []).add(item);
+        }
+      }
+    } catch (_) {}
     if (!mounted) return;
     if (sessions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -327,41 +342,63 @@ class _SportClubPageState extends State<SportClubPage> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
         top: false,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+            maxHeight: MediaQuery.of(ctx).size.height * 0.75,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
-                    width: 40,
-                    height: 4,
+                    width: 44,
+                    height: 5,
                     decoration: BoxDecoration(
                       color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  'เลือกรอบนัดที่ต้องการเข้าร่วม',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.event_available_rounded,
+                        color: AppColors.primaryDark,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'เลือกรอบนัดที่ต้องการเข้าร่วม',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Flexible(
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: sessions.length,
-                    separatorBuilder: (_, __) => const Divider(),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (ctx, i) {
                       final s = sessions[i];
                       final startsAt = DateTime.parse(
@@ -380,31 +417,260 @@ class _SportClubPageState extends State<SportClubPage> {
                           (s['available_count'] as num?)?.toInt() ??
                           (capacity - confirmedCount).clamp(0, capacity);
                       final isFull = capacity > 0 && availableCount <= 0;
-                      final subtitleLines = <String>[
-                        'ยืนยันแล้ว $confirmedCount / $capacity คน · เหลือ $availableCount ที่',
-                        if (pendingCount > 0) 'รออนุมัติ $pendingCount คน',
-                        if (note != null && note.isNotEmpty) note,
-                      ];
-                      return ListTile(
-                        title: Text(_formatThaiSessionRange(startsAt, endsAt)),
-                        subtitle: Text(
-                          subtitleLines.join('\n'),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
+                      final sessionCostItems =
+                          costItemsBySession[s['id']?.toString() ?? ''] ??
+                          const <Map<String, dynamic>>[];
+
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isFull
+                                ? Colors.grey.shade300
+                                : AppColors.primary.withValues(alpha: 0.35),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        trailing: isFull
-                            ? const Text('เต็ม')
-                            : const Icon(Icons.chevron_right),
-                        onTap: isFull
-                            ? null
-                            : () {
-                                Navigator.pop(ctx);
-                                _book(
-                                  s['id'].toString(),
-                                  requiresOwnerApproval: requiresOwnerApproval,
-                                  groupId: groupId,
-                                );
-                              },
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: isFull
+                                ? null
+                                : () {
+                                    Navigator.pop(ctx);
+                                    _book(
+                                      s['id'].toString(),
+                                      requiresOwnerApproval:
+                                          requiresOwnerApproval,
+                                      groupId: groupId,
+                                    );
+                                  },
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: isFull
+                                              ? Colors.grey.shade200
+                                              : AppColors.primary.withValues(
+                                                  alpha: 0.15,
+                                                ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.calendar_today_rounded,
+                                          size: 18,
+                                          color: isFull
+                                              ? Colors.grey.shade600
+                                              : AppColors.primaryDark,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _formatThaiSessionRange(
+                                                startsAt,
+                                                endsAt,
+                                              ),
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: isFull
+                                                    ? Colors.grey.shade600
+                                                    : Colors.black87,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              'ยืนยันแล้ว $confirmedCount / $capacity คน'
+                                              '${pendingCount > 0 ? ' · รออนุมัติ $pendingCount คน' : ''}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isFull
+                                              ? Colors.red.shade50
+                                              : Colors.green.shade50,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: isFull
+                                                ? Colors.red.shade200
+                                                : Colors.green.shade200,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isFull
+                                              ? 'เต็ม'
+                                              : 'เหลือ $availableCount ที่',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isFull
+                                                ? Colors.red.shade700
+                                                : Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (note != null && note.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'หมายเหตุ: $note',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                  if (sessionCostItems.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.grey.shade200,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          for (final item in sessionCostItems)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 4,
+                                              ),
+                                              child: Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    costCategoryIcon(
+                                                      item['category']
+                                                          ?.toString(),
+                                                    ),
+                                                    size: 14,
+                                                    color:
+                                                        AppColors.primaryDark,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      '${item['name']}: ${sessionCostItemSummary(item)}',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                      ),
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  paymentTimingBadge(
+                                                    item['payment_timing']
+                                                        ?.toString(),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          const Divider(height: 8),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'ค่าใช้จ่ายรอบนี้รวมโดยประมาณ',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              Text(
+                                                '~${formatBaht(sessionCostItemsTotal(sessionCostItems))}',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.primaryDark,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          isFull
+                                              ? 'รอบนี้เต็มแล้ว'
+                                              : (requiresOwnerApproval
+                                                    ? 'กดเพื่อส่งคำขอเข้าร่วม'
+                                                    : 'กดเพื่อเข้าร่วมรอบนี้'),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: isFull
+                                                ? Colors.grey.shade500
+                                                : AppColors.primaryDark,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          Icons.arrow_forward_rounded,
+                                          size: 15,
+                                          color: isFull
+                                              ? Colors.grey.shade500
+                                              : AppColors.primaryDark,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -541,6 +807,968 @@ class _SportClubPageState extends State<SportClubPage> {
     final pendingLabel = pending > 0 ? ' · รออนุมัติ $pending คน' : '';
     final confirmedLabel = detailed ? 'ผู้เข้าร่วม' : 'ยืนยันแล้ว';
     return '$confirmedLabel $confirmed / $capacity คน · เหลือ $available ที่$pendingLabel';
+  }
+
+  /// Phase 9.1: "฿200/รายเดือน · ฿500/ตลอดชีพ" style group-fee summary.
+  String _groupFeeSummary(List<Map<String, dynamic>> fees) {
+    return fees
+        .map(
+          (f) =>
+              '${formatBaht(f['amount'] as num?)}/'
+              '${billingPeriodLabel(f['billing_period']?.toString())}',
+        )
+        .join(' · ');
+  }
+
+  /// Phase 9.1: compact per-item cost lines + round total for a session on
+  /// the group card.
+  List<Widget> _sessionCostLines(
+    List<Map<String, dynamic>> items,
+    bool hasCover,
+    Widget Function(Widget) textPill,
+  ) {
+    if (items.isEmpty) return const [];
+    return [
+      for (final item in items)
+        Padding(
+          padding: const EdgeInsets.only(left: 40, top: 2),
+          child: textPill(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  costCategoryIcon(item['category']?.toString()),
+                  size: 13,
+                  color: hasCover ? Colors.white70 : Colors.grey.shade600,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    '${item['name']}: ${sessionCostItemSummary(item)} · '
+                    '${paymentTimingLabel(item['payment_timing']?.toString())}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hasCover ? Colors.white70 : Colors.grey[700],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.only(left: 40, top: 2),
+        child: textPill(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.receipt_long_rounded,
+                size: 13,
+                color: hasCover ? Colors.white : AppColors.primaryDark,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'ค่าใช้จ่ายรอบนี้รวม ~${formatBaht(sessionCostItemsTotal(items))}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: hasCover ? Colors.white : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// Phase 9.1: sessions with their public cost line items attached as
+  /// `cost_items` (reads the public view contract).
+  Future<List<Map<String, dynamic>>> _loadSessionsWithCostItems(
+    String groupId,
+  ) async {
+    final sessions = await _repo.listSessions(groupId);
+    final ids = sessions
+        .map((s) => s['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return sessions;
+    try {
+      final items = await _repo.listPublicSessionCostItems(ids);
+      final bySession = <String, List<Map<String, dynamic>>>{};
+      for (final item in items) {
+        final sid = item['session_id']?.toString() ?? '';
+        if (sid.isEmpty) continue;
+        bySession.putIfAbsent(sid, () => []).add(item);
+      }
+      for (final s in sessions) {
+        s['cost_items'] =
+            bySession[s['id']?.toString()] ?? <Map<String, dynamic>>[];
+      }
+    } catch (_) {
+      for (final s in sessions) {
+        s['cost_items'] = <Map<String, dynamic>>[];
+      }
+    }
+    return sessions;
+  }
+
+  /// Phase 9.1: renders the line items of one session inside the detail
+  /// sheet's per-round expansion tile.
+  Widget _buildSessionCostItemsView(Map<String, dynamic> session) {
+    final items =
+        (session['cost_items'] as List?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: Colors.grey.shade500,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'ไม่มีค่าใช้จ่ายเฉพาะรอบ',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.receipt_long_rounded,
+                  size: 16,
+                  color: AppColors.primaryDark,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'ค่าใช้จ่ายเฉพาะรอบนี้',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (final item in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        costCategoryIcon(item['category']?.toString()),
+                        size: 15,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['name']?.toString() ?? '',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            sessionCostItemSummary(item),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    paymentTimingBadge(item['payment_timing']?.toString()),
+                  ],
+                ),
+              ),
+            const Divider(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'ยอดรวมประมาณการของรอบ',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                Text(
+                  '~${formatBaht(sessionCostItemsTotal(items))}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Phase 9.1: session cost items editor (shared by create/edit sheets) ──
+
+  /// Renders the editable line-item list, standard picker + custom add
+  /// buttons, and the estimated round total. [costItems] is mutated in
+  /// place; [refresh] must rebuild the enclosing sheet.
+  Widget _buildSessionCostItemsSection({
+    required BuildContext sheetContext,
+    required String groupId,
+    required List<Map<String, dynamic>> costItems,
+    required double Function() sessionHours,
+    required void Function() refresh,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.payments_outlined,
+                size: 16,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'รายการค่าใช้จ่ายเฉพาะรอบ',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (costItems.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ไม่มีค่าใช้จ่ายเฉพาะรอบ (ไม่บังคับ)',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          for (var i = 0; i < costItems.length; i++)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      costCategoryIcon(costItems[i]['category']?.toString()),
+                      color: AppColors.primaryDark,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          costItems[i]['name']?.toString() ?? '',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          sessionCostItemSummary(costItems[i]),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        paymentTimingBadge(
+                          costItems[i]['payment_timing']?.toString(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                        color: Colors.grey.shade700,
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'แก้ไข',
+                        onPressed: () async {
+                          final result = await showSessionCostItemEditor(
+                            sheetContext,
+                            existing: costItems[i],
+                          );
+                          if (result != null) {
+                            costItems[i] = result;
+                            refresh();
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 19,
+                          color: Colors.redAccent,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'ลบ',
+                        onPressed: () {
+                          costItems.removeAt(i);
+                          refresh();
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: BorderSide(
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+                onPressed: () async {
+                  List<Map<String, dynamic>> standards;
+                  try {
+                    standards = await _repo.listGroupCostStandards(
+                      groupId,
+                      standardType: 'round_expense',
+                      activeOnly: true,
+                    );
+                  } catch (_) {
+                    standards = const [];
+                  }
+                  if (!sheetContext.mounted) return;
+                  if (standards.isEmpty) {
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'ก๊วนนี้ยังไม่มี template ค่าใช้จ่ายรอบ — '
+                          'สร้างได้ในหน้าแก้ไขก๊วน',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  final standard = await showCostStandardPicker(
+                    sheetContext,
+                    standards,
+                  );
+                  if (standard == null || !sheetContext.mounted) return;
+                  final result = await showSessionCostItemEditor(
+                    sheetContext,
+                    fromStandard: standard,
+                    defaultHours:
+                        standard['pricing_unit']?.toString() == 'per_hour'
+                        ? sessionHours()
+                        : null,
+                  );
+                  if (result != null) {
+                    costItems.add(result);
+                    refresh();
+                  }
+                },
+                icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                label: const Text(
+                  'เลือกจากแม่แบบ',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: BorderSide(
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+                onPressed: () async {
+                  final result = await showSessionCostItemEditor(sheetContext);
+                  if (result != null) {
+                    costItems.add(result);
+                    refresh();
+                  }
+                },
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text(
+                  'เพิ่มค่าใช้จ่ายเอง',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (costItems.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.receipt_long_rounded,
+                      size: 20,
+                      color: AppColors.primaryDark,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'ยอดประมาณการค่าใช้จ่ายของรอบ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '~${formatBaht(sessionCostItemsTotal(costItems.cast<Map<String, dynamic>>()))}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '(ยอดรวมของรอบ ไม่ใช่ยอดต่อคน — อิงเงื่อนไขการชำระตามรายการข้างต้น)',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Group edit sheet: manages cost standards directly against the DB
+  /// (add / edit / disable-enable). Used standards keep their history —
+  /// the UI offers ปิดใช้งาน instead of deleting.
+  Widget _buildGroupCostStandardsManager({
+    required BuildContext sheetContext,
+    required String groupId,
+    required String actorUserId,
+    required List<Map<String, dynamic>> standards,
+    required Future<void> Function() refresh,
+  }) {
+    final fees = standards
+        .where((s) => s['standard_type'] == 'group_fee')
+        .toList();
+    final templates = standards
+        .where((s) => s['standard_type'] == 'round_expense')
+        .toList();
+
+    Future<void> addFee() async {
+      final result = await showGroupFeeEditor(sheetContext);
+      if (result == null) return;
+      try {
+        await _repo.createGroupCostStandard(
+          groupId: groupId,
+          actorUserId: actorUserId,
+          standardType: 'group_fee',
+          category: 'membership',
+          name: result['name'].toString(),
+          amount: (result['amount'] as num).toDouble(),
+          billingPeriod: result['billing_period']?.toString(),
+          paymentTiming: result['payment_timing'].toString(),
+        );
+        await refresh();
+      } catch (e) {
+        if (!sheetContext.mounted) return;
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('บันทึกไม่สำเร็จ: ${_mapManagementError(e)}')),
+        );
+      }
+    }
+
+    Future<void> addTemplate() async {
+      final result = await showRoundExpenseTemplateEditor(sheetContext);
+      if (result == null) return;
+      try {
+        await _repo.createGroupCostStandard(
+          groupId: groupId,
+          actorUserId: actorUserId,
+          standardType: 'round_expense',
+          category: result['category'].toString(),
+          name: result['name'].toString(),
+          amount: (result['amount'] as num).toDouble(),
+          pricingUnit: result['pricing_unit']?.toString(),
+          defaultQuantity:
+              (result['default_quantity'] as num?)?.toDouble() ?? 1,
+          paymentTiming: result['payment_timing'].toString(),
+        );
+        await refresh();
+      } catch (e) {
+        if (!sheetContext.mounted) return;
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('บันทึกไม่สำเร็จ: ${_mapManagementError(e)}')),
+        );
+      }
+    }
+
+    Future<void> editStandard(Map<String, dynamic> standard) async {
+      final isFee = standard['standard_type'] == 'group_fee';
+      final result = isFee
+          ? await showGroupFeeEditor(sheetContext, existing: standard)
+          : await showRoundExpenseTemplateEditor(
+              sheetContext,
+              existing: standard,
+            );
+      if (result == null) return;
+      try {
+        await _repo.updateGroupCostStandard(
+          standardId: standard['id'].toString(),
+          actorUserId: actorUserId,
+          name: result['name'].toString(),
+          amount: (result['amount'] as num).toDouble(),
+          billingPeriod: result['billing_period']?.toString(),
+          pricingUnit: result['pricing_unit']?.toString(),
+          defaultQuantity: (result['default_quantity'] as num?)?.toDouble(),
+          paymentTiming: result['payment_timing']?.toString(),
+        );
+        await refresh();
+      } catch (e) {
+        if (!sheetContext.mounted) return;
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('บันทึกไม่สำเร็จ: ${_mapManagementError(e)}')),
+        );
+      }
+    }
+
+    Future<void> toggleActive(Map<String, dynamic> standard) async {
+      try {
+        await _repo.setGroupCostStandardActive(
+          standardId: standard['id'].toString(),
+          actorUserId: actorUserId,
+          isActive: standard['is_active'] != true,
+        );
+        await refresh();
+      } catch (e) {
+        if (!sheetContext.mounted) return;
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('อัปเดตไม่สำเร็จ: ${_mapManagementError(e)}')),
+        );
+      }
+    }
+
+    Widget standardTile(Map<String, dynamic> s) {
+      final isFee = s['standard_type'] == 'group_fee';
+      final amount = formatBaht(s['amount'] as num?);
+      final qty = (s['default_quantity'] as num?)?.toDouble() ?? 1;
+      final qtyText = qty == qty.roundToDouble()
+          ? qty.toInt().toString()
+          : qty.toString();
+      final unitPart = isFee
+          ? billingPeriodLabel(s['billing_period']?.toString())
+          : '${pricingUnitLabel(s['pricing_unit']?.toString())}'
+                '${(s['pricing_unit'] == 'per_item' || s['pricing_unit'] == 'per_hour') ? ' × $qtyText' : ''}';
+      final isActive = s['is_active'] != false;
+      final cat = s['category']?.toString();
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isActive ? Colors.grey.shade200 : Colors.grey.shade300,
+          ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                costCategoryIcon(cat),
+                color: isActive ? AppColors.primaryDark : Colors.grey.shade500,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s['name']?.toString() ?? '',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isActive ? null : Colors.grey.shade600,
+                            decoration: isActive
+                                ? null
+                                : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                      if (!isActive)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'ปิดใช้งาน',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        amount,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isActive
+                              ? AppColors.primaryDark
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                      Text(
+                        ' / $unitPart',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  paymentTimingBadge(s['payment_timing']?.toString()),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 19),
+                  color: Colors.grey.shade700,
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'แก้ไข',
+                  onPressed: () => editStandard(s),
+                ),
+                IconButton(
+                  icon: Icon(
+                    isActive
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 19,
+                    color: isActive ? Colors.redAccent : Colors.teal,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน',
+                  onPressed: () => toggleActive(s),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.payments_outlined,
+                size: 18,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'ค่าใช้จ่ายมาตรฐานของก๊วน',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            const Icon(
+              Icons.card_membership_rounded,
+              size: 16,
+              color: AppColors.primaryDark,
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'ค่าก๊วน / ค่าสมาชิก',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (fees.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ยังไม่ได้กำหนดค่าก๊วน/ค่าสมาชิก',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          ...fees.map(standardTile),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryDark,
+              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            onPressed: addFee,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text(
+              'เพิ่มค่าก๊วน / ค่าสมาชิก',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Divider(height: 1),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            const Icon(
+              Icons.sports_tennis_rounded,
+              size: 16,
+              color: AppColors.primaryDark,
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'Template ค่าใช้จ่ายรอบ',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (templates.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ยังไม่ได้กำหนดแม่แบบค่าใช้จ่ายรอบ',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          ...templates.map(standardTile),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryDark,
+              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            onPressed: addTemplate,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text(
+              'เพิ่ม Template ค่าใช้จ่ายรอบ',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   DateTime _roundUpToNearest(DateTime dt, {int roundMinutes = 30}) {
@@ -1008,6 +2236,32 @@ class _SportClubPageState extends State<SportClubPage> {
                                                     _repo.hasAnySessions(
                                                       g['id'].toString(),
                                                     ),
+                                                    _repo
+                                                        .listPublicGroupFees(
+                                                          g['id'].toString(),
+                                                        )
+                                                        .catchError(
+                                                          (_) =>
+                                                              <
+                                                                Map<
+                                                                  String,
+                                                                  dynamic
+                                                                >
+                                                              >[],
+                                                        ),
+                                                    _repo
+                                                        .listPublicSessionCostItemsForGroup(
+                                                          g['id'].toString(),
+                                                        )
+                                                        .catchError(
+                                                          (_) =>
+                                                              <
+                                                                Map<
+                                                                  String,
+                                                                  dynamic
+                                                                >
+                                                              >[],
+                                                        ),
                                                   ]),
                                                   builder: (context, snapshot) {
                                                     final items =
@@ -1025,6 +2279,53 @@ class _SportClubPageState extends State<SportClubPage> {
                                                     final hasAnySessions =
                                                         snapshot.data?[1] ==
                                                         true;
+                                                    final groupFees =
+                                                        (snapshot.data?[2]
+                                                                as List?)
+                                                            ?.cast<
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >() ??
+                                                        const <
+                                                          Map<String, dynamic>
+                                                        >[];
+                                                    final costItemsBySession =
+                                                        <
+                                                          String,
+                                                          List<
+                                                            Map<String, dynamic>
+                                                          >
+                                                        >{};
+                                                    for (final it
+                                                        in (snapshot.data?[3]
+                                                                    as List?)
+                                                                ?.cast<
+                                                                  Map<
+                                                                    String,
+                                                                    dynamic
+                                                                  >
+                                                                >() ??
+                                                            const <
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >[]) {
+                                                      final sid =
+                                                          it['session_id']
+                                                              ?.toString() ??
+                                                          '';
+                                                      if (sid.isNotEmpty) {
+                                                        costItemsBySession
+                                                            .putIfAbsent(
+                                                              sid,
+                                                              () => [],
+                                                            )
+                                                            .add(it);
+                                                      }
+                                                    }
                                                     if (snapshot
                                                             .connectionState !=
                                                         ConnectionState.done) {
@@ -1062,6 +2363,48 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                   : 'ยังไม่มีรอบนัด',
                                                             ),
                                                           ),
+                                                          if (groupFees
+                                                              .isNotEmpty)
+                                                            Padding(
+                                                              padding:
+                                                                  const EdgeInsets.only(
+                                                                    top: 4,
+                                                                  ),
+                                                              child: textPill(
+                                                                Row(
+                                                                  mainAxisSize:
+                                                                      MainAxisSize
+                                                                          .min,
+                                                                  children: [
+                                                                    Icon(
+                                                                      Icons
+                                                                          .card_membership_rounded,
+                                                                      size: 13,
+                                                                      color:
+                                                                          hasCover
+                                                                          ? Colors.white70
+                                                                          : AppColors.primaryDark,
+                                                                    ),
+                                                                    const SizedBox(
+                                                                      width: 4,
+                                                                    ),
+                                                                    Text(
+                                                                      'ค่าก๊วน: ${_groupFeeSummary(groupFees)}',
+                                                                      style: TextStyle(
+                                                                        fontSize:
+                                                                            12,
+                                                                        fontWeight:
+                                                                            FontWeight.w500,
+                                                                        color:
+                                                                            hasCover
+                                                                            ? Colors.white70
+                                                                            : Colors.grey[800],
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ),
                                                           if (_myBlockedGroupIds
                                                               .contains(gid))
                                                             Align(
@@ -1204,6 +2547,48 @@ class _SportClubPageState extends State<SportClubPage> {
                                                           CrossAxisAlignment
                                                               .start,
                                                       children: [
+                                                        if (groupFees
+                                                            .isNotEmpty)
+                                                          Padding(
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  bottom: 8,
+                                                                ),
+                                                            child: textPill(
+                                                              Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  Icon(
+                                                                    Icons
+                                                                        .card_membership_rounded,
+                                                                    size: 13,
+                                                                    color:
+                                                                        hasCover
+                                                                        ? Colors
+                                                                              .white70
+                                                                        : AppColors
+                                                                              .primaryDark,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 4,
+                                                                  ),
+                                                                  Text(
+                                                                    'ค่าก๊วน: ${_groupFeeSummary(groupFees)}',
+                                                                    style: TextStyle(
+                                                                      fontSize:
+                                                                          12,
+                                                                      color:
+                                                                          hasCover
+                                                                          ? Colors.white70
+                                                                          : Colors.grey[800],
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
                                                         for (final s
                                                             in items.take(3))
                                                           Padding(
@@ -1220,7 +2605,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                   Row(
                                                                     children: [
                                                                       const Text(
-                                                                        'ห้วง: ',
+                                                                        'รอบ: ',
                                                                         style: TextStyle(
                                                                           fontWeight:
                                                                               FontWeight.w500,
@@ -1267,6 +2652,19 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                       ),
                                                                     ),
                                                                   ),
+                                                                ),
+                                                                ..._sessionCostLines(
+                                                                  costItemsBySession[s['id']
+                                                                              ?.toString() ??
+                                                                          ''] ??
+                                                                      const <
+                                                                        Map<
+                                                                          String,
+                                                                          dynamic
+                                                                        >
+                                                                      >[],
+                                                                  hasCover,
+                                                                  textPill,
                                                                 ),
                                                               ],
                                                             ),
@@ -1419,6 +2817,7 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     final noteCtrl = TextEditingController();
     int capacity = 5;
+    final costItems = <Map<String, dynamic>>[];
     String? errorText;
     bool submitting = false;
     bool waitingForRefresh = refreshFuture != null;
@@ -1573,6 +2972,7 @@ class _SportClubPageState extends State<SportClubPage> {
                   note: noteCtrl.text.trim().isEmpty
                       ? null
                       : noteCtrl.text.trim(),
+                  costItems: List<Map<String, dynamic>>.from(costItems),
                 );
                 if (!mounted) return;
                 Navigator.pop(ctx);
@@ -1683,6 +3083,22 @@ class _SportClubPageState extends State<SportClubPage> {
                       label: '$capacity',
                       onChanged: (value) =>
                           setModalState(() => capacity = value.toInt()),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSessionCostItemsSection(
+                      sheetContext: ctx,
+                      groupId: groupId,
+                      costItems: costItems,
+                      sessionHours: () {
+                        final s = _dateTimeAt(selectedDate, startTime);
+                        final e = _endDateTimeAt(
+                          selectedDate,
+                          startTime,
+                          endTime,
+                        );
+                        return e.difference(s).inMinutes / 60.0;
+                      },
+                      refresh: () => setModalState(() {}),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -1797,7 +3213,7 @@ class _SportClubPageState extends State<SportClubPage> {
                 ),
                 child: FutureBuilder<List<dynamic>>(
                   future: Future.wait([
-                    _repo.listSessions(groupId),
+                    _loadSessionsWithCostItems(groupId),
                     _repo.listGroupMembers(groupId),
                     if (isAdmin)
                       _repo.listGroupPendingBookings(
@@ -1820,6 +3236,9 @@ class _SportClubPageState extends State<SportClubPage> {
                       )
                     else
                       Future.value(<Map<String, dynamic>>[]),
+                    _repo
+                        .listPublicGroupFees(groupId)
+                        .catchError((_) => <Map<String, dynamic>>[]),
                   ]),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
@@ -1854,6 +3273,11 @@ class _SportClubPageState extends State<SportClubPage> {
                         : ownPendingBookings;
                     final blockedUsers = (snapshot.data?.length ?? 0) > 4
                         ? (snapshot.data![4] as List?)
+                                  ?.cast<Map<String, dynamic>>() ??
+                              []
+                        : <Map<String, dynamic>>[];
+                    final groupFees = (snapshot.data?.length ?? 0) > 5
+                        ? (snapshot.data![5] as List?)
                                   ?.cast<Map<String, dynamic>>() ??
                               []
                         : <Map<String, dynamic>>[];
@@ -1949,6 +3373,169 @@ class _SportClubPageState extends State<SportClubPage> {
                                 ),
                               ),
                             ],
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.card_membership_rounded,
+                                    size: 16,
+                                    color: AppColors.primaryDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'ค่าใช้จ่ายมาตรฐานก๊วน',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                if (isAdmin)
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      foregroundColor: AppColors.primaryDark,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _showEditGroupSheet(group);
+                                    },
+                                    icon: const Icon(
+                                      Icons.tune_rounded,
+                                      size: 15,
+                                    ),
+                                    label: const Text(
+                                      'จัดการ',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (groupFees.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline_rounded,
+                                      size: 16,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              for (final fee in groupFees)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.card_membership_rounded,
+                                          size: 17,
+                                          color: AppColors.primaryDark,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              fee['name']?.toString() ?? '',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  formatBaht(
+                                                    fee['amount'] as num?,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        AppColors.primaryDark,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      paymentTimingBadge(
+                                        fee['payment_timing']?.toString(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                             const SizedBox(height: 12),
                             const Text(
                               'รอบนัด',
@@ -1999,7 +3586,9 @@ class _SportClubPageState extends State<SportClubPage> {
                                       [];
                                   final pendingForSession =
                                       pendingBySession[sessionId] ?? [];
-                                  final sessionChildren = <Widget>[];
+                                  final sessionChildren = <Widget>[
+                                    _buildSessionCostItemsView(s),
+                                  ];
 
                                   if (confirmedMembers.isNotEmpty) {
                                     sessionChildren.add(
@@ -2789,6 +4378,12 @@ class _SportClubPageState extends State<SportClubPage> {
     final isGroupOwner = group['created_by']?.toString() == userId;
     bool requiresApproval = group['requires_owner_approval'] == true;
     bool ownerAutoJoin = originalOwnerAutoJoin;
+    final groupId = group['id'].toString();
+    var costStandards = <Map<String, dynamic>>[];
+    try {
+      costStandards = await _repo.listGroupCostStandards(groupId);
+    } catch (_) {}
+    if (!mounted) return;
 
     await showModalBottomSheet(
       context: context,
@@ -2890,6 +4485,21 @@ class _SportClubPageState extends State<SportClubPage> {
                               setSheetState(() => ownerAutoJoin = v),
                         ),
                       ],
+                      const Divider(height: 24),
+                      _buildGroupCostStandardsManager(
+                        sheetContext: ctx,
+                        groupId: groupId,
+                        actorUserId: userId,
+                        standards: costStandards,
+                        refresh: () async {
+                          try {
+                            costStandards = await _repo.listGroupCostStandards(
+                              groupId,
+                            );
+                          } catch (_) {}
+                          setSheetState(() {});
+                        },
+                      ),
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
@@ -3002,6 +4612,19 @@ class _SportClubPageState extends State<SportClubPage> {
     final noteCtrl = TextEditingController(
       text: session['note']?.toString() ?? '',
     );
+    final sessionId = session['id'].toString();
+    final groupId = session['group_id']?.toString() ?? '';
+    final costItems = <Map<String, dynamic>>[];
+    try {
+      final loaded = await _repo.listSessionCostItems(sessionId);
+      for (final it in loaded) {
+        costItems.add(Map<String, dynamic>.from(it));
+      }
+    } catch (_) {}
+    final confirmedCount = (session['confirmed_count'] as num?)?.toInt() ?? 0;
+    final pendingCount = (session['pending_count'] as num?)?.toInt() ?? 0;
+    final hasBookings = confirmedCount > 0 || pendingCount > 0;
+    if (!mounted) return;
 
     await showModalBottomSheet(
       context: context,
@@ -3126,6 +4749,16 @@ class _SportClubPageState extends State<SportClubPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _buildSessionCostItemsSection(
+                      sheetContext: ctx,
+                      groupId: groupId,
+                      costItems: costItems,
+                      sessionHours: () {
+                        return editEnd.difference(editStart).inMinutes / 60.0;
+                      },
+                      refresh: () => setSheetState(() {}),
+                    ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: noteCtrl,
@@ -3149,9 +4782,36 @@ class _SportClubPageState extends State<SportClubPage> {
                             );
                             return;
                           }
+                          if (hasBookings) {
+                            final confirmed = await showDialog<bool?>(
+                              context: ctx,
+                              builder: (dctx) => AlertDialog(
+                                title: const Text('ยืนยันการแก้ไขรอบนัด'),
+                                content: Text(
+                                  'รอบนี้มีผู้จองแล้ว '
+                                  '$confirmedCount คนยืนยัน'
+                                  '${pendingCount > 0 ? ' · รออนุมัติ $pendingCount คน' : ''}'
+                                  '\n\nหากแก้ไขค่าใช้จ่ายจะมีผลต่อรอบนี้ '
+                                  'แต่ไม่กระทบการจองที่มีอยู่แล้ว '
+                                  'ดำเนินการต่อ?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dctx, false),
+                                    child: const Text('ยกเลิก'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(dctx, true),
+                                    child: const Text('ดำเนินการต่อ'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true) return;
+                          }
                           try {
                             await _repo.updateSession(
-                              sessionId: session['id'].toString(),
+                              sessionId: sessionId,
                               actorUserId: actorUserId,
                               capacity: editCapacity,
                               startsAt: editStart,
@@ -3162,6 +4822,9 @@ class _SportClubPageState extends State<SportClubPage> {
                               note: noteCtrl.text.trim().isEmpty
                                   ? null
                                   : noteCtrl.text.trim(),
+                              costItems: List<Map<String, dynamic>>.from(
+                                costItems,
+                              ),
                             );
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(

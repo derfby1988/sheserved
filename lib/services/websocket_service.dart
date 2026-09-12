@@ -76,6 +76,8 @@ class WebSocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   final _fitnessBookingAlertController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _applicationNotificationController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   // Getters
   bool get isConnected => _isConnected;
@@ -147,9 +149,25 @@ class WebSocketService {
       _emergencyHealthDeadManTriggeredController.stream;
   Stream<Map<String, dynamic>> get fitnessBookingAlertStream =>
       _fitnessBookingAlertController.stream;
+  Stream<Map<String, dynamic>> get applicationNotificationStream =>
+      _applicationNotificationController.stream;
 
   void publishFitnessBookingAlert(Map<String, dynamic> alert) {
     _fitnessBookingAlertController.add(alert);
+  }
+
+  /// Notify the backend after an admin has reviewed an application.
+  /// The server resolves the applicant from the application ID before
+  /// persisting and delivering the notification.
+  void sendApplicationReviewNotification({
+    required String applicationId,
+    required String status,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('application-review-notification', {
+      'applicationId': applicationId,
+      'status': status,
+    });
   }
 
   WebSocketService._(this._serverUrl);
@@ -401,6 +419,9 @@ class WebSocketService {
       });
       _socket!.on('fitness_booking_status', (data) {
         _fitnessBookingAlertController.add(Map<String, dynamic>.from(data));
+      });
+      _socket!.on('application-notification', (data) {
+        _applicationNotificationController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('error', (error) {
@@ -870,6 +891,7 @@ class WebSocketService {
     _emergencyHealthSensorAlertController.close();
     _emergencyHealthDeadManReminderController.close();
     _emergencyHealthDeadManTriggeredController.close();
+    _applicationNotificationController.close();
   }
 
   /// Send rescue status update

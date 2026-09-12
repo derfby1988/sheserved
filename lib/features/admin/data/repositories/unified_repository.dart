@@ -8,7 +8,7 @@ import '../../models/registration_field_config.dart';
 import '../../../../config/app_config.dart';
 
 /// Unified Repository - จัดการข้อมูลจากทั้ง Local และ Supabase
-/// 
+///
 /// การทำงาน:
 /// 1. อ่านข้อมูลจาก Local ก่อน (เร็วกว่า)
 /// 2. ถ้า Supabase พร้อมใช้งาน จะ sync ข้อมูลอัตโนมัติ
@@ -18,7 +18,7 @@ class UnifiedRepository {
   final String _localApiUrl;
   final bool _supabaseConfigured;
   SupabaseClient? _supabaseClient;
-  
+
   // Offline queue
   final List<_PendingOperation> _offlineQueue = [];
   Timer? _syncTimer;
@@ -28,11 +28,9 @@ class UnifiedRepository {
   final _syncStatusController = StreamController<SyncStatus>.broadcast();
   Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
 
-  UnifiedRepository({
-    String? localApiUrl,
-  }) : _localApiUrl = localApiUrl ?? AppConfig.localApiUrl,
-       _supabaseConfigured = AppConfig.supabaseUrl != 'YOUR_SUPABASE_URL' {
-    
+  UnifiedRepository({String? localApiUrl})
+    : _localApiUrl = localApiUrl ?? AppConfig.localApiUrl,
+      _supabaseConfigured = AppConfig.supabaseUrl != 'YOUR_SUPABASE_URL' {
     // Initialize Supabase client if configured
     if (_supabaseConfigured) {
       try {
@@ -57,7 +55,9 @@ class UnifiedRepository {
   // =====================================================
 
   /// ดึงอาชีพทั้งหมด - อ่านจาก Local ก่อน
-  Future<List<Profession>> getAllProfessions({bool forceRefresh = false}) async {
+  Future<List<Profession>> getAllProfessions({
+    bool forceRefresh = false,
+  }) async {
     // ถ้า forceRefresh และ Supabase พร้อม ให้ sync ก่อน
     if (forceRefresh && _supabaseConfigured && _supabaseClient != null) {
       await _syncProfessionsFromSupabase();
@@ -65,7 +65,9 @@ class UnifiedRepository {
 
     // อ่านจาก Local
     try {
-      final response = await http.get(Uri.parse('$_localApiUrl/api/professions'));
+      final response = await http.get(
+        Uri.parse('$_localApiUrl/api/professions'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         return data.map((json) {
@@ -101,14 +103,18 @@ class UnifiedRepository {
   Future<Profession?> getProfessionById(String id) async {
     // Try local first
     try {
-      final response = await http.get(Uri.parse('$_localApiUrl/api/professions/$id'));
+      final response = await http.get(
+        Uri.parse('$_localApiUrl/api/professions/$id'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         data['field_count'] = 0;
         return Profession.fromJson(data);
       }
     } catch (e) {
-      debugPrint('UnifiedRepository: Failed to fetch profession from local - $e');
+      debugPrint(
+        'UnifiedRepository: Failed to fetch profession from local - $e',
+      );
     }
 
     // Fallback to Supabase
@@ -122,7 +128,9 @@ class UnifiedRepository {
         response['field_count'] = 0;
         return Profession.fromJson(response);
       } catch (e) {
-        debugPrint('UnifiedRepository: Failed to fetch profession from Supabase - $e');
+        debugPrint(
+          'UnifiedRepository: Failed to fetch profession from Supabase - $e',
+        );
       }
     }
 
@@ -177,7 +185,7 @@ class UnifiedRepository {
       if (created != null) {
         localData['id'] = created.id;
       }
-      
+
       await http.post(
         Uri.parse('$_localApiUrl/api/professions'),
         headers: {'Content-Type': 'application/json'},
@@ -186,11 +194,13 @@ class UnifiedRepository {
 
       // If Supabase failed, queue for later
       if (created == null && _supabaseConfigured) {
-        _offlineQueue.add(_PendingOperation(
-          table: 'professions',
-          operation: 'insert',
-          data: localData,
-        ));
+        _offlineQueue.add(
+          _PendingOperation(
+            table: 'professions',
+            operation: 'insert',
+            data: localData,
+          ),
+        );
       }
     } catch (e) {
       debugPrint('UnifiedRepository: Failed to create in local - $e');
@@ -204,7 +214,9 @@ class UnifiedRepository {
   // =====================================================
 
   /// ดึง fields ของอาชีพ
-  Future<List<RegistrationFieldConfig>> getFieldConfigsForProfession(String professionId) async {
+  Future<List<RegistrationFieldConfig>> getFieldConfigsForProfession(
+    String professionId,
+  ) async {
     // Try local first
     try {
       final response = await http.get(
@@ -247,7 +259,9 @@ class UnifiedRepository {
             .map((e) => RegistrationFieldConfig.fromJson(e))
             .toList();
       } catch (e) {
-        debugPrint('UnifiedRepository: Failed to fetch fields from Supabase - $e');
+        debugPrint(
+          'UnifiedRepository: Failed to fetch fields from Supabase - $e',
+        );
       }
     }
 
@@ -270,7 +284,9 @@ class UnifiedRepository {
         return data.map((json) => _convertApplicationJson(json)).toList();
       }
     } catch (e) {
-      debugPrint('UnifiedRepository: Failed to fetch applications from local - $e');
+      debugPrint(
+        'UnifiedRepository: Failed to fetch applications from local - $e',
+      );
     }
 
     // Fallback to Supabase
@@ -278,14 +294,16 @@ class UnifiedRepository {
       try {
         final response = await _supabaseClient!
             .from('registration_applications')
-            .select('*, profession:professions(*)')
+            .select('*, profession:professions!profession_id(*)')
             .eq('status', 'pending')
             .order('created_at', ascending: false);
         return (response as List)
             .map((e) => RegistrationApplication.fromJson(e))
             .toList();
       } catch (e) {
-        debugPrint('UnifiedRepository: Failed to fetch applications from Supabase - $e');
+        debugPrint(
+          'UnifiedRepository: Failed to fetch applications from Supabase - $e',
+        );
       }
     }
 
@@ -293,7 +311,9 @@ class UnifiedRepository {
   }
 
   /// สร้างใบสมัคร (Deprecated — ใช้ ProfessionRepository.createApplication แทน เพื่อรองรับ guard ป้องกันการสมัครซ้ำ)
-  @Deprecated('ใช้ ProfessionRepository.createApplication แทน เพื่อรองรับ guard ป้องกัน pending/approved ซ้ำ')
+  @Deprecated(
+    'ใช้ ProfessionRepository.createApplication แทน เพื่อรองรับ guard ป้องกัน pending/approved ซ้ำ',
+  )
   Future<RegistrationApplication?> createApplication({
     required String userId,
     required String professionId,
@@ -331,7 +351,9 @@ class UnifiedRepository {
             .single();
         created = RegistrationApplication.fromJson(response);
       } catch (e) {
-        debugPrint('UnifiedRepository: Failed to create application in Supabase - $e');
+        debugPrint(
+          'UnifiedRepository: Failed to create application in Supabase - $e',
+        );
       }
     }
 
@@ -352,7 +374,9 @@ class UnifiedRepository {
         }),
       );
     } catch (e) {
-      debugPrint('UnifiedRepository: Failed to create application in local - $e');
+      debugPrint(
+        'UnifiedRepository: Failed to create application in local - $e',
+      );
     }
 
     return created;
@@ -368,12 +392,17 @@ class UnifiedRepository {
       try {
         final now = DateTime.now();
         // 1. Update application status and fetch profession_id + user_id
-        final result = await _supabaseClient!.from('registration_applications').update({
-          'status': 'approved',
-          'review_note': note,
-          'reviewed_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        }).eq('id', applicationId).eq('status', 'pending').select();
+        final result = await _supabaseClient!
+            .from('registration_applications')
+            .update({
+              'status': 'approved',
+              'review_note': note,
+              'reviewed_at': now.toIso8601String(),
+              'updated_at': now.toIso8601String(),
+            })
+            .eq('id', applicationId)
+            .eq('status', 'pending')
+            .select();
 
         if ((result as List).isNotEmpty) {
           professionId = result[0]['profession_id'] as String?;
@@ -381,11 +410,14 @@ class UnifiedRepository {
 
           // 2. Update user's profession_id and verification_status
           if (userId != null && professionId != null) {
-            await _supabaseClient!.from('users').update({
-              'profession_id': professionId,
-              'verification_status': 'verified',
-              'updated_at': now.toIso8601String(),
-            }).eq('id', userId);
+            await _supabaseClient!
+                .from('users')
+                .update({
+                  'profession_id': professionId,
+                  'verification_status': 'verified',
+                  'updated_at': now.toIso8601String(),
+                })
+                .eq('id', userId);
           }
         }
       } catch (e) {
@@ -405,7 +437,10 @@ class UnifiedRepository {
   }
 
   /// ปฏิเสธใบสมัคร
-  Future<void> rejectApplication(String applicationId, {required String note}) async {
+  Future<void> rejectApplication(
+    String applicationId, {
+    required String note,
+  }) async {
     String? userId;
 
     // Write to both
@@ -413,23 +448,31 @@ class UnifiedRepository {
       try {
         final now = DateTime.now();
         // 1. Update application status and fetch user_id
-        final result = await _supabaseClient!.from('registration_applications').update({
-          'status': 'rejected',
-          'review_note': note,
-          'reviewed_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        }).eq('id', applicationId).eq('status', 'pending').select();
+        final result = await _supabaseClient!
+            .from('registration_applications')
+            .update({
+              'status': 'rejected',
+              'review_note': note,
+              'reviewed_at': now.toIso8601String(),
+              'updated_at': now.toIso8601String(),
+            })
+            .eq('id', applicationId)
+            .eq('status', 'pending')
+            .select();
 
         if ((result as List).isNotEmpty) {
           userId = result[0]['user_id'] as String?;
 
           // 2. Reset user's profession_id to consumer and update verification_status
           if (userId != null) {
-            await _supabaseClient!.from('users').update({
-              'profession_id': '00000000-0000-0000-0000-000000000001',
-              'verification_status': 'rejected',
-              'updated_at': now.toIso8601String(),
-            }).eq('id', userId);
+            await _supabaseClient!
+                .from('users')
+                .update({
+                  'profession_id': '00000000-0000-0000-0000-000000000001',
+                  'verification_status': 'rejected',
+                  'updated_at': now.toIso8601String(),
+                })
+                .eq('id', userId);
           }
         }
       } catch (e) {
@@ -471,7 +514,9 @@ class UnifiedRepository {
       );
 
       _syncStatusController.add(SyncStatus.idle);
-      debugPrint('UnifiedRepository: Synced ${(response as List).length} professions');
+      debugPrint(
+        'UnifiedRepository: Synced ${(response as List).length} professions',
+      );
     } catch (e) {
       _syncStatusController.add(SyncStatus.error);
       debugPrint('UnifiedRepository: Failed to sync professions - $e');
@@ -496,10 +541,16 @@ class UnifiedRepository {
             await _supabaseClient!.from(op.table).insert(op.data);
             break;
           case 'update':
-            await _supabaseClient!.from(op.table).update(op.data).eq('id', op.data['id']);
+            await _supabaseClient!
+                .from(op.table)
+                .update(op.data)
+                .eq('id', op.data['id']);
             break;
           case 'delete':
-            await _supabaseClient!.from(op.table).delete().eq('id', op.data['id']);
+            await _supabaseClient!
+                .from(op.table)
+                .delete()
+                .eq('id', op.data['id']);
             break;
         }
       } catch (e) {
@@ -574,11 +625,7 @@ class UnifiedRepository {
 }
 
 /// Sync Status
-enum SyncStatus {
-  idle,
-  syncing,
-  error,
-}
+enum SyncStatus { idle, syncing, error }
 
 /// Pending Operation for offline queue
 class _PendingOperation {

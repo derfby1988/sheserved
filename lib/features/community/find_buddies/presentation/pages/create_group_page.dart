@@ -12,6 +12,7 @@ import '../../../../../../services/platform_service.dart';
 import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 
@@ -48,6 +49,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   List<String> _recentGroupNames = [];
   bool _showImageSection = false;
   bool _showSettingsSection = false;
+  bool _showCostsSection = false;
+  // Phase 9.1: draft cost standards, written to DB after the group exists.
+  List<Map<String, dynamic>> _groupFeeDrafts = [];
+  List<Map<String, dynamic>> _roundExpenseDrafts = [];
   gm.GoogleMapController? _mapController;
   bool _mapLoadLogged = false;
   final _searchPlaceCtrl = TextEditingController();
@@ -67,7 +72,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _lng != null ||
         _genderPreference != 'any' ||
         _requiresOwnerApproval ||
-        !_ownerAutoJoin;
+        !_ownerAutoJoin ||
+        _groupFeeDrafts.isNotEmpty ||
+        _roundExpenseDrafts.isNotEmpty;
   }
 
   Future<void> _handleBackRequest() async {
@@ -266,6 +273,32 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         lat: _lat,
         lng: _lng,
       );
+      // Phase 9.1: persist drafted cost standards now that group_id exists.
+      for (final fee in _groupFeeDrafts) {
+        await _repo.createGroupCostStandard(
+          groupId: groupId,
+          actorUserId: user.id,
+          standardType: 'group_fee',
+          category: 'membership',
+          name: fee['name'].toString(),
+          amount: (fee['amount'] as num).toDouble(),
+          billingPeriod: fee['billing_period']?.toString(),
+          paymentTiming: fee['payment_timing'].toString(),
+        );
+      }
+      for (final tpl in _roundExpenseDrafts) {
+        await _repo.createGroupCostStandard(
+          groupId: groupId,
+          actorUserId: user.id,
+          standardType: 'round_expense',
+          category: tpl['category'].toString(),
+          name: tpl['name'].toString(),
+          amount: (tpl['amount'] as num).toDouble(),
+          pricingUnit: tpl['pricing_unit']?.toString(),
+          defaultQuantity: (tpl['default_quantity'] as num?)?.toDouble() ?? 1,
+          paymentTiming: tpl['payment_timing'].toString(),
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -327,6 +360,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         'lng': _lng,
         'coverImageUrl': _coverImageUrl,
         'venuePhotoUrl': _venuePhotoUrl,
+        'groupFees': _groupFeeDrafts,
+        'roundExpenses': _roundExpenseDrafts,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
       await prefs.setString(_prefsDraftKey, jsonEncode(draft));
@@ -377,6 +412,18 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _lng = (draft['lng'] as num?)?.toDouble();
         _coverImageUrl = draft['coverImageUrl']?.toString();
         _venuePhotoUrl = draft['venuePhotoUrl']?.toString();
+        _groupFeeDrafts =
+            (draft['groupFees'] as List?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            [];
+        _roundExpenseDrafts =
+            (draft['roundExpenses'] as List?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            [];
       });
       await prefs.remove(_prefsDraftKey);
     } catch (_) {}
@@ -537,7 +584,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-
                                   const SizedBox(height: 20),
                                   const Text(
                                     'เพศที่ต้องการชวนเข้าร่วม',
@@ -567,7 +613,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     onChanged: (v) =>
                                         setState(() => _ownerAutoJoin = v),
                                   ),
-                                                                        const Divider(height: 24),                              _buildModernTextField(
+                                  const Divider(height: 24),
+                                  _buildModernTextField(
                                     controller: _descCtrl,
                                     label: 'คำอธิบาย (ไม่บังคับ)',
                                     hint:
@@ -577,6 +624,16 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                   ),
                                 ],
                               ),
+                            ),
+                            const SizedBox(height: 32),
+                            _buildCollapsibleSection(
+                              title: 'ค่าใช้จ่ายมาตรฐานของก๊วน',
+                              icon: Icons.payments_outlined,
+                              expanded: _showCostsSection,
+                              onToggle: () => setState(
+                                () => _showCostsSection = !_showCostsSection,
+                              ),
+                              child: _buildCostStandardsEditor(),
                             ),
                             const SizedBox(height: 32),
                             _buildModernSection(
@@ -2060,5 +2117,314 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               ),
       ),
     );
+  }
+
+  // ── Phase 9.1: ค่าใช้จ่ายมาตรฐานของก๊วน (drafts, saved after create) ──
+
+  Widget _buildCostStandardsEditor() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.card_membership_rounded,
+                size: 18,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'ค่าก๊วน / ค่าสมาชิก',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_groupFeeDrafts.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ยังไม่ได้กำหนดค่าก๊วน/ค่าสมาชิก (ไม่บังคับ)',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          for (var i = 0; i < _groupFeeDrafts.length; i++)
+            _buildCostDraftCard(
+              title: _groupFeeDrafts[i]['name']?.toString() ?? '',
+              category: 'membership',
+              amountText: formatBaht(_groupFeeDrafts[i]['amount'] as num?),
+              unitText: billingPeriodLabel(
+                _groupFeeDrafts[i]['billing_period']?.toString(),
+              ),
+              timing: _groupFeeDrafts[i]['payment_timing']?.toString(),
+              onEdit: () => _editGroupFeeDraft(i),
+              onDelete: () => setState(() => _groupFeeDrafts.removeAt(i)),
+            ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryDark,
+              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            ),
+            onPressed: _addGroupFeeDraft,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text(
+              'เพิ่มค่าก๊วน / ค่าสมาชิก',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Divider(height: 1),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.sports_tennis_rounded,
+                size: 18,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Template ค่าใช้จ่ายรอบ',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_roundExpenseDrafts.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ยังไม่ได้กำหนดแม่แบบค่าใช้จ่ายรอบ (ไม่บังคับ)',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          )
+        else
+          for (var i = 0; i < _roundExpenseDrafts.length; i++)
+            _buildCostDraftCard(
+              title: _roundExpenseDrafts[i]['name']?.toString() ?? '',
+              category: _roundExpenseDrafts[i]['category']?.toString(),
+              amountText: formatBaht(_roundExpenseDrafts[i]['amount'] as num?),
+              unitText: pricingUnitLabel(
+                _roundExpenseDrafts[i]['pricing_unit']?.toString(),
+              ),
+              timing: _roundExpenseDrafts[i]['payment_timing']?.toString(),
+              onEdit: () => _editRoundExpenseDraft(i),
+              onDelete: () => setState(() => _roundExpenseDrafts.removeAt(i)),
+            ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryDark,
+              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            ),
+            onPressed: _addRoundExpenseDraft,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text(
+              'เพิ่ม Template ค่าใช้จ่ายรอบ',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCostDraftCard({
+    required String title,
+    required String? category,
+    required String amountText,
+    required String unitText,
+    required String? timing,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              costCategoryIcon(category),
+              color: AppColors.primaryDark,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      amountText,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                    Text(
+                      ' / $unitText',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                paymentTimingBadge(timing),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 19),
+                color: Colors.grey.shade700,
+                onPressed: onEdit,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'แก้ไข',
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 19,
+                  color: Colors.redAccent,
+                ),
+                onPressed: onDelete,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'ลบ',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addGroupFeeDraft() async {
+    final result = await showGroupFeeEditor(context);
+    if (result != null && mounted) {
+      setState(() => _groupFeeDrafts.add(result));
+    }
+  }
+
+  Future<void> _editGroupFeeDraft(int index) async {
+    final result = await showGroupFeeEditor(
+      context,
+      existing: _groupFeeDrafts[index],
+    );
+    if (result != null && mounted) {
+      setState(() => _groupFeeDrafts[index] = result);
+    }
+  }
+
+  Future<void> _addRoundExpenseDraft() async {
+    final result = await showRoundExpenseTemplateEditor(context);
+    if (result != null && mounted) {
+      setState(() => _roundExpenseDrafts.add(result));
+    }
+  }
+
+  Future<void> _editRoundExpenseDraft(int index) async {
+    final result = await showRoundExpenseTemplateEditor(
+      context,
+      existing: _roundExpenseDrafts[index],
+    );
+    if (result != null && mounted) {
+      setState(() => _roundExpenseDrafts[index] = result);
+    }
   }
 }

@@ -51,21 +51,22 @@ String? _resolveNotificationRoute(AppNotification notification) {
     'donation' => '/donate',
     'health' => '/health',
     'articles' => '/articles',
-    'procurement' || 'inventory' || 'kpi' || 'hr' || 'admin' => '/erp',
+    'admin' => '/admin/applications',
+    'system' => '/profile',
+    'procurement' || 'inventory' || 'kpi' || 'hr' => '/erp',
     _ => null,
   };
 }
 
-Object? _notificationArguments(
-  String route,
-  Map<String, dynamic> payload,
-) {
+Object? _notificationArguments(String route, Map<String, dynamic> payload) {
   if (route == '/articles') return payload['filter']?.toString();
   if (route == '/chat-list' ||
       route == '/health-program-requests' ||
       route == '/donate' ||
       route == '/health' ||
-      route == '/erp') {
+      route == '/erp' ||
+      route == '/profile' ||
+      route == '/admin/applications') {
     return null;
   }
   return payload.isEmpty ? null : payload;
@@ -81,13 +82,14 @@ class TlzNotificationPanel extends ConsumerStatefulWidget {
       _TlzNotificationPanelState();
 }
 
-class _TlzNotificationPanelState
-    extends ConsumerState<TlzNotificationPanel> {
+class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   static const _filters = <({String label, String? value})>[
     (label: 'ทั้งหมด', value: null),
     (label: 'แชท', value: 'chat'),
     (label: 'คำปรึกษา', value: 'consultation'),
     (label: 'ERP', value: 'procurement'),
+    (label: 'อนุมัติอาชีพ', value: 'admin'),
+    (label: 'ผลการสมัคร', value: 'system'),
     (label: 'บริจาค', value: 'donation'),
     (label: 'สุขภาพ', value: 'health'),
   ];
@@ -166,33 +168,41 @@ class _TlzNotificationPanelState
   }
 
   Future<void> _openNotification(AppNotification notification) async {
-    final opened = await openTlzNotificationDestination(context, notification);
-    if (!opened || !mounted) {
-      if (mounted) _showMessage('ยังไม่พบหน้าปลายทางของการแจ้งเตือนนี้');
+    final route = _resolveNotificationRoute(notification);
+    if (route == null) {
+      _showMessage('ยังไม่พบหน้าปลายทางของการแจ้งเตือนนี้');
       return;
     }
 
+    // Capture root navigator + args before any state changes / pops.
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final args = _notificationArguments(route, notification.payload);
+
+    // 1. Dismiss (marks as read + hides) immediately — BEFORE navigating.
+    //    This ensures the notification is removed and the unread count
+    //    decreases even if the admin navigates further from the destination
+    //    instead of returning to the panel.
     final dismissed = await ref
         .read(notificationProvider.notifier)
-        .dismissNotification(
-          notification.id,
-          category: _selectedCategory,
-        );
+        .dismissNotification(notification.id, category: _selectedCategory);
     if (!mounted) return;
     if (!dismissed) {
       _showMessage('ไม่สามารถซ่อนการแจ้งเตือนได้ กรุณาลองใหม่');
       return;
     }
+
+    // 2. Close the panel, then navigate to the destination.
     Navigator.of(context).pop();
+    rootNavigator.pushNamed(route, arguments: args);
   }
 
   Future<void> _openChatRoom(Map<String, dynamic> room) async {
     final roomId = room['roomId']?.toString();
     if (roomId == null || roomId.isEmpty) return;
 
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ChatRoomPage(roomId: roomId)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ChatRoomPage(roomId: roomId)));
     if (!mounted) return;
 
     await ref.read(chatUnreadProvider.notifier).markRoomAsRead(roomId);
@@ -203,9 +213,9 @@ class _TlzNotificationPanelState
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   DateTime? _latestChatAt() {
@@ -219,16 +229,20 @@ class _TlzNotificationPanelState
     return latest;
   }
 
-  List<({
-    String label,
-    String? value,
-    int unreadCount,
-    DateTime? latestAt,
-    int index,
-  })> _buildOrderedFilters({
+  List<
+    ({
+      String label,
+      String? value,
+      int unreadCount,
+      DateTime? latestAt,
+      int index,
+    })
+  >
+  _buildOrderedFilters({
     required NotificationCategorySummary allSummary,
     required int chatUnreadCount,
     required DateTime? latestChatAt,
+    required List<AppNotification> loadedNotifications,
   }) {
     final filters = _filters.asMap().entries.map((entry) {
       final filter = entry.value;
@@ -248,8 +262,23 @@ class _TlzNotificationPanelState
               data: (value) => value,
               orElse: () => const NotificationCategorySummary(),
             );
-        unreadCount = summary.unreadCount;
+        // Also account for items already loaded (incl. realtime pushes) so a
+        // freshly received category surfaces even before the summary refreshes.
+        final loadedInCategory = loadedNotifications.where(
+          (item) => item.category == filter.value,
+        );
+        final loadedUnread = loadedInCategory
+            .where((item) => !item.isRead)
+            .length;
+        unreadCount = summary.unreadCount > loadedUnread
+            ? summary.unreadCount
+            : loadedUnread;
         latestAt = summary.latestAt;
+        for (final item in loadedInCategory) {
+          if (latestAt == null || item.createdAt.isAfter(latestAt)) {
+            latestAt = item.createdAt;
+          }
+        }
       }
 
       if (filter.value == null &&
@@ -324,6 +353,7 @@ class _TlzNotificationPanelState
       allSummary: allSummary,
       chatUnreadCount: chatUnreadCount,
       latestChatAt: latestChatAt,
+      loadedNotifications: state.notifications,
     );
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -373,50 +403,52 @@ class _TlzNotificationPanelState
                             color: colorScheme.surface.withValues(alpha: 0.20),
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: colorScheme.onSurface.withValues(alpha: 0.14),
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.14,
+                              ),
                             ),
                           ),
                           child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'การแจ้งเตือน',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                          color: colorScheme.onSurface,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    totalUnread > 0
-                                        ? 'ยังไม่อ่าน $totalUnread รายการ'
-                                        : 'ไม่มีรายการที่ยังไม่อ่าน',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: colorScheme.onSurface
-                                              .withValues(alpha: 0.82),
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (totalUnread > 0)
-                              TextButton.icon(
-                                onPressed: _markAllAsRead,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: AppColors.accentDark,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'การแจ้งเตือน',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge
+                                          ?.copyWith(
+                                            color: colorScheme.onSurface,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      totalUnread > 0
+                                          ? 'ยังไม่อ่าน $totalUnread รายการ'
+                                          : 'ไม่มีรายการที่ยังไม่อ่าน',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.82),
+                                          ),
+                                    ),
+                                  ],
                                 ),
-                                icon: const Icon(Icons.done_all, size: 18),
-                                label: const Text('อ่านทั้งหมด'),
                               ),
+                              if (totalUnread > 0)
+                                TextButton.icon(
+                                  onPressed: _markAllAsRead,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: AppColors.accentDark,
+                                  ),
+                                  icon: const Icon(Icons.done_all, size: 18),
+                                  label: const Text('อ่านทั้งหมด'),
+                                ),
                             ],
                           ),
                         ),
@@ -425,10 +457,7 @@ class _TlzNotificationPanelState
                         SizedBox(
                           height: 42,
                           child: ListView.separated(
-                            padding: const EdgeInsets.only(
-                              left: 20,
-                              right: 32,
-                            ),
+                            padding: const EdgeInsets.only(left: 20, right: 32),
                             scrollDirection: Axis.horizontal,
                             itemCount: orderedFilters.length,
                             separatorBuilder: (_, _) =>
@@ -449,10 +478,10 @@ class _TlzNotificationPanelState
                                   color: selected
                                       ? Colors.white
                                       : hasUnread
-                                          ? colorScheme.onSurface
-                                          : colorScheme.onSurface.withValues(
-                                              alpha: 0.55,
-                                            ),
+                                      ? colorScheme.onSurface
+                                      : colorScheme.onSurface.withValues(
+                                          alpha: 0.55,
+                                        ),
                                   fontWeight: selected
                                       ? FontWeight.w700
                                       : FontWeight.w500,
@@ -467,8 +496,9 @@ class _TlzNotificationPanelState
                                 side: BorderSide(
                                   color: hasUnread
                                       ? AppColors.accent.withValues(alpha: 0.45)
-                                      : colorScheme.onSurface
-                                          .withValues(alpha: 0.18),
+                                      : colorScheme.onSurface.withValues(
+                                          alpha: 0.18,
+                                        ),
                                 ),
                               );
                             },
@@ -476,7 +506,8 @@ class _TlzNotificationPanelState
                         ),
                       const SizedBox(height: 6),
                       Expanded(
-                        child: state.isLoading &&
+                        child:
+                            state.isLoading &&
                                 state.notifications.isEmpty &&
                                 _chatRooms.isEmpty
                             ? const Center(child: CircularProgressIndicator())
@@ -493,27 +524,7 @@ class _TlzNotificationPanelState
                                     20,
                                     24,
                                   ),
-                                  children: [
-                                    if (_chatRooms.isNotEmpty && _showsChat)
-                                      ...[
-                                        _buildSectionTitle('ข้อความแชท'),
-                                        ..._chatRooms.map(_buildChatRoomCard),
-                                      ],
-                                    if (state.notifications.isNotEmpty &&
-                                        _selectedCategory != 'chat')
-                                      ...[
-                                        _buildSectionTitle(
-                                          _selectedCategory == null
-                                              ? 'การแจ้งเตือนระบบ'
-                                              : 'รายการแจ้งเตือน',
-                                        ),
-                                        ...state.notifications
-                                            .map(_buildNotificationCard),
-                                      ],
-                                    if (_chatRooms.isEmpty &&
-                                        state.notifications.isEmpty)
-                                      _buildEmptyState(),
-                                  ],
+                                  children: _buildFeedChildren(state),
                                 ),
                               ),
                       ),
@@ -528,15 +539,54 @@ class _TlzNotificationPanelState
     );
   }
 
+  /// Merges chat rooms and app notifications into one feed ordered newest
+  /// first, so a fresh notification is never hidden below older chat items.
+  List<Widget> _buildFeedChildren(NotificationState state) {
+    final showChat = _chatRooms.isNotEmpty && _showsChat;
+    final showNotifications =
+        state.notifications.isNotEmpty && _selectedCategory != 'chat';
+    if (!showChat && !showNotifications) return [_buildEmptyState()];
+
+    final entries = <({DateTime? at, Widget widget})>[
+      if (showChat)
+        for (final room in _chatRooms)
+          (
+            at: DateTime.tryParse(room['createdAt']?.toString() ?? ''),
+            widget: _buildChatRoomCard(room),
+          ),
+      if (showNotifications)
+        for (final notification in state.notifications)
+          (
+            at: notification.createdAt,
+            widget: _buildNotificationCard(notification),
+          ),
+    ];
+    entries.sort((a, b) {
+      final aAt = a.at;
+      final bAt = b.at;
+      if (aAt == null && bAt == null) return 0;
+      if (aAt == null) return 1;
+      if (bAt == null) return -1;
+      return bAt.compareTo(aAt);
+    });
+
+    return [
+      _buildSectionTitle(
+        _selectedCategory == null ? 'ล่าสุด' : 'รายการแจ้งเตือน',
+      ),
+      ...entries.map((entry) => entry.widget),
+    ];
+  }
+
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, top: 4),
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-            ),
+          color: Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -564,7 +614,10 @@ class _TlzNotificationPanelState
         padding: EdgeInsets.zero,
         child: ListTile(
           onTap: roomId.isEmpty ? null : () => _openChatRoom(room),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 4,
+          ),
           leading: CircleAvatar(
             backgroundColor: AppColors.info.withValues(alpha: 0.18),
             child: const Icon(Icons.chat_bubble_outline, color: AppColors.info),
@@ -594,8 +647,8 @@ class _TlzNotificationPanelState
                 Text(
                   _formatRelativeTime(createdAt),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.68),
-                      ),
+                    color: colorScheme.onSurface.withValues(alpha: 0.68),
+                  ),
                 ),
               const SizedBox(height: 4),
               Container(
@@ -642,7 +695,10 @@ class _TlzNotificationPanelState
         padding: EdgeInsets.zero,
         child: ListTile(
           onTap: () => _openNotification(notification),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 4,
+          ),
           leading: CircleAvatar(
             backgroundColor: iconColor.withValues(alpha: 0.16),
             child: Icon(_categoryIcon(notification.category), color: iconColor),
@@ -653,8 +709,9 @@ class _TlzNotificationPanelState
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: colorScheme.onSurface,
-              fontWeight:
-                  notification.isRead ? FontWeight.w500 : FontWeight.w700,
+              fontWeight: notification.isRead
+                  ? FontWeight.w500
+                  : FontWeight.w700,
             ),
           ),
           subtitle: notification.body == null
@@ -679,8 +736,8 @@ class _TlzNotificationPanelState
               Text(
                 _formatRelativeTime(notification.createdAt),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.68),
-                    ),
+                  color: colorScheme.onSurface.withValues(alpha: 0.68),
+                ),
               ),
               if (!notification.isRead) ...[
                 const SizedBox(height: 5),
@@ -710,28 +767,26 @@ class _TlzNotificationPanelState
             Icon(
               Icons.notifications_none_rounded,
               size: 56,
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.35),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.35),
             ),
             const SizedBox(height: 12),
             Text(
               'ไม่มีการแจ้งเตือน',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'เมื่อมีรายการใหม่จะแสดงที่นี่',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.78),
-                  ),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.78),
+              ),
             ),
           ],
         ),
