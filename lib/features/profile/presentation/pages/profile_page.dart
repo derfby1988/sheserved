@@ -42,13 +42,7 @@ import 'package:sheserved/config/app_config.dart';
 import '../../../auth/data/models/password_change_result.dart';
 import '../widgets/change_password_bottom_sheet.dart';
 
-enum ProfileTab {
-  profile,
-  volunteer,
-  shareHealth,
-  donationApprove,
-  history,
-}
+enum ProfileTab { profile, volunteer, shareHealth, donationApprove, history }
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -292,9 +286,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     } catch (e) {
       if (mounted) {
         setState(() => _isCancellingApplication = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ไม่สามารถยกเลิกได้: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ไม่สามารถยกเลิกได้: $e')));
       }
     }
   }
@@ -371,7 +365,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   @override
   void didPopNext() {
-    debugPrint('[ProfilePage] didPopNext → refreshing history if on history tab');
+    debugPrint(
+      '[ProfilePage] didPopNext → refreshing history if on history tab',
+    );
     if (_selectedTab == ProfileTab.history) {
       final bool isConsumer = !(_user?.isProvider ?? false);
       if (isConsumer) {
@@ -455,10 +451,14 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final checkin = _deadManCheckin;
     final isEnabled = checkin?.isEnabled ?? _deadManEnabled;
     final lastCheckInText = checkin?.lastCheckInAt != null
-        ? DateFormat('dd/MM/yyyy HH:mm').format(checkin!.lastCheckInAt!.toLocal())
+        ? DateFormat(
+            'dd/MM/yyyy HH:mm',
+          ).format(checkin!.lastCheckInAt!.toLocal())
         : 'ยังไม่เคยเช็กอิน';
     final lastTriggeredText = checkin?.lastTriggeredAt != null
-        ? DateFormat('dd/MM/yyyy HH:mm').format(checkin!.lastTriggeredAt!.toLocal())
+        ? DateFormat(
+            'dd/MM/yyyy HH:mm',
+          ).format(checkin!.lastTriggeredAt!.toLocal())
         : 'ยังไม่เคยถูกกระตุ้น';
 
     return Column(
@@ -519,8 +519,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                           _isLoadingDeadManSettings
                               ? 'กำลังโหลดการตั้งค่า...'
                               : isEnabled
-                                  ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการยืนยันความปลอดภัยล่าสุด'
-                                  : 'ยังไม่เปิดใช้งาน',
+                              ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการยืนยันความปลอดภัยล่าสุด'
+                              : 'ยังไม่เปิดใช้งาน',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: Colors.grey,
                           ),
@@ -540,11 +540,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               const SizedBox(height: 16),
               Text(
                 'ช่วงเวลายืนยันความปลอดภัย',
-                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Slider(
-                value: _deadManCheckInIntervalMinutes.toDouble().clamp(60, 1440),
+                value: _deadManCheckInIntervalMinutes.toDouble().clamp(
+                  60,
+                  1440,
+                ),
                 min: 60,
                 max: 1440,
                 divisions: 23,
@@ -560,13 +565,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 onChangeEnd: _isSavingDeadManSettings
                     ? null
                     : (value) => _saveDeadManSettings(
-                          checkInIntervalMinutes: value.round(),
-                        ),
+                        checkInIntervalMinutes: value.round(),
+                      ),
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('1 ชม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '1 ชม.',
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                  ),
                   Text(
                     '$_deadManCheckInIntervalMinutes นาที',
                     style: AppTextStyles.bodySmall.copyWith(
@@ -574,7 +582,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text('24 ชม.', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '24 ชม.',
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -582,8 +593,14 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _buildMiniStatusChip('เช็กอินล่าสุด: $lastCheckInText', Icons.check_circle_outline),
-                  _buildMiniStatusChip('กระตุ้นล่าสุด: $lastTriggeredText', Icons.warning_amber_outlined),
+                  _buildMiniStatusChip(
+                    'เช็กอินล่าสุด: $lastCheckInText',
+                    Icons.check_circle_outline,
+                  ),
+                  _buildMiniStatusChip(
+                    'กระตุ้นล่าสุด: $lastTriggeredText',
+                    Icons.warning_amber_outlined,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -591,7 +608,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _isSavingDeadManSettings ? null : _checkInDeadManNow,
+                      onPressed: _isSavingDeadManSettings
+                          ? null
+                          : _checkInDeadManNow,
                       icon: const Icon(Icons.touch_app),
                       label: const Text('ยืนยันความปลอดภัยตอนนี้'),
                     ),
@@ -640,7 +659,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             ),
           ),
         ],
-            ),
+      ),
     );
   }
 
@@ -685,21 +704,24 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       text: _profession?.name ?? 'โปรไฟล์',
                       isActive: _selectedTab == ProfileTab.profile,
                       activeColor: AppColors.primary,
-                      onTap: () => setState(() => _selectedTab = ProfileTab.profile),
+                      onTap: () =>
+                          setState(() => _selectedTab = ProfileTab.profile),
                     ),
                     _buildTabItem(
                       icon: Icons.volunteer_activism_outlined,
                       text: 'จิตอาสา',
                       isActive: _selectedTab == ProfileTab.volunteer,
                       activeColor: const Color(0xFFF5A623),
-                      onTap: () => setState(() => _selectedTab = ProfileTab.volunteer),
+                      onTap: () =>
+                          setState(() => _selectedTab = ProfileTab.volunteer),
                     ),
                     _buildTabItem(
                       icon: Icons.health_and_safety_outlined,
                       text: 'แชร์สุขภาพ',
                       isActive: _selectedTab == ProfileTab.shareHealth,
                       activeColor: const Color(0xFFE91E63),
-                      onTap: () => setState(() => _selectedTab = ProfileTab.shareHealth),
+                      onTap: () =>
+                          setState(() => _selectedTab = ProfileTab.shareHealth),
                     ),
                     if (_canApproveDonation)
                       _buildTabItem(
@@ -707,7 +729,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         text: 'อนุมัติบริจาค',
                         isActive: _selectedTab == ProfileTab.donationApprove,
                         activeColor: Colors.teal,
-                        onTap: () => setState(() => _selectedTab = ProfileTab.donationApprove),
+                        onTap: () => setState(
+                          () => _selectedTab = ProfileTab.donationApprove,
+                        ),
                       ),
                     if (isConsumer)
                       _buildTabItem(
@@ -715,7 +739,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         text: 'ประวัติปรึกษา',
                         isActive: _selectedTab == ProfileTab.history,
                         activeColor: AppColors.primary,
-                        onTap: () => setState(() => _selectedTab = ProfileTab.history),
+                        onTap: () =>
+                            setState(() => _selectedTab = ProfileTab.history),
                       ),
                     if (isProvider) ...[
                       _buildTabItem(
@@ -723,14 +748,20 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         text: 'จัดการ Quick Replies',
                         isActive: false,
                         activeColor: Colors.purple,
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ManageQuickRepliesPage())),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ManageQuickRepliesPage(),
+                          ),
+                        ),
                       ),
                       _buildTabItem(
                         icon: Icons.history_edu_outlined,
                         text: 'ประวัติให้บริการ',
                         isActive: _selectedTab == ProfileTab.history,
                         activeColor: Colors.green,
-                        onTap: () => setState(() => _selectedTab = ProfileTab.history),
+                        onTap: () =>
+                            setState(() => _selectedTab = ProfileTab.history),
                       ),
                     ],
                   ],
@@ -746,10 +777,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                     key: _myConsultationsKey,
                     isEmbedded: true,
                   )
-                : ProviderHistoryPage(
-                    key: _historyPageKey,
-                    isEmbedded: true,
-                  ),
+                : ProviderHistoryPage(key: _historyPageKey, isEmbedded: true),
           ),
         ] else ...[
           SliverPadding(
@@ -786,7 +814,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   _buildNotificationSettings(),
                 ] else if (_selectedTab == ProfileTab.shareHealth) ...[
                   _buildShareHealthSettings(),
-                ] else if (_selectedTab == ProfileTab.donationApprove && _canApproveDonation) ...[
+                ] else if (_selectedTab == ProfileTab.donationApprove &&
+                    _canApproveDonation) ...[
                   DonationApproverSettingsWidget(
                     repository: _donationRepository,
                     userId: _user?.id,
@@ -886,7 +915,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       ),
     );
   }
-
 
   Widget _buildTabItem({
     required IconData icon,
@@ -1114,16 +1142,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    professionName,
-                    style: AppTextStyles.bodyMedium,
-                  ),
+                  child: Text(professionName, style: AppTextStyles.bodyMedium),
                 ),
                 if (isVerified)
                   const Icon(Icons.verified, color: AppColors.primary, size: 16)
                 else if (isPending)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -1138,7 +1166,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   )
                 else if (isRejected)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -1153,7 +1184,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   )
                 else if (isCancelled)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.grey.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -1187,8 +1221,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final app = _pendingApplication!;
     final isOwnerRequest =
         app.registrationData['is_owner_request'] == 'true' ||
-            app.registrationData['is_owner_request'] == true;
-    final createdDate = '${app.createdAt.day}/${app.createdAt.month}/${app.createdAt.year + 543}';
+        app.registrationData['is_owner_request'] == true;
+    final createdDate =
+        '${app.createdAt.day}/${app.createdAt.month}/${app.createdAt.year + 543}';
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1218,12 +1253,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           const SizedBox(height: 8),
           Text(
             'อาชีพ: ${app.profession?.name ?? 'ไม่ระบุ'}${isOwnerRequest ? ' (สมัครเป็นเจ้าขององค์กร)' : ''}',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             'สมัครเมื่อ: $createdDate',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -1452,11 +1491,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       groups[p.category.id]!.add(p);
     }
     final sortedCatIds = categories.keys.toList()
-      ..sort((a, b) => (categories[a]?.displayOrder ?? 0)
-          .compareTo(categories[b]?.displayOrder ?? 0));
+      ..sort(
+        (a, b) => (categories[a]?.displayOrder ?? 0).compareTo(
+          categories[b]?.displayOrder ?? 0,
+        ),
+      );
 
     String? expandedCatId = _profession?.category.id;
 
+    final ScrollController scrollController = ScrollController();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1508,8 +1551,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 child: _isLoadingAllProfessions
                     ? const Center(child: CircularProgressIndicator())
                     : Scrollbar(
+                        controller: scrollController,
                         thumbVisibility: true,
                         child: ListView.builder(
+                          controller: scrollController,
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                           itemCount: sortedCatIds.length,
                           itemBuilder: (context, index) {
@@ -1521,7 +1566,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                               final p = proList.first;
                               final isSelected = _profession?.id == p.id;
                               return _buildProfessionPickerItem(
-                                p, isSelected, setModalState,
+                                p,
+                                isSelected,
+                                setModalState,
                               );
                             }
 
@@ -1531,9 +1578,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                             );
 
                             return Theme(
-                              data: Theme.of(context).copyWith(
-                                dividerColor: Colors.transparent,
-                              ),
+                              data: Theme.of(
+                                context,
+                              ).copyWith(dividerColor: Colors.transparent),
                               child: ExpansionTile(
                                 key: Key('${catId}_$isExpanded'),
                                 initiallyExpanded: isExpanded,
@@ -1562,7 +1609,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                                 children: proList.map((p) {
                                   final isSelected = _profession?.id == p.id;
                                   return _buildProfessionPickerItem(
-                                    p, isSelected, setModalState,
+                                    p,
+                                    isSelected,
+                                    setModalState,
                                     padding: const EdgeInsets.only(left: 20),
                                   );
                                 }).toList(),
@@ -1576,7 +1625,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           ),
         ),
       ),
-    );
+    ).whenComplete(() => scrollController.dispose());
   }
 
   Widget _buildProfessionPickerItem(
@@ -1595,11 +1644,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         _onProfessionSelected(p);
       },
       contentPadding: padding ?? EdgeInsets.zero,
-      leading: Icon(
-        _getIconForProfession(p.iconName),
-        color: color,
-        size: 22,
-      ),
+      leading: Icon(_getIconForProfession(p.iconName), color: color, size: 22),
       title: Text(
         p.name,
         style: AppTextStyles.bodyMedium.copyWith(
@@ -1626,19 +1671,32 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   IconData _getIconForProfession(String? iconName) {
     switch (iconName) {
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'store': return Icons.store;
-      case 'local_hospital': return Icons.local_hospital;
-      case 'medical_services': return Icons.medical_services;
-      case 'delivery_dining': return Icons.delivery_dining;
-      case 'engineering': return Icons.engineering;
-      case 'gavel': return Icons.gavel;
-      case 'person': return Icons.person;
-      case 'school': return Icons.school;
-      case 'restaurant': return Icons.restaurant;
-      case 'spa': return Icons.spa;
-      case 'fitness_center': return Icons.fitness_center;
-      default: return Icons.work;
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'store':
+        return Icons.store;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'engineering':
+        return Icons.engineering;
+      case 'gavel':
+        return Icons.gavel;
+      case 'person':
+        return Icons.person;
+      case 'school':
+        return Icons.school;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'spa':
+        return Icons.spa;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      default:
+        return Icons.work;
     }
   }
 
@@ -1678,7 +1736,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       const Expanded(
                         child: Text(
                           'ต้องการสร้างและจดทะเบียนองค์กรใหม่ (สมัครเป็นผู้ดูแลระบบคนแรก/Owner)',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -1692,7 +1753,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 child: const Text('ยกเลิก'),
               ),
               TextButton(
-                onPressed: () => Navigator.pop(ctx, {'confirmed': true, 'isOwner': isOwnerRequest}),
+                onPressed: () => Navigator.pop(ctx, {
+                  'confirmed': true,
+                  'isOwner': isOwnerRequest,
+                }),
                 child: const Text('ดำเนินการต่อ'),
               ),
             ],
@@ -1719,9 +1783,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         );
         if (errorMessage != null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(errorMessage)),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(errorMessage)));
           }
           return;
         }
@@ -1729,10 +1793,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
       // 1. Update user profession and role
       // หมายเหตุ: ตาราง users ใช้ column `role` (consumer/provider/admin) ไม่ใช่ `user_type`
-      final newRole =
-          newProfession.category.id == prof.UserCategory.consumerId
-              ? 'consumer'
-              : 'provider';
+      final newRole = newProfession.category.id == prof.UserCategory.consumerId
+          ? 'consumer'
+          : 'provider';
       await userRepo.updateUser(_user!.id, {
         'profession_id': newProfession.id,
         'role': newRole,
@@ -1765,16 +1828,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         final message = newProfession.requiresVerification
             ? 'ส่งคำขอเปลี่ยนอาชีพเรียบร้อย รอการตรวจสอบ'
             : 'เปลี่ยนอาชีพเป็น ${newProfession.name} เรียบร้อยแล้ว';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) {
       debugPrint('Error changing profession: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เปลี่ยนอาชีพไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เปลี่ยนอาชีพไม่สำเร็จ: $e')));
       }
     } finally {
       if (mounted) setState(() => _isChangingProfession = false);
@@ -2223,8 +2286,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                           _isLoadingEmergencyHealthSettings
                               ? 'กำลังโหลดการตั้งค่า...'
                               : isEnabled
-                                  ? 'เปิดใช้งานอยู่ • พร้อมปลดล็อกเมื่อครบเงื่อนไข'
-                                  : 'ยังไม่เปิดใช้งาน',
+                              ? 'เปิดใช้งานอยู่ • พร้อมปลดล็อกเมื่อครบเงื่อนไข'
+                              : 'ยังไม่เปิดใช้งาน',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: Colors.grey,
                           ),
@@ -2244,14 +2307,21 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               if (settings?.consentGivenAt != null) ...[
                 const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.verified_outlined, color: Colors.green[700], size: 18),
+                      Icon(
+                        Icons.verified_outlined,
+                        color: Colors.green[700],
+                        size: 18,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -2268,11 +2338,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               const SizedBox(height: 16),
               Text(
                 'เวลารอปลดล็อกข้อมูล',
-                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Slider(
-                value: _emergencyHealthReleaseDelayMinutes.toDouble().clamp(1, 120),
+                value: _emergencyHealthReleaseDelayMinutes.toDouble().clamp(
+                  1,
+                  120,
+                ),
                 min: 1,
                 max: 120,
                 divisions: 119,
@@ -2288,13 +2363,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 onChangeEnd: _isSavingEmergencyHealthSettings
                     ? null
                     : (value) => _saveEmergencyHealthSettings(
-                          releaseDelayMinutes: value.round(),
-                        ),
+                        releaseDelayMinutes: value.round(),
+                      ),
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('1 นาที', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '1 นาที',
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                  ),
                   Text(
                     '$_emergencyHealthReleaseDelayMinutes นาที',
                     style: AppTextStyles.bodySmall.copyWith(
@@ -2302,13 +2380,18 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text('120 นาที', style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+                  Text(
+                    '120 นาที',
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
               Text(
                 'ข้อมูลที่จะแชร์',
-                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -2332,16 +2415,18 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               const SizedBox(height: 16),
               Text(
                 'เงื่อนไขการปลดล็อก',
-                style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               _buildEmergencyBooleanSetting(
                 title: 'ต้องมี responder ที่ active',
-                subtitle: 'เปิดไว้เพื่อให้ข้อมูลปลดล็อกเฉพาะเมื่อมีผู้ช่วยเหลือที่ยัง active',
+                subtitle:
+                    'เปิดไว้เพื่อให้ข้อมูลปลดล็อกเฉพาะเมื่อมีผู้ช่วยเหลือที่ยัง active',
                 value: _emergencyHealthRequireActiveResponder,
-                onChanged: (value) => _saveEmergencyBooleanSetting(
-                  requireActiveResponder: value,
-                ),
+                onChanged: (value) =>
+                    _saveEmergencyBooleanSetting(requireActiveResponder: value),
               ),
               const SizedBox(height: 12),
               _buildEmergencyBooleanSetting(
@@ -2357,20 +2442,20 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 title: 'ต้องยืนยันตัวตนแล้ว',
                 subtitle: 'จำกัดการเข้าถึงเฉพาะผู้ใช้ที่ยืนยันตัวตนแล้ว',
                 value: _emergencyHealthRequireVerified,
-                onChanged: (value) => _saveEmergencyBooleanSetting(
-                  requireVerified: value,
-                ),
+                onChanged: (value) =>
+                    _saveEmergencyBooleanSetting(requireVerified: value),
               ),
               const SizedBox(height: 12),
               _buildEmergencyBooleanSetting(
                 title: 'เปิด fallback หากไม่มีคนผ่านเงื่อนไข',
-                subtitle: 'ขยายสิทธิ์อัตโนมัติเมื่อไม่มี responder ที่ตรงตามเงื่อนไข',
+                subtitle:
+                    'ขยายสิทธิ์อัตโนมัติเมื่อไม่มี responder ที่ตรงตามเงื่อนไข',
                 value: _emergencyHealthEmergencyFallback,
-                onChanged: (value) => _saveEmergencyBooleanSetting(
-                  emergencyFallback: value,
-                ),
+                onChanged: (value) =>
+                    _saveEmergencyBooleanSetting(emergencyFallback: value),
               ),
-              if (_isLoadingEmergencyHealthSettings || _isSavingEmergencyHealthSettings) ...[
+              if (_isLoadingEmergencyHealthSettings ||
+                  _isSavingEmergencyHealthSettings) ...[
                 const SizedBox(height: 16),
                 const LinearProgressIndicator(minHeight: 2),
               ],
@@ -2433,13 +2518,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     }
 
     setState(() {
-      _emergencyHealthSettings = (_emergencyHealthSettings ?? EmergencyHealthSettings.defaults())
-          .copyWith(
-        isEnabled: enabled,
-        consentGivenAt: enabled
-            ? (_emergencyHealthSettings?.consentGivenAt ?? DateTime.now())
-            : _emergencyHealthSettings?.consentGivenAt,
-      );
+      _emergencyHealthSettings =
+          (_emergencyHealthSettings ?? EmergencyHealthSettings.defaults())
+              .copyWith(
+                isEnabled: enabled,
+                consentGivenAt: enabled
+                    ? (_emergencyHealthSettings?.consentGivenAt ??
+                          DateTime.now())
+                    : _emergencyHealthSettings?.consentGivenAt,
+              );
     });
 
     await _saveEmergencyHealthSettings(isEnabled: enabled);
@@ -2464,10 +2551,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     bool? emergencyFallback,
   }) async {
     if (requireActiveResponder != null) {
-      setState(() => _emergencyHealthRequireActiveResponder = requireActiveResponder);
+      setState(
+        () => _emergencyHealthRequireActiveResponder = requireActiveResponder,
+      );
     }
     if (requireMedicalProfession != null) {
-      setState(() => _emergencyHealthRequireMedicalProfession = requireMedicalProfession);
+      setState(
+        () =>
+            _emergencyHealthRequireMedicalProfession = requireMedicalProfession,
+      );
     }
     if (requireVerified != null) {
       setState(() => _emergencyHealthRequireVerified = requireVerified);
@@ -2522,10 +2614,12 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final userId = AuthService.instance.userId;
     if (userId == null) return;
 
-    final current = _emergencyHealthSettings ?? EmergencyHealthSettings.defaults();
+    final current =
+        _emergencyHealthSettings ?? EmergencyHealthSettings.defaults();
     final updated = current.copyWith(
       isEnabled: isEnabled ?? current.isEnabled,
-      releaseDelayMinutes: releaseDelayMinutes ?? _emergencyHealthReleaseDelayMinutes,
+      releaseDelayMinutes:
+          releaseDelayMinutes ?? _emergencyHealthReleaseDelayMinutes,
       enabledFields: enabledFields ?? _emergencyHealthEnabledFields,
       requireActiveResponder:
           requireActiveResponder ?? _emergencyHealthRequireActiveResponder,
@@ -2551,9 +2645,12 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       setState(() {
         _emergencyHealthSettings = updated;
         _emergencyHealthReleaseDelayMinutes = updated.releaseDelayMinutes;
-        _emergencyHealthEnabledFields = List<String>.from(updated.enabledFields);
+        _emergencyHealthEnabledFields = List<String>.from(
+          updated.enabledFields,
+        );
         _emergencyHealthRequireActiveResponder = updated.requireActiveResponder;
-        _emergencyHealthRequireMedicalProfession = updated.requireMedicalProfession;
+        _emergencyHealthRequireMedicalProfession =
+            updated.requireMedicalProfession;
         _emergencyHealthRequireVerified = updated.requireVerified;
         _emergencyHealthEmergencyFallback = updated.emergencyFallback;
       });
@@ -2590,7 +2687,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     }
 
     try {
-      final settings = await ServiceLocator.instance.emergencyHealthSettingsRepository
+      final settings =
+          await ServiceLocator.instance.emergencyHealthSettingsRepository
               .fetchSettings(userId) ??
           EmergencyHealthSettings.defaults();
 
@@ -2598,9 +2696,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       setState(() {
         _emergencyHealthSettings = settings;
         _emergencyHealthReleaseDelayMinutes = settings.releaseDelayMinutes;
-        _emergencyHealthEnabledFields = List<String>.from(settings.enabledFields);
-        _emergencyHealthRequireActiveResponder = settings.requireActiveResponder;
-        _emergencyHealthRequireMedicalProfession = settings.requireMedicalProfession;
+        _emergencyHealthEnabledFields = List<String>.from(
+          settings.enabledFields,
+        );
+        _emergencyHealthRequireActiveResponder =
+            settings.requireActiveResponder;
+        _emergencyHealthRequireMedicalProfession =
+            settings.requireMedicalProfession;
         _emergencyHealthRequireVerified = settings.requireVerified;
         _emergencyHealthEmergencyFallback = settings.emergencyFallback;
       });
@@ -2614,16 +2716,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   List<Map<String, String>> get _emergencyFieldOptions => const [
-        {'key': 'blood_type', 'label': 'กรุ๊ปเลือด'},
-        {'key': 'allergies', 'label': 'แพ้ยา/อาหาร'},
-        {'key': 'emergency_contact', 'label': 'ผู้ติดต่อฉุกเฉิน'},
-        {'key': 'chronic_conditions', 'label': 'โรคประจำตัว'},
-        {'key': 'surgical_history', 'label': 'ประวัติผ่าตัด'},
-        {'key': 'device_metrics', 'label': 'Device Metrics'},
-        {'key': 'prescriptions', 'label': 'ยาที่รับอยู่'},
-        {'key': 'consultation_history', 'label': 'ประวัติปรึกษา'},
-        {'key': 'weight_history', 'label': 'น้ำหนักย้อนหลัง'},
-      ];
+    {'key': 'blood_type', 'label': 'กรุ๊ปเลือด'},
+    {'key': 'allergies', 'label': 'แพ้ยา/อาหาร'},
+    {'key': 'emergency_contact', 'label': 'ผู้ติดต่อฉุกเฉิน'},
+    {'key': 'chronic_conditions', 'label': 'โรคประจำตัว'},
+    {'key': 'surgical_history', 'label': 'ประวัติผ่าตัด'},
+    {'key': 'device_metrics', 'label': 'Device Metrics'},
+    {'key': 'prescriptions', 'label': 'ยาที่รับอยู่'},
+    {'key': 'consultation_history', 'label': 'ประวัติปรึกษา'},
+    {'key': 'weight_history', 'label': 'น้ำหนักย้อนหลัง'},
+  ];
 
   /// UI เลือกอาชีพที่อนุญาตให้เห็นวิดีโอไม่เบลอ
   Widget _buildUnblurredProfessionSection() {
@@ -3185,7 +3287,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       await _deadManRepo.upsertCheckin(
         userId: userId,
         isEnabled: isEnabled ?? _deadManEnabled,
-        intervalMinutes: checkInIntervalMinutes ?? _deadManCheckInIntervalMinutes,
+        intervalMinutes:
+            checkInIntervalMinutes ?? _deadManCheckInIntervalMinutes,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3318,8 +3421,8 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                     isLocalOnly
                         ? 'ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมด Local Only'
                         : noPassword
-                            ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
-                            : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
+                        ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
+                        : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: disabled ? Colors.grey : AppColors.textSecondary,
                     ),

@@ -20,6 +20,7 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
     with RouteAware {
   bool _isLoading = true;
   List<ConsultationRequestModel> _requests = [];
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
   @override
   void dispose() {
     dashboardRouteObserver.unsubscribe(this);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -108,23 +110,25 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
     final body = _isLoading
         ? _buildShimmerLoading()
         : _requests.isEmpty
-            ? _buildEmptyState()
-            : RefreshIndicator(
-                onRefresh: loadHistory,
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  thickness: 6.0,
-                  radius: const Radius.circular(8.0),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _requests.length,
-                    itemBuilder: (context, index) {
-                      final req = _requests[index];
-                      return _buildHistoryCard(req);
-                    },
-                  ),
-                ),
-              );
+        ? _buildEmptyState()
+        : RefreshIndicator(
+            onRefresh: loadHistory,
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              thickness: 6.0,
+              radius: const Radius.circular(8.0),
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                itemCount: _requests.length,
+                itemBuilder: (context, index) {
+                  final req = _requests[index];
+                  return _buildHistoryCard(req);
+                },
+              ),
+            ),
+          );
 
     if (widget.isEmbedded) {
       return body;
@@ -269,7 +273,9 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
 
   Widget _buildHistoryCard(ConsultationRequestModel req) {
     final statusColor = _getStatusColor(req.status);
-    final dateStr = ThaiDateUtils.formatShortDateBE2Digit(req.createdAt.toLocal());
+    final dateStr = ThaiDateUtils.formatShortDateBE2Digit(
+      req.createdAt.toLocal(),
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -279,7 +285,8 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
       child: InkWell(
         onTap: () {
           final isFinished = req.status == 'completed';
-          final isReadOnly = req.status == 'completed' || req.status == 'cancelled';
+          final isReadOnly =
+              req.status == 'completed' || req.status == 'cancelled';
           Navigator.pushNamed(
             context,
             '/chart-board',
@@ -356,7 +363,11 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.check_circle_outline, size: 16, color: Colors.green),
+                    const Icon(
+                      Icons.check_circle_outline,
+                      size: 16,
+                      color: Colors.green,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'เสร็จสิ้นเมื่อ: ${ThaiDateUtils.formatShortDateBE2Digit(req.updatedAt.toLocal())}',

@@ -24,10 +24,7 @@ class RegisterWizardPage extends StatefulWidget {
   State<RegisterWizardPage> createState() => _RegisterWizardPageState();
 }
 
-enum _ValidationIssueType {
-  form,
-  attachment,
-}
+enum _ValidationIssueType { form, attachment }
 
 class _ValidationIssue {
   final String message;
@@ -44,11 +41,11 @@ class _ValidationIssue {
 class _RegisterWizardPageState extends State<RegisterWizardPage> {
   int _currentStep = 0;
   final int _totalSteps = 4;
-  
+
   // Dynamic field values storage
   final Map<String, dynamic> _dynamicFieldValues = {};
   final Map<String, String> _attachmentFieldUrls = {};
-  
+
   // Available professions (loaded dynamically)
   List<Profession> _professions = [];
   bool _isLoadingProfessions = true;
@@ -89,11 +86,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       if (AppConfig.isSupabaseConfigured) {
         final repository = ProfessionRepository(Supabase.instance.client);
         final professions = await repository.getAllProfessions();
-        
+
         setState(() {
           // Sort professions by category's display_order first, then by profession's display_order
           professions.sort((a, b) {
-            int catComp = a.category.displayOrder.compareTo(b.category.displayOrder);
+            int catComp = a.category.displayOrder.compareTo(
+              b.category.displayOrder,
+            );
             if (catComp != 0) return catComp;
             return a.displayOrder.compareTo(b.displayOrder);
           });
@@ -130,14 +129,18 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     setState(() {
       _isLoadingProfessions = true; // Use this or add _isLoadingFields
     });
-    
+
     try {
       final repository = ProfessionRepository(Supabase.instance.client);
-      final fields = await repository.getFieldConfigsForProfession(profession.id);
+      final fields = await repository.getFieldConfigsForProfession(
+        profession.id,
+      );
       if (mounted) {
         setState(() {
           // Fallback to default if no fields in DB yet for this profession
-          _professionFields = fields.isNotEmpty ? fields : _getDefaultFieldsForProfession(profession.id);
+          _professionFields = fields.isNotEmpty
+              ? fields
+              : _getDefaultFieldsForProfession(profession.id);
           _dynamicFieldValues.clear();
           _isLoadingProfessions = false;
         });
@@ -156,26 +159,41 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   // Helper method for icon mapping (moved from build)
   IconData _getIconForProfession(String? iconName) {
     if (iconName == null) return Icons.work;
-    
+
     switch (iconName) {
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'store': return Icons.store;
-      case 'local_hospital': return Icons.local_hospital;
-      case 'medical_services': return Icons.medical_services;
-      case 'delivery_dining': return Icons.delivery_dining;
-      case 'engineering': return Icons.engineering;
-      case 'gavel': return Icons.gavel;
-      case 'person': return Icons.person;
-      case 'school': return Icons.school;
-      case 'restaurant': return Icons.restaurant;
-      case 'spa': return Icons.spa;
-      case 'fitness_center': return Icons.fitness_center;
-      default: return Icons.work;
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'store':
+        return Icons.store;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'engineering':
+        return Icons.engineering;
+      case 'gavel':
+        return Icons.gavel;
+      case 'person':
+        return Icons.person;
+      case 'school':
+        return Icons.school;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'spa':
+        return Icons.spa;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      default:
+        return Icons.work;
     }
   }
 
   // ... (getDefaultFieldsForProfession remains same or can be updated if we had real field config loading, but sticking to hardcoded for fields as per current scope unless requested)
-  List<RegistrationFieldConfig> _getDefaultFieldsForProfession(String professionId) {
+  List<RegistrationFieldConfig> _getDefaultFieldsForProfession(
+    String professionId,
+  ) {
     switch (professionId) {
       case Profession.consumerProfessionId:
         return [
@@ -186,7 +204,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             label: 'เบอร์โทรศัพท์',
             hint: 'กรอกเบอร์โทรศัพท์ (ใช้สำหรับยืนยันตัวตน)',
             fieldType: FieldType.phone,
-            isRequired: true,  // Primary identifier
+            isRequired: true, // Primary identifier
             order: 0,
           ),
           RegistrationFieldConfig(
@@ -196,7 +214,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             label: 'อีเมล (ไม่บังคับ)',
             hint: 'กรอกอีเมลของคุณ',
             fieldType: FieldType.email,
-            isRequired: false,  // Optional
+            isRequired: false, // Optional
             order: 1,
           ),
           RegistrationFieldConfig(
@@ -350,7 +368,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     _confirmPasswordController.dispose();
     // Dispose dynamic controllers
     for (final entry in _dynamicFieldValues.entries) {
-      if (entry.key.endsWith('_controller') && entry.value is TextEditingController) {
+      if (entry.key.endsWith('_controller') &&
+          entry.value is TextEditingController) {
         (entry.value as TextEditingController).dispose();
       }
     }
@@ -374,11 +393,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFFD4900A),
-                  Color(0xFF8B6000),
-                  _bgDark,
-                ],
+                colors: [Color(0xFFD4900A), Color(0xFF8B6000), _bgDark],
                 stops: [0.0, 0.45, 1.0],
               ),
             ),
@@ -468,24 +483,33 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
   String _getStepTitle() {
     switch (_currentStep) {
-      case 0: return 'ข้อมูลทั่วไป';
-      case 1: return 'ข้อมูลเข้าสู่ระบบ';
-      case 2: return 'ข้อมูลเพิ่มเติม';
-      case 3: return 'ยืนยันข้อมูล';
-      default: return 'ลงทะเบียน';
+      case 0:
+        return 'ข้อมูลทั่วไป';
+      case 1:
+        return 'ข้อมูลเข้าสู่ระบบ';
+      case 2:
+        return 'ข้อมูลเพิ่มเติม';
+      case 3:
+        return 'ยืนยันข้อมูล';
+      default:
+        return 'ลงทะเบียน';
     }
   }
 
   String _getStepSubtitle() {
     switch (_currentStep) {
-      case 0: return 'กรอกชื่อและเลือกประเภทการลงทะเบียน';
-      case 1: return 'ตั้งชื่อผู้ใช้และรหัสผ่านสำหรับเข้าสู่ระบบ';
-      case 2: return 'กรอกข้อมูลเพิ่มเติมตามประเภทที่เลือก';
-      case 3: return 'ตรวจสอบข้อมูลก่อนยืนยันการลงทะเบียน';
-      default: return '';
+      case 0:
+        return 'กรอกชื่อและเลือกประเภทการลงทะเบียน';
+      case 1:
+        return 'ตั้งชื่อผู้ใช้และรหัสผ่านสำหรับเข้าสู่ระบบ';
+      case 2:
+        return 'กรอกข้อมูลเพิ่มเติมตามประเภทที่เลือก';
+      case 3:
+        return 'ตรวจสอบข้อมูลก่อนยืนยันการลงทะเบียน';
+      default:
+        return '';
     }
   }
-
 
   Widget _buildCurrentStep() {
     switch (_currentStep) {
@@ -535,8 +559,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }
 
   Widget _buildProfessionSelector() {
-    final professionColor = _selectedProfession?.colorHex != null 
-        ? Color(int.parse(_selectedProfession!.colorHex!.replaceFirst('#', '0xFF')))
+    final professionColor = _selectedProfession?.colorHex != null
+        ? Color(
+            int.parse(_selectedProfession!.colorHex!.replaceFirst('#', '0xFF')),
+          )
         : _goldAccent;
 
     return InkWell(
@@ -548,12 +574,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(28),
           border: Border.all(
-            color: _selectedProfession != null ? professionColor.withOpacity(0.5) : Colors.grey[200]!,
+            color: _selectedProfession != null
+                ? professionColor.withOpacity(0.5)
+                : Colors.grey[200]!,
             width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: (_selectedProfession != null ? professionColor : Colors.black).withOpacity(0.04),
+              color:
+                  (_selectedProfession != null ? professionColor : Colors.black)
+                      .withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -573,14 +603,20 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               child: Text(
                 _selectedProfession?.name ?? 'เลือกประเภทการลงทะเบียน',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: _selectedProfession != null ? AppColors.textPrimary : Colors.grey[400],
-                  fontWeight: _selectedProfession != null ? FontWeight.w600 : FontWeight.normal,
+                  color: _selectedProfession != null
+                      ? AppColors.textPrimary
+                      : Colors.grey[400],
+                  fontWeight: _selectedProfession != null
+                      ? FontWeight.w600
+                      : FontWeight.normal,
                 ),
               ),
             ),
             Icon(
-              Icons.unfold_more, 
-              color: _selectedProfession != null ? professionColor : Colors.grey[400],
+              Icons.unfold_more,
+              color: _selectedProfession != null
+                  ? professionColor
+                  : Colors.grey[400],
               size: 20,
             ),
           ],
@@ -593,7 +629,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     // Group professions by category ID
     final Map<String, List<Profession>> groups = {};
     final Map<String, UserCategory> categories = {};
-    
+
     for (var p in _professions) {
       if (!groups.containsKey(p.category.id)) {
         groups[p.category.id] = [];
@@ -604,12 +640,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
     // Sort categories list by displayOrder
     final sortedCatIds = categories.keys.toList()
-      ..sort((a, b) => (categories[a]?.displayOrder ?? 0)
-          .compareTo(categories[b]?.displayOrder ?? 0));
+      ..sort(
+        (a, b) => (categories[a]?.displayOrder ?? 0).compareTo(
+          categories[b]?.displayOrder ?? 0,
+        ),
+      );
 
     // Track which category is expanded for auto-closing others
     String? expandedCatId = _selectedProfession?.category.id;
 
+    final ScrollController scrollController = ScrollController();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -638,28 +678,32 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               const SizedBox(height: 8),
               Expanded(
                 child: Scrollbar(
+                  controller: scrollController,
                   thumbVisibility: true,
                   child: ListView.builder(
+                    controller: scrollController,
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                     itemCount: sortedCatIds.length,
                     itemBuilder: (context, index) {
                       final catId = sortedCatIds[index];
                       final category = categories[catId]!;
                       final proList = groups[catId]!;
-                      
+
                       if (proList.length == 1) {
                         final p = proList.first;
                         final isSelected = _selectedProfession?.id == p.id;
                         return _buildProfessionItem(p, isSelected);
                       }
-                      
+
                       final isExpanded = expandedCatId == catId;
-                      final hasSelectedInGroup = proList.any((p) => _selectedProfession?.id == p.id);
-                      
+                      final hasSelectedInGroup = proList.any(
+                        (p) => _selectedProfession?.id == p.id,
+                      );
+
                       return Theme(
-                        data: Theme.of(context).copyWith(
-                          dividerColor: Colors.transparent,
-                        ),
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
                         child: ExpansionTile(
                           // Use Key that includes expansion state to force rebuild when auto-closing
                           key: Key('${catId}_$isExpanded'),
@@ -690,14 +734,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                             category.name,
                             style: AppTextStyles.bodyMedium.copyWith(
                               fontWeight: FontWeight.normal,
-                              color: hasSelectedInGroup ? AppColors.primary : AppColors.textPrimary,
+                              color: hasSelectedInGroup
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
                             ),
                           ),
                           children: proList.map((p) {
                             final isSelected = _selectedProfession?.id == p.id;
                             return _buildProfessionItem(
-                              p, 
-                              isSelected, 
+                              p,
+                              isSelected,
                               padding: const EdgeInsets.only(left: 20),
                             );
                           }).toList(),
@@ -711,14 +757,18 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() => scrollController.dispose());
   }
 
-  Widget _buildProfessionItem(Profession p, bool isSelected, {EdgeInsets? padding}) {
-    final color = p.colorHex != null 
+  Widget _buildProfessionItem(
+    Profession p,
+    bool isSelected, {
+    EdgeInsets? padding,
+  }) {
+    final color = p.colorHex != null
         ? Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')))
         : _goldAccent;
-        
+
     return ListTile(
       onTap: () {
         setState(() {
@@ -728,11 +778,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         Navigator.pop(context);
       },
       contentPadding: padding ?? EdgeInsets.zero,
-      leading: Icon(
-        _getIconForProfession(p.iconName), 
-        color: color, 
-        size: 22
-      ),
+      leading: Icon(_getIconForProfession(p.iconName), color: color, size: 22),
       title: Text(
         p.name,
         style: AppTextStyles.bodyMedium.copyWith(
@@ -740,13 +786,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
       ),
-      trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20) : null,
+      trailing: isSelected
+          ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+          : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       tileColor: isSelected ? AppColors.primary.withOpacity(0.05) : null,
     );
   }
-
-
 
   /// Step 2: ข้อมูลสำหรับเข้าสู่ระบบ
   Widget _buildStep2LoginInfo() {
@@ -770,9 +816,12 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           prefixIcon: Icons.lock_outline,
           obscureText: _obscurePassword,
           suffixIcon: IconButton(
-            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
             icon: Icon(
-              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              _obscurePassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
               color: Colors.grey[400],
               size: 20,
             ),
@@ -788,9 +837,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           prefixIcon: Icons.lock_outline,
           obscureText: _obscureConfirmPassword,
           suffixIcon: IconButton(
-            onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+            onPressed: () => setState(
+              () => _obscureConfirmPassword = !_obscureConfirmPassword,
+            ),
             icon: Icon(
-              _obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              _obscureConfirmPassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
               color: Colors.grey[400],
               size: 20,
             ),
@@ -803,7 +856,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   /// Step 3: ข้อมูลจำเพาะ - สร้างแบบ Dynamic จาก Profession Config
   Widget _buildStep3SpecificInfo() {
     final profession = _selectedProfession;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -824,16 +877,18 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           ),
         ),
         const SizedBox(height: 28),
-        
+
         // Dynamic fields from profession config
-        ..._professionFields.map((field) => Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: _buildDynamicField(field),
-        )),
+        ..._professionFields.map(
+          (field) => Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _buildDynamicField(field),
+          ),
+        ),
       ],
     );
   }
-  
+
   /// Build dynamic field based on config
   Widget _buildDynamicField(RegistrationFieldConfig field) {
     switch (field.fieldType) {
@@ -849,14 +904,20 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         return _buildDynamicTextField(field);
     }
   }
-  
-  Widget _buildDynamicTextField(RegistrationFieldConfig field, {int maxLines = 1}) {
+
+  Widget _buildDynamicTextField(
+    RegistrationFieldConfig field, {
+    int maxLines = 1,
+  }) {
     // Get or create controller for this field
     if (!_dynamicFieldValues.containsKey('${field.fieldId}_controller')) {
-      _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
+      _dynamicFieldValues['${field.fieldId}_controller'] =
+          TextEditingController();
     }
-    final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
-    
+    final controller =
+        _dynamicFieldValues['${field.fieldId}_controller']
+            as TextEditingController;
+
     TextInputType? keyboardType;
     switch (field.fieldType) {
       case FieldType.email:
@@ -871,12 +932,14 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       default:
         keyboardType = TextInputType.text;
     }
-    
+
     // Check if this is a verified phone field
-    final isVerifiedPhone = field.fieldType == FieldType.phone && 
-        _isPhoneVerified && 
-        _verifiedPhoneNumber == controller.text.replaceAll(RegExp(r'[^0-9]'), '');
-    
+    final isVerifiedPhone =
+        field.fieldType == FieldType.phone &&
+        _isPhoneVerified &&
+        _verifiedPhoneNumber ==
+            controller.text.replaceAll(RegExp(r'[^0-9]'), '');
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -886,18 +949,23 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           prefixIcon: _getIconForFieldType(field.fieldType),
           keyboardType: keyboardType,
           maxLines: maxLines,
-          suffixIcon: isVerifiedPhone 
+          suffixIcon: isVerifiedPhone
               ? const Icon(Icons.verified, color: Colors.green, size: 20)
               : null,
-          onChanged: field.fieldType == FieldType.phone ? (_) {
-            // Reset verification if phone number changes
-            final currentPhone = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
-            if (_verifiedPhoneNumber != currentPhone) {
-              setState(() {
-                _isPhoneVerified = false;
-              });
-            }
-          } : null,
+          onChanged: field.fieldType == FieldType.phone
+              ? (_) {
+                  // Reset verification if phone number changes
+                  final currentPhone = controller.text.replaceAll(
+                    RegExp(r'[^0-9]'),
+                    '',
+                  );
+                  if (_verifiedPhoneNumber != currentPhone) {
+                    setState(() {
+                      _isPhoneVerified = false;
+                    });
+                  }
+                }
+              : null,
         ),
         if (isVerifiedPhone)
           Padding(
@@ -908,10 +976,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                 const SizedBox(width: 4),
                 Text(
                   'ยืนยันเบอร์โทรศัพท์แล้ว',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.green, fontSize: 12),
                 ),
               ],
             ),
@@ -919,13 +984,17 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       ],
     );
   }
-  
+
   Widget _buildDynamicDateField(RegistrationFieldConfig field) {
     if (!_dynamicFieldValues.containsKey('${field.fieldId}_controller')) {
-      _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController();
+      _dynamicFieldValues['${field.fieldId}_controller'] =
+          TextEditingController();
     }
-    final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController;
-    final DateTime? selectedDate = _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
+    final controller =
+        _dynamicFieldValues['${field.fieldId}_controller']
+            as TextEditingController;
+    final DateTime? selectedDate =
+        _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
 
     return ThaiBuddhistDatePickerField(
       value: selectedDate,
@@ -944,16 +1013,14 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     if (!_dynamicFieldValues.containsKey('${field.fieldId}_address')) {
       _dynamicFieldValues['${field.fieldId}_address'] = null;
     }
-    final currentAddress = _dynamicFieldValues['${field.fieldId}_address'] as ThaiAddress?;
+    final currentAddress =
+        _dynamicFieldValues['${field.fieldId}_address'] as ThaiAddress?;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.grey[200]!, width: 1.5),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -961,7 +1028,11 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.location_on_outlined, color: Colors.grey[400], size: 22),
+              Icon(
+                Icons.location_on_outlined,
+                color: Colors.grey[400],
+                size: 22,
+              ),
               const SizedBox(width: 12),
               Text(
                 '${field.label}${field.isRequired ? " *" : ""}',
@@ -978,7 +1049,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               setState(() {
                 _dynamicFieldValues['${field.fieldId}_address'] = address;
                 // Also store a string representation if needed by the backend
-                _dynamicFieldValues['${field.fieldId}_controller'] = TextEditingController(text: address.fullAddress);
+                _dynamicFieldValues['${field.fieldId}_controller'] =
+                    TextEditingController(text: address.fullAddress);
               });
             },
           ),
@@ -986,7 +1058,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       ),
     );
   }
-  
+
   Widget _buildDynamicImageField(RegistrationFieldConfig field) {
     final fieldKey = _resolveFieldKey(field);
     final imageUrl = _attachmentFieldUrls[fieldKey];
@@ -1008,7 +1080,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       },
     );
   }
-  
+
   IconData _getIconForFieldType(FieldType type) {
     switch (type) {
       case FieldType.email:
@@ -1032,9 +1104,6 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     }
   }
 
-
-
-  
   String _resolveFieldKey(RegistrationFieldConfig field) {
     return field.fieldKey ?? field.fieldId;
   }
@@ -1095,15 +1164,24 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             children: [
               _buildSummaryItem('ประเภท', _selectedProfession?.name ?? '-'),
               const Divider(height: 24),
-              _buildSummaryItem('ชื่อ-นามสกุล',
-                  '${_firstNameController.text} ${_lastNameController.text}'),
+              _buildSummaryItem(
+                'ชื่อ-นามสกุล',
+                '${_firstNameController.text} ${_lastNameController.text}',
+              ),
               _buildSummaryItem('ชื่อผู้ใช้', _usernameController.text),
               const Divider(height: 24),
               // Dynamic fields summary
-              ..._professionFields.where((f) => f.fieldType != FieldType.image).map((field) {
-                final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
-                return _buildSummaryItem(field.label, controller?.text ?? '-');
-              }),
+              ..._professionFields
+                  .where((f) => f.fieldType != FieldType.image)
+                  .map((field) {
+                    final controller =
+                        _dynamicFieldValues['${field.fieldId}_controller']
+                            as TextEditingController?;
+                    return _buildSummaryItem(
+                      field.label,
+                      controller?.text ?? '-',
+                    );
+                  }),
             ],
           ),
         ),
@@ -1271,17 +1349,17 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             obscureText: obscureText,
             maxLines: maxLines,
             onChanged: onChanged,
-            style: const TextStyle(
-              color: Color(0xFF1A1A1A),
-              fontSize: 15,
-            ),
+            style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 15),
             decoration: InputDecoration(
               hintText: hintText,
               hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
               prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
               suffixIcon: suffixIcon,
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
           ),
         ),
@@ -1326,7 +1404,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
       ),
     );
@@ -1346,10 +1427,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Colors.grey[200]!,
-            width: 1.5,
-          ),
+          border: Border.all(color: Colors.grey[200]!, width: 1.5),
         ),
         child: Row(
           children: [
@@ -1364,7 +1442,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               ),
               child: Icon(
                 imagePath != null ? Icons.check_circle : icon,
-                color: imagePath != null ? AppColors.primary : AppColors.textHint,
+                color: imagePath != null
+                    ? AppColors.primary
+                    : AppColors.textHint,
                 size: 28,
               ),
             ),
@@ -1443,7 +1523,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                     ),
                   )
                 : Text(
-                    _currentStep == _totalSteps - 1 ? 'ยืนยันลงทะเบียน' : 'ถัดไป',
+                    _currentStep == _totalSteps - 1
+                        ? 'ยืนยันลงทะเบียน'
+                        : 'ถัดไป',
                     style: AppTextStyles.button.copyWith(
                       color: Colors.black,
                       fontSize: 17,
@@ -1504,44 +1586,49 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       if (_currentStep == 2) {
         // Only check for Consumers who have 'phone_controller'
         // If other professions use phone as ID later, add checking here
-        final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
-        final phoneNumber = phoneController?.text.replaceAll(RegExp(r'[^0-9]'), '') ?? '';
-        
-        if (phoneNumber.isNotEmpty) {
-           final exists = await userRepo.isPhoneExists(phoneNumber);
-           if (exists) {
-             _showSnackBar('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว กรุณาใช้เบอร์อื่น');
-             setState(() => _isLoading = false);
-             return;
-           }
+        final phoneController =
+            _dynamicFieldValues['phone_controller'] as TextEditingController?;
+        final phoneNumber =
+            phoneController?.text.replaceAll(RegExp(r'[^0-9]'), '') ?? '';
 
-           // OTP Verification Logic
-           if (AppConfig.enableOtpVerification) {
-              // Check if phone number changed from previously verified
-              if (_verifiedPhoneNumber != phoneNumber) {
-                _isPhoneVerified = false;
+        if (phoneNumber.isNotEmpty) {
+          final exists = await userRepo.isPhoneExists(phoneNumber);
+          if (exists) {
+            _showSnackBar('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว กรุณาใช้เบอร์อื่น');
+            setState(() => _isLoading = false);
+            return;
+          }
+
+          // OTP Verification Logic
+          if (AppConfig.enableOtpVerification) {
+            // Check if phone number changed from previously verified
+            if (_verifiedPhoneNumber != phoneNumber) {
+              _isPhoneVerified = false;
+            }
+
+            if (!_isPhoneVerified) {
+              // Show OTP verification dialog
+              // Ensure we hide loading before showing dialog?
+              // Dialog might be pushed on top.
+
+              final verified = await OtpVerificationDialog.show(
+                context,
+                phoneNumber,
+              );
+
+              if (!verified) {
+                _showSnackBar('กรุณายืนยันเบอร์โทรศัพท์');
+                setState(() => _isLoading = false);
+                return;
               }
-              
-              if (!_isPhoneVerified) {
-                // Show OTP verification dialog
-                // Ensure we hide loading before showing dialog?
-                // Dialog might be pushed on top.
-                
-                final verified = await OtpVerificationDialog.show(context, phoneNumber);
-                
-                if (!verified) {
-                  _showSnackBar('กรุณายืนยันเบอร์โทรศัพท์');
-                  setState(() => _isLoading = false);
-                  return;
-                }
-                
-                // Mark as verified
-                setState(() {
-                  _isPhoneVerified = true;
-                  _verifiedPhoneNumber = phoneNumber;
-                });
-              }
-           }
+
+              // Mark as verified
+              setState(() {
+                _isPhoneVerified = true;
+                _verifiedPhoneNumber = phoneNumber;
+              });
+            }
+          }
         }
       }
 
@@ -1556,7 +1643,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       }
     } catch (e) {
       debugPrint('Error validating step: $e');
-       _showSnackBar('เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
+      _showSnackBar('เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
       setState(() => _isLoading = false);
     }
   }
@@ -1567,107 +1654,136 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     switch (_currentStep) {
       case 0:
         if (_firstNameController.text.isEmpty) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณากรอกชื่อ',
-            type: _ValidationIssueType.form,
-            stepIndex: 0,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณากรอกชื่อ',
+              type: _ValidationIssueType.form,
+              stepIndex: 0,
+            ),
+          );
         }
         if (_lastNameController.text.isEmpty) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณากรอกนามสกุล',
-            type: _ValidationIssueType.form,
-            stepIndex: 0,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณากรอกนามสกุล',
+              type: _ValidationIssueType.form,
+              stepIndex: 0,
+            ),
+          );
         }
         if (_selectedProfession == null) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณาเลือกประเภทการลงทะเบียน',
-            type: _ValidationIssueType.form,
-            stepIndex: 0,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณาเลือกประเภทการลงทะเบียน',
+              type: _ValidationIssueType.form,
+              stepIndex: 0,
+            ),
+          );
         }
         break;
 
       case 1:
         if (_usernameController.text.isEmpty) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณากรอกชื่อผู้ใช้',
-            type: _ValidationIssueType.form,
-            stepIndex: 1,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณากรอกชื่อผู้ใช้',
+              type: _ValidationIssueType.form,
+              stepIndex: 1,
+            ),
+          );
         }
         if (_passwordController.text.isEmpty) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณากรอกรหัสผ่าน',
-            type: _ValidationIssueType.form,
-            stepIndex: 1,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณากรอกรหัสผ่าน',
+              type: _ValidationIssueType.form,
+              stepIndex: 1,
+            ),
+          );
         }
         if (_passwordController.text.length < PasswordPolicy.minLength) {
-          issues.add(_ValidationIssue(
-            message: PasswordPolicy.minLengthMessage,
-            type: _ValidationIssueType.form,
-            stepIndex: 1,
-          ));
+          issues.add(
+            _ValidationIssue(
+              message: PasswordPolicy.minLengthMessage,
+              type: _ValidationIssueType.form,
+              stepIndex: 1,
+            ),
+          );
         }
         if (_passwordController.text != _confirmPasswordController.text) {
-          issues.add(const _ValidationIssue(
-            message: 'รหัสผ่านไม่ตรงกัน',
-            type: _ValidationIssueType.form,
-            stepIndex: 1,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'รหัสผ่านไม่ตรงกัน',
+              type: _ValidationIssueType.form,
+              stepIndex: 1,
+            ),
+          );
         }
         break;
 
       case 2:
         // Validate required dynamic fields
         for (final field in _professionFields) {
-          final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+          final controller =
+              _dynamicFieldValues['${field.fieldId}_controller']
+                  as TextEditingController?;
           if (field.fieldType != FieldType.image && field.isRequired) {
             if (controller == null || controller.text.isEmpty) {
-              issues.add(_ValidationIssue(
-                message: 'กรุณากรอก ${field.label}',
-                type: _ValidationIssueType.form,
-                stepIndex: 2,
-              ));
+              issues.add(
+                _ValidationIssue(
+                  message: 'กรุณากรอก ${field.label}',
+                  type: _ValidationIssueType.form,
+                  stepIndex: 2,
+                ),
+              );
             }
 
             if (controller != null && field.fieldType == FieldType.phone) {
               final phone = controller.text.replaceAll(RegExp(r'[^0-9]'), '');
               final phoneRegex = RegExp(r'^0[0-9]{8,9}$');
               if (!phoneRegex.hasMatch(phone)) {
-                issues.add(const _ValidationIssue(
-                  message: 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง',
-                  type: _ValidationIssueType.form,
-                  stepIndex: 2,
-                ));
+                issues.add(
+                  const _ValidationIssue(
+                    message: 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง',
+                    type: _ValidationIssueType.form,
+                    stepIndex: 2,
+                  ),
+                );
               }
             }
 
-            if (controller != null && field.fieldType == FieldType.email && controller.text.isNotEmpty) {
-              final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+            if (controller != null &&
+                field.fieldType == FieldType.email &&
+                controller.text.isNotEmpty) {
+              final emailRegex = RegExp(
+                r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+              );
               if (!emailRegex.hasMatch(controller.text)) {
-                issues.add(const _ValidationIssue(
-                  message: 'รูปแบบอีเมลไม่ถูกต้อง',
-                  type: _ValidationIssueType.form,
-                  stepIndex: 2,
-                ));
+                issues.add(
+                  const _ValidationIssue(
+                    message: 'รูปแบบอีเมลไม่ถูกต้อง',
+                    type: _ValidationIssueType.form,
+                    stepIndex: 2,
+                  ),
+                );
               }
             }
           }
 
-          final needsAttachment = field.requiresAttachment ||
+          final needsAttachment =
+              field.requiresAttachment ||
               field.attachmentRequiredWhenFilled ||
               (field.fieldType == FieldType.image && field.isRequired);
           if (needsAttachment) {
             final fieldKey = _resolveFieldKey(field);
             if (!_attachmentFieldUrls.containsKey(fieldKey)) {
-              issues.add(_ValidationIssue(
-                message: 'กรุณาอัปโหลดหลักฐานสำหรับ ${field.label}',
-                type: _ValidationIssueType.attachment,
-                stepIndex: 2,
-              ));
+              issues.add(
+                _ValidationIssue(
+                  message: 'กรุณาอัปโหลดหลักฐานสำหรับ ${field.label}',
+                  type: _ValidationIssueType.attachment,
+                  stepIndex: 2,
+                ),
+              );
             }
           }
         }
@@ -1675,11 +1791,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
       case 3:
         if (!_acceptTerms) {
-          issues.add(const _ValidationIssue(
-            message: 'กรุณายอมรับข้อกำหนดการใช้งาน',
-            type: _ValidationIssueType.form,
-            stepIndex: 3,
-          ));
+          issues.add(
+            const _ValidationIssue(
+              message: 'กรุณายอมรับข้อกำหนดการใช้งาน',
+              type: _ValidationIssueType.form,
+              stepIndex: 3,
+            ),
+          );
         }
         break;
 
@@ -1690,17 +1808,19 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     return issues;
   }
 
-  Future<void> _showValidationIssuesDialog(List<_ValidationIssue> issues) async {
+  Future<void> _showValidationIssuesDialog(
+    List<_ValidationIssue> issues,
+  ) async {
     if (issues.isEmpty || !mounted) return;
 
     final firstFormIssue = issues.cast<_ValidationIssue?>().firstWhere(
-          (issue) => issue?.type == _ValidationIssueType.form,
-          orElse: () => null,
-        );
+      (issue) => issue?.type == _ValidationIssueType.form,
+      orElse: () => null,
+    );
     final firstAttachmentIssue = issues.cast<_ValidationIssue?>().firstWhere(
-          (issue) => issue?.type == _ValidationIssueType.attachment,
-          orElse: () => null,
-        );
+      (issue) => issue?.type == _ValidationIssueType.attachment,
+      orElse: () => null,
+    );
 
     await showDialog<void>(
       context: context,
@@ -1760,7 +1880,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               },
               icon: const Icon(Icons.edit_outlined),
               label: Text(
-                firstFormIssue.stepIndex == 2 ? 'ไปกรอกฟอร์มเพิ่มเติม' : 'ไปกรอกฟอร์มที่ขาด',
+                firstFormIssue.stepIndex == 2
+                    ? 'ไปกรอกฟอร์มเพิ่มเติม'
+                    : 'ไปกรอกฟอร์มที่ขาด',
               ),
             ),
           if (firstAttachmentIssue != null)
@@ -1797,17 +1919,20 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     try {
       final supabase = Supabase.instance.client;
       final userRepo = UserRepository(supabase);
-      
+
       // 1. Check if username already exists
-      final usernameExists = await userRepo.isUsernameExists(_usernameController.text);
+      final usernameExists = await userRepo.isUsernameExists(
+        _usernameController.text,
+      );
       if (usernameExists) {
         throw Exception('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว');
       }
-      
+
       // 2. Get phone from dynamic fields
-      final phoneController = _dynamicFieldValues['phone_controller'] as TextEditingController?;
+      final phoneController =
+          _dynamicFieldValues['phone_controller'] as TextEditingController?;
       final phone = phoneController?.text.replaceAll(RegExp(r'[^0-9]'), '');
-      
+
       // Check if phone already exists
       if (phone != null && phone.isNotEmpty) {
         final phoneExists = await userRepo.isPhoneExists(phone);
@@ -1815,17 +1940,20 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           throw Exception('เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว');
         }
       }
-      
+
       // 3. Determine user type based on profession category
       auth.UserType userType;
       if (_selectedProfession?.category == UserCategory.consumer) {
         userType = auth.UserType.consumer;
-      } else if (_selectedProfession?.nameEn?.toLowerCase().contains('clinic') == true) {
+      } else if (_selectedProfession?.nameEn?.toLowerCase().contains(
+            'clinic',
+          ) ==
+          true) {
         userType = auth.UserType.clinic;
       } else {
         userType = auth.UserType.expert;
       }
-      
+
       // 4. Create user in database
       final user = await userRepo.createUser(
         userType: userType,
@@ -1836,15 +1964,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         password: _passwordController.text, // TODO: Hash password
         phone: phone,
       );
-      
+
       debugPrint('✅ User created with ID: ${user.id}');
-      
+
       // 5. Create profile based on user type
       if (userType == auth.UserType.consumer) {
         // Get email and birthday from dynamic fields
-        final emailController = _dynamicFieldValues['email_controller'] as TextEditingController?;
+        final emailController =
+            _dynamicFieldValues['email_controller'] as TextEditingController?;
         final birthday = _dynamicFieldValues['birthday_date'] as DateTime?;
-        
+
         await userRepo.createConsumerProfile(
           userId: user.id,
           birthday: birthday,
@@ -1852,14 +1981,28 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         debugPrint('✅ Consumer profile created');
       } else if (userType == auth.UserType.expert) {
         // Get expert-specific fields
-        final businessNameController = _dynamicFieldValues['business_name_controller'] as TextEditingController?;
-        final specialtyController = _dynamicFieldValues['specialty_controller'] as TextEditingController?;
-        final businessPhoneController = _dynamicFieldValues['business_phone_controller'] as TextEditingController?;
-        final businessEmailController = _dynamicFieldValues['business_email_controller'] as TextEditingController?;
-        final businessAddressController = _dynamicFieldValues['business_address_controller'] as TextEditingController?;
-        final experienceController = _dynamicFieldValues['experience_controller'] as TextEditingController?;
-        final descriptionController = _dynamicFieldValues['description_controller'] as TextEditingController?;
-        
+        final businessNameController =
+            _dynamicFieldValues['business_name_controller']
+                as TextEditingController?;
+        final specialtyController =
+            _dynamicFieldValues['specialty_controller']
+                as TextEditingController?;
+        final businessPhoneController =
+            _dynamicFieldValues['business_phone_controller']
+                as TextEditingController?;
+        final businessEmailController =
+            _dynamicFieldValues['business_email_controller']
+                as TextEditingController?;
+        final businessAddressController =
+            _dynamicFieldValues['business_address_controller']
+                as TextEditingController?;
+        final experienceController =
+            _dynamicFieldValues['experience_controller']
+                as TextEditingController?;
+        final descriptionController =
+            _dynamicFieldValues['description_controller']
+                as TextEditingController?;
+
         await userRepo.createExpertProfile(
           userId: user.id,
           businessName: businessNameController?.text,
@@ -1873,14 +2016,28 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         debugPrint('✅ Expert profile created');
       } else if (userType == auth.UserType.clinic) {
         // Get clinic-specific fields
-        final clinicNameController = _dynamicFieldValues['clinic_name_controller'] as TextEditingController?;
-        final licenseNumberController = _dynamicFieldValues['license_number_controller'] as TextEditingController?;
-        final serviceTypeController = _dynamicFieldValues['service_type_controller'] as TextEditingController?;
-        final businessPhoneController = _dynamicFieldValues['business_phone_controller'] as TextEditingController?;
-        final businessEmailController = _dynamicFieldValues['business_email_controller'] as TextEditingController?;
-        final businessAddressController = _dynamicFieldValues['business_address_controller'] as TextEditingController?;
-        final descriptionController = _dynamicFieldValues['description_controller'] as TextEditingController?;
-        
+        final clinicNameController =
+            _dynamicFieldValues['clinic_name_controller']
+                as TextEditingController?;
+        final licenseNumberController =
+            _dynamicFieldValues['license_number_controller']
+                as TextEditingController?;
+        final serviceTypeController =
+            _dynamicFieldValues['service_type_controller']
+                as TextEditingController?;
+        final businessPhoneController =
+            _dynamicFieldValues['business_phone_controller']
+                as TextEditingController?;
+        final businessEmailController =
+            _dynamicFieldValues['business_email_controller']
+                as TextEditingController?;
+        final businessAddressController =
+            _dynamicFieldValues['business_address_controller']
+                as TextEditingController?;
+        final descriptionController =
+            _dynamicFieldValues['description_controller']
+                as TextEditingController?;
+
         await userRepo.createClinicProfile(
           userId: user.id,
           clinicName: clinicNameController?.text,
@@ -1893,23 +2050,29 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         );
         debugPrint('✅ Clinic profile created');
       }
-      
+
       // 6. Save dynamic field values
       final Map<String, String> fieldValues = {};
       for (final field in _professionFields) {
         final fieldKey = _resolveFieldKey(field);
-        final controller = _dynamicFieldValues['${field.fieldId}_controller'] as TextEditingController?;
+        final controller =
+            _dynamicFieldValues['${field.fieldId}_controller']
+                as TextEditingController?;
         if (controller != null && controller.text.isNotEmpty) {
           fieldValues[fieldKey] = controller.text;
         }
-        final dateValue = _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
+        final dateValue =
+            _dynamicFieldValues['${field.fieldId}_date'] as DateTime?;
         if (dateValue != null) {
           fieldValues[fieldKey] = dateValue.toIso8601String();
         }
       }
-      
+
       if (fieldValues.isNotEmpty) {
-        final registrationDataSaved = await userRepo.saveRegistrationDataSafe(user.id, fieldValues);
+        final registrationDataSaved = await userRepo.saveRegistrationDataSafe(
+          user.id,
+          fieldValues,
+        );
         if (registrationDataSaved) {
           debugPrint('✅ Registration data saved: ${fieldValues.length} fields');
         } else {
@@ -1930,13 +2093,21 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           username: _usernameController.text,
           phone: phone,
           profileImageUrl: user.profileImageUrl,
-          registrationData: fieldValues.isNotEmpty ? fieldValues : {'activated_at': DateTime.now().toIso8601String()},
+          registrationData: fieldValues.isNotEmpty
+              ? fieldValues
+              : {'activated_at': DateTime.now().toIso8601String()},
         );
         await _persistAttachments(application.id);
-        await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.pending);
+        await userRepo.updateVerificationStatus(
+          user.id,
+          auth.VerificationStatus.pending,
+        );
         debugPrint('✅ Registration application created: ${application.id}');
       } else {
-        await userRepo.updateVerificationStatus(user.id, auth.VerificationStatus.verified);
+        await userRepo.updateVerificationStatus(
+          user.id,
+          auth.VerificationStatus.verified,
+        );
         debugPrint('✅ User verified (no verification required)');
       }
 
@@ -1958,17 +2129,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         setState(() {
           _isLoading = false;
         });
-        _showSnackBar('เกิดข้อผิดพลาด: ${e.toString().replaceAll('Exception: ', '')}');
+        _showSnackBar(
+          'เกิดข้อผิดพลาด: ${e.toString().replaceAll('Exception: ', '')}',
+        );
       }
     }
   }
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 

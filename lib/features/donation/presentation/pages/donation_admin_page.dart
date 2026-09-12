@@ -28,7 +28,8 @@ class DonationAdminPage extends StatefulWidget {
   State<DonationAdminPage> createState() => _DonationAdminPageState();
 }
 
-class _DonationAdminPageState extends State<DonationAdminPage> with SingleTickerProviderStateMixin {
+class _DonationAdminPageState extends State<DonationAdminPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late DonationRepository _repository;
   String? _currentUserId;
@@ -43,12 +44,17 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is int) {
         _tabController.animateTo(args);
-      } else if (args is Map<String, dynamic> && args.containsKey('initialIndex')) {
+      } else if (args is Map<String, dynamic> &&
+          args.containsKey('initialIndex')) {
         _tabController.animateTo(args['initialIndex'] as int);
       }
     });
 
-    _tabController = TabController(length: 5, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(
+      length: 5,
+      vsync: this,
+      initialIndex: initialIndex,
+    );
     _repository = DonationRepository(Supabase.instance.client);
     _loadUserContext();
   }
@@ -86,16 +92,27 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      Text(
-                        'จัดการระบบบริจาค',
-                        style: AppTextStyles.heading3.copyWith(color: Colors.white),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'ระบบบริจาคและสิทธิ์อาสาอุบัติเหตุ',
+                            style: AppTextStyles.heading3.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -123,7 +140,11 @@ class _DonationAdminPageState extends State<DonationAdminPage> with SingleTicker
         controller: _tabController,
         children: [
           _CategoryManagementPanel(repository: _repository),
-          _ApprovalCenterPanel(repository: _repository, userId: _currentUserId, isStorageAdmin: _isStorageAdmin),
+          _ApprovalCenterPanel(
+            repository: _repository,
+            userId: _currentUserId,
+            isStorageAdmin: _isStorageAdmin,
+          ),
           _ResponderHelpPanel(userId: _currentUserId),
           const DonationReportPanel(),
           const BeneficiaryAdminPanel(),
@@ -139,13 +160,14 @@ class _CategoryManagementPanel extends StatefulWidget {
   const _CategoryManagementPanel({required this.repository});
 
   @override
-  State<_CategoryManagementPanel> createState() => _CategoryManagementPanelState();
+  State<_CategoryManagementPanel> createState() =>
+      _CategoryManagementPanelState();
 }
 
 class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
   List<DonationCategory> _categories = [];
   List<Profession> _volunteerProfessions = []; // สำหรับ dialog สิทธิ์จิตอาสา
-  List<UserCategory> _userCategories = [];      // สำหรับ dialog Flow อนุมัติ
+  List<UserCategory> _userCategories = []; // สำหรับ dialog Flow อนุมัติ
   bool _isLoading = true;
 
   @override
@@ -180,7 +202,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
         _isLoading = false;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
     }
   }
 
@@ -191,20 +215,48 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     bool isSaving = false;
 
     final List<Map<String, dynamic>> availableIcons = [
-      {'name': 'emergency_share', 'icon': Icons.emergency_share, 'label': 'ฉุกเฉิน / แชร์'},
+      {
+        'name': 'emergency_share',
+        'icon': Icons.emergency_share,
+        'label': 'ฉุกเฉิน / แชร์',
+      },
       {'name': 'gavel', 'icon': Icons.gavel, 'label': 'กฎหมาย / ค้อน'},
-      {'name': 'local_fire_department', 'icon': Icons.local_fire_department, 'label': 'ไฟไหม้ / ดับเพลิง'},
+      {
+        'name': 'local_fire_department',
+        'icon': Icons.local_fire_department,
+        'label': 'ไฟไหม้ / ดับเพลิง',
+      },
       {'name': 'water_damage', 'icon': Icons.water_damage, 'label': 'น้ำท่วม'},
       {'name': 'payments', 'icon': Icons.payments, 'label': 'การเงิน'},
-      {'name': 'inventory_2', 'icon': Icons.inventory_2, 'label': 'สิ่งของ / กล่อง'},
+      {
+        'name': 'inventory_2',
+        'icon': Icons.inventory_2,
+        'label': 'สิ่งของ / กล่อง',
+      },
       {'name': 'restaurant', 'icon': Icons.restaurant, 'label': 'อาหาร'},
       {'name': 'favorite', 'icon': Icons.favorite, 'label': 'ความรัก / หัวใจ'},
       {'name': 'home', 'icon': Icons.home, 'label': 'ที่พัก / บ้าน'},
-      {'name': 'local_shipping', 'icon': Icons.local_shipping, 'label': 'เดินทาง / ขนส่ง'},
-      {'name': 'elderly', 'icon': Icons.elderly, 'label': 'ผู้สูงอายุ / ผู้ป่วย'},
-      {'name': 'healing', 'icon': Icons.healing, 'label': 'ปฐมพยาบาล / การแพทย์'},
+      {
+        'name': 'local_shipping',
+        'icon': Icons.local_shipping,
+        'label': 'เดินทาง / ขนส่ง',
+      },
+      {
+        'name': 'elderly',
+        'icon': Icons.elderly,
+        'label': 'ผู้สูงอายุ / ผู้ป่วย',
+      },
+      {
+        'name': 'healing',
+        'icon': Icons.healing,
+        'label': 'ปฐมพยาบาล / การแพทย์',
+      },
       {'name': 'pets', 'icon': Icons.pets, 'label': 'สัตว์เลี้ยง'},
-      {'name': 'warning', 'icon': Icons.warning_amber_rounded, 'label': 'แจ้งเตือน / ระวัง'},
+      {
+        'name': 'warning',
+        'icon': Icons.warning_amber_rounded,
+        'label': 'แจ้งเตือน / ระวัง',
+      },
     ];
 
     String selectedIcon = category?.iconName ?? 'favorite';
@@ -216,49 +268,73 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(category == null ? 'เพิ่มหมวดหมู่' : 'แก้ไขหมวดหมู่', style: const TextStyle(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            category == null ? 'เพิ่มหมวดหมู่' : 'แก้ไขหมวดหมู่',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ชื่อหมวดหมู่')),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'ชื่อหมวดหมู่'),
+                ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedIcon,
                   decoration: InputDecoration(
                     labelText: 'สัญลักษณ์/ไอคอน',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                   ),
-                  items: availableIcons.map((i) => DropdownMenuItem(
-                    value: i['name'] as String,
-                    child: Row(
-                      children: [
-                        Icon(i['icon'] as IconData, color: Colors.teal),
-                        const SizedBox(width: 12),
-                        Text(i['label'] as String),
-                      ]
-                    )
-                  )).toList(),
+                  items: availableIcons
+                      .map(
+                        (i) => DropdownMenuItem(
+                          value: i['name'] as String,
+                          child: Row(
+                            children: [
+                              Icon(i['icon'] as IconData, color: Colors.teal),
+                              const SizedBox(width: 12),
+                              Text(i['label'] as String),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (val) {
-                     if (val != null) {
-                       setDialogState(() {
-                         selectedIcon = val;
-                         iconController.text = val;
-                       });
-                     }
-                  }
+                    if (val != null) {
+                      setDialogState(() {
+                        selectedIcon = val;
+                        iconController.text = val;
+                      });
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  title: const Text('เป็นเหตุฉุกเฉิน?', style: TextStyle(fontWeight: FontWeight.w500)),
+                  title: const Text(
+                    'เป็นเหตุฉุกเฉิน?',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
                   value: isEmergency,
                   activeColor: Colors.redAccent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   tileColor: Colors.grey.shade50,
-                  onChanged: isSaving ? null : (val) => setDialogState(() => isEmergency = val),
+                  onChanged: isSaving
+                      ? null
+                      : (val) => setDialogState(() => isEmergency = val),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
               ],
@@ -275,7 +351,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   : () async {
                       if (nameController.text.trim().isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('กรุณากรอกชื่อหมวดหมู่')),
+                          const SnackBar(
+                            content: Text('กรุณากรอกชื่อหมวดหมู่'),
+                          ),
                         );
                         return;
                       }
@@ -285,23 +363,30 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           'name': nameController.text.trim(),
                           'icon_name': selectedIcon, // Save the selected icon
                           'is_emergency': isEmergency,
-                          'volunteer_profession_ids': category?.volunteerProfessionIds ?? [],
+                          'volunteer_profession_ids':
+                              category?.volunteerProfessionIds ?? [],
                           // ไม่แตะ approver_profession_ids — จัดการใน Flow อนุมัติ dialog
-                          'approver_profession_ids': category?.approverProfessionIds ?? [],
+                          'approver_profession_ids':
+                              category?.approverProfessionIds ?? [],
                         };
                         if (category == null) {
                           await widget.repository.createCategory(data);
                         } else {
-                          await widget.repository.updateCategory(category.id, data);
+                          await widget.repository.updateCategory(
+                            category.id,
+                            data,
+                          );
                         }
                         await _loadCategories();
                         if (mounted) {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(category == null
-                                  ? 'เพิ่มหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓'
-                                  : 'บันทึกหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓'),
+                              content: Text(
+                                category == null
+                                    ? 'เพิ่มหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓'
+                                    : 'บันทึกหมวดหมู่ "${nameController.text.trim()}" สำเร็จ ✓',
+                              ),
                               backgroundColor: Colors.green,
                               duration: const Duration(seconds: 3),
                             ),
@@ -312,7 +397,10 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                         setDialogState(() => isSaving = false);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('บันทึกไม่สำเร็จ: $e'), backgroundColor: Colors.red),
+                            SnackBar(
+                              content: Text('บันทึกไม่สำเร็จ: $e'),
+                              backgroundColor: Colors.red,
+                            ),
                           );
                         }
                       }
@@ -325,7 +413,10 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('บันทึก'),
             ),
@@ -343,19 +434,28 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       return;
     }
 
-    List<String> selectedVolunteers = List.from(category.volunteerProfessionIds);
+    List<String> selectedVolunteers = List.from(
+      category.volunteerProfessionIds,
+    );
     bool isSaving = false;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               const Icon(Icons.volunteer_activism, color: Colors.blue),
               const SizedBox(width: 8),
-              const Expanded(child: Text('สิทธิ์จิตอาสา', style: TextStyle(fontWeight: FontWeight.bold))),
+              const Expanded(
+                child: Text(
+                  'สิทธิ์จิตอาสา',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -363,29 +463,49 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('เลือกวิชาชีพที่มีสิทธิ์ให้ความช่วยเหลือในหมวด "${category.name}"',
-                    style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                Text(
+                  'เลือกวิชาชีพที่มีสิทธิ์ให้ความช่วยเหลือในหมวด "${category.name}"',
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                ),
                 const SizedBox(height: 16),
                 ..._volunteerProfessions.map((prof) {
                   final isSelected = selectedVolunteers.contains(prof.id);
                   return Card(
                     elevation: 0,
-                    color: isSelected ? Colors.blue.withOpacity(0.05) : Colors.grey.shade50,
+                    color: isSelected
+                        ? Colors.blue.withOpacity(0.05)
+                        : Colors.grey.shade50,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: isSelected ? Colors.blue.withOpacity(0.3) : Colors.transparent),
+                      side: BorderSide(
+                        color: isSelected
+                            ? Colors.blue.withOpacity(0.3)
+                            : Colors.transparent,
+                      ),
                     ),
                     child: CheckboxListTile(
-                      title: Text(prof.name, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                      title: Text(
+                        prof.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
                       value: isSelected,
                       activeColor: Colors.blue,
                       controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: isSaving ? null : (val) {
-                        setDialogState(() {
-                          if (val == true) selectedVolunteers.add(prof.id);
-                          else selectedVolunteers.remove(prof.id);
-                        });
-                      },
+                      onChanged: isSaving
+                          ? null
+                          : (val) {
+                              setDialogState(() {
+                                if (val == true)
+                                  selectedVolunteers.add(prof.id);
+                                else
+                                  selectedVolunteers.remove(prof.id);
+                              });
+                            },
                     ),
                   );
                 }),
@@ -406,7 +526,10 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                         final data = {
                           'volunteer_profession_ids': selectedVolunteers,
                         };
-                        await widget.repository.updateCategory(category.id, data);
+                        await widget.repository.updateCategory(
+                          category.id,
+                          data,
+                        );
                         await _loadCategories();
                         if (mounted) {
                           Navigator.pop(context);
@@ -421,18 +544,36 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                         setDialogState(() => isSaving = false);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
+                            SnackBar(
+                              content: Text('เกิดข้อผิดพลาด: $e'),
+                              backgroundColor: Colors.red,
+                            ),
                           );
                         }
                       }
                     },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: isSaving
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('บันทึก', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'บันทึก',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
           ],
         ),
@@ -459,11 +600,16 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
           IconData catIcon(String id) {
             final c = _userCategories.where((c) => c.id == id).firstOrNull;
             switch (c?.iconName) {
-              case 'gavel': return Icons.gavel;
-              case 'store': return Icons.store;
-              case 'shopping_cart': return Icons.shopping_cart;
-              case 'local_hospital': return Icons.local_hospital;
-              default: return Icons.group;
+              case 'gavel':
+                return Icons.gavel;
+              case 'store':
+                return Icons.store;
+              case 'shopping_cart':
+                return Icons.shopping_cart;
+              case 'local_hospital':
+                return Icons.local_hospital;
+              default:
+                return Icons.group;
             }
           }
 
@@ -476,10 +622,21 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Flow การอนุมัติ',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                      Text(category.name,
-                          style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.normal)),
+                      const Text(
+                        'Flow การอนุมัติ',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        category.name,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -493,22 +650,38 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // — Header —
-                    Row(children: [
-                      const Icon(Icons.add_circle_outline, size: 14, color: Colors.teal),
-                      const SizedBox(width: 4),
-                      Text('เลือกหมวดหมู่ผู้ใช้ที่ต้องอนุมัติ',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal[800])),
-                    ]),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.add_circle_outline,
+                          size: 14,
+                          color: Colors.teal,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'เลือกหมวดหมู่ผู้ใช้ที่ต้องอนุมัติ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.teal[800],
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 2),
-                    const Text('ผู้ใช้ที่มีอาชีพอยู่ในหมวดหมู่นี้จะได้รับสิทธิ์เป็นผู้อนุมัติตามสถานะจากตารางจริง',
-                        style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    const Text(
+                      'ผู้ใช้ที่มีอาชีพอยู่ในหมวดหมู่นี้จะได้รับสิทธิ์เป็นผู้อนุมัติตามสถานะจากตารางจริง',
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
                     const SizedBox(height: 8),
                     // — Checklist หมวดหมู่ผู้ใช้ —
                     if (_userCategories.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text('ได้รับข้อมูลหมวดหมู่ที่ใช้งานไม่มี (โหลดอยู่...)',
-                            style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        child: Text(
+                          'ได้รับข้อมูลหมวดหมู่ที่ใช้งานไม่มี (โหลดอยู่...)',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
                       )
                     else
                       ..._userCategories.map((uc) {
@@ -518,35 +691,74 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           contentPadding: EdgeInsets.zero,
                           controlAffinity: ListTileControlAffinity.leading,
                           activeColor: Colors.teal,
-                          secondary: Icon(catIcon(uc.id), color: Colors.teal, size: 20),
-                          title: Text(uc.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          subtitle: uc.description != null && uc.description!.isNotEmpty
-                              ? Text(uc.description!, style: const TextStyle(fontSize: 10, color: Colors.grey))
+                          secondary: Icon(
+                            catIcon(uc.id),
+                            color: Colors.teal,
+                            size: 20,
+                          ),
+                          title: Text(
+                            uc.name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle:
+                              uc.description != null &&
+                                  uc.description!.isNotEmpty
+                              ? Text(
+                                  uc.description!,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey,
+                                  ),
+                                )
                               : null,
                           value: isSelected,
-                          onChanged: isSaving ? null : (val) {
-                            setDialogState(() {
-                              if (val == true) orderedApprovers.add(uc.id);
-                              else orderedApprovers.remove(uc.id);
-                            });
-                          },
+                          onChanged: isSaving
+                              ? null
+                              : (val) {
+                                  setDialogState(() {
+                                    if (val == true)
+                                      orderedApprovers.add(uc.id);
+                                    else
+                                      orderedApprovers.remove(uc.id);
+                                  });
+                                },
                         );
                       }),
                     // — Reorder —
                     if (orderedApprovers.isNotEmpty) ...[
                       const Divider(height: 24),
-                      Row(children: [
-                        const Icon(Icons.drag_indicator, size: 14, color: Colors.teal),
-                        const SizedBox(width: 4),
-                        Text('ลำดับการอนุมัติ (ลากเพื่อเรียง)',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal[800])),
-                      ]),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.drag_indicator,
+                            size: 14,
+                            color: Colors.teal,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'ลำดับการอนุมัติ (ลากเพื่อเรียง)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.teal[800],
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 2),
-                      const Text('ลำดับ 1 → อนุมัติก่อน, ตามด้วยลำดับถัดไป',
-                          style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      const Text(
+                        'ลำดับ 1 → อนุมัติก่อน, ตามด้วยลำดับถัดไป',
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
                       const SizedBox(height: 8),
                       SizedBox(
-                        height: (orderedApprovers.length * 56.0).clamp(56.0, 280.0),
+                        height: (orderedApprovers.length * 56.0).clamp(
+                          56.0,
+                          280.0,
+                        ),
                         child: ReorderableListView(
                           shrinkWrap: true,
                           onReorder: isSaving
@@ -554,7 +766,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                               : (oldIndex, newIndex) {
                                   setDialogState(() {
                                     if (newIndex > oldIndex) newIndex--;
-                                    final item = orderedApprovers.removeAt(oldIndex);
+                                    final item = orderedApprovers.removeAt(
+                                      oldIndex,
+                                    );
                                     orderedApprovers.insert(newIndex, item);
                                   });
                                 },
@@ -563,17 +777,38 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                             return ListTile(
                               key: ValueKey(id),
                               dense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
                               leading: Container(
-                                width: 28, height: 28,
-                                decoration: const BoxDecoration(color: Colors.teal, shape: BoxShape.circle),
+                                width: 28,
+                                height: 28,
+                                decoration: const BoxDecoration(
+                                  color: Colors.teal,
+                                  shape: BoxShape.circle,
+                                ),
                                 child: Center(
-                                  child: Text('${i + 1}',
-                                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                  child: Text(
+                                    '${i + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              title: Text(catName(id), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                              trailing: const Icon(Icons.drag_handle, color: Colors.grey),
+                              title: Text(
+                                catName(id),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              trailing: const Icon(
+                                Icons.drag_handle,
+                                color: Colors.grey,
+                              ),
                             );
                           }),
                         ),
@@ -611,16 +846,29 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           setDialogState(() => isSaving = false);
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('บันทึกไม่สำเร็จ: $e'), backgroundColor: Colors.red),
+                              SnackBar(
+                                content: Text('บันทึกไม่สำเร็จ: $e'),
+                                backgroundColor: Colors.red,
+                              ),
                             );
                           }
                         }
                       },
                 icon: isSaving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.save, size: 16),
                 label: const Text('บันทึก Flow'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal,
+                  foregroundColor: Colors.white,
+                ),
               ),
             ],
           );
@@ -643,59 +891,75 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (fields.isEmpty) const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text('ยังไม่มีฟิลด์เพิ่มเติม'),
-                  ),
-                  if (fields.isNotEmpty) Expanded(
-                    child: ReorderableListView.builder(
-                      shrinkWrap: true,
-                      itemCount: fields.length,
-                      onReorder: (oldIndex, newIndex) {
-                        setDialogState(() {
-                          if (newIndex > oldIndex) {
-                            newIndex -= 1;
-                          }
-                          final item = fields.removeAt(oldIndex);
-                          fields.insert(newIndex, item);
-                        });
-                      },
-                      itemBuilder: (context, index) {
-                        final field = fields[index];
-                        return ListTile(
-                          key: ValueKey(field.id),
-                          leading: const Icon(Icons.drag_handle, color: Colors.grey),
-                          title: Text(field.label),
-                          subtitle: Text('ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.blue),
-                                tooltip: 'แก้ไข',
-                                onPressed: () async {
-                                  final editedField = await _showAddFieldDialog(existingField: field);
-                                  if (editedField != null) {
-                                    setDialogState(() {
-                                      fields[index] = editedField;
-                                    });
-                                  }
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () {
-                                  setDialogState(() {
-                                    fields.removeAt(index);
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                  if (fields.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text('ยังไม่มีฟิลด์เพิ่มเติม'),
                     ),
-                  ),
+                  if (fields.isNotEmpty)
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        shrinkWrap: true,
+                        itemCount: fields.length,
+                        onReorder: (oldIndex, newIndex) {
+                          setDialogState(() {
+                            if (newIndex > oldIndex) {
+                              newIndex -= 1;
+                            }
+                            final item = fields.removeAt(oldIndex);
+                            fields.insert(newIndex, item);
+                          });
+                        },
+                        itemBuilder: (context, index) {
+                          final field = fields[index];
+                          return ListTile(
+                            key: ValueKey(field.id),
+                            leading: const Icon(
+                              Icons.drag_handle,
+                              color: Colors.grey,
+                            ),
+                            title: Text(field.label),
+                            subtitle: Text(
+                              'ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}',
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Colors.blue,
+                                  ),
+                                  tooltip: 'แก้ไข',
+                                  onPressed: () async {
+                                    final editedField =
+                                        await _showAddFieldDialog(
+                                          existingField: field,
+                                        );
+                                    if (editedField != null) {
+                                      setDialogState(() {
+                                        fields[index] = editedField;
+                                      });
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
+                                  onPressed: () {
+                                    setDialogState(() {
+                                      fields.removeAt(index);
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     onPressed: () async {
@@ -713,7 +977,10 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('ยกเลิก'),
+              ),
               TextButton(
                 onPressed: () async {
                   try {
@@ -780,58 +1047,79 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ),
-                      if (fields.isEmpty) const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text('ไม่มีฟอร์มพื้นฐาน'),
-                      ),
-                      if (fields.isNotEmpty) Expanded(
-                        child: ReorderableListView.builder(
-                          shrinkWrap: true,
-                          itemCount: fields.length,
-                          onReorder: (oldIndex, newIndex) {
-                            setDialogState(() {
-                              if (newIndex > oldIndex) newIndex -= 1;
-                              final item = fields.removeAt(oldIndex);
-                              fields.insert(newIndex, item);
-                            });
-                          },
-                          itemBuilder: (context, index) {
-                            final field = fields[index];
-                            return ListTile(
-                              key: ValueKey(field.id),
-                              leading: const Icon(Icons.drag_handle, color: Colors.grey),
-                              title: Text(field.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
-                                    tooltip: 'แก้ไข',
-                                    onPressed: () async {
-                                      final updatedField = await _showAddFieldDialog(existingField: field);
-                                      if (updatedField != null) {
-                                        setDialogState(() {
-                                          fields[index] = updatedField;
-                                        });
-                                      }
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    tooltip: 'ลบฟิลด์นี้',
-                                    onPressed: () {
-                                      setDialogState(() {
-                                        fields.removeAt(index);
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+                      if (fields.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text('ไม่มีฟอร์มพื้นฐาน'),
                         ),
-                      ),
+                      if (fields.isNotEmpty)
+                        Expanded(
+                          child: ReorderableListView.builder(
+                            shrinkWrap: true,
+                            itemCount: fields.length,
+                            onReorder: (oldIndex, newIndex) {
+                              setDialogState(() {
+                                if (newIndex > oldIndex) newIndex -= 1;
+                                final item = fields.removeAt(oldIndex);
+                                fields.insert(newIndex, item);
+                              });
+                            },
+                            itemBuilder: (context, index) {
+                              final field = fields[index];
+                              return ListTile(
+                                key: ValueKey(field.id),
+                                leading: const Icon(
+                                  Icons.drag_handle,
+                                  color: Colors.grey,
+                                ),
+                                title: Text(
+                                  field.label,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'ID: ${field.id} | Type: ${field.type} | Required: ${field.isRequired}',
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: Colors.blue,
+                                      ),
+                                      tooltip: 'แก้ไข',
+                                      onPressed: () async {
+                                        final updatedField =
+                                            await _showAddFieldDialog(
+                                              existingField: field,
+                                            );
+                                        if (updatedField != null) {
+                                          setDialogState(() {
+                                            fields[index] = updatedField;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      tooltip: 'ลบฟิลด์นี้',
+                                      onPressed: () {
+                                        setDialogState(() {
+                                          fields.removeAt(index);
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       const Divider(),
                       TextButton.icon(
                         onPressed: () async {
@@ -843,31 +1131,55 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                           }
                         },
                         icon: const Icon(Icons.add_circle, color: Colors.teal),
-                        label: const Text('เพิ่มช่องข้อมูลใหม่', style: TextStyle(color: Colors.teal)),
+                        label: const Text(
+                          'เพิ่มช่องข้อมูลใหม่',
+                          style: TextStyle(color: Colors.teal),
+                        ),
                       ),
                     ],
                   ),
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'ยกเลิก',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
                   ElevatedButton.icon(
                     onPressed: () async {
                       try {
                         await widget.repository.saveGlobalFields(fields);
                         if (context.mounted) {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกฟอร์มพื้นฐานเรียบร้อยแล้ว'), backgroundColor: Colors.green));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('บันทึกฟอร์มพื้นฐานเรียบร้อยแล้ว'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
                         }
                       } catch (e) {
                         debugPrint('Error saving global fields: $e');
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e'), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('บันทึกไม่สำเร็จ: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
                         }
                       }
                     },
                     icon: const Icon(Icons.save, color: Colors.white, size: 18),
-                    label: const Text('บันทึกการจัดเรียง', style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                    label: const Text(
+                      'บันทึกการจัดเรียง',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                    ),
                   ),
                 ],
               );
@@ -878,13 +1190,19 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context); // close loading
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
       }
     }
   }
 
-  Future<DonationCategoryField?> _showAddFieldDialog({DonationCategoryField? existingField}) {
-    final labelController = TextEditingController(text: existingField?.label ?? '');
+  Future<DonationCategoryField?> _showAddFieldDialog({
+    DonationCategoryField? existingField,
+  }) {
+    final labelController = TextEditingController(
+      text: existingField?.label ?? '',
+    );
     final idController = TextEditingController(text: existingField?.id ?? '');
     String type = existingField?.type ?? 'text';
     bool isRequired = existingField?.isRequired ?? false;
@@ -894,24 +1212,60 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: Text(existingField == null ? 'เพิ่มฟิลด์ใหม่' : 'แก้ไขฟิลด์'),
+            title: Text(
+              existingField == null ? 'เพิ่มฟิลด์ใหม่' : 'แก้ไขฟิลด์',
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: idController, decoration: const InputDecoration(labelText: 'ID (ภาษาอังกฤษห้ามเว้นวรรค)')),
-                TextField(controller: labelController, decoration: const InputDecoration(labelText: 'ชื่อฟิลด์ (Label)')),
+                TextField(
+                  controller: idController,
+                  decoration: const InputDecoration(
+                    labelText: 'ID (ภาษาอังกฤษห้ามเว้นวรรค)',
+                  ),
+                ),
+                TextField(
+                  controller: labelController,
+                  decoration: const InputDecoration(
+                    labelText: 'ชื่อฟิลด์ (Label)',
+                  ),
+                ),
                 DropdownButtonFormField<String>(
                   value: type,
                   decoration: const InputDecoration(labelText: 'ประเภทข้อมูล'),
                   items: const [
-                    DropdownMenuItem(value: 'text', child: Text('ข้อความสั้น (Text)')),
-                    DropdownMenuItem(value: 'long_text', child: Text('ข้อความยาว (Long Text)')),
-                    DropdownMenuItem(value: 'number', child: Text('ตัวเลข (Number)')),
-                    DropdownMenuItem(value: 'date', child: Text('วันที่ (Date)')),
-                    DropdownMenuItem(value: 'community_dropdown', child: Text('เลือกชุมชน (Community Dropdown)')),
-                    DropdownMenuItem(value: 'address_picker', child: Text('ที่อยู่แบบละเอียดยืนยันพื้นที่ (Address)')),
-                    DropdownMenuItem(value: 'boolean', child: Text('สวิตช์เปิด/ปิด (Switch Boolean)')),
-                    DropdownMenuItem(value: 'image', child: Text('รูปภาพอัปโหลด (Image Upload)')),
+                    DropdownMenuItem(
+                      value: 'text',
+                      child: Text('ข้อความสั้น (Text)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'long_text',
+                      child: Text('ข้อความยาว (Long Text)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'number',
+                      child: Text('ตัวเลข (Number)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'date',
+                      child: Text('วันที่ (Date)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'community_dropdown',
+                      child: Text('เลือกชุมชน (Community Dropdown)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'address_picker',
+                      child: Text('ที่อยู่แบบละเอียดยืนยันพื้นที่ (Address)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'boolean',
+                      child: Text('สวิตช์เปิด/ปิด (Switch Boolean)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'image',
+                      child: Text('รูปภาพอัปโหลด (Image Upload)'),
+                    ),
                   ],
                   onChanged: (val) => setDialogState(() => type = val!),
                 ),
@@ -923,16 +1277,23 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('ยกเลิก'),
+              ),
               TextButton(
                 onPressed: () {
-                  if (idController.text.isEmpty || labelController.text.isEmpty) return;
-                  Navigator.pop(context, DonationCategoryField(
-                    id: idController.text,
-                    label: labelController.text,
-                    type: type,
-                    isRequired: isRequired,
-                  ));
+                  if (idController.text.isEmpty || labelController.text.isEmpty)
+                    return;
+                  Navigator.pop(
+                    context,
+                    DonationCategoryField(
+                      id: idController.text,
+                      label: labelController.text,
+                      type: type,
+                      isRequired: isRequired,
+                    ),
+                  );
                 },
                 child: const Text('เพิ่ม'),
               ),
@@ -954,12 +1315,24 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () => _showGlobalFieldsDialog(),
-                  icon: const Icon(Icons.settings_applications, color: Colors.white),
-                  label: const Text('ตั้งค่าข้อมูลพื้นฐาน', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  icon: const Icon(
+                    Icons.settings_applications,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'ตั้งค่าข้อมูลพื้นฐาน',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
@@ -968,11 +1341,20 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                 child: ElevatedButton.icon(
                   onPressed: () => _showCategoryDialog(),
                   icon: const Icon(Icons.add, color: Colors.white),
-                  label: const Text('เพิ่มหมวดหมู่ใหม่', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  label: const Text(
+                    'เพิ่มหมวดหมู่ใหม่',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
@@ -981,20 +1363,30 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
         ),
         Expanded(
           child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _categories.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _categories.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.category_outlined, size: 56, color: Colors.grey[300]),
+                      Icon(
+                        Icons.category_outlined,
+                        size: 56,
+                        color: Colors.grey[300],
+                      ),
                       const SizedBox(height: 12),
-                      Text('ยังไม่มีหมวดหมู่', style: TextStyle(color: Colors.grey[500])),
+                      Text(
+                        'ยังไม่มีหมวดหมู่',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
                     ],
                   ),
                 )
               : ReorderableListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   itemCount: _categories.length,
                   onReorder: (oldIndex, newIndex) async {
                     if (newIndex > oldIndex) {
@@ -1021,16 +1413,23 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                       }
                     });
 
-                    final List<Map<String, dynamic>> orderData = _categories.map((c) => {
-                      'id': c.id,
-                      'display_order': c.displayOrder,
-                    }).toList();
+                    final List<Map<String, dynamic>> orderData = _categories
+                        .map(
+                          (c) => {'id': c.id, 'display_order': c.displayOrder},
+                        )
+                        .toList();
 
                     try {
-                      await widget.repository.updateCategoriesDisplayOrder(orderData);
+                      await widget.repository.updateCategoriesDisplayOrder(
+                        orderData,
+                      );
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาดในการจัดเรียง: $e')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('เกิดข้อผิดพลาดในการจัดเรียง: $e'),
+                          ),
+                        );
                         _loadCategories();
                       }
                     }
@@ -1064,12 +1463,18 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    color: cat.isEmergency ? Colors.red.shade50 : AppColors.primary.withOpacity(0.08),
+                                    color: cat.isEmergency
+                                        ? Colors.red.shade50
+                                        : AppColors.primary.withOpacity(0.08),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
-                                    cat.isEmergency ? Icons.emergency : Icons.category,
-                                    color: cat.isEmergency ? Colors.red : AppColors.primary,
+                                    cat.isEmergency
+                                        ? Icons.emergency
+                                        : Icons.category,
+                                    color: cat.isEmergency
+                                        ? Colors.red
+                                        : AppColors.primary,
                                     size: 22,
                                   ),
                                 ),
@@ -1077,16 +1482,23 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                 // ชื่อหมวดหมู่
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         cat.name,
-                                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                       ),
                                       if (cat.nameEn != null)
                                         Text(
                                           cat.nameEn!,
-                                          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500]),
+                                          style: AppTextStyles.bodySmall
+                                              .copyWith(
+                                                color: Colors.grey[500],
+                                              ),
                                         ),
                                     ],
                                   ),
@@ -1094,7 +1506,9 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                 // ลำดับ
                                 Text(
                                   '#${cat.displayOrder}',
-                                  style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[400]),
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.grey[400],
+                                  ),
                                 ),
                               ],
                             ),
@@ -1105,11 +1519,23 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                               runSpacing: 4,
                               children: [
                                 if (cat.isEmergency)
-                                  _buildBadge('🚨 ฉุกเฉิน', Colors.red.shade50, Colors.red),
+                                  _buildBadge(
+                                    '🚨 ฉุกเฉิน',
+                                    Colors.red.shade50,
+                                    Colors.red,
+                                  ),
                                 if (cat.volunteerProfessionIds.isNotEmpty)
-                                  _buildBadge('👥 จิตอาสา ${cat.volunteerProfessionIds.length} อาชีพ', Colors.blue.shade50, Colors.blue),
+                                  _buildBadge(
+                                    '👥 จิตอาสา ${cat.volunteerProfessionIds.length} อาชีพ',
+                                    Colors.blue.shade50,
+                                    Colors.blue,
+                                  ),
                                 if (cat.customFields.isNotEmpty)
-                                  _buildBadge('📋 ${cat.customFields.length} ฟิลด์', Colors.orange.shade50, Colors.orange),
+                                  _buildBadge(
+                                    '📋 ${cat.customFields.length} ฟิลด์',
+                                    Colors.orange.shade50,
+                                    Colors.orange,
+                                  ),
                               ],
                             ),
                             // Approval Stepper — แสดงเมื่อมีกลุ่มอาชีพที่ต้องอนุมัติ
@@ -1124,15 +1550,19 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                               child: Scrollbar(
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
-                                  padding: const EdgeInsets.only(bottom: 8), // เพิ่มพื้นที่ให้ scrollbar เล็กน้อย
+                                  padding: const EdgeInsets.only(
+                                    bottom: 8,
+                                  ), // เพิ่มพื้นที่ให้ scrollbar เล็กน้อย
                                   child: Row(
-                                    mainAxisSize: MainAxisSize.min, // ให้ Row มีขนาดเท่ากับปุ่มรวมกัน
+                                    mainAxisSize: MainAxisSize
+                                        .min, // ให้ Row มีขนาดเท่ากับปุ่มรวมกัน
                                     children: [
                                       _actionBtn(
                                         icon: Icons.list_alt_rounded,
                                         label: 'ฟิลด์บริจาค(เฉพาะ)',
                                         color: Colors.green,
-                                        onTap: () => _showCustomFieldsDialog(cat),
+                                        onTap: () =>
+                                            _showCustomFieldsDialog(cat),
                                       ),
                                       const SizedBox(width: 8),
                                       _actionBtn(
@@ -1146,20 +1576,26 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                         icon: Icons.volunteer_activism_rounded,
                                         label: 'สิทธิ์อาสา',
                                         color: Colors.blue,
-                                        onTap: () => _showVolunteerProfessionsDialog(cat),
+                                        onTap: () =>
+                                            _showVolunteerProfessionsDialog(
+                                              cat,
+                                            ),
                                       ),
                                       const SizedBox(width: 8),
                                       _actionBtn(
-                                        icon: Icons.account_balance_wallet_rounded,
+                                        icon: Icons
+                                            .account_balance_wallet_rounded,
                                         label: 'Escrow & ค่าธรรมเนียม',
                                         color: Colors.orange.shade700,
                                         onTap: () {
                                           showDialog(
                                             context: context,
-                                            builder: (ctx) => CategoryEscrowConfigDialog(
-                                              category: cat,
-                                              onSaved: () => _loadCategories(),
-                                            ),
+                                            builder: (ctx) =>
+                                                CategoryEscrowConfigDialog(
+                                                  category: cat,
+                                                  onSaved: () =>
+                                                      _loadCategories(),
+                                                ),
                                           );
                                         },
                                       ),
@@ -1173,27 +1609,48 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                                       const SizedBox(width: 8),
                                       _actionBtn(
                                         icon: Icons.delete_rounded,
-                                        label: 'ลบหมวดหมู่', // แก้คำผิดหมวดหมุ่เป็นหมวดหมู่ด้วย
+                                        label:
+                                            'ลบหมวดหมู่', // แก้คำผิดหมวดหมุ่เป็นหมวดหมู่ด้วย
                                         color: Colors.red,
                                         onTap: () async {
                                           final confirmed = await showDialog<bool>(
                                             context: context,
                                             builder: (ctx) => AlertDialog(
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
                                               title: const Text('ยืนยันการลบ'),
-                                              content: Text('ลบหมวดหมู่ "${cat.name}" ใช่หรือไม่?\nการกระทำนี้ไม่สามารถยกเลิกได้'),
+                                              content: Text(
+                                                'ลบหมวดหมู่ "${cat.name}" ใช่หรือไม่?\nการกระทำนี้ไม่สามารถยกเลิกได้',
+                                              ),
                                               actions: [
-                                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, false),
+                                                  child: const Text('ยกเลิก'),
+                                                ),
                                                 ElevatedButton(
-                                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                                  onPressed: () => Navigator.pop(ctx, true),
-                                                  child: const Text('ลบ', style: TextStyle(color: Colors.white)),
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.red,
+                                                      ),
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, true),
+                                                  child: const Text(
+                                                    'ลบ',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
                                                 ),
                                               ],
                                             ),
                                           );
                                           if (confirmed == true) {
-                                            await widget.repository.deleteCategory(cat.id);
+                                            await widget.repository
+                                                .deleteCategory(cat.id);
                                             _loadCategories();
                                           }
                                         },
@@ -1229,7 +1686,14 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 150, height: 12, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+              Container(
+                width: 150,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
               const SizedBox(height: 10),
               Row(
                 children: List.generate(
@@ -1237,7 +1701,13 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                   (index) => Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Container(height: 4, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2))),
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1247,7 +1717,14 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(
                   approverIds.isNotEmpty ? approverIds.length : 2,
-                  (index) => Container(width: 40, height: 10, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+                  (index) => Container(
+                    width: 40,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1278,12 +1755,17 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
               const SizedBox(width: 4),
               Text(
                 'ต้องผ่าน ${steps.length} กลุ่มอาชีพจึงเปิดรับบริจาคได้',
-                style: const TextStyle(fontSize: 10, color: Colors.teal, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: Colors.teal,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: List.generate(steps.length, (i) {
               final isLast = i == steps.length - 1;
               return Expanded(
@@ -1374,11 +1856,19 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
         color: bg,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(text, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600)),
+      child: Text(
+        text,
+        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
-  Widget _actionBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
+  Widget _actionBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -1393,7 +1883,14 @@ class _CategoryManagementPanelState extends State<_CategoryManagementPanel> {
           children: [
             Icon(icon, size: 14, color: color),
             const SizedBox(width: 4),
-            Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -1406,7 +1903,11 @@ class _ApprovalCenterPanel extends StatefulWidget {
   final DonationRepository repository;
   final String? userId;
   final bool isStorageAdmin;
-  const _ApprovalCenterPanel({required this.repository, this.userId, required this.isStorageAdmin});
+  const _ApprovalCenterPanel({
+    required this.repository,
+    this.userId,
+    required this.isStorageAdmin,
+  });
 
   @override
   State<_ApprovalCenterPanel> createState() => _ApprovalCenterPanelState();
@@ -1428,13 +1929,18 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
     if (widget.userId == null) return;
     setState(() => _isLoading = true);
     final results = await Future.wait([
-      widget.repository.getPendingRequests(widget.userId!, isAdminOverride: widget.isStorageAdmin),
+      widget.repository.getPendingRequests(
+        widget.userId!,
+        isAdminOverride: widget.isStorageAdmin,
+      ),
       widget.repository.getUserApproverProfessions(widget.userId!),
     ]);
     if (mounted) {
       setState(() {
         _pendingRequests = (results[0] as List<DonationRequest>)
-            .where((r) => r.approvalStatus == DonationApprovalStatus.pending_local)
+            .where(
+              (r) => r.approvalStatus == DonationApprovalStatus.pending_local,
+            )
             .toList();
         _userProfessionIds = results[1] as List<String>;
         _isLoading = false;
@@ -1444,19 +1950,27 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
 
   Future<void> _doApprove(DonationRequest req) async {
     if (widget.userId == null) return;
-    
+
     // แจ้งเตือนก่อนทำการลัดคิว
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Admin Override'),
-        content: const Text('คุณกำลังจะใช้อำนาจแอดมินอนุมัติคำร้องนี้ลัดคิวทุกขั้นตอน ยืนยันหรือไม่?'),
+        content: const Text(
+          'คุณกำลังจะใช้อำนาจแอดมินอนุมัติคำร้องนี้ลัดคิวทุกขั้นตอน ยืนยันหรือไม่?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ยกเลิก'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('ยืนยันอนุมัติ', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'ยืนยันอนุมัติ',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -1466,17 +1980,16 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
 
     try {
       await widget.repository.approveRequest(
-        req.id, req.approvalStatus, widget.userId!,
+        req.id,
+        req.approvalStatus,
+        widget.userId!,
         isAdminOverride: true,
       );
       _loadPending();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ $e'),
-            backgroundColor: Colors.red.shade600,
-          ),
+          SnackBar(content: Text('❌ $e'), backgroundColor: Colors.red.shade600),
         );
       }
     }
@@ -1484,9 +1997,13 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.userId == null) return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
-    if (!widget.isStorageAdmin) return const Center(child: Text('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะ Admin)'));
-    
+    if (widget.userId == null)
+      return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
+    if (!widget.isStorageAdmin)
+      return const Center(
+        child: Text('คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (เฉพาะ Admin)'),
+      );
+
     return Column(
       children: [
         const Padding(
@@ -1498,70 +2015,85 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
         ),
         Expanded(
           child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _pendingRequests.isEmpty
-                ? const Center(child: Text('ไม่มีรายการรออนุมัติ'))
-                : ListView.builder(
-                    itemCount: _pendingRequests.length,
-                    itemBuilder: (context, index) {
-                      final req = _pendingRequests[index];
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: ListTile(
-                          title: Text(req.title),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('สถานะปัจจุบัน: ${_getStatusLabel(req.approvalStatus)}'),
-                              if (req.approvalStatus == DonationApprovalStatus.pending_local) ...[
-                                const SizedBox(height: 4),
-                                Text('📍 สถานที่ใช้: ${req.usageLocation ?? "-"}', style: const TextStyle(fontSize: 12)),
-                                Text('🏠 ที่อยู่ผู้ร้อง: ${req.requesterAddress ?? "-"}', style: const TextStyle(fontSize: 12)),
-                              ],
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.check_circle, color: Colors.green),
-                                // ✅ Bug #2 Fix: ใช้ _doApprove() ที่ส่ง professionId ที่ถูกต้อง
-                                onPressed: () async {
-                                  try {
-                                    await _doApprove(req);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('✅ ยืนยันคำร้องสำเร็จ'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('เกิดข้อผิดพลาด: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
+              ? const Center(child: CircularProgressIndicator())
+              : _pendingRequests.isEmpty
+              ? const Center(child: Text('ไม่มีรายการรออนุมัติ'))
+              : ListView.builder(
+                  itemCount: _pendingRequests.length,
+                  itemBuilder: (context, index) {
+                    final req = _pendingRequests[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: ListTile(
+                        title: Text(req.title),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'สถานะปัจจุบัน: ${_getStatusLabel(req.approvalStatus)}',
+                            ),
+                            if (req.approvalStatus ==
+                                DonationApprovalStatus.pending_local) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '📍 สถานที่ใช้: ${req.usageLocation ?? "-"}',
+                                style: const TextStyle(fontSize: 12),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.cancel, color: Colors.red),
-                                onPressed: () async {
-                                  await widget.repository.rejectRequest(req.id);
-                                  _loadPending();
-                                },
+                              Text(
+                                '🏠 ที่อยู่ผู้ร้อง: ${req.requesterAddress ?? "-"}',
+                                style: const TextStyle(fontSize: 12),
                               ),
                             ],
-                          ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                              ),
+                              // ✅ Bug #2 Fix: ใช้ _doApprove() ที่ส่ง professionId ที่ถูกต้อง
+                              onPressed: () async {
+                                try {
+                                  await _doApprove(req);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('✅ ยืนยันคำร้องสำเร็จ'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('เกิดข้อผิดพลาด: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.cancel, color: Colors.red),
+                              onPressed: () async {
+                                await widget.repository.rejectRequest(req.id);
+                                _loadPending();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -1569,12 +2101,13 @@ class _ApprovalCenterPanelState extends State<_ApprovalCenterPanel> {
 
   String _getStatusLabel(DonationApprovalStatus status) {
     switch (status) {
-      case DonationApprovalStatus.pending_local: return 'รอผู้นำชุมชนยืนยัน';
-      default: return 'อื่นๆ';
-    }
+      case DonationApprovalStatus.pending_local:
+        return 'รอผู้นำชุมชนยืนยัน';
+      default:
+        return 'อื่นๆ';
     }
   }
-
+}
 
 // This file uses the new DonationReportPanel instead of _ContributionHistoryPanel
 
@@ -1602,8 +2135,12 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
     _loadEmergencyVideos();
 
     // Listen for new emergency alerts via WebSocket and auto-refresh
-    _emergencySub = WebSocketService().emergencyNotificationStream.listen((data) {
-      debugPrint('ResponderHelpPanel: Received emergency notification, refreshing list...');
+    _emergencySub = WebSocketService().emergencyNotificationStream.listen((
+      data,
+    ) {
+      debugPrint(
+        'ResponderHelpPanel: Received emergency notification, refreshing list...',
+      );
       _loadEmergencyVideos();
     });
 
@@ -1622,7 +2159,9 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
 
   Future<void> _loadEmergencyVideos() async {
     if (!mounted) return;
-    setState(() => _isLoading = _emergencyVideos.isEmpty); // Only show loading on first load
+    setState(
+      () => _isLoading = _emergencyVideos.isEmpty,
+    ); // Only show loading on first load
     try {
       // 1. Get Current Location for distance calculation
       try {
@@ -1637,43 +2176,48 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
       final repo = ServiceLocator.instance.donationRepository;
       final emergencyCategories = await repo.getEmergencyCategories();
       final user = AuthService.instance.currentUser;
-      
+
       // 3. Load Videos
-      debugPrint('ResponderHelpPanel: Loading videos from ${AppConfig.localApiUrl}');
+      debugPrint(
+        'ResponderHelpPanel: Loading videos from ${AppConfig.localApiUrl}',
+      );
       final allVideos = await _videoRepository.getEmergencyVideos();
-      
+
       // 4. Filter Videos by Role
       List<Video> filteredVideos = [];
       if (user != null) {
         for (var video in allVideos) {
           bool isRelevant = false;
           final categoryId = video.categoryId;
-          
+
           if (categoryId != null) {
-            final category = emergencyCategories.any((c) => c.id == categoryId) 
+            final category = emergencyCategories.any((c) => c.id == categoryId)
                 ? emergencyCategories.firstWhere((c) => c.id == categoryId)
                 : null;
-            
+
             if (category != null) {
-              if (user.professionId != null && category.volunteerProfessionIds.contains(user.professionId)) {
+              if (user.professionId != null &&
+                  category.volunteerProfessionIds.contains(user.professionId)) {
                 isRelevant = true;
               }
             } else {
-               // Fallback
-               isRelevant = true;
+              // Fallback
+              isRelevant = true;
             }
           } else {
             // General emergency without category
             isRelevant = true;
           }
-          
+
           if (isRelevant) {
             filteredVideos.add(video);
           }
         }
       }
 
-      debugPrint('ResponderHelpPanel: Loaded ${filteredVideos.length} filtered videos (out of ${allVideos.length})');
+      debugPrint(
+        'ResponderHelpPanel: Loaded ${filteredVideos.length} filtered videos (out of ${allVideos.length})',
+      );
       if (mounted) {
         setState(() {
           _emergencyVideos = filteredVideos;
@@ -1688,28 +2232,35 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
 
   String _formatAddress(Video video) {
     List<String> parts = [];
-    if (video.village != null && video.village!.isNotEmpty) parts.add('หมู่บ้าน ${video.village}');
-    if (video.road != null && video.road!.isNotEmpty) parts.add('ถนน ${video.road}');
-    if (video.soi != null && video.soi!.isNotEmpty) parts.add('ซอย ${video.soi}');
-    if (video.alley != null && video.alley!.isNotEmpty) parts.add('ตรอก ${video.alley}');
-    if (video.address != null && video.address!.isNotEmpty) parts.add(video.address!);
-    
+    if (video.village != null && video.village!.isNotEmpty)
+      parts.add('หมู่บ้าน ${video.village}');
+    if (video.road != null && video.road!.isNotEmpty)
+      parts.add('ถนน ${video.road}');
+    if (video.soi != null && video.soi!.isNotEmpty)
+      parts.add('ซอย ${video.soi}');
+    if (video.alley != null && video.alley!.isNotEmpty)
+      parts.add('ตรอก ${video.alley}');
+    if (video.address != null && video.address!.isNotEmpty)
+      parts.add(video.address!);
+
     if (parts.isEmpty) return 'ไม่ระบุที่อยู่ละเอียด';
     return parts.join(' ');
   }
 
   String _getDistanceLabel(Video video) {
-    if (_currentPosition == null || video.latitude == 0 || video.longitude == 0) {
+    if (_currentPosition == null ||
+        video.latitude == 0 ||
+        video.longitude == 0) {
       return 'ไม่ทราบระยะทาง';
     }
-    
+
     double distanceInMeters = Geolocator.distanceBetween(
       _currentPosition!.latitude,
       _currentPosition!.longitude,
       video.latitude,
       video.longitude,
     );
-    
+
     if (distanceInMeters < 1000) {
       return 'ห่างจากคุณ ${distanceInMeters.toStringAsFixed(0)} เมตร';
     } else {
@@ -1719,11 +2270,11 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
 
   Future<void> _handleAcceptHelp(Video video) async {
     if (widget.userId == null) return;
-    
+
     // Show loading state
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('กำลังบันทึกการตอบรับ...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('กำลังบันทึกการตอบรับ...')));
 
     try {
       // 1. สร้าง Record การตอบรับ (Real API call)
@@ -1733,7 +2284,7 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
         latitude: _currentPosition?.latitude,
         longitude: _currentPosition?.longitude,
       );
-      
+
       if (responseId == null) {
         throw Exception('ไม่สามารถบันทึกการตอบรับได้ กรุณาลองใหม่');
       }
@@ -1753,7 +2304,10 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาด: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1761,7 +2315,8 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.userId == null) return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
+    if (widget.userId == null)
+      return const Center(child: Text('กรุณาเข้าสู่ระบบ'));
 
     return RefreshIndicator(
       onRefresh: _loadEmergencyVideos,
@@ -1771,55 +2326,86 @@ class _ResponderHelpPanelState extends State<_ResponderHelpPanel> {
             padding: EdgeInsets.all(16.0),
             child: Text(
               'เหตุฉุกเฉินที่กำลังเกิดขึ้น (Active Emergencies)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.red,
+              ),
             ),
           ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _emergencyVideos.isEmpty
-                    ? const Center(child: Text('ไม่มีเหตุฉุกเฉินในขณะนี้'))
-                    : ListView.builder(
-                        itemCount: _emergencyVideos.length,
-                        itemBuilder: (context, index) {
-                          final video = _emergencyVideos[index];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  leading: const Icon(Icons.emergency, color: Colors.red),
-                                  title: Text(video.title ?? 'ไม่ระบุชื่อเหตุการณ์'),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(_formatAddress(video), 
-                                        style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                                      const SizedBox(height: 4),
-                                      Text(_getDistanceLabel(video), 
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue)),
-                                    ],
-                                  ),
-                                  trailing: const Icon(Icons.live_tv, color: Colors.green),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                                  child: ElevatedButton(
-                                    onPressed: () => _handleAcceptHelp(video),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red,
-                                      foregroundColor: Colors.white,
-                                      minimumSize: const Size(double.infinity, 45),
+                ? const Center(child: Text('ไม่มีเหตุฉุกเฉินในขณะนี้'))
+                : ListView.builder(
+                    itemCount: _emergencyVideos.length,
+                    itemBuilder: (context, index) {
+                      final video = _emergencyVideos[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(
+                                Icons.emergency,
+                                color: Colors.red,
+                              ),
+                              title: Text(
+                                video.title ?? 'ไม่ระบุชื่อเหตุการณ์',
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _formatAddress(video),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
                                     ),
-                                    child: const Text('ฉันพร้อมช่วยเหลือ (Accept Help)', 
-                                      style: TextStyle(fontWeight: FontWeight.bold)),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _getDistanceLabel(video),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: const Icon(
+                                Icons.live_tv,
+                                color: Colors.green,
+                              ),
                             ),
-                          );
-                        },
-                      ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 8.0,
+                              ),
+                              child: ElevatedButton(
+                                onPressed: () => _handleAcceptHelp(video),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(double.infinity, 45),
+                                ),
+                                child: const Text(
+                                  'ฉันพร้อมช่วยเหลือ (Accept Help)',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

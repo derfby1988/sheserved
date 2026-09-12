@@ -26,7 +26,8 @@ class DonationApproverSettingsWidget extends StatefulWidget {
 
 class _DonationApproverSettingsWidgetState
     extends State<DonationApproverSettingsWidget> {
-  List<DonationCategory> _relevantCategories = []; // หมวดหมู่ที่หมวดผู้ใช้นี้ต้องอนุมัติ
+  List<DonationCategory> _relevantCategories =
+      []; // หมวดหมู่ที่หมวดผู้ใช้นี้ต้องอนุมัติ
   Map<String, bool> _categoryToggles = {};
   int _approvalRadius = 500;
   bool _isLoading = true;
@@ -52,7 +53,9 @@ class _DonationApproverSettingsWidgetState
     try {
       // 1. โหลด 3 อย่างแบบ parallel โดยแยก type ให้ชัดเจน
       final catsFuture = widget.repository.getCategories();
-      final regFuture = widget.repository.getUserApproverSettings(widget.userId!);
+      final regFuture = widget.repository.getUserApproverSettings(
+        widget.userId!,
+      );
       final userFuture = Supabase.instance.client
           .from('users')
           .select('profession_id')
@@ -81,9 +84,10 @@ class _DonationApproverSettingsWidgetState
         final catId = row['category_id'] as String;
         final isEnabled = row['is_enabled'] as bool? ?? true;
         final radiusMeters = row['radius_meters'] as int? ?? 500;
-        
+
         toggles[catId] = isEnabled;
-        radius = radiusMeters; // Using the latest one found since it's global per user in UI
+        radius =
+            radiusMeters; // Using the latest one found since it's global per user in UI
       }
 
       // 4. กรองเฉพาะหมวดหมู่บริจาคที่ user category นี้ต้องอนุมัติ
@@ -169,8 +173,11 @@ class _DonationApproverSettingsWidgetState
         ),
         child: Column(
           children: [
-            Icon(Icons.admin_panel_settings_outlined,
-                size: 40, color: Colors.grey.shade300),
+            Icon(
+              Icons.admin_panel_settings_outlined,
+              size: 40,
+              color: Colors.grey.shade300,
+            ),
             const SizedBox(height: 12),
             Text(
               'ไม่มีหมวดหมู่บริจาคที่ต้องรับผิดชอบอนุมัติ',
@@ -179,8 +186,10 @@ class _DonationApproverSettingsWidgetState
             ),
             const SizedBox(height: 4),
             Text(
-              'ผู้ดูแลระบบสามารถกำหนด Flow การอนุมัติได้ที่หน้าจัดการระบบบริจาค',
-              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade400),
+              'ผู้ดูแลระบบสามารถกำหนด Flow การอนุมัติได้ที่หน้าระบบบริจาคและสิทธิ์อาสาอุบัติเหตุ',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade400,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -212,20 +221,31 @@ class _DonationApproverSettingsWidgetState
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                    color: Colors.teal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.admin_panel_settings, color: Colors.teal),
+                  color: Colors.teal.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings,
+                  color: Colors.teal,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('สถานะผู้อนุมัติของคุณ',
-                        style: AppTextStyles.heading3.copyWith(color: Colors.teal)),
-                    Text('เลือกรับผิดชอบดูแลคำร้องตามหมวดหมู่',
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: Colors.grey.shade600)),
+                    Text(
+                      'สถานะผู้อนุมัติของคุณ',
+                      style: AppTextStyles.heading3.copyWith(
+                        color: Colors.teal,
+                      ),
+                    ),
+                    Text(
+                      'เลือกรับผิดชอบดูแลคำร้องตามหมวดหมู่',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -247,11 +267,16 @@ class _DonationApproverSettingsWidgetState
               contentPadding: EdgeInsets.zero,
               title: Text(
                 'เข้าร่วมอนุมัติหมวด: ${cat.name}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
               subtitle: cat.nameEn != null
-                  ? Text(cat.nameEn!,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey))
+                  ? Text(
+                      cat.nameEn!,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    )
                   : null,
               value: isEnabled,
               activeThumbColor: Colors.teal,
@@ -265,12 +290,17 @@ class _DonationApproverSettingsWidgetState
           const SizedBox(height: 16),
 
           // Radius Slider
-          Text('พื้นที่อนุมัติการบริจาค',
-              style: AppTextStyles.bodyMedium
-                  .copyWith(fontWeight: FontWeight.bold)),
+          Text(
+            'พื้นที่อนุมัติการบริจาค',
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text('ระยะจากที่อยู่ปัจจุบันถึงสถานที่ใช้บริจาค',
-              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey)),
+          Text(
+            'ระยะจากที่อยู่ปัจจุบันถึงสถานที่ใช้บริจาค',
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -283,21 +313,26 @@ class _DonationApproverSettingsWidgetState
                   activeColor: Colors.teal,
                   onChanged: (val) =>
                       setState(() => _approvalRadius = val.toInt()),
-                  onChangeEnd: (val) =>
-                      _saveRadiusToAllCategories(val.toInt()),
+                  onChangeEnd: (val) => _saveRadiusToAllCategories(val.toInt()),
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                    color: Colors.teal.shade50,
-                    borderRadius: BorderRadius.circular(12)),
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
                   _approvalRadius >= 1000
                       ? '${(_approvalRadius / 1000).toStringAsFixed(1)} กม.'
                       : '$_approvalRadius ม.',
                   style: const TextStyle(
-                      color: Colors.teal, fontWeight: FontWeight.bold),
+                    color: Colors.teal,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],

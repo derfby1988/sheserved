@@ -334,11 +334,18 @@ class BookmarkedArticlesDialog extends StatefulWidget {
 class _BookmarkedArticlesDialogState extends State<BookmarkedArticlesDialog> {
   bool _isLoading = true;
   List<HealthArticle> _articles = [];
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _fetchBookmarks();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchBookmarks() async {
@@ -363,8 +370,18 @@ class _BookmarkedArticlesDialogState extends State<BookmarkedArticlesDialog> {
 
   String _formatDate(DateTime date) {
     const months = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year + 543}';
   }
@@ -418,8 +435,10 @@ class _BookmarkedArticlesDialogState extends State<BookmarkedArticlesDialog> {
                   maxHeight: MediaQuery.of(context).size.height * 0.6,
                 ),
                 child: Scrollbar(
+                  controller: _scrollController,
                   thumbVisibility: _articles.length > 5,
                   child: ListView.separated(
+                    controller: _scrollController,
                     shrinkWrap: true,
                     itemCount: _articles.length,
                     separatorBuilder: (context, index) =>

@@ -212,712 +212,705 @@ class _TlzDrawerState extends State<TlzDrawer>
     return SizedBox(
       width: drawerWidth,
       child: Drawer(
-          backgroundColor: Colors.transparent,
-          child: GestureDetector(
-            onHorizontalDragUpdate: _handleSwipeUpdate,
-            onHorizontalDragEnd: _handleSwipeEnd,
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.7),
-                              border: Border(
-                                left: BorderSide(
-                                  color: Colors.white.withOpacity(0.2),
-                                  width: 1.5,
-                                ),
-                                right: BorderSide(
-                                  color: Colors.white.withOpacity(0.1),
-                                  width: 0.5,
-                                ),
+        backgroundColor: Colors.transparent,
+        child: GestureDetector(
+          onHorizontalDragUpdate: _handleSwipeUpdate,
+          onHorizontalDragEnd: _handleSwipeEnd,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.7),
+                            border: Border(
+                              left: BorderSide(
+                                color: Colors.white.withOpacity(0.2),
+                                width: 1.5,
+                              ),
+                              right: BorderSide(
+                                color: Colors.white.withOpacity(0.1),
+                                width: 0.5,
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
+                  ),
 
-                    // Green curved background on left
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      child: CustomPaint(
-                        size: Size(60, MediaQuery.of(context).size.height),
-                        painter: _DrawerCurvePainter(
-                          scrollOffset: _scrollOffset,
-                        ),
-                      ),
+                  // Green curved background on left
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: CustomPaint(
+                      size: Size(60, MediaQuery.of(context).size.height),
+                      painter: _DrawerCurvePainter(scrollOffset: _scrollOffset),
                     ),
+                  ),
 
-                    // Content
-                    SafeArea(
-                      child: Column(
-                        children: [
-                          // Header Section: Close Button & Profile Image
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                // Close button
-                                GestureDetector(
-                                  onTap: () {
-                                    // เริ่ม animation ปิด drawer
-                                    _animationController.forward().then((_) {
-                                      _closeDrawer();
-                                    });
-                                  },
-                                  child: Container(
-                                    width: 32,
-                                    height: 32,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.backgroundWhite,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.shadow,
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Icon(
-                                      Icons.close,
-                                      size: 18,
-                                      color: AppColors.textPrimary,
-                                    ),
+                  // Content
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        // Header Section: Close Button & Profile Image
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Close button
+                              GestureDetector(
+                                onTap: () {
+                                  // เริ่ม animation ปิด drawer
+                                  _animationController.forward().then((_) {
+                                    _closeDrawer();
+                                  });
+                                },
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.backgroundWhite,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.shadow,
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: AppColors.textPrimary,
                                   ),
                                 ),
+                              ),
 
-                                // Profile Image
-                                GestureDetector(
-                                  onTap: () => _navigateTo(context, '/profile'),
-                                  child: Container(
-                                    width: 45,
-                                    height: 45,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.backgroundWhite,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: AppColors.primaryLight,
-                                        width: 2,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.shadow,
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ],
-                                      image:
-                                          AuthService
-                                                      .instance
-                                                      .currentUser
-                                                      ?.profileImageUrl !=
-                                                  null &&
-                                              AuthService
-                                                  .instance
-                                                  .currentUser!
-                                                  .profileImageUrl!
-                                                  .isNotEmpty
-                                          ? DecorationImage(
-                                              image: NetworkImage(
-                                                AuthService
-                                                    .instance
-                                                    .currentUser!
-                                                    .profileImageUrl!,
-                                              ),
-                                              fit: BoxFit.cover,
-                                            )
-                                          : null,
+                              // Profile Image
+                              GestureDetector(
+                                onTap: () => _navigateTo(context, '/profile'),
+                                child: Container(
+                                  width: 45,
+                                  height: 45,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.backgroundWhite,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: AppColors.primaryLight,
+                                      width: 2,
                                     ),
-                                    child:
-                                        (AuthService
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.shadow,
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                    image:
+                                        AuthService
                                                     .instance
                                                     .currentUser
-                                                    ?.profileImageUrl ==
-                                                null ||
+                                                    ?.profileImageUrl !=
+                                                null &&
                                             AuthService
                                                 .instance
                                                 .currentUser!
                                                 .profileImageUrl!
-                                                .isEmpty)
-                                        ? const Icon(
-                                            Icons.person,
-                                            color: AppColors.primaryLight,
+                                                .isNotEmpty
+                                        ? DecorationImage(
+                                            image: NetworkImage(
+                                              AuthService
+                                                  .instance
+                                                  .currentUser!
+                                                  .profileImageUrl!,
+                                            ),
+                                            fit: BoxFit.cover,
                                           )
                                         : null,
                                   ),
+                                  child:
+                                      (AuthService
+                                                  .instance
+                                                  .currentUser
+                                                  ?.profileImageUrl ==
+                                              null ||
+                                          AuthService
+                                              .instance
+                                              .currentUser!
+                                              .profileImageUrl!
+                                              .isEmpty)
+                                      ? const Icon(
+                                          Icons.person,
+                                          color: AppColors.primaryLight,
+                                        )
+                                      : null,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
+                        ),
 
-                          // Fixed Home item
-                          Padding(
-                            padding: const EdgeInsets.only(left: 60, right: 16),
-                            child: _buildMenuItem(
-                              context,
-                              title: 'หน้าหลัก',
-                              icon: Icons.arrow_forward,
-                              onTap: () {
-                                _animationController.forward().then((_) {
-                                  Navigator.of(context).pop(); // Close drawer
-                                  // Navigate to Home and clear stack
-                                  Navigator.of(context).pushNamedAndRemoveUntil(
-                                    '/',
-                                    (route) => false,
-                                  );
-                                });
-                              },
-                            ),
+                        // Fixed Home item
+                        Padding(
+                          padding: const EdgeInsets.only(left: 60, right: 16),
+                          child: _buildMenuItem(
+                            context,
+                            title: 'หน้าหลัก',
+                            icon: Icons.arrow_forward,
+                            onTap: () {
+                              _animationController.forward().then((_) {
+                                Navigator.of(context).pop(); // Close drawer
+                                // Navigate to Home and clear stack
+                                Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/',
+                                  (route) => false,
+                                );
+                              });
+                            },
                           ),
+                        ),
 
-                          const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                          // Scrollable menu items
-                          Expanded(
-                            child: SingleChildScrollView(
-                              controller: _scrollController,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 60,
-                                  right: 16,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    const SizedBox(height: 12),
+                        // Scrollable menu items
+                        Expanded(
+                          child: SingleChildScrollView(
+                            controller: _scrollController,
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                left: 60,
+                                right: 16,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const SizedBox(height: 12),
 
-                                    // Section 1: Medical Services
-                                    _buildGroupHeader(
-                                      context,
-                                      title: 'บริการทางการแพทย์',
-                                      isExpanded: _expandedGroups['medical']!,
-                                      onTap: () => setState(
-                                        () => _expandedGroups['medical'] =
-                                            !_expandedGroups['medical']!,
-                                      ),
+                                  // Section 1: Medical Services
+                                  _buildGroupHeader(
+                                    context,
+                                    title: 'บริการทางการแพทย์',
+                                    isExpanded: _expandedGroups['medical']!,
+                                    onTap: () => setState(
+                                      () => _expandedGroups['medical'] =
+                                          !_expandedGroups['medical']!,
                                     ),
-                                    if (_expandedGroups['medical']!) ...[
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'สุขภาพ',
-                                        icon: Icons.favorite_outline,
-                                        onTap: () {
+                                  ),
+                                  if (_expandedGroups['medical']!) ...[
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'สุขภาพ',
+                                      icon: Icons.favorite_outline,
+                                      onTap: () {
+                                        Navigator.of(context).pop();
+                                        Navigator.pushNamed(context, '/health');
+                                      },
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ปรึกษา คุณหมอ',
+                                      icon: Icons.people_outline,
+                                      isUnderlined: true,
+                                      underlineText: 'ปรึกษา',
+                                      onTap: () {
+                                        Navigator.pop(
+                                          context,
+                                        ); // close drawer first
+                                        ConsultationGuard.startConsultationForPatient(
+                                          context,
+                                        );
+                                      },
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'คลินิก / ร้านยา / ศูนย์',
+                                      icon: Icons.people_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/clinic'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'บทความเพื่อสุขภาพ',
+                                      icon: Icons.article_outlined,
+                                      isUnderlined: true,
+                                      underlineText: 'บทความ',
+                                      onTap: () {
+                                        _animationController.forward().then((
+                                          _,
+                                        ) {
                                           Navigator.of(context).pop();
                                           Navigator.pushNamed(
                                             context,
-                                            '/health',
+                                            '/articles',
                                           );
-                                        },
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ปรึกษา คุณหมอ',
-                                        icon: Icons.people_outline,
-                                        isUnderlined: true,
-                                        underlineText: 'ปรึกษา',
-                                        onTap: () {
-                                          Navigator.pop(
+                                        });
+                                      },
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'แชท / สนทนา',
+                                      icon: Icons.chat_bubble_outline,
+                                      isUnderlined: true,
+                                      underlineText: 'แชท',
+                                      onTap: () {
+                                        _animationController.forward().then((
+                                          _,
+                                        ) {
+                                          Navigator.of(context).pop();
+                                          Navigator.pushNamed(
                                             context,
-                                          ); // close drawer first
-                                          ConsultationGuard.startConsultationForPatient(
-                                            context,
+                                            '/chat-list',
                                           );
-                                        },
-                                        isSubItem: true,
-                                      ),
+                                        });
+                                      },
+                                      isSubItem: true,
+                                    ),
+                                    if (AuthService.instance.isProvider)
                                       _buildMenuItem(
                                         context,
-                                        title: 'คลินิก / ร้านยา / ศูนย์',
-                                        icon: Icons.people_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/clinic'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'บทความเพื่อสุขภาพ',
-                                        icon: Icons.article_outlined,
-                                        isUnderlined: true,
-                                        underlineText: 'บทความ',
-                                        onTap: () {
-                                          _animationController.forward().then((
-                                            _,
-                                          ) {
-                                            Navigator.of(context).pop();
-                                            Navigator.pushNamed(
-                                              context,
-                                              '/articles',
-                                            );
-                                          });
-                                        },
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'แชท / สนทนา',
-                                        icon: Icons.chat_bubble_outline,
-                                        isUnderlined: true,
-                                        underlineText: 'แชท',
-                                        onTap: () {
-                                          _animationController.forward().then((
-                                            _,
-                                          ) {
-                                            Navigator.of(context).pop();
-                                            Navigator.pushNamed(
-                                              context,
-                                              '/chat-list',
-                                            );
-                                          });
-                                        },
-                                        isSubItem: true,
-                                      ),
-                                      if (AuthService.instance.isProvider)
-                                        _buildMenuItem(
+                                        title: 'คำขอโปรแกรมรักษา',
+                                        icon: Icons.assignment_outlined,
+                                        onTap: () => _navigateTo(
                                           context,
-                                          title: 'คำขอโปรแกรมรักษา',
-                                          icon: Icons.assignment_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/health-program-requests',
-                                          ),
-                                          isSubItem: true,
+                                          '/health-program-requests',
                                         ),
+                                        isSubItem: true,
+                                      ),
 
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ยา & ความงาม',
+                                      icon: Icons.people_outline,
+                                      onTap: () {
+                                        Navigator.of(
+                                          context,
+                                        ).pop(); // ปิด Drawer ก่อนเปิดหน้าถัดไป
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const PharmacyProductsPage(),
+                                          ),
+                                        );
+                                      },
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'โปรแกรมการรักษา',
+                                      icon: Icons.people_outline,
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/care-programs',
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                  ],
+
+                                  const SizedBox(height: 16),
+                                  const Divider(color: AppColors.divider),
+                                  const SizedBox(height: 16),
+
+                                  // Section 2: Community
+                                  _buildGroupHeader(
+                                    context,
+                                    title: 'ชุมชน',
+                                    isExpanded: _expandedGroups['community']!,
+                                    onTap: () => setState(
+                                      () => _expandedGroups['community'] =
+                                          !_expandedGroups['community']!,
+                                    ),
+                                  ),
+                                  if (_expandedGroups['community']!) ...[
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'แจ้งเหตุ / ฉุกเฉิน',
+                                      icon: Icons.emergency_outlined,
+                                      isUnderlined: true,
+                                      underlineText: 'แจ้งเหตุ',
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/emergency-live',
+                                        arguments: {'tab': 2},
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'บริจาค / ส่งกำลังใจ',
+                                      icon: Icons.people_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/donate'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'หาเพื่อนออกกำลังกาย',
+                                      icon: Icons.group,
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/community/sport-club',
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ดูแลผู้สูงอายุ',
+                                      icon: Icons.people_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/jobs'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'คัดกรองเข้าพื้นที่',
+                                      icon: Icons.people_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/screening'),
+                                      isSubItem: true,
+                                    ),
+                                    if (_isVolunteer)
                                       _buildMenuItem(
                                         context,
-                                        title: 'ยา & ความงาม',
-                                        icon: Icons.people_outline,
+                                        title: 'ศูนย์กู้ภัยจิตอาสา',
+                                        icon: Icons.map,
+                                        onTap: () =>
+                                            _navigateTo(context, '/rescue-map'),
+                                        isSubItem: true,
+                                      ),
+                                  ],
+
+                                  const SizedBox(height: 16),
+                                  const Divider(color: AppColors.divider),
+                                  const SizedBox(height: 16),
+
+                                  // Section 3: Help & About
+                                  _buildGroupHeader(
+                                    context,
+                                    title: 'ช่วยเหลือและเกี่ยวกับเรา',
+                                    isExpanded: _expandedGroups['help']!,
+                                    onTap: () => setState(
+                                      () => _expandedGroups['help'] =
+                                          !_expandedGroups['help']!,
+                                    ),
+                                  ),
+                                  if (_expandedGroups['help']!) ...[
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'คู่มือการใช้',
+                                      icon: Icons.family_restroom,
+                                      onTap: () =>
+                                          _navigateTo(context, '/user-guide'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ร่วมงานกับเรา',
+                                      icon: Icons.family_restroom,
+                                      onTap: () =>
+                                          _navigateTo(context, '/careers'),
+                                      isSubItem: true,
+                                    ),
+                                  ],
+
+                                  const SizedBox(height: 16),
+                                  const Divider(color: AppColors.divider),
+                                  const SizedBox(height: 16),
+
+                                  // Section 4: Settings
+                                  _buildGroupHeader(
+                                    context,
+                                    title: 'การตั้งค่า',
+                                    isExpanded: _expandedGroups['settings']!,
+                                    onTap: () => setState(
+                                      () => _expandedGroups['settings'] =
+                                          !_expandedGroups['settings']!,
+                                    ),
+                                  ),
+                                  if (_expandedGroups['settings']!) ...[
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ข้อมูลส่วนตัว',
+                                      icon: Icons.person_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/profile'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ช่องทางชำระเงิน',
+                                      icon: Icons.credit_card,
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/payment-methods',
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'จัดการบัญชี',
+                                      icon: Icons.people_outline,
+                                      onTap: () =>
+                                          _navigateTo(context, '/account'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ตั้งค่าระบบ',
+                                      icon: Icons.settings,
+                                      onTap: () =>
+                                          _navigateTo(context, '/settings'),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
+                                      title: 'ตั้งค่า Sync',
+                                      icon: Icons.sync,
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/settings/sync',
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                  ],
+                                  // การจัดการยา (Organization หรือ Personal Override)
+                                  if (_canManageDrugRisk) ...[
+                                    const SizedBox(height: 16),
+                                    const Divider(color: AppColors.divider),
+                                    const SizedBox(height: 16),
+                                    _buildGroupHeader(
+                                      context,
+                                      title: 'การจัดการยา',
+                                      isExpanded:
+                                          _expandedGroups['drug_management']!,
+                                      onTap: () => setState(
+                                        () => _expandedGroups['drug_management'] =
+                                            !_expandedGroups['drug_management']!,
+                                      ),
+                                    ),
+                                    if (_expandedGroups['drug_management']!) ...[
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการหมวดหมู่ความเสี่ยงยา',
+                                        icon: Icons.warning_amber_outlined,
                                         onTap: () {
-                                          Navigator.of(
-                                            context,
-                                          ).pop(); // ปิด Drawer ก่อนเปิดหน้าถัดไป
+                                          Navigator.of(context).pop();
                                           Navigator.of(context).push(
                                             MaterialPageRoute(
                                               builder: (_) =>
-                                                  const PharmacyProductsPage(),
+                                                  const DrugRiskClassificationAdminPage(),
                                             ),
                                           );
                                         },
                                         isSubItem: true,
                                       ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'โปรแกรมการรักษา',
-                                        icon: Icons.people_outline,
-                                        onTap: () => _navigateTo(
-                                          context,
-                                          '/care-programs',
-                                        ),
-                                        isSubItem: true,
-                                      ),
-                                    ],
-
-                                    const SizedBox(height: 16),
-                                    const Divider(color: AppColors.divider),
-                                    const SizedBox(height: 16),
-
-                                    // Section 2: Community
-                                    _buildGroupHeader(
-                                      context,
-                                      title: 'ชุมชน',
-                                      isExpanded: _expandedGroups['community']!,
-                                      onTap: () => setState(
-                                        () => _expandedGroups['community'] =
-                                            !_expandedGroups['community']!,
-                                      ),
-                                    ),
-                                    if (_expandedGroups['community']!) ...[
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'แจ้งเหตุ / ฉุกเฉิน',
-                                        icon: Icons.emergency_outlined,
-                                        isUnderlined: true,
-                                        underlineText: 'แจ้งเหตุ',
-                                        onTap: () => _navigateTo(
-                                          context,
-                                          '/emergency-live',
-                                          arguments: {'tab': 2},
-                                        ),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'บริจาค / ส่งกำลังใจ',
-                                        icon: Icons.people_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/donate'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'หาเพื่อนออกกำลังกาย',
-                                        icon: Icons.group,
-                                        onTap: () =>
-                                            _navigateTo(context, '/community/sport-club'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ดูแลผู้สูงอายุ',
-                                        icon: Icons.people_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/jobs'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'คัดกรองเข้าพื้นที่',
-                                        icon: Icons.people_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/screening'),
-                                        isSubItem: true,
-                                      ),
-                                      if (_isVolunteer)
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'ศูนย์กู้ภัยจิตอาสา',
-                                          icon: Icons.map,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/rescue-map',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                    ],
-
-                                    const SizedBox(height: 16),
-                                    const Divider(color: AppColors.divider),
-                                    const SizedBox(height: 16),
-
-                                    // Section 3: Help & About
-                                    _buildGroupHeader(
-                                      context,
-                                      title: 'ช่วยเหลือและเกี่ยวกับเรา',
-                                      isExpanded: _expandedGroups['help']!,
-                                      onTap: () => setState(
-                                        () => _expandedGroups['help'] =
-                                            !_expandedGroups['help']!,
-                                      ),
-                                    ),
-                                    if (_expandedGroups['help']!) ...[
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'คู่มือการใช้',
-                                        icon: Icons.family_restroom,
-                                        onTap: () =>
-                                            _navigateTo(context, '/user-guide'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ร่วมงานกับเรา',
-                                        icon: Icons.family_restroom,
-                                        onTap: () =>
-                                            _navigateTo(context, '/careers'),
-                                        isSubItem: true,
-                                      ),
-                                    ],
-
-                                    const SizedBox(height: 16),
-                                    const Divider(color: AppColors.divider),
-                                    const SizedBox(height: 16),
-
-                                    // Section 4: Settings
-                                    _buildGroupHeader(
-                                      context,
-                                      title: 'การตั้งค่า',
-                                      isExpanded: _expandedGroups['settings']!,
-                                      onTap: () => setState(
-                                        () => _expandedGroups['settings'] =
-                                            !_expandedGroups['settings']!,
-                                      ),
-                                    ),
-                                    if (_expandedGroups['settings']!) ...[
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ข้อมูลส่วนตัว',
-                                        icon: Icons.person_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/profile'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ช่องทางชำระเงิน',
-                                        icon: Icons.credit_card,
-                                        onTap: () => _navigateTo(
-                                          context,
-                                          '/payment-methods',
-                                        ),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'จัดการบัญชี',
-                                        icon: Icons.people_outline,
-                                        onTap: () =>
-                                            _navigateTo(context, '/account'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ตั้งค่าระบบ',
-                                        icon: Icons.settings,
-                                        onTap: () =>
-                                            _navigateTo(context, '/settings'),
-                                        isSubItem: true,
-                                      ),
-                                      _buildMenuItem(
-                                        context,
-                                        title: 'ตั้งค่า Sync',
-                                        icon: Icons.sync,
-                                        onTap: () => _navigateTo(
-                                          context,
-                                          '/settings/sync',
-                                        ),
-                                        isSubItem: true,
-                                      ),
-                                    ],
-                                    // การจัดการยา (Organization หรือ Personal Override)
-                                    if (_canManageDrugRisk) ...[
-                                      const SizedBox(height: 16),
-                                      const Divider(color: AppColors.divider),
-                                      const SizedBox(height: 16),
-                                      _buildGroupHeader(
-                                        context,
-                                        title: 'การจัดการยา',
-                                        isExpanded:
-                                            _expandedGroups['drug_management']!,
-                                        onTap: () => setState(
-                                          () => _expandedGroups['drug_management'] =
-                                              !_expandedGroups['drug_management']!,
-                                        ),
-                                      ),
-                                      if (_expandedGroups['drug_management']!) ...[
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการหมวดหมู่ความเสี่ยงยา',
-                                          icon: Icons.warning_amber_outlined,
-                                          onTap: () {
-                                            Navigator.of(context).pop();
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const DrugRiskClassificationAdminPage(),
-                                              ),
-                                            );
-                                          },
-                                          isSubItem: true,
-                                        ),
-                                      ],
-                                    ],
-
-                                    const SizedBox(height: 16),
-                                    const Divider(color: AppColors.divider),
-                                    const SizedBox(height: 16),
-
-                                    // Section 5: Admin — แสดงเฉพาะ admin
-                                    if (AuthService.instance.isAdmin) ...[
-                                      _buildGroupHeader(
-                                        context,
-                                        title: 'ผู้ดูแลระบบ',
-                                        isExpanded: _expandedGroups['admin']!,
-                                        onTap: () => setState(
-                                          () => _expandedGroups['admin'] =
-                                              !_expandedGroups['admin']!,
-                                        ),
-                                      ),
-                                      if (_expandedGroups['admin']!) ...[
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการอาชีพ',
-                                          icon: Icons.admin_panel_settings,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/professions',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการหมวดหมู่ผู้ใช้',
-                                          icon: Icons.category_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/user-categories',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'เฝ้าดูระบบ (System Monitor)',
-                                          icon: Icons.monitor_heart_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/system-monitor',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'ตรวจสอบผู้สมัคร',
-                                          icon: Icons.verified_user_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/applications',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการอวัยวะ',
-                                          icon: Icons.accessibility_new,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/body_regions',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการแพ็คเกจ',
-                                          icon: Icons.inventory_2_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/packages',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการระบบบริจาค',
-                                          icon:
-                                              Icons.volunteer_activism_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/donations',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการหมวดหมู่ยา/สินค้า',
-                                          icon: Icons.local_pharmacy_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/pharmacy_filters',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'ควบคุมระบบวิดีโอ',
-                                          icon: Icons.video_settings,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/video-control',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'จัดการลายน้ำ (Watermark)',
-                                          icon:
-                                              Icons.branding_watermark_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/watermark',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                        _buildMenuItem(
-                                          context,
-                                          title: 'ตั้งค่าแพลตฟอร์ม (Map Web)',
-                                          icon: Icons
-                                              .settings_applications_outlined,
-                                          onTap: () => _navigateTo(
-                                            context,
-                                            '/admin/platform-settings',
-                                          ),
-                                          isSubItem: true,
-                                        ),
-                                      ],
-                                      const SizedBox(height: 32),
                                     ],
                                   ],
-                                ),
+
+                                  const SizedBox(height: 16),
+                                  const Divider(color: AppColors.divider),
+                                  const SizedBox(height: 16),
+
+                                  // Section 5: Admin — แสดงเฉพาะ admin
+                                  if (AuthService.instance.isAdmin) ...[
+                                    _buildGroupHeader(
+                                      context,
+                                      title: 'ผู้ดูแลระบบ',
+                                      isExpanded: _expandedGroups['admin']!,
+                                      onTap: () => setState(
+                                        () => _expandedGroups['admin'] =
+                                            !_expandedGroups['admin']!,
+                                      ),
+                                    ),
+                                    if (_expandedGroups['admin']!) ...[
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการอาชีพ',
+                                        icon: Icons.admin_panel_settings,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/professions',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการหมวดหมู่ผู้ใช้',
+                                        icon: Icons.category_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/user-categories',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'เฝ้าดูระบบ (System Monitor)',
+                                        icon: Icons.monitor_heart_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/system-monitor',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'ตรวจสอบผู้สมัคร',
+                                        icon: Icons.verified_user_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/applications',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการอวัยวะ',
+                                        icon: Icons.accessibility_new,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/body_regions',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการแพ็คเกจ',
+                                        icon: Icons.inventory_2_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/packages',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการบริจาค / จิตอาสา',
+                                        icon: Icons.volunteer_activism_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/donations',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการหมวดหมู่ยา/สินค้า',
+                                        icon: Icons.local_pharmacy_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/pharmacy_filters',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'ควบคุมระบบวิดีโอ',
+                                        icon: Icons.video_settings,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/video-control',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการลายน้ำ (Watermark)',
+                                        icon: Icons.branding_watermark_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/watermark',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'ตั้งค่าแพลตฟอร์ม (Map Web)',
+                                        icon: Icons
+                                            .settings_applications_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/admin/platform-settings',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 32),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
+                        ),
 
-                          // Auth button
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 60,
-                              right: 16,
-                              bottom: 32,
-                            ),
-                            child: _buildMenuItem(
-                              context,
-                              title: AuthService.instance.isLoggedIn
-                                  ? 'ออกจากระบบ'
-                                  : 'ลงชื่อเข้าใช้',
-                              icon: AuthService.instance.isLoggedIn
-                                  ? Icons.exit_to_app
-                                  : Icons.login,
-                              onTap: () async {
-                                if (AuthService.instance.isLoggedIn) {
-                                  if (widget.onLogout != null) {
-                                    widget.onLogout!();
-                                  } else {
-                                    // Capture navigator before closing drawer
-                                    final navigator = Navigator.of(
-                                      context,
-                                      rootNavigator: true,
-                                    );
-                                    // Close drawer first
-                                    Navigator.of(context).pop();
-                                    await AuthService.instance.logout();
-                                    // Wait for drawer close animation to complete
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 400),
-                                    );
-                                    // Use captured navigator — context is now unmounted
-                                    navigator.pushNamedAndRemoveUntil(
-                                      '/login',
-                                      (route) => false,
-                                    );
-                                  }
-                                } else {
-                                  final navigator = Navigator.of(context);
-                                  navigator.pop();
-                                  navigator.pushNamed('/login');
-                                }
-                              },
-                            ),
+                        // Auth button
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: 60,
+                            right: 16,
+                            bottom: 32,
                           ),
-                        ],
-                      ),
+                          child: _buildMenuItem(
+                            context,
+                            title: AuthService.instance.isLoggedIn
+                                ? 'ออกจากระบบ'
+                                : 'ลงชื่อเข้าใช้',
+                            icon: AuthService.instance.isLoggedIn
+                                ? Icons.exit_to_app
+                                : Icons.login,
+                            onTap: () async {
+                              if (AuthService.instance.isLoggedIn) {
+                                if (widget.onLogout != null) {
+                                  widget.onLogout!();
+                                } else {
+                                  // Capture navigator before closing drawer
+                                  final navigator = Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  );
+                                  // Close drawer first
+                                  Navigator.of(context).pop();
+                                  await AuthService.instance.logout();
+                                  // Wait for drawer close animation to complete
+                                  await Future.delayed(
+                                    const Duration(milliseconds: 400),
+                                  );
+                                  // Use captured navigator — context is now unmounted
+                                  navigator.pushNamedAndRemoveUntil(
+                                    '/login',
+                                    (route) => false,
+                                  );
+                                }
+                              } else {
+                                final navigator = Navigator.of(context);
+                                navigator.pop();
+                                navigator.pushNamed('/login');
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+      ),
     );
   }
 
