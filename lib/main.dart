@@ -92,6 +92,7 @@ import 'features/erp/presentation/pages/supplier_detail_page.dart';
 import 'features/erp/presentation/pages/procurement_dashboard_page.dart';
 import 'features/erp/presentation/pages/procurement_report_page.dart';
 import 'features/erp/presentation/pages/notification_list_page.dart';
+import 'shared/widgets/tlz_notification_toast.dart';
 import 'features/erp/presentation/pages/cart_page.dart';
 import 'features/erp/presentation/pages/checkout_page.dart';
 import 'features/erp/presentation/pages/delivery_orders_page.dart';
@@ -142,7 +143,9 @@ Future<void> _openBoxSafe<T>(String boxName) async {
   try {
     await Hive.openBox<T>(boxName);
   } catch (e) {
-    debugPrint('Hive: Failed to open box "$boxName" ($e) — deleting and recreating');
+    debugPrint(
+      'Hive: Failed to open box "$boxName" ($e) — deleting and recreating',
+    );
     await Hive.deleteBoxFromDisk(boxName);
     await Hive.openBox<T>(boxName);
   }
@@ -179,7 +182,7 @@ void main() async {
   Hive.registerAdapter(MessageStatusAdapter());
   Hive.registerAdapter(ChatMessageAdapter());
   Hive.registerAdapter(ChatParticipantAdapter());
-  
+
   // Open Boxes (with fallback: delete corrupt boxes from schema changes)
   await _openBoxSafe<ChatRoom>('chat_rooms');
   await _openBoxSafe<ChatMessage>('chat_messages');
@@ -197,11 +200,7 @@ void main() async {
   // Initialize Thai Date Service
   await ThaiDateService().initializeLocale('th_TH');
 
-  runApp(
-    const ProviderScope(
-      child: SheservedApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: SheservedApp()));
 }
 
 class SheservedApp extends StatelessWidget {
@@ -214,20 +213,16 @@ class SheservedApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: false,
       scrollBehavior: AppScrollBehavior(),
-      navigatorObservers: [
-        dashboardRouteObserver,
-        RouteLoggerObserver(),
-      ],
+      builder: (context, child) =>
+          Stack(children: [child!, const TlzNotificationToast()]),
+      navigatorObservers: [dashboardRouteObserver, RouteLoggerObserver()],
       theme: AppTheme.lightTheme,
       localizationsDelegates: [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('th', 'TH'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('th', 'TH'), Locale('en', 'US')],
       home: const MainAppLayout(),
       routes: {
         '/login': (context) => const LoginPage(),
@@ -239,33 +234,78 @@ class SheservedApp extends StatelessWidget {
         '/test': (context) => const TestWebSocketWidget(),
         '/home': (context) => const MainAppLayout(),
 
-        '/admin/professions': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ProfessionAdminPage()),
-        '/admin/applications': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ApplicationReviewPage()),
-        '/admin/body_regions': (context) => const AuthGuardWidget(requiredRole: 'admin', child: BodyRegionAdminPage()),
+        '/admin/professions': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: ProfessionAdminPage(),
+        ),
+        '/admin/applications': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: ApplicationReviewPage(),
+        ),
+        '/admin/body_regions': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: BodyRegionAdminPage(),
+        ),
         '/settings/sync': (context) => const SyncSettingsPage(),
         '/chat-list': (context) => const ChatListPage(),
         '/chat-contacts': (context) => ContactListPage(),
-        '/health-program-requests': (context) => const AuthGuardWidget(requiredRole: 'provider', child: HealthProgramRequestDashboard()),
-        '/admin/packages': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PackageAdminPage()),
-        '/admin/user-categories': (context) => const AuthGuardWidget(requiredRole: 'admin', child: UserCategoryAdminPage()),
-        '/admin/system-monitor': (context) => const AuthGuardWidget(requiredRole: 'admin', child: SystemMonitorPage()),
+        '/health-program-requests': (context) => const AuthGuardWidget(
+          requiredRole: 'provider',
+          child: HealthProgramRequestDashboard(),
+        ),
+        '/admin/packages': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: PackageAdminPage(),
+        ),
+        '/admin/user-categories': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: UserCategoryAdminPage(),
+        ),
+        '/admin/system-monitor': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: SystemMonitorPage(),
+        ),
         '/donate': (context) => const DonationDashboardPage(),
-        '/admin/donations': (context) => const AuthGuardWidget(requiredRole: 'admin', child: DonationAdminPage()),
-        '/admin/pharmacy_filters': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PharmacyFiltersAdminPage()),
-        '/admin/video-control': (context) => const AuthGuardWidget(requiredRole: 'admin', child: VideoAdminPage()),
-        '/admin/watermark': (context) => const AuthGuardWidget(requiredRole: 'admin', child: WatermarkManagementPage()),
-        '/admin/platform-settings': (context) => const AuthGuardWidget(requiredRole: 'admin', child: PlatformSettingsPage()),
+        '/admin/donations': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: DonationAdminPage(),
+        ),
+        '/admin/pharmacy_filters': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: PharmacyFiltersAdminPage(),
+        ),
+        '/admin/video-control': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: VideoAdminPage(),
+        ),
+        '/admin/watermark': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: WatermarkManagementPage(),
+        ),
+        '/admin/platform-settings': (context) => const AuthGuardWidget(
+          requiredRole: 'admin',
+          child: PlatformSettingsPage(),
+        ),
         '/community/sport-club': (context) => const SportClubPage(),
-        '/community/sport-club/group/create': (context) => const CreateGroupPage(),
-        '/community/sport-club/sport/propose': (context) => const ProposeSportPage(),
-        '/community/sport-club/sport/review': (context) => const AuthGuardWidget(requiredRole: 'admin', child: ReviewProposedSportsPage()),
+        '/community/sport-club/group/create': (context) =>
+            const CreateGroupPage(),
+        '/community/sport-club/sport/propose': (context) =>
+            const ProposeSportPage(),
+        '/community/sport-club/sport/review': (context) =>
+            const AuthGuardWidget(
+              requiredRole: 'admin',
+              child: ReviewProposedSportsPage(),
+            ),
         '/community/sport-club/my-groups': (context) => const MyGroupsPage(),
 
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),
         '/my-consultations': (context) => const MyConsultationsPage(),
-        '/provider-history': (context) => const AuthGuardWidget(requiredRole: 'provider', child: ProviderHistoryPage()),
+        '/provider-history': (context) => const AuthGuardWidget(
+          requiredRole: 'provider',
+          child: ProviderHistoryPage(),
+        ),
         '/kpi/dashboard': (context) => const KpiDashboardPage(),
         '/kpi/target/form': (context) => const KpiTargetFormPage(),
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
@@ -285,31 +325,37 @@ class SheservedApp extends StatelessWidget {
         if (settings.name == '/erp' || settings.name == '/erp/dashboard') {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => const ErpDashboardShell(child: ErpDashboardPage()),
+            builder: (context) =>
+                const ErpDashboardShell(child: ErpDashboardPage()),
           );
         }
-        if (settings.name == '/erp/settings' || settings.name == '/organizationSettings') {
+        if (settings.name == '/erp/settings' ||
+            settings.name == '/organizationSettings') {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => const ErpDashboardShell(child: OrganizationSettingsPage()),
+            builder: (context) =>
+                const ErpDashboardShell(child: OrganizationSettingsPage()),
           );
         }
         if (settings.name == '/erp/settings/theme') {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => const ErpDashboardShell(child: ThemeSettingsPage()),
+            builder: (context) =>
+                const ErpDashboardShell(child: ThemeSettingsPage()),
           );
         }
         if (settings.name == '/erp/settings/modules') {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => const ErpDashboardShell(child: ModuleLayoutSettingsPage()),
+            builder: (context) =>
+                const ErpDashboardShell(child: ModuleLayoutSettingsPage()),
           );
         }
         if (settings.name == '/erp/settings/glass') {
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => const ErpDashboardShell(child: GlassmorphismSettingsPage()),
+            builder: (context) =>
+                const ErpDashboardShell(child: GlassmorphismSettingsPage()),
           );
         }
         if (settings.name == '/erp/roles') {
@@ -317,7 +363,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: RoleManagementPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: RoleManagementPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/feature-flags') {
@@ -325,7 +373,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: FeatureFlagsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: FeatureFlagsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/products') {
@@ -333,7 +383,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ProductListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ProductListPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/customers') {
@@ -341,7 +393,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: CustomerListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: CustomerListPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory') {
@@ -349,7 +403,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: InventoryPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: InventoryPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/dashboard') {
@@ -357,7 +413,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: InventoryDashboardPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: InventoryDashboardPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/transfer') {
@@ -365,7 +423,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: StockTransferPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: StockTransferPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/adjustment') {
@@ -373,7 +433,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: StockAdjustmentPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: StockAdjustmentPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/movements') {
@@ -381,7 +443,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: StockMovementTrackingPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: StockMovementTrackingPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/stocktake-config') {
@@ -389,7 +453,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: StocktakeConfigPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: StocktakeConfigPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/inventory/receipt') {
@@ -397,7 +463,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: GoodsReceiptPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: GoodsReceiptPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/suppliers') {
@@ -405,7 +473,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ProcurementPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ProcurementPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/procurement-settings') {
@@ -413,7 +483,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ProcurementSettingsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ProcurementSettingsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/reorder-suggestions') {
@@ -423,17 +495,30 @@ class SheservedApp extends StatelessWidget {
           final userId = args?['userId'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ReorderSuggestionPage(professionId: professionId, branchId: branchId, userId: userId)),
+            builder: (context) => ErpDashboardShell(
+              child: ReorderSuggestionPage(
+                professionId: professionId,
+                branchId: branchId,
+                userId: userId,
+              ),
+            ),
           );
         }
         if (settings.name == '/erp/supplier-detail') {
           final args = settings.arguments as Map<String, dynamic>?;
           final professionId = args?['professionId'] as String? ?? '';
           final supplierId = args?['supplierId'] as String? ?? '';
-          final supplierName = args?['supplierName'] as String? ?? 'ผู้จัดจำหน่าย';
+          final supplierName =
+              args?['supplierName'] as String? ?? 'ผู้จัดจำหน่าย';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: SupplierDetailPage(professionId: professionId, supplierId: supplierId, supplierName: supplierName)),
+            builder: (context) => ErpDashboardShell(
+              child: SupplierDetailPage(
+                professionId: professionId,
+                supplierId: supplierId,
+                supplierName: supplierName,
+              ),
+            ),
           );
         }
         if (settings.name == '/erp/procurement-dashboard') {
@@ -442,7 +527,12 @@ class SheservedApp extends StatelessWidget {
           final branchId = args?['branchId'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ProcurementDashboardPage(professionId: professionId, branchId: branchId)),
+            builder: (context) => ErpDashboardShell(
+              child: ProcurementDashboardPage(
+                professionId: professionId,
+                branchId: branchId,
+              ),
+            ),
           );
         }
         if (settings.name == '/erp/procurement-report') {
@@ -451,7 +541,12 @@ class SheservedApp extends StatelessWidget {
           final branchId = args?['branchId'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ProcurementReportPage(professionId: professionId, branchId: branchId)),
+            builder: (context) => ErpDashboardShell(
+              child: ProcurementReportPage(
+                professionId: professionId,
+                branchId: branchId,
+              ),
+            ),
           );
         }
         if (settings.name == '/erp/notifications') {
@@ -459,7 +554,9 @@ class SheservedApp extends StatelessWidget {
           final category = args?['category'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: NotificationListPage(category: category)),
+            builder: (context) => ErpDashboardShell(
+              child: NotificationListPage(category: category),
+            ),
           );
         }
         if (settings.name == '/erp/cart') {
@@ -467,7 +564,8 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: CartPage(professionId: professionId)),
+            builder: (context) =>
+                ErpDashboardShell(child: CartPage(professionId: professionId)),
           );
         }
         if (settings.name == '/erp/checkout') {
@@ -476,7 +574,12 @@ class SheservedApp extends StatelessWidget {
           final sessionId = args?['sessionId'] as String?;
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: CheckoutPage(professionId: professionId, sessionId: sessionId)),
+            builder: (context) => ErpDashboardShell(
+              child: CheckoutPage(
+                professionId: professionId,
+                sessionId: sessionId,
+              ),
+            ),
           );
         }
         if (settings.name == '/erp/delivery') {
@@ -484,7 +587,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: DeliveryOrdersPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: DeliveryOrdersPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/vendor-contracts') {
@@ -492,7 +597,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: VendorContractsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: VendorContractsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/payment-channels') {
@@ -500,7 +607,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: PaymentChannelsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: PaymentChannelsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/pos/counter') {
@@ -508,7 +617,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: CounterPosPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: CounterPosPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/pos/clinic') {
@@ -516,7 +627,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ClinicPosPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ClinicPosPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/order/success') {
@@ -532,7 +645,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: EmployeeListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: EmployeeListPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/gl-entries') {
@@ -540,7 +655,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: GlEntriesPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: GlEntriesPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/analytics') {
@@ -548,7 +665,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: DashboardAnalyticsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: DashboardAnalyticsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/chart-of-accounts') {
@@ -556,7 +675,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ChartOfAccountsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ChartOfAccountsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/accounts-receivable') {
@@ -564,7 +685,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: AccountsReceivablePage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: AccountsReceivablePage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/accounts-payable') {
@@ -572,7 +695,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: AccountsPayablePage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: AccountsPayablePage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/shifts') {
@@ -580,7 +705,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ShiftManagementPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ShiftManagementPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/clinical/emr') {
@@ -588,7 +715,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: EmrListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: EmrListPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/clinical/opd') {
@@ -596,7 +725,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: OpdVisitPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: OpdVisitPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/clinical/prescriptions') {
@@ -604,7 +735,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: PrescriptionPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: PrescriptionPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/clinical/lab') {
@@ -612,7 +745,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: LabResultsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: LabResultsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/clinical/cohorts') {
@@ -620,7 +755,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: PatientCohortPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: PatientCohortPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/refunds') {
@@ -628,7 +765,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: RefundListPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: RefundListPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/loyalty') {
@@ -636,7 +775,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: LoyaltyRulesPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: LoyaltyRulesPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/reports') {
@@ -644,7 +785,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: ReportExportPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: ReportExportPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/settlement') {
@@ -652,7 +795,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: SettlementPayoutPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: SettlementPayoutPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/payroll') {
@@ -660,7 +805,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: PayrollPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: PayrollPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/hr-settings') {
@@ -668,7 +815,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: HrSettingsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: HrSettingsPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/settings/employee-roles') {
@@ -676,7 +825,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: EmployeeRoleAssignmentPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: EmployeeRoleAssignmentPage(professionId: professionId),
+            ),
           );
         }
         if (settings.name == '/erp/settings/my-permissions') {
@@ -684,7 +835,9 @@ class SheservedApp extends StatelessWidget {
           final professionId = args?['professionId'] as String? ?? '';
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => ErpDashboardShell(child: MyPermissionsPage(professionId: professionId)),
+            builder: (context) => ErpDashboardShell(
+              child: MyPermissionsPage(professionId: professionId),
+            ),
           );
         }
 
@@ -722,7 +875,8 @@ class SheservedApp extends StatelessWidget {
         if (settings.name == '/consultation-history-chat') {
           final consultationId = settings.arguments as String;
           return MaterialPageRoute(
-            builder: (context) => ConsultationChatHistoryPage(consultationId: consultationId),
+            builder: (context) =>
+                ConsultationChatHistoryPage(consultationId: consultationId),
           );
         }
 
@@ -804,7 +958,7 @@ class SheservedApp extends StatelessWidget {
             builder: (context) => const HealthArticlePage(),
           );
         }
-        
+
         if (settings.name == '/admin/registration-fields') {
           final profession = settings.arguments as Profession?;
           return MaterialPageRoute(
@@ -823,9 +977,7 @@ class SheservedApp extends StatelessWidget {
         }
 
         if (settings.name == '/sport-club') {
-          return MaterialPageRoute(
-            builder: (context) => const SportClubPage(),
-          );
+          return MaterialPageRoute(builder: (context) => const SportClubPage());
         }
 
         return null;

@@ -163,11 +163,20 @@ class WebSocketService {
     required String applicationId,
     required String status,
   }) {
-    if (!_isConnected || _socket == null) return;
+    debugPrint(
+      '[WebSocket] sendApplicationReviewNotification: app=$applicationId status=$status connected=$_isConnected socket=${_socket != null}',
+    );
+    if (!_isConnected || _socket == null) {
+      debugPrint(
+        '[WebSocket] sendApplicationReviewNotification SKIPPED — not connected',
+      );
+      return;
+    }
     _socket!.emit('application-review-notification', {
       'applicationId': applicationId,
       'status': status,
     });
+    debugPrint('[WebSocket] emit application-review-notification OK');
   }
 
   WebSocketService._(this._serverUrl);

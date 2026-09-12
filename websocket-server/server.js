@@ -880,11 +880,21 @@ io.on('connection', (socket) => {
   // current application status from Supabase; client payload is not trusted
   // for recipient identity or authorization.
   socket.on('application-review-notification', async (data) => {
-    if (!socket.userId || socket.userRole !== 'admin') return;
+    console.log('[AppReview] received event from socket.userId=', socket.userId, 'role=', socket.userRole);
+    if (!socket.userId || socket.userRole !== 'admin') {
+      console.warn('[AppReview] rejected: not admin or no userId');
+      return;
+    }
     const applicationId = data?.applicationId?.toString();
     const status = data?.status?.toString();
-    if (!applicationId || !['approved', 'rejected'].includes(status)) return;
-    if (!supabaseForSync) return;
+    if (!applicationId || !['approved', 'rejected'].includes(status)) {
+      console.warn('[AppReview] rejected: invalid applicationId or status', { applicationId, status });
+      return;
+    }
+    if (!supabaseForSync) {
+      console.warn('[AppReview] rejected: supabaseForSync not configured');
+      return;
+    }
 
     try {
       const { data: application, error } = await supabaseForSync
@@ -892,7 +902,12 @@ io.on('connection', (socket) => {
         .select('id, user_id, profession_id, status, profession:professions!profession_id(name)')
         .eq('id', applicationId)
         .maybeSingle();
-      if (error || !application || application.status !== status) return;
+      if (error || !application || application.status !== status) {
+        console.warn('[AppReview] rejected: application not found or status mismatch', { error: error?.message, found: !!application, dbStatus: application?.status, expectedStatus: status });
+        return;
+      }
+
+      console.log('[AppReview] application found for user:', application.user_id);
 
       const professionName = application.profession?.name || 'อาชีพที่ร้องขอ';
       const isApproved = status === 'approved';
@@ -927,6 +942,7 @@ io.on('connection', (socket) => {
         return;
       }
 
+      console.log('[AppReview] notification inserted, broadcasting to user:', application.user_id);
       socketService.broadcastApplicationNotification([application.user_id], notification);
     } catch (error) {
       console.error('[Notifications] Review event failed:', error.message);

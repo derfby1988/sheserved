@@ -164,12 +164,19 @@ function broadcastFitnessBookingStatus(recipientUserIds, payload) {
  * @param {object} payload
  */
 function broadcastApplicationNotification(recipientUserIds, payload) {
-    if (!io || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0) return;
+    if (!io || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0) {
+        console.warn('[AppReview] broadcastApplicationNotification skipped: io=', !!io, 'recipients=', recipientUserIds);
+        return;
+    }
 
     const uniqueUserIds = [...new Set(recipientUserIds.map((id) => `${id}`.trim()).filter(Boolean))];
-    if (uniqueUserIds.length === 0) return;
+    if (uniqueUserIds.length === 0) {
+        console.warn('[AppReview] broadcastApplicationNotification skipped: no valid user IDs');
+        return;
+    }
 
     uniqueUserIds.forEach((userId) => {
+        console.log('[AppReview] emitting application-notification to user-' + userId);
         io.to(`user-${userId}`).emit('application-notification', {
             recipient_id: userId,
             ...payload,
