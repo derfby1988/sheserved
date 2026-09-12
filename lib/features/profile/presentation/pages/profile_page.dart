@@ -770,6 +770,27 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             ),
           ),
         ),
+        SliverToBoxAdapter(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'ย้อนกลับ',
+                color: AppColors.primary,
+                onPressed: () {
+                  final navigator = Navigator.of(context);
+                  if (navigator.canPop()) {
+                    navigator.pop();
+                  } else {
+                    navigator.pushReplacementNamed('/home');
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
         if (_selectedTab == ProfileTab.history) ...[
           SliverFillRemaining(
             child: isConsumer
