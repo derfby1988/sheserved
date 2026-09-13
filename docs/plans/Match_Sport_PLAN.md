@@ -2118,15 +2118,18 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 
 ## Phase 15 — ระบบตำแหน่งผู้เล่นบนสนามจำลอง (Position Lineup) ⏳ รอ implement
 
-> ตัดสินใจ 2026-09-13 — เจ้าของก๊วนระบุตำแหน่งผู้เล่นที่ต้องการเชิญบนสนามจำลอง (1 หรือ 2 ฝั่งตาม `sports.field_layout`), วางไอคอนตำแหน่งลงพื้นที่สนามและลากย้ายได้, กำหนดไอคอน/สี/ชื่อตำแหน่ง/จำนวนที่รับต่อตำแหน่ง ผู้เข้าร่วมต้องเลือกตำแหน่งที่ยังว่างตอนจองรอบนั้น; ทุกตำแหน่งเต็ม = เข้าร่วมรอบนั้นไม่ได้
+> ตัดสินใจ 2026-09-13 — เจ้าของก๊วนระบุตำแหน่งผู้เล่นที่ต้องการเชิญบนสนามจำลอง (1 หรือ 2 ฝั่งตาม `sports.field_layout`), วางไอคอนตำแหน่งลงพื้นที่สนามและลากย้ายได้, กำหนดไอคอน/สี/ชื่อตำแหน่ง/จำนวนที่รับต่อตำแหน่ง ผู้เข้าร่วมรวมถึง owner auto-join ต้องเลือกตำแหน่งที่ยังว่างตอนจองรอบนั้นและถูกนับใน slot; ทุกตำแหน่งเต็ม = เข้าร่วมรอบนั้นไม่ได้
+>
+> ทบทวนแผน 2026-09-13 — หากตำแหน่งเต็มระหว่าง booking pending ให้คง booking เป็น `pending`, แจ้งผู้สมัครให้เปลี่ยนตำแหน่ง แล้วจึงอนุมัติใหม่; ไม่ reject อัตโนมัติ
 
 ### 15.1 การตัดสินใจเชิงออกแบบ (Decision Log)
 
 - **Slot ผูกกับรอบนัด (per-session)** — สมาชิกเลือกตำแหน่งใหม่ทุกครั้งที่จองรอบนั้น ไม่ใช่ roster ประจำก๊วน; claim จริงคือ `fitness_group_bookings.position_id` ของรอบนั้น
 - **บล็อกเมื่อเต็ม** — ก๊วนที่กำหนดตำแหน่ง active อย่างน้อย 1 ตำแหน่ง → ผู้เข้าร่วม **ต้องเลือกตำแหน่ง**; ทุกตำแหน่งเต็มในรอบนั้น → เข้าร่วมไม่ได้ (ไม่มี join แบบไม่ระบุตำแหน่ง)
-- **Pending ไม่ถือ slot** — คำขอ `pending` เก็บ `position_id` ที่ต้องการไว้เฉยๆ ไม่นับ slot; slot ถูก claim ตอน `approve_fitness_session_booking` เปลี่ยนเป็น `confirmed`; ถ้าตำแหน่งเต็มระหว่างรออนุมัติ → approve ล้มด้วย `POSITION_FULL` ให้แอดมิน reject พร้อมเหตุผล หรือให้ผู้สมัครเปลี่ยนตำแหน่งผ่าน `set_booking_position`
+- **Pending ไม่ถือ slot** — คำขอ `pending` เก็บ `position_id` ที่ต้องการไว้เฉยๆ ไม่นับ slot; slot ถูก claim ตอน `approve_fitness_session_booking` เปลี่ยนเป็น `confirmed`; ถ้าตำแหน่งเต็มระหว่างรออนุมัติ → `approve` ต้องล้มด้วย `POSITION_FULL` แต่คง booking เป็น `pending`, ส่ง event `fitness_booking_position_full` ไปยังผู้สมัคร และแสดงปุ่ม "เปลี่ยนตำแหน่ง" ให้ผู้สมัครเรียก `set_booking_position` แล้วจึงให้ผู้จัดการกดอนุมัติใหม่ (ห้าม reject อัตโนมัติ)
+- **Owner auto-join** — owner ต้องเลือกตำแหน่งและถูกนับ slot เช่นเดียวกับผู้เข้าร่วมทั่วไป; auto-join ต้องเลือกตำแหน่งผ่านค่า config/ตำแหน่ง default ที่ตรวจสอบได้ก่อนเรียก booking RPC หากไม่มีตำแหน่งที่เลือกให้ fail ด้วย `POSITION_REQUIRED` อย่างชัดเจน
 - **ตารางแยก `fitness_group_positions`** (1 row = 1 marker) — นับ slot/query ตามตำแหน่งได้ รองรับ use case อนาคต เช่น ค้นก๊วนที่รับ "กองหน้า"
-- **รูปสนามมาจาก `sports.field_layout`** — ผู้เสนอกีฬาเลือกตอนเสนอ, แอดมินปรับตอนอนุมัติ (`approveSport` รับ `fieldLayout`); กีฬาเดิม backfill ด้วย name mapping (ทีม/แร็กเก็ต → `double`, ไม่มีตำแหน่ง → `none`, อื่นๆ → `single`)
+- **รูปสนามมาจาก `sports.field_layout`** — ผู้เสนอกีฬาเสนอค่าเริ่มต้นได้, แอดมินเป็นผู้ยืนยัน/ปรับตอนอนุมัติ (`approveSport` รับ `fieldLayout`); กีฬาเดิมที่ยังไม่มีค่า ห้ามใช้ fuzzy/name mapping และห้ามเปิด position feature จนกว่าแอดมินจะกำหนด `none/single/double` ให้เป็นรายกีฬาในหน้า review หรือ admin setup
 - **ครอบคลุม UI ครบ** — หน้าสร้างก๊วน (draft), sheet แก้ไขก๊วน (live DB), แสดงผลอ่านอย่างเดียวใน group detail sheet, สรุปตำแหน่งบนการ์ดก๊วน และ position picker ใน session picker flow
 - **สมาชิกเปลี่ยนตำแหน่งตัวเองได้** ผ่าน `set_booking_position` ขณะ booking ยัง `pending`/`confirmed` และรอบยังไม่จบ — เปลี่ยนได้เฉพาะไปตำแหน่งที่ยังไม่เต็ม ไม่อนุญาต "ล้างตำแหน่ง" ในก๊วนที่บังคับตำแหน่ง (รักษา invariant)
 
@@ -2135,8 +2138,9 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 ```sql
 -- sports: รูปแบบสนามจำลองของกีฬา
 ALTER TABLE public.sports
-  ADD COLUMN IF NOT EXISTS field_layout VARCHAR(10) NOT NULL DEFAULT 'single'
+  ADD COLUMN IF NOT EXISTS field_layout VARCHAR(10) NULL
   CHECK (field_layout IN ('none','single','double'));
+-- NULL     = ยังไม่ผ่านการกำหนดโดย admin — ห้ามเปิด position UI / ห้ามสร้าง group ที่ใช้ position
 -- 'none'   = กีฬาที่ไม่ใช้ระบบตำแหน่ง (วิ่ง/โยคะ/ฟิตเนส) — UI ซ่อน section
 -- 'single' = พื้นที่เดียว (side เดียว)
 -- 'double' = สนาม 2 ฝั่ง (เส้นแบ่งกลาง)
@@ -2161,12 +2165,12 @@ CREATE INDEX idx_fgp_group ON public.fitness_group_positions(group_id) WHERE is_
 -- claim ต่อรอบ: position ที่เลือกผูกกับ booking โดยตรง
 ALTER TABLE public.fitness_group_bookings
   ADD COLUMN IF NOT EXISTS position_id UUID
-  REFERENCES public.fitness_group_positions(id) ON DELETE SET NULL;
+  REFERENCES public.fitness_group_positions(id) ON DELETE RESTRICT;
 CREATE INDEX idx_fgb_position ON public.fitness_group_bookings(position_id)
   WHERE status = 'confirmed';
 ```
 
-- `ON DELETE SET NULL` — ลบ position แล้ว booking เดิมไม่หาย แค่เลิกผูกตำแหน่ง; ถ้า position มี booking อ้างอยู่ UI เสนอ `is_active=false` แทนลบ (pattern เดียวกับ cost standards)
+- `ON DELETE RESTRICT` — ห้ามลบ position ที่มี booking อ้างอยู่; UI ใช้ `is_active=false` เป็นวิธีปิดรับแทนการลบ (pattern เดียวกับ cost standards) และอนุญาตลบจริงเฉพาะ position ที่ไม่เคยถูกอ้างอิง
 - `x/y` normalize 0–1 เต็ม canvas; `side` เก็บฝั่งที่ marker ถูก drop (derived ที่ UI ไม่ผูก CHECK กับ x เพื่อไม่ over-constrain)
 - Indexes: `(group_id)` กรองเฉพาะ active สำหรับ public view, `(position_id) WHERE confirmed` สำหรับนับ slot ต่อรอบ
 
@@ -2198,7 +2202,7 @@ GROUP BY 1, 2;
 5. `v_status = 'pending'` (ก๊วนปิด) → เก็บ `position_id` เป็นความต้องการ ไม่ตรวจ slot
 6. `INSERT ... ON CONFLICT (session_id,user_id) DO UPDATE` ต้องเขียน `position_id = EXCLUDED.position_id` ด้วย (rebook เปลี่ยนตำแหน่งได้)
 
-**`approve_fitness_session_booking`** — ก่อน flip เป็น confirmed: ถ้า booking มี `position_id` → ตรวจ slot เหมือนข้อ 4 → เต็มแล้ว raise `POSITION_FULL` (ใบค้าง pending ต่อ แอดมิน reject หรือให้ผู้สมัครเปลี่ยนตำแหน่ง)
+**`approve_fitness_session_booking`** — ต้อง lock `fitness_group_sessions` ของ booking ด้วย `FOR UPDATE` ก่อนตรวจ session capacity/position capacity เพื่อ serialize การจองและอนุมัติในรอบเดียวกัน; ก่อน flip เป็น confirmed ถ้า booking มี `position_id` → ตรวจ slot เหมือนข้อ 4 → เต็มแล้ว raise `POSITION_FULL`, คงใบค้าง `pending`, ส่ง event `fitness_booking_position_full` ไปยังผู้สมัคร และให้ผู้สมัครเปลี่ยนตำแหน่งผ่าน `set_booking_position` ก่อนผู้จัดการอนุมัติใหม่
 
 **`set_booking_position(p_booking_id, p_user_id, p_position_id)`** — สมาชิกเปลี่ยนตำแหน่งตัวเอง:
 - booking ต้องเป็นของ `p_user_id`, `status IN ('pending','confirmed')`, รอบ `ends_at > now()`
@@ -2206,7 +2210,7 @@ GROUP BY 1, 2;
 - `confirmed` + เปลี่ยนตำแหน่ง → slot check ก่อนเขียน
 - error codes: `BOOKING_NOT_FOUND`, `FORBIDDEN`, `POSITION_REQUIRED`, `POSITION_INVALID`, `POSITION_FULL`, `SESSION_ENDED`
 
-**Session capacity ยังมีผลปกติ** — limit จริงของรอบ = min(session capacity, Σ slots ที่ยังว่าง); การ์ด/picker แสดงทั้งสองแยกกันเหมือนเดิม
+**Session capacity ยังมีผลปกติ** — limit จริงของรอบ = min(session capacity, Σ slots ที่ยังว่าง); การ์ด/picker แสดงทั้งสองแยกกันเหมือนเดิม การตรวจทั้งสองค่าใน booking/approve ต้องอยู่ใน transaction เดียวและ lock session เดียวกัน
 
 ### 15.5 Field Canvas UI (widget ใหม่)
 
@@ -2221,22 +2225,22 @@ GROUP BY 1, 2;
 
 ### 15.6 UI Integration Points
 
-- **`create_group_page.dart`** — section แบบพับได้ "ตำแหน่งผู้เล่นที่ต้องการ" (default ปิด) แสดงเฉพาะเมื่อ sport ที่เลือก `field_layout != 'none'`; markers เป็น draft เก็บใน state แล้ว persist หลัง `createGroup` ได้ id ผ่าน `createGroupPositions(groupId, drafts)` — pattern เดียวกับ cost standards ของ Phase 9.1
-- **`sport_club_page.dart` `_showEditGroupSheet`** — section จัดการตำแหน่ง live กับ DB (โหลด positions, เพิ่ม/แก้/เปิด-ปิด/ลบ); ลบ position ที่มี booking อ้างอยู่ → confirm + fallback deactivate
+- **`create_group_page.dart`** — section แบบพับได้ "ตำแหน่งผู้เล่นที่ต้องการ" (default ปิด) แสดงเฉพาะเมื่อ sport ที่เลือกมี `field_layout` เป็น `single/double`; markers เป็น draft เก็บใน state แล้ว persist หลัง `createGroup` ได้ id ผ่าน `replaceGroupPositions(groupId, drafts)` แบบ atomic; ถ้าบันทึกไม่สำเร็จต้องแสดง error และไม่ประกาศสร้างก๊วนสำเร็จแบบเงียบๆ
+- **`sport_club_page.dart` `_showEditGroupSheet`** — section จัดการตำแหน่ง live กับ DB (โหลด positions, แก้ draft แล้วกดบันทึกทั้งชุดผ่าน `replaceGroupPositions`); เปิด/ปิดใช้งานได้, ลบจริงเฉพาะ marker ที่ไม่มี booking อ้างอยู่, marker ที่มี booking ให้ deactivate เท่านั้น; ถ้าบันทึกไม่สำเร็จต้องคง draft ไว้ให้ retry
 - **`_showSessionPickerSheet`** — ก๊วนที่มีตำแหน่ง active: การ์ดรอบแสดงแถบตำแหน่งว่างสรุป (เช่น `กองหน้า เหลือ 1 · ผู้รักษา เหลือ 2`); แตะรอบ → `showPositionPicker` (mini field + ตำแหน่งที่เหลือ) เลือกแล้วค่อย `_book(sessionId, positionId)`; ตำแหน่งเต็ม disable; ทุกตำแหน่งเต็ม → การ์ดแสดง "ตำแหน่งเต็มแล้ว" และปิดการ join (ก่อน capacity check เดิม)
 - **`_showGroupDetailSheet`** — section "ตำแหน่งที่ก๊วนเปิดรับ" แสดง `PositionLineupView` แบบอ่านอย่างเดียว + ปุ่ม "จัดการ" สำหรับ admin ก๊วน; ใน session ExpansionTile แสดง availability ของรอบนั้นและให้สมาชิกที่จองแล้วเปลี่ยนตำแหน่งผ่าน `set_booking_position`
 - **การ์ดก๊วนบน feed** — แถวสรุป `รับตำแหน่ง: กองหน้า×2 · ผู้รักษา×1` (เฉพาะก๊วนที่มีตำแหน่ง)
-- **`propose_sport_page.dart`** — เพิ่มตัวเลือก `field_layout` (none/single/double) พร้อม preview สนามย่อย
-- **`review_proposed_sports_page.dart`** — แอดมินปรับ `field_layout` ตอนอนุมัติ (`approveSport` รับพารามิเตอร์เพิ่ม)
+- **`propose_sport_page.dart`** — เพิ่มตัวเลือก `field_layout` (none/single/double) พร้อม preview สนามย่อย; ค่าเป็นเพียงข้อเสนอจนกว่า admin จะยืนยัน
+- **`review_proposed_sports_page.dart`** — แอดมินต้องเลือก/ยืนยัน `field_layout` ก่อนอนุมัติ (`approveSport` รับพารามิเตอร์เพิ่ม); เพิ่ม admin setup สำหรับกีฬาเดิมที่ค่าเป็น NULL/ยังไม่ผ่านการกำหนด และห้ามเปิด position UI จนกว่าจะกำหนดครบ
 
 ### 15.7 Repository Methods (FitnessBuddiesRepository)
 
-- `listGroupPositions(groupId)` / `listPublicGroupPositions(groupId)`
-- `listSessionPositionAvailability(sessionIds)` — positions + taken per session (join 2 public views ฝั่ง client)
-- `createGroupPositions(groupId, drafts)` / `createGroupPosition` / `updateGroupPosition` / `setGroupPositionActive` / `deleteGroupPosition` — manager-guarded ผ่าน `_requireGroupManager` + validate allowlist (icon key, color hex, slots 1–50, x/y 0–1, label ≤60)
-- `bookSession(sessionId, userId, {positionId})` — ส่งต่อไป RPC
-- `setBookingPosition(bookingId, userId, positionId)` — เรียก RPC
-- error mapping: `POSITION_REQUIRED` → "ก๊วนนี้ต้องเลือกตำแหน่งก่อนเข้าร่วม", `POSITION_FULL` → "ตำแหน่งนี้เต็มแล้ว", `POSITION_INVALID` → "ตำแหน่งไม่ถูกต้องหรือถูกปิดแล้ว"
+- `replaceGroupPositions(groupId, drafts)` — RPC atomic สำหรับแทนที่ active/draft positions ทั้งชุด; ต้อง validate manager + group/sport layout ใน transaction เดียว และห้ามทำให้ booking ที่ยืนยันแล้วเสีย invariant
+- `listGroupPositions(groupId)` / `listPublicGroupPositions(groupId)` / `listSessionPositionAvailability(sessionIds)` — อ่าน layout และ taken count ตามสิทธิ์/ผ่าน public views
+- `createGroupPosition` / `updateGroupPosition` / `setGroupPositionActive` / `deleteGroupPosition` — ใช้ได้เฉพาะกรณีที่ไม่กระทบ booking และควรเรียกผ่านชุด atomic เป็นหลัก; validate allowlist (icon key, color hex, slots 1–50, x/y 0–1, label ≤60)
+- `bookSession(sessionId, userId, {positionId})` — ส่งต่อไป RPC; owner auto-join ต้องส่ง position ที่เลือกไว้ด้วย
+- `setBookingPosition(bookingId, userId, positionId)` — เรียก RPC และส่ง event/refresh เมื่อเปลี่ยนสำเร็จ
+- error mapping: `POSITION_REQUIRED` → "ก๊วนนี้ต้องเลือกตำแหน่งก่อนเข้าร่วม", `POSITION_FULL` → "ตำแหน่งนี้เต็มแล้ว", `POSITION_INVALID` → "ตำแหน่งไม่ถูกต้องหรือถูกปิดแล้ว", `POSITION_LAYOUT_NOT_READY` → "กีฬานี้ยังไม่ได้ตั้งค่ารูปแบบสนาม"
 
 ### 15.8 Edge Cases และ Invariants
 
@@ -2245,11 +2249,12 @@ GROUP BY 1, 2;
 - ยกเลิก booking `confirmed` → slot ว่างทันที (นับเฉพาะ confirmed)
 - reject/cancel `pending` → ไม่มีอะไรต้องคืน (ไม่เคยถือ slot)
 - เจ้าของลด `slots` ต่ำกว่าจำนวนที่จองแล้ว → claim เดิมคงอยู่ รับใหม่หยุดอัตโนมัติ (count check)
-- เปลี่ยนกีฬาของก๊วน/`field_layout` เปลี่ยนภายหลัง → positions เดิมคงอยู่, canvas render ตาม layout ใหม่ (double→single ย้าย side=1 เข้ามาในกรอบเดียว)
-- Owner auto-join / owner rejoin: owner จองผ่าน path เดิม — ถ้าก๊วนบังคับตำแหน่ง owner ก็ต้องเลือกตำแหน่งด้วย (หรือยกเว้น owner จาก POSITION_REQUIRED — **ตัดสินใจตอน implement** โดย default ให้ owner ไม่ถูกบังคับ)
+- เปลี่ยนกีฬาของก๊วน/`field_layout` เปลี่ยนภายหลัง → ห้ามทำให้ positions เดิมผิด layout; ในรอบแรกไม่เปิดให้เปลี่ยนกีฬา/ลดจาก `double` เป็น `single` เมื่อมี positions หรือ bookings อ้างอยู่ ให้ admin แก้ positions/ยืนยัน migration อย่างชัดเจนก่อน
+- Owner auto-join / owner rejoin: owner ต้องจองผ่าน path เดิมพร้อม `position_id`; ถ้าไม่มีตำแหน่งที่เลือกให้ fail ด้วย `POSITION_REQUIRED` และไม่สร้าง booking บางส่วน
 
 ### 15.9 Test Plan และ Acceptance Criteria
 
-- **DB test**: constraint ทุกตัว, index, view 2 ตัว, `book_fitness_session` ครบเคส (POSITION_REQUIRED/POSITION_INVALID/POSITION_FULL/pending ไม่นับ slot), approve เต็ม → POSITION_FULL, set_booking_position ทุก guard, idempotent re-run
-- **Widget test**: editor เพิ่ม/ลาก/แก้/ลบ marker, side อัปเดตถูกตอนลากข้ามฝั่ง, picker disable ตำแหน่งเต็ม, ก๊วนไม่มีตำแหน่ง flow เดิม
-- **Gate 15:** เจ้าของก๊วนวาง/ลาก/แก้ตำแหน่งบนสนาม 1–2 ฝั่งได้ตาม `field_layout` ของกีฬา, ผู้เข้าร่วมเลือกได้เฉพาะตำแหน่งที่ยังว่างของรอบนั้น, เต็มหมดเข้าร่วมไม่ได้, pending ไม่ถือ slot แต่ approve ตรวจ slot อีกครั้ง, ก๊วนที่ไม่ใช้ฟีเจอร์ทำงานเหมือนเดิมทุกจุด และผ่าน regression ของ join/approve/cancel เดิม
+- **DB test**: constraint ทุกตัว, `ON DELETE RESTRICT`, index, public views, NULL `field_layout` gate, atomic `replaceGroupPositions`, `book_fitness_session` ครบเคส (POSITION_REQUIRED/POSITION_INVALID/POSITION_FULL/pending ไม่นับ slot), concurrent booking/approve race test, approve เต็มคง pending + event, set_booking_position ทุก guard, owner auto-join ต้องมี position, idempotent re-run
+- **Widget test**: editor เพิ่ม/ลาก/แก้/ลบ marker, side อัปเดตถูกตอนลากข้ามฝั่ง, picker disable ตำแหน่งเต็ม, pending position-full แสดง action เปลี่ยนตำแหน่ง, field layout NULL/none ซ่อน editor, ก๊วนไม่มีตำแหน่ง flow เดิม
+- **Integration/E2E test**: สร้างก๊วนพร้อม positions ต้อง atomic, แก้ positions แล้ว retry ได้, admin review ต้องกำหนด field layout ก่อนอนุมัติ, notification ไปยังผู้สมัครเมื่อ approve ชน POSITION_FULL, เปลี่ยนตำแหน่ง pending/confirmed สำเร็จและไม่ทำให้ booking/slot หลุด invariant
+- **Gate 15:** แอดมินกำหนด `field_layout` ให้กีฬาเดิมครบก่อนเปิดใช้, เจ้าของก๊วนวาง/ลาก/แก้ตำแหน่งบนสนาม 1–2 ฝั่งได้ตาม layout, ผู้เข้าร่วมรวม owner auto-join เลือกได้เฉพาะตำแหน่งที่ยังว่างของรอบนั้น, เต็มหมดเข้าร่วมไม่ได้, pending ไม่ถือ slotแต่ approve ตรวจ slot อีกครั้งและคง pending เมื่อเต็ม, ก๊วนที่ไม่ใช้ฟีเจอร์ทำงานเหมือนเดิมทุกจุด และผ่าน regression ของ join/approve/cancel เดิม

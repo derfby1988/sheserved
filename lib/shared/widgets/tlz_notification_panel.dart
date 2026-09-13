@@ -7,6 +7,7 @@ import '../../features/chat/presentation/pages/chat_room_page.dart';
 import '../../features/erp/data/models/app_notification.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
 import '../../features/erp/presentation/widgets/glass_card.dart';
+import 'swipe_to_dismiss_card.dart';
 
 Future<void> showTlzNotificationPanel(
   BuildContext context, {
@@ -97,6 +98,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   String? _selectedCategory;
   List<Map<String, dynamic>> _chatRooms = [];
   bool _isLoadingChatRooms = false;
+  bool _isInitialLoading = true;
 
   bool get _showsChat =>
       _selectedCategory == null || _selectedCategory == 'chat';
@@ -113,9 +115,16 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     });
   }
 
+  /// โหลดข้อมูลเริ่มต้นพร้อมกัน (parallel) แล้วค่อยแสดง feed
+  /// เพื่อให้การ์ดแจ้งเตือน + การ์ดห้องแชทโผล่มาพร้อมกัน ไม่ใช่คนละจังหวะ
   Future<void> _loadInitialData() async {
-    await _loadNotifications();
-    if (_needsChatData) await _loadChatRooms();
+    try {
+      final tasks = <Future<void>>[_loadNotifications()];
+      if (_needsChatData) tasks.add(_loadChatRooms());
+      await Future.wait(tasks);
+    } finally {
+      if (mounted) setState(() => _isInitialLoading = false);
+    }
   }
 
   Future<void> _loadNotifications() {
@@ -537,10 +546,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
                         ),
                       const SizedBox(height: 6),
                       Expanded(
-                        child:
-                            state.isLoading &&
-                                state.notifications.isEmpty &&
-                                _chatRooms.isEmpty
+                        child: _isInitialLoading
                             ? const Center(child: CircularProgressIndicator())
                             : RefreshIndicator(
                                 onRefresh: _refresh,
@@ -632,7 +638,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _SwipeToDismissCard(
+      child: SwipeToDismissCard(
         key: ValueKey('panel_chat_room_$roomId'),
         onDismissed: () => _dismissChatRoom(room),
         child: GlassCard(
@@ -721,7 +727,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     final iconColor = _categoryColor(notification.category);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _SwipeToDismissCard(
+      child: SwipeToDismissCard(
         key: ValueKey('panel_notification_${notification.id}'),
         onDismissed: () => _dismissNotification(notification),
         child: GlassCard(
@@ -892,88 +898,5 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     if (diff.inHours < 24) return '${diff.inHours} ชม.ที่แล้ว';
     if (diff.inDays < 7) return '${diff.inDays} วันที่แล้ว';
     return '${dateTime.day}/${dateTime.month}/${dateTime.year + 543}';
-  }
-}
-
-/// การ์ดที่รองรับการปัดซ้ายเพื่อซ่อนรายการ (แจ้งเตือน / ห้องแชท เหมือน toast)
-/// ใช้ GestureDetector แนวนอนโดยตรง ไม่ขัดกับการเลื่อนแนวตั้งของ ListView
-class _SwipeToDismissCard extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onDismissed;
-
-  const _SwipeToDismissCard({
-    super.key,
-    required this.child,
-    required this.onDismissed,
-  });
-
-  @override
-  State<_SwipeToDismissCard> createState() => _SwipeToDismissCardState();
-}
-
-class _SwipeToDismissCardState extends State<_SwipeToDismissCard> {
-  double _dragOffset = 0;
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    if (!mounted) return;
-    setState(() {
-      _dragOffset = (_dragOffset + details.delta.dx).clamp(-1000.0, 0.0);
-    });
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    if (!mounted) return;
-    setState(() => _dragOffset = 0);
-    final shouldDismiss =
-        _dragOffset < -80 || details.velocity.pixelsPerSecond.dx < -500;
-    if (shouldDismiss) widget.onDismissed();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragUpdate: _onDragUpdate,
-      onHorizontalDragEnd: _onDragEnd,
-      child: Stack(
-        children: [
-          const Positioned.fill(child: _PanelDismissBackground()),
-          Transform.translate(
-            offset: Offset(_dragOffset, 0),
-            child: widget.child,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// พื้นหลังที่เผยออกเมื่อปัดซ้ายใน panel — ไอคอนลบชิดขวา โทนแดงเดียวกับ toast
-class _PanelDismissBackground extends StatelessWidget {
-  const _PanelDismissBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      alignment: Alignment.centerRight,
-      padding: const EdgeInsets.only(right: 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Colors.transparent,
-            Colors.redAccent.withValues(alpha: isDark ? 0.28 : 0.20),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Icon(
-        Icons.delete_outline_rounded,
-        color: Colors.redAccent.withValues(alpha: isDark ? 0.9 : 0.8),
-        size: 22,
-      ),
-    );
   }
 }
