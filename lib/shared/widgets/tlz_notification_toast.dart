@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../features/erp/data/models/app_notification.dart';
+import '../../features/erp/presentation/providers/notification_provider.dart';
 import '../../services/websocket_service.dart';
 
 /// การ์ดจางๆ ที่แสดงใต้ Top Bar เมื่อมี notification ใหม่เข้ามาทาง WebSocket
@@ -27,6 +28,7 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
   StreamSubscription<Map<String, dynamic>>? _subscription;
   Timer? _hideTimer;
   AppNotification? _current;
+  double _dragOffset = 0;
 
   static const _showDuration = Duration(milliseconds: 480);
   static const _hideDuration = Duration(milliseconds: 560);
@@ -72,30 +74,69 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
 
     // ถ้าการ์ดกำลังแสดงอยู่ → อัปเดตเนื้อหา + รีเซ็ต hold timer (ไม่ต้อง animate ใหม่)
     if (_controller.value > 0 && _current != null) {
-      setState(() => _current = notification);
+      setState(() {
+        _dragOffset = 0;
+        _current = notification;
+      });
       _hideTimer = Timer(_holdDuration, () {
-        if (mounted) {
-          _controller.reverse().then((_) {
-            if (mounted) setState(() => _current = null);
-          });
-        }
+        if (mounted) _hideCurrent();
       });
       return;
     }
 
     // ไม่ได้แสดง → เริ่มแอนิเมชันใหม่
-    setState(() => _current = notification);
+    setState(() {
+      _dragOffset = 0;
+      _current = notification;
+    });
     _controller.forward(from: 0).then((_) {
       if (!mounted) return;
-      // hold 3 วินาที แล้ว reverse (fade + slide กลับขึ้น)
+      // hold สักครู่ แล้ว reverse (fade + slide กลับขึ้น)
       _hideTimer = Timer(_holdDuration, () {
-        if (mounted) {
-          _controller.reverse().then((_) {
-            if (mounted) setState(() => _current = null);
-          });
-        }
+        if (mounted) _hideCurrent();
       });
     });
+  }
+
+  /// ปิดการ์ดปัจจุบัน พร้อมยกเลิก timer และ reverse แอนิเมชัน
+  void _hideCurrent() {
+    _hideTimer?.cancel();
+    _controller.reverse().then((_) {
+      if (mounted) setState(() => _current = null);
+    });
+  }
+
+  /// ปัดซ้ายเพื่อยกเลิกรายการแจ้งเตือนนั้น
+  /// ปิดการ์ดทันที แล้วแจ้ง provider เพื่อ mark dismissed (non-blocking)
+  void _dismissCurrent() {
+    final notification = _current;
+    _hideTimer?.cancel();
+    _controller.stop();
+    setState(() {
+      _dragOffset = 0;
+      _current = null;
+    });
+    if (notification == null) return;
+    ref
+        .read(notificationProvider.notifier)
+        .dismissNotification(notification.id, category: notification.category);
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    if (!mounted) return;
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dx).clamp(-1000.0, 0.0);
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final shouldDismiss =
+        _dragOffset < -80 || details.velocity.pixelsPerSecond.dx < -500;
+    if (shouldDismiss) {
+      _dismissCurrent();
+      return;
+    }
+    if (mounted) setState(() => _dragOffset = 0);
   }
 
   @override
@@ -114,12 +155,55 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       top: topPadding + 56,
       left: 16,
       right: 16,
-      child: SlideTransition(
-        position: _slide,
-        child: FadeTransition(
-          opacity: _opacity,
-          child: _ToastCard(notification: _current!),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: _onDragUpdate,
+        onHorizontalDragEnd: _onDragEnd,
+        child: Stack(
+          children: [
+            const Positioned.fill(child: _ToastDismissBackground()),
+            Transform.translate(
+              offset: Offset(_dragOffset, 0),
+              child: SlideTransition(
+                position: _slide,
+                child: FadeTransition(
+                  opacity: _opacity,
+                  child: _ToastCard(notification: _current!),
+                ),
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// พื้นหลังที่เผยออกเมื่อปัดซ้าย — ไอคอนปิดโทนเดียวกับการ์ด (ไม่มีขอบ)
+class _ToastDismissBackground extends StatelessWidget {
+  const _ToastDismissBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 22),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Colors.transparent,
+            Colors.redAccent.withValues(alpha: isDark ? 0.22 : 0.16),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Icon(
+        Icons.delete_outline_rounded,
+        color: Colors.redAccent.withValues(alpha: isDark ? 0.9 : 0.8),
+        size: 22,
       ),
     );
   }

@@ -5066,3 +5066,248 @@ Column(
 - [ ] `MapBackgroundWidget` แสดงเส้นทางจริงเมื่อมี `route_polyline`
 - [ ] fallback เส้นตรงทำงานเมื่อ route หาย
 - [ ] ไม่มีค่าใช้จ่ายแฝงใน dev mode
+
+---
+
+## 16. Phase — Trending Panel Fast Load & Emergency Card Caching (แผนงาน — ยังไม่ Implement)
+
+> Planned: 2026-09-13
+> Status: Pending implementation / รอการอนุมัติ
+> เป้าหมาย: ให้การ์ดเหตุฉุกเฉินใน "กล่องยอดนิยม" ของ `EmergencyLivePage` แสดงผลได้เร็วที่สุดตั้งแต่เฟรมแรก
+
+### 16.0 สถานะปัจจุบันที่ตรวจสอบแล้ว (Verified — 2026-09-13)
+
+**ฝั่ง Flutter (`lib/`):**
+- `initState()` → `_loadInitialData()` เป็น **sequential await ทั้งหมด** — `_loadTrendingVideos()` ถูกเรียก **ท้ายสุด** หลัง `_loadEmergencyCategories()`, `_restoreActiveMissionIfNeeded()`, `getInteractionSummary()`, `getVideoById()`, `getGpsTracks()` (`parts/emergency_navigation_logic.dart:278-366`)
+- `_loadTrendingVideos()` ยิง `GET {localApiUrl}/api/videos/emergency/list?page&limit` → fallback Supabase `.from('videos')` **ไม่มี client-side cache ใดๆ** (`video_repository.dart:140-166`)
+- `TrendingPanelWidget` render ตั้งแต่เฟรมแรกพร้อม `isLoadingTrending: true` — ไม่ได้ lazy รอผู้ใช้เปิด panel (`live_view_widget.dart:569`)
+- Thumbnail ใช้ `CachedNetworkImage` แล้ว → รูปมี disk/memory cache ของ `cached_network_image` อยู่ (`trending_panel_widget.dart:452`)
+- WebSocket `emergency-notification` → `_loadTrendingVideos()` รีโหลดทั้งชุด (reset `_trendingPage = 1`) (`parts/emergency_websocket_logic.dart:242-249`)
+- ผู้แจ้งเหตุ insert การ์ดตนเองเข้า `_trendingVideos` ตรงๆ แบบ optimistic (`parts/emergency_reporting_logic.dart:310`) — การ์ดนี้อยู่เฉพาะใน state ของหน้า ไม่ได้เขียนกลับเข้า shared cache
+- `HomePage._loadActiveAlerts()` เรียก `getEmergencyVideos()` ตัวเดียวกัน (`home_page.dart:846`) → เป็น shared-prefetch point ธรรมชาติ
+- `DonationAdminPage` (ResponderHelpPanel) เรียก `getEmergencyVideos()` ด้วย (`donation_admin_page.dart:2280`) — consumer ที่สาม, ใช้ default args (page=1, limit=20) เหมือนกัน → ได้ประโยชน์จาก cache ฟรี
+- ทั้ง 3 consumers (Home, EmergencyLivePage, DonationAdmin) เรียกด้วย page=1 limit=20 → ใช้ cache key ฝั่ง server เดียวกัน `video:emergency:list:v2:1:20`
+- `Video` model มี `toJson()`/`fromJson()` ครบ → serialize ลง local DB ได้ทันที (`video_models.dart:90, 271`)
+- Hive พร้อมใช้แล้วในแอป (pattern `_openBoxSafe` + adapter ใน `main.dart:142-189`)
+
+**ฝั่ง Server (`websocket-server/`):**
+- `/emergency/list` **มี Redis Cache-Aside อยู่แล้ว** — key `video:emergency:list:v2:${page}:${limit}`, TTL = `TTL.DEFAULT` (600s), stampede lock `SETNX` (`routes/video.js:557-597`, `middleware/cache-aside.js`)
+- Invalidation ที่มีอยู่: video ready (`services/video-service.js:306-310`), `view` interaction (`server.js:1190`), thumbnail update กระทบ `video:meta/thumbnail` เท่านั้น (`thumbnail-queue.js:188-191`)
+- **⚠️ Gap ที่พบ (INSERT ไม่ invalidate)**: มี **2 INSERT paths** ที่ไม่ invalidate `video:emergency:list:*`:
+  1. `INSERT INTO videos` ตอน upload video เริ่มต้น (`routes/video.js:172-176`) — type `emergency`
+  2. `INSERT INTO videos` ตอน upload-photos (`routes/video.js:376-380`) — type `emergency_photo` (เมื่อไม่ใช่ thai_mhung) ซึ่งอยู่ใน list query `WHERE v.type IN ('emergency', 'emergency_photo')`
+- **Mitigation ที่มีอยู่**: `view` interaction ยังทำงาน — `recordVideoView()` ถูกเรียกจาก 3 จุด (`trending_panel_widget.dart:385` tap การ์ด, `live_view_widget.dart:227` swipe, `fullscreen_video_viewer.dart:166` fullscreen switch) → server.js:1190 invalidate `video:emergency:list:*` ทุกครั้งที่มีคนดู/ปัดการ์ด → stale window สั้นกว่า TTL ในทางปฏิบัติ แต่ worst case ยังเป็น TTL (600s ปัจจุบัน, 60s ตามที่เสนอ) ถ้าไม่มีใครดูการ์ดเลย
+- **หมายเหตุ**: `_recordView()` (HTTP-based) ถูกปิดแล้ว (`emergency_navigation_logic.dart:285,674`) แต่ `recordVideoView()` (WebSocket-based) ยังใช้อยู่ — อย่าสับสนระหว่างสอง method นี้
+- Endpoint เป็น **public read-only** (มี `ipLimiter`, ไม่มี `requireAuth`) และ response มี `user_name`, `user_avatar`, `address/road/soi/alley/village` (ข้อมูลระบุตัวผู้แจ้ง + ที่อยู่เหตุการณ์)
+- **ไม่มี `Cache-Control` header** ตั้งไว้ที่ endpoint หรือ global middleware — ต้องเพิ่ม `no-store` (ตาม secure plan 04)
+
+### 16.1 ปัญหาที่ต้องแก้ (Problem Statement)
+
+1. การ์ดยอดนิยมต้องรอ round-trip หลายตัวที่ไม่เกี่ยวกัน (`await` ต่อเนื่อง) ก่อนเริ่ม fetch — latency รวมอาจถึงหลายวินาทีบนเครือข่ายช้า
+2. เปิดหน้าซ้ำกี่ครั้งก็ยิง API ใหม่ทุกครั้ง — ไม่มี in-memory/disk cache ฝั่ง client
+3. Server cache อาจ stale สำหรับ "เหตุใหม่" — INSERT ไม่ invalidate (ดู §16.0 Gap) แต่มี `view`-based invalidation ช่วย mitigate; ถ้า client ทำ cache เพิ่มโดยไม่แก้ฝั่ง server จะยิ่งทำให้การ์ดใหม่ขึ้นช้ากว่าเดิม
+4. การกรองรายการ (`_computeMissionTrendingFilter`) เป็น **per-user** — ห้ามเอาผลที่กรองแล้วไปแคชแชร์กัน (เดี๋ยวรั่วข้ามสิทธิ์ — ดู §16.4)
+
+### 16.2 ลำดับการดำเนินงานตามความเสี่ยง (Risk-ordered plan)
+
+Phase 16 แบ่งเป็นลำดับบังคับ 4 ระดับ ไม่ควรเปิดใช้ทุกแนวทางพร้อมกัน:
+
+#### 16.2.1 ควรทำทันที — ความเสี่ยงต่ำ
+
+| ลำดับ | งาน | เหตุผลและเงื่อนไข |
+|---|---|---|
+| 1 | **Parallel load** — เริ่ม `_loadTrendingVideos()` พร้อม initialization อื่น | ไม่เปลี่ยน API/data contract; ต้องรอ categories และ list พร้อมก่อน mission filtering |
+| 2 | **Server invalidation หลัง INSERT** — แก้ทั้ง video upload และ photo upload | แก้ stale-gap โดยตรง; invalidate หลัง DB insert สำเร็จเท่านั้น และ Redis ล้มเหลวต้อง fail-open |
+| 3 | **In-memory cache ขั้นพื้นฐาน** ที่ `VideoRepository` | cache เฉพาะ raw list page 1, bounded TTL/size, dedupe in-flight; ต้อง clear เมื่อ logout/switch user |
+| 4 | **Shared prefetch** | ใช้ repository singleton เดียวกันจาก Home, EmergencyLivePage และ DonationAdmin; ห้ามผูก state ระหว่าง widget โดยตรง |
+
+#### 16.2.2 ควรทำหลังจากวัดผล — ความเสี่ยงปานกลาง
+
+| ลำดับ | งาน | เงื่อนไขก่อนเปิดใช้ |
+|---|---|---|
+| 5 | **SWR และ `forceRefresh`** | ต้องมี request generation/version เพื่อป้องกัน response เก่าเขียนทับ response ใหม่; ต้องวัด stale age, hit rate, API latency และ error rate |
+| 6 | **ปรับ Redis TTL เป็น `TTL.VIDEO_LIST`** | ทำหลังวัด Redis hit rate และ PostgreSQL load; การ invalidate ครบถ้วนต้องผ่านการทดสอบก่อน ไม่ควรลด TTL โดยอัตโนมัติ |
+| 7 | **Thumbnail `precacheImage`** 2–3 รายการแรก | ทำหลัง list สำเร็จเท่านั้น; จำกัดจำนวน/ขนาดและใช้เฉพาะ server-generated `thumbnail_url` |
+
+#### 16.2.3 ควรเลื่อนหรือแยกเป็น Phase ย่อย — ความเสี่ยงสูงกว่า
+
+| งาน | เหตุผลที่ยังไม่ควรทำในรอบแรก |
+|---|---|
+| **Hive/local DB persistence** | ข้อมูลมีชื่อและสถานที่; Hive v2 ไม่เข้ารหัสโดย default และอยู่ใน maintenance mode; ต้องตัดสินใจ encryption/data minimization/technology ก่อน |
+| **การเปลี่ยน authorization หรือ privacy contract ของ endpoint** | เป็นการเปลี่ยนขอบเขตข้อมูล ไม่ควรซ่อนอยู่ใน performance phase; ต้องเป็น security/privacy phase แยก |
+| **การทำ per-user cache** | ต้องออกแบบ authorization context และ invalidation ใหม่ทั้งหมด; ห้ามนำผล mission filtering มาใช้เป็น shared cache |
+
+#### 16.2.4 ห้ามทำใน Phase 16
+
+| งาน | เหตุผล |
+|---|---|
+| **Edge/CDN/browser cache สำหรับ endpoint นี้** | response มีชื่อผู้แจ้ง/ข้อมูลสถานที่ ขัด secure plan 03/04; `Cache-Control: no-store` ต้องคงไว้ |
+| **ใช้ Supabase service-role key หรือ bypass AuthService/RLS** | ขัด authentication, least privilege และ bounded gateway design |
+
+### 16.3 สถาปัตยกรรมที่เสนอ (Recommended Design)
+
+```
+[HomePage._loadActiveAlerts] ──┐
+                               ├──▶ VideoRepository.getEmergencyVideos()  (singleton ใน ServiceLocator)
+[EmergencyLivePage initState] ─┘         │
+                                         ├── Memory cache (Map + fetchedAt)  ← bounded TTL/size, เริ่มแบบ cache-aside
+                                         ├── (ภายหลัง/แยก phase) encrypted local persistence ← ต้องผ่าน privacy gate ก่อน
+                                         └── dedupe: in-flight Future เดียวกันถูก share
+                       ▲
+[Server] /emergency/list → Redis cacheAside key video:emergency:list:v2:{p}:{l}
+                          + invalidate ตอน INSERT videos (ใหม่), video ready, view
+```
+
+**Contract ของ client cache (บังคับ):**
+- แคชเฉพาะ **ลิสต์ดิบ (unfiltered)** page=1 เท่านั้น — `_filteredTrendingVideos()` ต้องคำนวณใหม่ทุกครั้งจากลิสต์ดิบ ห้ามแคชผลที่ผ่าน eligibility/reporter-lock แล้ว
+- API: `getEmergencyVideos({page, limit, forceRefresh})` — page>1 ไม่เข้า cache (ป้องกัน key หลากหลาย + ตรง secure plan 03 R4: key bound เดียว)
+- Invalidation ฝั่ง client: (a) bounded TTL, (b) WebSocket `emergency-notification` → `forceRefresh: true`, (c) logout/switch user → clear memory cache, (d) optimistic write-through ต้องมี deduplication ด้วย `videoId` และ rollback เมื่อ upload ล้มเหลว
+- fail-open: ถ้า cache มีปัญหา → ยิง network เหมือนเดิม (เหมือน `cacheAside` ฝั่ง server ที่ fallback DB)
+- SWR เปิดใช้หลังผ่าน metrics gate; ต้องมี request generation/version เพื่อ discard response เก่าที่กลับมาหลัง request ใหม่
+- เวลา panel แสดงจาก cache ให้ตั้ง `_isLoadingTrending = true` ต่อระหว่าง revalidate แล้วแทนที่เมื่อข้อมูลใหม่มา (SWR) — อย่าบล็อก UI
+- ห้ามถือว่า `Cache-Control: no-store` ปิด Redis internal cache; header นี้มีผลกับ browser/proxy/CDN เท่านั้น
+
+### 16.4 การตรวจสอบความขัดแย้ง (Compliance Review — ตรวจละเอียดแล้ว)
+
+**กับ `docs/infrastructure/`:**
+
+| เอกสาร | ผลการตรวจ | หมายเหตุ |
+|---|---|---|
+| `caching_strategy.md` §2.1-2.4 | ✅ สอดคล้อง — ใช้ cache-aside/stampede protection ที่มีอยู่แล้ว, pattern SWR ฝั่ง client คือ "Flutter App Memory" ใน multi-level cache §3.2 | ต้องเพิ่ม `TTL.VIDEO_LIST` ใน §2.8 และ key `video:emergency:list:*` ใน §2.9 (มีใช้จริงแล้วแต่ยังไม่ได้เขียนลง schema) |
+| `caching_strategy.md` §2.5 | ✅ สอดคล้อง — invalidation-on-insert ที่เพิ่มคือ "Invalidate-on-Start/Complete" ตามตาราง | — |
+| `architecture_analysis.md` Phase 1+2 | ✅ ไม่ขัด — ใช้ Redis instance เดิม, ไม่เพิ่ม infrastructure ใหม่, ไม่มีค่าใช้จ่าย | — |
+| `reverse_proxy_plan.md` Phase 3 | ⚠️ **ข้อห้าม** — เมื่อถึง Phase 3 edge caching ห้าม cache `/api/videos/emergency/list` ที่ Caddy/CDN (response มีข้อมูล user) — ให้ Redis cache เป็นคำตอบเดียวของ endpoint นี้ | บันทึกไว้กันอนาคต |
+| `performance_analysis_p1p2.md` | ✅ สอดคล้อง — ลด latency ตรง §3.2, ไม่เพิ่ม throughput burden (cache ลด query) | — |
+| `role_management_refactor_plan.md` | ✅ cache เก็บ raw list (role-agnostic); filter computation ใช้ `_isVolunteerCapable`/`_eligibleTrendingVideoIds` ที่ derive จาก `user.professionId` + `_emergencyCategories` | เมื่อ role refactor เปลี่ยนวิธี derive `isVolunteer` ต้องอัปเดต filter computation แต่ cache ไม่ต้องแก้ |
+| `DATABASE_SERVER_COMPLETE.md` / `SETUP_DATABASE_SERVER.md` / `SETUP_DATABASE_STEPS.md` / `SETUP_NEW_MACHINE.md` / `FORMAT_EXTERNAL_DRIVE_APFS.md` / `HFS_vs_APFS_COMPARISON.md` | ✅ ไม่เกี่ยว — Phase 16 ไม่เปลี่ยน database schema หรือ storage setup | — |
+
+**กับ `docs/secure/`:**
+
+| แผน | กฎที่เกี่ยว | การปฏิบัติของ Phase นี้ |
+|---|---|---|
+| `01_broken_object_level_authorization.md` กฎที่ 6 | Cache key ต้องรวม authorization context **หรือ** cache เฉพาะข้อมูล public | ✅ ลิสต์ดิบถือเป็น public data (endpoint ไม่มี authz วันนี้) — แคชแชร์ได้; ⚠️ **เงื่อนไข**: ถ้าอนาคต endpoint เพิ่ม authz/personalization ต้องเปลี่ยน key เป็น `:v3` + ผูก `viewer:${userId}` (ใช้ cache versioning ตาม §9.6 ของแผน 01) และ **ห้าม** แคชผล `_filteredTrendingVideos()` เด็ดขาด |
+| `01` กฎที่ 9 (ห้าม filter ที่ client) | ข้อมูลที่ไม่ควรเห็นต้องไม่ออกจาก server | ℹ️ status quo — วันนี้ลิสต์ดิบส่งทุกคนแล้ว client กรอง (เป็น design เดิม ไม่ใช่สิ่งที่ phase นี้แนะนำเพิ่ม); ถ้าแผน 01 enforce กฎที่ 9 ในอนาคต endpoint นี้จะต้อง scoped และ cache ต้อง version ใหม่ตามด้านบน |
+| `03_rate_limiting_resource_exhaustion.md` R4 | cache key จากค่าที่ clamp เท่านั้น | ✅ server ใช้ `clampPagination` แล้ว; ฝั่ง client fix คีย์เดียว `trending:p1` ไม่รับ input |
+| `03` (§WAF) | ห้าม edge-cache response ที่มีข้อมูล user/organization | ✅ ไม่ทำ edge cache (ตัวเลือก G ถูกตัดออก) |
+| `04_security_misconfiguration.md` | `Cache-Control: no-store` สำหรับข้อมูลอ่อนไหว; `debugPrint` ต้อง guard `kDebugMode` | ✅ เพิ่ม `no-store` header ให้ endpoint นี้ (ยืนยันเจตนาไม่ให้ proxy cache); log ฝั่ง Flutter ทุกจุดของ cache ต้องอยู่ใน `kDebugMode`/`debugPrint` |
+| `05_logging_audit_monitoring.md` | cache hit/miss ต้องมี metrics; ห้าม log PII | ✅ server: log `[Cache]` hit/miss เดิมมีแล้ว — เพิ่ม metric hit/miss สำหรับ `video:emergency:list:*` ตาม §"cache hit/miss metrics ควรอยู่ใน monitoring เดียวกัน"; client: log เฉพาะ videoId/count ห้าม log ชื่อ/ที่อยู่ |
+| `07_secret_management.md` | — | ✅ ไม่มี secret ใหม่ |
+| `09_authentication_authorization.md` + `auth_data_guidelines.md` | ฝั่ง client ใช้ `AuthService`/`ServiceLocator` เท่านั้น | ✅ clear-cache-on-logout hook ผูกกับ `AuthService` ไม่แตะ Supabase auth |
+| `11_input_validation.md` | validate ก่อนใช้ | ✅ ข้อมูลจาก Hive/memory ผ่าน `Video.fromJson` เดิม (safe parsing ตาม Grip #2) — ถ้า parse fail → ลบ entry ทิ้ง fail-open |
+| `12_least_privilege.md` | cache key รวม user/org context | ✅ เหมือนแผน 01 กฎที่ 6 — ข้อมูล public แชร์ได้, per-user ห้ามแคช |
+| `16_ssrf.md` | ห้าม fetch URL ที่ user ควบคุม | ✅ `precacheImage` ใช้เฉพาะ `thumbnail_url` ที่ server generate — ห้าม precache URL จาก text field ใดๆ |
+| `17/18` (auth runbooks) | — | ✅ ไม่เกี่ยว |
+
+**เพิ่มเติม (ตรวจรอบสอง — 2026-09-13):**
+
+| แผน | กฎที่เกี่ยว | การปฏิบัติของ Phase นี้ |
+|---|---|---|
+| `02_path_traversal_command_injection.md` PT9 | Redis key ประกอบจาก input ต้อง sanitize | ✅ ปิดแล้วในโค้ดจริง (`sanitizeCacheKey` ใน `utils/safe-path.js`) — Phase 16 ใช้ key คงที่ `video:emergency:list:*` และ `trending:p1` ไม่รับ user input จึงไม่ต้อง sanitize เพิ่ม |
+| `06_dependency_vulnerabilities.md` | `hive` ^2.2.3 ไม่เข้ารหัส default + v2 อยู่ใน maintenance mode (`hive_ce` เป็นทางเลือก) | ⚠️ **Step local persistence ถูกเลื่อนออกจาก implementation แรก** — ห้ามเปิดใช้จนกว่าจะผ่าน privacy gate: encrypted storage/key management, data minimization และเลือก dependency ที่รองรับระยะยาว |
+| `08_session_token_security.md` T11 | Redis session helper มีอยู่แต่ไม่ได้ใช้; logout = `_currentUser = null` (client-side เท่านั้น) | ✅ Phase 16 clear-cache-on-logout hook ผูกกับ `AuthService.logout` ฝั่ง client เท่านั้น — สอดคล้องกับสถาปัตยกรรมปัจจุบัน; ⚠️ **เมื่อแผน 08 implement server-side session revocation** ในอนาคต: เนื่องจาก list เป็น public data ไม่ต้อง invalidate server cache ตาม user — แต่ถ้าอนาคต endpoint เป็น per-user scoped ต้องเพิ่ม server-side invalidation ด้วย |
+| `13_sql_injection.md` §"ความสอดคล้อง" | Cache key ต้อง sanitize + prefix ด้วย tenant/user | ✅ Phase 16 key ฝั่ง server (`video:emergency:list:v2:${page}:${limit}`) ใช้ค่า clamp แล้ว (แผน 03 R4); ฝั่ง client key คงที่ `trending:p1` ไม่รับ input → ไม่มี SQL/cache injection surface |
+| `14_xss.md` | sanitize rich text, safe URL/WebView | ✅ Phase 16 ไม่เพิ่ม rendering path ใหม่ — `user_name`/`address` จาก cache ถูก render ผ่าน `Text` widget เดียวกับทาง network (Flutter ไม่มี DOM XSS); ห้ามใช้ `Html`/`WebView` แสดงข้อมูลจาก cache |
+| `15_csrf.md` | — | ✅ Phase 16 เป็น read-only caching ไม่มี state-changing request → ไม่เกี่ยว |
+| `rls_audit_report.md` | `videos` มี RLS (owner/public-ready policies) | ✅ fallback Supabase query ใน `video_repository.dart:159-165` ผ่าน RLS → cache เก็บข้อมูลที่ผ่าน RLS แล้ว; ⚠️ **เมื่อแผน 12 ลด RLS เป็น strict** ต้องตรวจว่า public-ready policy ยังครอบคลุม list query อยู่ |
+| `bounded_gateway_design.md` | service_role ผ่าน gateway เท่านั้น | ✅ Phase 16 ไม่เพิ่ม service_role call — fallback ใช้ anon key (client-side) เหมือนเดิม; ⚠️ **เมื่อ bounded gateway implement** ในอนาคต: fallback Supabase query ควรย้ายไปผ่าน gateway ไม่ใช่ direct client call |
+
+### 16.4.1 จุดที่ยังป้องกันผลกระทบได้ไม่สมบูรณ์ (Residual Risks)
+
+รายการต่อไปนี้เป็นข้อจำกัดที่ Phase 16 ลดความเสี่ยงได้ แต่ยังไม่สามารถปิดได้ทั้งหมด:
+
+1. **Privacy ของ public response:** endpoint ยังส่งชื่อผู้แจ้งและข้อมูลสถานที่ให้ client ทุกคนได้อยู่แล้ว; Phase 16 ไม่ได้แก้ authorization/privacy contract นี้ จึงต้องมี security/privacy phase แยกหากข้อกำหนดเปลี่ยน
+2. **Local storage privacy:** memory cache ลดความเสี่ยงด้าน persistence แต่ข้อมูลยังอยู่ใน process memory; local DB ยังไม่ควรทำจนกว่าจะมี encryption และ data minimization
+3. **Race condition:** request เก่าอาจตอบหลัง `forceRefresh`; implementation ต้องใช้ generation/version และไม่เขียนผลลัพธ์ stale ทับข้อมูลใหม่
+4. **Optimistic insertion:** การ์ดชั่วคราวอาจซ้ำหรือค้างเมื่อ upload ล้มเหลว; ต้อง dedupe ด้วย `videoId`, ระบุ optimistic state และ rollback ได้
+5. **TTL/DB load:** การลด TTL อาจเพิ่ม PostgreSQL load; ต้องใช้ metrics และ rollback ได้ ไม่ถือว่า 60 วินาทีเป็นค่าที่ปลอดภัยโดยอัตโนมัติ
+6. **Role/RLS evolution:** หาก endpoint กลายเป็น per-user หรือ RLS ถูก tighten ต้องเปลี่ยน cache key/version และตรวจ policy ก่อนเปิด cache ต่อ
+7. **Cache-Control scope:** `no-store` ป้องกัน proxy/CDN/browser caching แต่ไม่ใช่กลไก invalidate Redis และไม่ลบข้อมูลที่อยู่ใน client memory
+
+**บันทึก PDPA (ภายใต้ triage_system_e2e_pdpa.md):** ลิสต์มี `address/road/soi/alley/village` + ชื่อผู้แจ้ง — การ persist ลง local DB ถือว่าเก็บ personal data บน device; จึง **ไม่อยู่ใน implementation แรกของ Phase 16**. หากแยกทำภายหลัง ต้องมี data minimization, encryption, key lifecycle, TTL จำกัด, clear ตอน logout และ threat/privacy review เพิ่มเติม; ไม่ถือว่าการ terminate app เป็นการลบข้อมูลที่เชื่อถือได้
+
+### 16.5 Implementation Steps (เรียงลำดับ)
+
+**Step 1 — Server invalidation (ควรทำทันที):**
+- [ ] เพิ่ม `await invalidateCachePattern('video:emergency:list:*')` หลัง `INSERT INTO videos` สำเร็จ — **2 จุด**: upload video (`routes/video.js` ~บรรทัด 176) และ upload-photos (`routes/video.js` ~บรรทัด 380, เฉพาะเมื่อ `videoType === 'emergency_photo'` ไม่ใช่ `thai_mhung_photo`)
+- [ ] คง fail-open behavior เมื่อ Redis ใช้งานไม่ได้ และทดสอบว่าการ invalidate ไม่ทำให้ upload ล้มเหลวหลัง DB insert สำเร็จ
+- [ ] เพิ่ม `res.set('Cache-Control', 'no-store')` ที่ endpoint ตาม secure plan 04; ย้ำว่า header นี้ไม่ปิด Redis internal cache
+
+**Step 2 — Flutter parallel load (ควรทำทันที):**
+- [ ] ใน `_loadInitialData()`: ยิง `_loadTrendingVideos()` แบบไม่ await ตั้งแต่ต้น โดยไม่รอ categories/video/GPS
+- [ ] เปลี่ยนจุดเรียก `_computeMissionTrendingFilter()` ให้รอ `Future.wait([categories, trending])` — รักษา invariant เดิม
+- [ ] ทำ `_loadMoreTrendingVideos()` ไม่เปลี่ยน (page>1 ไม่เข้า cache)
+
+**Step 3 — Bounded in-memory cache (ควรทำทันทีหลังวัด baseline):**
+- [ ] เพิ่ม `_trendingCache` และ `_trendingInFlight` ใน `VideoRepository` singleton; จำกัดเฉพาะ page=1 และ limit ที่กำหนด
+- [ ] เริ่มจาก cache-aside/fresh-cache ก่อน; เปิด SWR หลังมี metrics และ acceptance gate
+- [ ] dedupe concurrent requests และกำหนด max entries/TTL/memory policy
+- [ ] เพิ่ม `invalidateTrendingCache()`; logout/user switch ต้อง clear memory cache
+- [ ] WebSocket `emergency-notification` ใช้ `forceRefresh: true`
+- [ ] เพิ่ม request generation/version เพื่อ discard response เก่าที่กลับมาหลัง request ใหม่
+- [ ] optimistic write-through ต้อง dedupe ด้วย `videoId`, ตรวจข้อมูลให้ครบ และ rollback เมื่อ upload/reporting ล้มเหลว
+
+**Step 4 — Shared prefetch (หลังวัดผล cache):**
+- [ ] `HomePage._loadActiveAlerts()`, `EmergencyLivePage` และ `DonationAdminPage` เรียก repository method เดียวกัน
+- [ ] ใช้ in-flight Future เดียวกัน; ห้ามแชร์ filtered list หรือ UI state ระหว่าง consumer
+- [ ] ไม่บังคับว่าผู้ใช้ต้องเปิด Home ก่อน และต้อง fallback ได้เมื่อเข้า EmergencyLivePage โดยตรง
+
+**Step 5 — SWR/TTL tuning และ thumbnail precache (ความเสี่ยงปานกลาง):**
+- [ ] เปิด SWR หลังวัด hit/miss, stale age, API latency, PostgreSQL load และ error rate
+- [ ] พิจารณา `TTL.VIDEO_LIST` แยกจาก `TTL.DEFAULT` หลังตรวจ Redis hit rate/DB load; ไม่ลด TTL อัตโนมัติโดยไม่มี baseline
+- [ ] หลังได้ลิสต์สำเร็จค่อย `precacheImage` thumbnail 2–3 ใบแรก; จำกัดจำนวน/ขนาดและใช้เฉพาะ server-generated `thumbnail_url`
+
+**Step 6 — Local persistence (แยก Phase ย่อย, ยังไม่เปิดใช้):**
+- [ ] ก่อน implementation ต้องผ่าน privacy/security gate: data minimization, encrypted storage, key lifecycle, dependency review และ threat model
+- [ ] ห้ามใช้ `openBoxSafe<String>` แบบ unencrypted กับข้อมูลชื่อ/ที่อยู่
+- [ ] หากอนุมัติภายหลัง ค่อยกำหนด TTL, logout clear, corruption handling, migration และ test การสลับบัญชี
+- [ ] การ terminate app ไม่ถือว่าเป็นการลบข้อมูลที่เชื่อถือได้
+
+### 16.6 Edge Cases
+
+| สถานการณ์ | การจัดการ |
+|---|---|
+| Local API ล่ม → fallback Supabase | cache ต้องจำ `source`; ข้อมูลจาก Supabase อาจขาด field ที่ local API join มา → เขียน cache ได้ แต่ TTL เดียวกัน |
+| เหตุใหม่เกิดขณะ cache ยังสด | WS `emergency-notification` → `forceRefresh` + server invalidate-on-insert; ต้อง discard response รุ่นเก่าถ้ามาถึงภายหลัง |
+| ผู้แจ้งเห็นการ์ดตนเองทันที | optimistic entry ต้องมี stable `videoId`, dedupe, สถานะชั่วคราว และ rollback เมื่อ upload/reporting ล้มเหลว |
+| ผู้ใช้สลับบัญชีบน device เดียวกัน | clear memory cache ตอน logout/user switch; Hive ยังไม่อยู่ใน implementation แรก |
+| 2 หน้าเรียกพร้อมกัน (Home + Live) | in-flight Future share — ไม่ยิงซ้ำ และต้องแยก raw list จาก filtered UI state |
+| `_switchVideo` → `_loadInitialData` ใหม่ | cache hit ทำให้ไม่เสียเวลา re-fetch; forceRefresh เฉพาะเหตุการณ์ที่กำหนด |
+| Redis ล่ม | `cacheAside` fail-open → DB ตรง (พฤติกรรมเดิม) |
+| Local cache corrupt | implementation แรกไม่มี local DB; หากทำภายหลังต้องลบเฉพาะ entry ที่เสียและ fallback network โดยไม่ลบข้อมูลอื่นโดยไม่จำเป็น |
+
+### 16.7 Testing Checklist
+
+**Server:**
+- [ ] `INSERT` เหตุใหม่ → `GET /emergency/list` ถัดไปเห็นการ์ดใหม่ทันทีหลัง invalidation (ไม่ผูก acceptance กับ TTL 60s)
+- [ ] `curl` ซ้ำ 2 ครั้ง → ครั้งที่ 2 log `[Cache] 💾/hit` และ response เท่ากัน
+- [ ] ปิด Redis → endpoint ยังตอบ 200 (fail-open)
+- [ ] `Cache-Control: no-store` อยู่ใน response header
+
+**Flutter:**
+- [ ] เปิด `EmergencyLivePage` ครั้งแรก → panel มี skeleton/loading แต่ request trending เริ่มทันที (ดู timestamp log ไม่ต้องรอ video/GPS)
+- [ ] ออกแล้วเข้าใหม่ภายใน 30s → การ์ดขึ้นในเฟรมแรกจาก cache + revalidate แทนที่หลัง network ตอบ
+- [ ] รับ `emergency-notification` → list มีการ์ดใหม่ (ไม่ใช่ stale cache)
+- [ ] ผู้แจ้งสร้างเหตุ → การ์ดตนเองอยู่ในหน้าเดียวกันทันที, ไม่ซ้ำหลัง refresh และ rollback ได้เมื่อ upload/reporting ล้มเหลว
+- [ ] logout → login คนอื่น → ไม่มีลิสต์เก่าค้างใน memory cache
+- [ ] ปิด Local API บังคับ fallback Supabase → แอปไม่พัง, cache ทำงานปกติ
+- [ ] (เฉพาะ local-persistence sub-phase ที่อนุมัติภายหลัง) kill app แล้วเปิดใหม่ → ตรวจ encryption, TTL และการอ่าน cache อย่างปลอดภัย
+
+**Security regression:**
+- [ ] ยืนยัน `_filteredTrendingVideos()` ยังคำนวณจากลิสต์ดิบทุกครั้ง (grep — ห้ามมี cache ของผลที่ filter แล้ว)
+- [ ] ไม่มี log ที่มีชื่อ/ที่อยู่ผู้แจ้งจากโค้ด cache ใหม่
+- [ ] `precacheImage` ใช้เฉพาะ `thumbnail_url` จาก API
+
+### 16.8 Acceptance Criteria
+
+- การ์ดยอดนิยมแสดงในเฟรมแรกเมื่อมี cache (warm re-entry และ cold start ถ้าทำ Step 4)
+- เหตุการณ์ใหม่ปรากฏใน panel ภายใน ≤ รอบเดียวของ emergency-notification (ไม่ติด stale 10 นาที)
+- ไม่มีการแคชผลที่ผ่าน per-user filter
+- implementation แรกไม่เพิ่ม infrastructure/ค่าใช้จ่าย — ใช้ Redis และ bounded memory cache ที่มีอยู่; Hive ไม่อยู่ใน scope แรก
+- ไม่ขัดกฎ secure plan 01 (กฎที่ 6), 03 (R4, edge-cache), 04 (no-store, kDebugMode), 05 (no PII in log)
+- local persistence จะมี acceptance criteria แยกได้ต่อเมื่อผ่าน encryption/privacy/dependency gate
+
+### 16.9 Rollback
+
+- Step 1 (server): revert การเพิ่ม invalidate + TTL — endpoint กลับไปพฤติกรรมเดิม ไม่มี data migration
+- Step 2-5 (Flutter): revert code — cache/parallelization เป็น additive layer; หาก SWR/TTL tuning มีปัญหาให้ปิดด้วย feature flag หรือกลับไป fresh-cache/network path
+- Local-persistence sub-phase (ถ้าได้รับอนุมัติภายหลัง): ใช้ migration/clear procedure ที่ผ่าน privacy review; ห้ามลบ box โดยไม่มี explicit approval และ backup/retention policy ที่เหมาะสม

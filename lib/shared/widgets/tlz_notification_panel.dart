@@ -196,6 +196,37 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     rootNavigator.pushNamed(route, arguments: args);
   }
 
+  /// ปัดซ้ายเพื่อซ่อนรายการแจ้งเตือน — ลบออกจากรายการ + refresh unread count
+  Future<void> _dismissNotification(AppNotification notification) async {
+    final dismissed = await ref
+        .read(notificationProvider.notifier)
+        .dismissNotification(notification.id, category: _selectedCategory);
+    if (!mounted) return;
+    if (!dismissed) {
+      _showMessage('ไม่สามารถซ่อนการแจ้งเตือนได้ กรุณาลองใหม่');
+    }
+  }
+
+  /// ปัดซ้ายเพื่อซ่อนห้องแชท — mark as read แล้วเอาออกจากรายการ
+  Future<void> _dismissChatRoom(Map<String, dynamic> room) async {
+    final roomId = room['roomId']?.toString();
+    if (roomId == null || roomId.isEmpty) return;
+
+    final success = await ref
+        .read(chatUnreadProvider.notifier)
+        .markRoomAsRead(roomId);
+    if (!mounted) return;
+    if (!success) {
+      _showMessage('ไม่สามารถซ่อนห้องแชทได้ กรุณาลองใหม่');
+      return;
+    }
+    setState(() {
+      _chatRooms = _chatRooms
+          .where((item) => item['roomId']?.toString() != roomId)
+          .toList();
+    });
+  }
+
   Future<void> _openChatRoom(Map<String, dynamic> room) async {
     final roomId = room['roomId']?.toString();
     if (roomId == null || roomId.isEmpty) return;
@@ -601,74 +632,84 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        section: GlassSection.card,
-        borderRadius: 18,
-        glassOpacity: 0.28,
-        glassBlur: 14,
-        customBorder: Border.all(
-          color: Colors.white.withValues(alpha: 0.38),
-          width: 1.0,
-        ),
-        tintColor: AppColors.info.withValues(alpha: 0.12),
-        padding: EdgeInsets.zero,
-        child: ListTile(
-          onTap: roomId.isEmpty ? null : () => _openChatRoom(room),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 4,
+      child: _SwipeToDismissCard(
+        key: ValueKey('panel_chat_room_$roomId'),
+        onDismissed: () => _dismissChatRoom(room),
+        child: GlassCard(
+          section: GlassSection.card,
+          borderRadius: 18,
+          glassOpacity: 0.28,
+          glassBlur: 14,
+          customBorder: Border.all(
+            color: Colors.white.withValues(alpha: 0.38),
+            width: 1.0,
           ),
-          leading: CircleAvatar(
-            backgroundColor: AppColors.info.withValues(alpha: 0.18),
-            child: const Icon(Icons.chat_bubble_outline, color: AppColors.info),
-          ),
-          title: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
+          tintColor: AppColors.info.withValues(alpha: 0.12),
+          padding: EdgeInsets.zero,
+          child: ListTile(
+            onTap: roomId.isEmpty ? null : () => _openChatRoom(room),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 4,
             ),
-          ),
-          subtitle: Text(
-            preview.isEmpty ? 'มีข้อความที่ยังไม่ได้อ่าน' : preview,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.onSurface.withValues(alpha: 0.78),
-            ),
-          ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (createdAt != null)
-                Text(
-                  _formatRelativeTime(createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.68),
-                  ),
-                ),
-              const SizedBox(height: 4),
-              Container(
-                constraints: const BoxConstraints(minWidth: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.info,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$unreadCount',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+            leading: CircleAvatar(
+              backgroundColor: AppColors.info.withValues(alpha: 0.18),
+              child: const Icon(
+                Icons.chat_bubble_outline,
+                color: AppColors.info,
               ),
-            ],
+            ),
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              preview.isEmpty ? 'มีข้อความที่ยังไม่ได้อ่าน' : preview,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.onSurface.withValues(alpha: 0.78),
+              ),
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (createdAt != null)
+                  Text(
+                    _formatRelativeTime(createdAt),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.68),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 20),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.info,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$unreadCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -680,77 +721,84 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     final iconColor = _categoryColor(notification.category);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        section: GlassSection.card,
-        borderRadius: 18,
-        glassOpacity: 0.28,
-        glassBlur: 14,
-        customBorder: Border.all(
-          color: Colors.white.withValues(alpha: 0.38),
-          width: 1.0,
-        ),
-        tintColor: notification.isRead
-            ? null
-            : AppColors.accent.withValues(alpha: 0.14),
-        padding: EdgeInsets.zero,
-        child: ListTile(
-          onTap: () => _openNotification(notification),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 4,
+      child: _SwipeToDismissCard(
+        key: ValueKey('panel_notification_${notification.id}'),
+        onDismissed: () => _dismissNotification(notification),
+        child: GlassCard(
+          section: GlassSection.card,
+          borderRadius: 18,
+          glassOpacity: 0.28,
+          glassBlur: 14,
+          customBorder: Border.all(
+            color: Colors.white.withValues(alpha: 0.38),
+            width: 1.0,
           ),
-          leading: CircleAvatar(
-            backgroundColor: iconColor.withValues(alpha: 0.16),
-            child: Icon(_categoryIcon(notification.category), color: iconColor),
-          ),
-          title: Text(
-            notification.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.onSurface,
-              fontWeight: notification.isRead
-                  ? FontWeight.w500
-                  : FontWeight.w700,
+          tintColor: notification.isRead
+              ? null
+              : AppColors.accent.withValues(alpha: 0.14),
+          padding: EdgeInsets.zero,
+          child: ListTile(
+            onTap: () => _openNotification(notification),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 4,
             ),
-          ),
-          subtitle: notification.body == null
-              ? Text(
-                  _categoryLabel(notification.category),
-                  style: TextStyle(
-                    color: colorScheme.onSurface.withValues(alpha: 0.78),
-                  ),
-                )
-              : Text(
-                  notification.body!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: colorScheme.onSurface.withValues(alpha: 0.78),
-                  ),
-                ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _formatRelativeTime(notification.createdAt),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.68),
-                ),
+            leading: CircleAvatar(
+              backgroundColor: iconColor.withValues(alpha: 0.16),
+              child: Icon(
+                _categoryIcon(notification.category),
+                color: iconColor,
               ),
-              if (!notification.isRead) ...[
-                const SizedBox(height: 5),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: AppColors.accent,
-                    shape: BoxShape.circle,
+            ),
+            title: Text(
+              notification.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: notification.isRead
+                    ? FontWeight.w500
+                    : FontWeight.w700,
+              ),
+            ),
+            subtitle: notification.body == null
+                ? Text(
+                    _categoryLabel(notification.category),
+                    style: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.78),
+                    ),
+                  )
+                : Text(
+                    notification.body!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.78),
+                    ),
+                  ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _formatRelativeTime(notification.createdAt),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.68),
                   ),
                 ),
+                if (!notification.isRead) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -844,5 +892,88 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     if (diff.inHours < 24) return '${diff.inHours} ชม.ที่แล้ว';
     if (diff.inDays < 7) return '${diff.inDays} วันที่แล้ว';
     return '${dateTime.day}/${dateTime.month}/${dateTime.year + 543}';
+  }
+}
+
+/// การ์ดที่รองรับการปัดซ้ายเพื่อซ่อนรายการ (แจ้งเตือน / ห้องแชท เหมือน toast)
+/// ใช้ GestureDetector แนวนอนโดยตรง ไม่ขัดกับการเลื่อนแนวตั้งของ ListView
+class _SwipeToDismissCard extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onDismissed;
+
+  const _SwipeToDismissCard({
+    super.key,
+    required this.child,
+    required this.onDismissed,
+  });
+
+  @override
+  State<_SwipeToDismissCard> createState() => _SwipeToDismissCardState();
+}
+
+class _SwipeToDismissCardState extends State<_SwipeToDismissCard> {
+  double _dragOffset = 0;
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    if (!mounted) return;
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dx).clamp(-1000.0, 0.0);
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    if (!mounted) return;
+    setState(() => _dragOffset = 0);
+    final shouldDismiss =
+        _dragOffset < -80 || details.velocity.pixelsPerSecond.dx < -500;
+    if (shouldDismiss) widget.onDismissed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: _onDragUpdate,
+      onHorizontalDragEnd: _onDragEnd,
+      child: Stack(
+        children: [
+          const Positioned.fill(child: _PanelDismissBackground()),
+          Transform.translate(
+            offset: Offset(_dragOffset, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// พื้นหลังที่เผยออกเมื่อปัดซ้ายใน panel — ไอคอนลบชิดขวา โทนแดงเดียวกับ toast
+class _PanelDismissBackground extends StatelessWidget {
+  const _PanelDismissBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Colors.transparent,
+            Colors.redAccent.withValues(alpha: isDark ? 0.28 : 0.20),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Icon(
+        Icons.delete_outline_rounded,
+        color: Colors.redAccent.withValues(alpha: isDark ? 0.9 : 0.8),
+        size: 22,
+      ),
+    );
   }
 }
