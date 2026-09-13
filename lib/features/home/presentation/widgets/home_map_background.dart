@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
@@ -53,16 +52,10 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
   bool _locationPermissionDenied = false;
 
   // ─── Emergency events ──────────────────────────────────────
-  List<Map<String, dynamic>> _activeEvents = [];
   Map<String, dynamic>? _focusedEvent; // event ที่กำลังโฟกัสอยู่
   Set<gm.Marker> _markers = {};
   Set<gm.Polyline> _polylines = {}; // เส้นทางนำทาง
   Timer? _refreshTimer;
-
-  // ─── Info banner ───────────────────────────────────────────
-  bool _showBanner = false;
-  String _bannerTitle = '';
-  String _bannerSubtitle = '';
 
   @override
   void initState() {
@@ -97,7 +90,6 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
           _polylines.clear();
           _focusedEvent = null;
         });
-        _hideBanner();
         if (_userLatLng != null) {
           _animateCameraTo(_userLatLng!, zoom: 14.5);
         }
@@ -118,7 +110,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     if (lat == 0.0) return;
 
     final dest = gm.LatLng(lat, lng);
-    
+
     if (_userLatLng != null) {
       setState(() {
         _polylines = {
@@ -137,13 +129,11 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     } else {
       _animateCameraTo(dest, zoom: 15.0);
     }
-    
-    _showEventBanner(alert);
   }
 
   void _animateToFit(gm.LatLng p1, gm.LatLng p2) {
     if (_mapController == null) return;
-    
+
     double minLat = min(p1.latitude, p2.latitude);
     double maxLat = max(p1.latitude, p2.latitude);
     double minLng = min(p1.longitude, p2.longitude);
@@ -211,7 +201,6 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       // หา event ที่ใกล้ผู้ใช้ที่สุด
       final nearest = _findNearestEvent(events);
 
-
       double parseDouble(dynamic value) {
         if (value == null) return 0.0;
         if (value is num) return value.toDouble();
@@ -221,12 +210,16 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
 
       // 1. ตัดสินใจว่าจะโฟกัสที่อะไร
       Map<String, dynamic>? currentFocus;
-      
+
       if (widget.focusedAlert != null) {
         // ให้ความสำคัญกับสิ่งที่ผู้ใช้เลือก (จากหน้า Home)
-        final stillExists = events.any((e) => e['videoId'] == widget.focusedAlert!['videoId']);
+        final stillExists = events.any(
+          (e) => e['videoId'] == widget.focusedAlert!['videoId'],
+        );
         if (stillExists) {
-          currentFocus = events.firstWhere((e) => e['videoId'] == widget.focusedAlert!['videoId']);
+          currentFocus = events.firstWhere(
+            (e) => e['videoId'] == widget.focusedAlert!['videoId'],
+          );
         } else {
           // ถ้าสิ่งที่โฟกัสหายไปแล้ว ให้กลับไปตำแหน่งผู้ใช้หรือ nearest (ถ้ามี)
           currentFocus = nearest;
@@ -236,7 +229,6 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       }
 
       setState(() {
-        _activeEvents = events;
         _focusedEvent = currentFocus;
         _markers = _buildMarkers(events, currentFocus);
       });
@@ -245,14 +237,12 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       if (currentFocus != null) {
         final lat = parseDouble(currentFocus['latitude']);
         final lng = parseDouble(currentFocus['longitude']);
-        
+
         // เลื่อนกล้องไปยังจุดที่โฟกัส
         _animateCameraTo(gm.LatLng(lat, lng), zoom: 14.0);
-        _showEventBanner(currentFocus);
       } else if (_userLatLng != null && widget.focusedAlert == null) {
         // ไม่มี event และไม่มีการโฟกัสค้างไว้ — กลับที่ตำแหน่งผู้ใช้
         _animateCameraTo(_userLatLng!, zoom: 14.5);
-        _hideBanner();
       }
     } catch (e) {
       debugPrint('HomeMap: _pollEmergencyEvents error: $e');
@@ -262,7 +252,8 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
   // ─── Find nearest event to user ────────────────────────────
   Map<String, dynamic>? _findNearestEvent(List<Map<String, dynamic>> events) {
     if (events.isEmpty) return null;
-    if (_userLatLng == null) return events.first; // fallback ถ้ายังไม่รู้ตำแหน่งผู้ใช้
+    if (_userLatLng == null)
+      return events.first; // fallback ถ้ายังไม่รู้ตำแหน่งผู้ใช้
 
     Map<String, dynamic>? nearest;
     double minDist = double.infinity;
@@ -278,7 +269,11 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
       final lat = parseDouble(e['latitude']);
       final lng = parseDouble(e['longitude']);
       final dist = _haversineDistance(
-        _userLatLng!.latitude, _userLatLng!.longitude, lat, lng);
+        _userLatLng!.latitude,
+        _userLatLng!.longitude,
+        lat,
+        lng,
+      );
       if (dist < minDist) {
         minDist = dist;
         nearest = e;
@@ -289,13 +284,20 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
 
   /// Haversine distance in metres
   double _haversineDistance(
-      double lat1, double lon1, double lat2, double lon2) {
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const r = 6371000.0;
     final dLat = _deg2rad(lat2 - lat1);
     final dLon = _deg2rad(lon2 - lon1);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_deg2rad(lat1)) * cos(_deg2rad(lat2)) *
-            sin(dLon / 2) * sin(dLon / 2);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_deg2rad(lat1)) *
+            cos(_deg2rad(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     return r * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
@@ -303,19 +305,24 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
 
   // ─── Build markers ─────────────────────────────────────────
   Set<gm.Marker> _buildMarkers(
-      List<Map<String, dynamic>> events, Map<String, dynamic>? focused) {
+    List<Map<String, dynamic>> events,
+    Map<String, dynamic>? focused,
+  ) {
     final markers = <gm.Marker>{};
 
     // User location marker
     if (_userLatLng != null) {
-      markers.add(gm.Marker(
-        markerId: const gm.MarkerId('user_location'),
-        position: _userLatLng!,
-        icon: gm.BitmapDescriptor.defaultMarkerWithHue(
-            gm.BitmapDescriptor.hueBlue),
-        infoWindow: const gm.InfoWindow(title: 'ตำแหน่งของคุณ'),
-        zIndex: 2,
-      ));
+      markers.add(
+        gm.Marker(
+          markerId: const gm.MarkerId('user_location'),
+          position: _userLatLng!,
+          icon: gm.BitmapDescriptor.defaultMarkerWithHue(
+            gm.BitmapDescriptor.hueBlue,
+          ),
+          infoWindow: const gm.InfoWindow(title: 'ตำแหน่งของคุณ'),
+          zIndex: 2,
+        ),
+      );
     }
 
     double parseDouble(dynamic value) {
@@ -329,23 +336,28 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
     for (final e in events) {
       final videoId = e['videoId'] as String;
       final isFocused = focused != null && focused['videoId'] == videoId;
-      markers.add(gm.Marker(
-        markerId: gm.MarkerId(videoId),
-        position: gm.LatLng(parseDouble(e['latitude']), parseDouble(e['longitude'])),
-        icon: gm.BitmapDescriptor.defaultMarkerWithHue(
-          isFocused
-              ? gm.BitmapDescriptor.hueRed
-              : gm.BitmapDescriptor.hueOrange,
+      markers.add(
+        gm.Marker(
+          markerId: gm.MarkerId(videoId),
+          position: gm.LatLng(
+            parseDouble(e['latitude']),
+            parseDouble(e['longitude']),
+          ),
+          icon: gm.BitmapDescriptor.defaultMarkerWithHue(
+            isFocused
+                ? gm.BitmapDescriptor.hueRed
+                : gm.BitmapDescriptor.hueOrange,
+          ),
+          infoWindow: gm.InfoWindow(
+            title: '🚨 ${e['categoryName'] ?? 'เหตุฉุกเฉิน'}',
+            snippet: isFocused ? 'ใกล้คุณที่สุด' : 'แตะเพื่อดูรายละเอียด',
+          ),
+          zIndex: isFocused ? 1.5 : 1.0,
+          onTap: () {
+            _mapController?.showMarkerInfoWindow(gm.MarkerId(videoId));
+          },
         ),
-        infoWindow: gm.InfoWindow(
-          title: '🚨 ${e['categoryName'] ?? 'เหตุฉุกเฉิน'}',
-          snippet: isFocused ? 'ใกล้คุณที่สุด' : 'แตะเพื่อดูรายละเอียด',
-        ),
-        zIndex: isFocused ? 1.5 : 1.0,
-        onTap: () {
-          _mapController?.showMarkerInfoWindow(gm.MarkerId(videoId));
-        },
-      ));
+      );
     }
     return markers;
   }
@@ -357,30 +369,6 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         gm.CameraPosition(target: target, zoom: zoom),
       ),
     );
-  }
-
-  // ─── Banner ────────────────────────────────────────────────
-  void _showEventBanner(Map<String, dynamic> event) {
-    if (!mounted) return;
-    setState(() {
-      _bannerTitle = '🚨 ${event['categoryName'] ?? 'เหตุฉุกเฉิน'}';
-      double parseDouble(dynamic value) {
-        if (value == null) return 0.0;
-        if (value is num) return value.toDouble();
-        if (value is String) return double.tryParse(value) ?? 0.0;
-        return 0.0;
-      }
-
-      final lat = parseDouble(event['latitude']).toStringAsFixed(5);
-      final lng = parseDouble(event['longitude']).toStringAsFixed(5);
-      _bannerSubtitle = 'ใกล้คุณที่สุด · $lat, $lng';
-      _showBanner = true;
-    });
-  }
-
-  void _hideBanner() {
-    if (!mounted) return;
-    setState(() => _showBanner = false);
   }
 
   // ─── MapCreated ────────────────────────────────────────────
@@ -400,8 +388,10 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
 
         _mapController?.animateCamera(
           gm.CameraUpdate.newLatLngZoom(
-            gm.LatLng(parseDouble(_focusedEvent!['latitude']),
-                parseDouble(_focusedEvent!['longitude'])),
+            gm.LatLng(
+              parseDouble(_focusedEvent!['latitude']),
+              parseDouble(_focusedEvent!['longitude']),
+            ),
             15.0,
           ),
         );
@@ -458,65 +448,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
               ),
             ),
           ),
-
-        // Event info banner (แสดงเมื่อมี emergency focus)
-        if (_showBanner && _isMapLoaded)
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: _buildEventBanner(),
-          ),
       ],
-    );
-  }
-
-  // ─── Event Banner ──────────────────────────────────────────
-  Widget _buildEventBanner() {
-    return AnimatedOpacity(
-      opacity: _showBanner ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.red.shade700.withOpacity(0.92),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.red.withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.warning_amber_rounded,
-                color: Colors.white, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_bannerTitle,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13)),
-                  Text(_bannerSubtitle,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 11)),
-                ],
-              ),
-            ),
-            Text(
-              '${_activeEvents.length} เหตุ',
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 11),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -528,10 +460,8 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         return Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin:
-                  Alignment(-1.0 + 2 * _shimmerController.value, 0),
-              end: Alignment(
-                  -1.0 + 2 * _shimmerController.value + 1, 0),
+              begin: Alignment(-1.0 + 2 * _shimmerController.value, 0),
+              end: Alignment(-1.0 + 2 * _shimmerController.value + 1, 0),
               colors: [
                 AppColors.background,
                 AppColors.background.withOpacity(0.5),
@@ -558,9 +488,10 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                          color: AppColors.shadow,
-                          blurRadius: 8,
-                          offset: const Offset(0, 2)),
+                        color: AppColors.shadow,
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
                   ),
                   child: Column(
@@ -572,13 +503,17 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                              AppColors.primary),
+                            AppColors.primary,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text('กำลังโหลดแผนที่...',
-                          style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textSecondary)),
+                      Text(
+                        'กำลังโหลดแผนที่...',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -596,10 +531,7 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            AppColors.background,
-            AppColors.background.withOpacity(0.8),
-          ],
+          colors: [AppColors.background, AppColors.background.withOpacity(0.8)],
         ),
       ),
       child: Center(
@@ -613,18 +545,21 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                      color: AppColors.shadow,
-                      blurRadius: 12,
-                      offset: const Offset(0, 4)),
+                    color: AppColors.shadow,
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
               ),
-              child: Icon(Icons.map_outlined,
-                  size: 48, color: AppColors.textHint),
+              child: Icon(
+                Icons.map_outlined,
+                size: 48,
+                color: AppColors.textHint,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
                 color: AppColors.surface.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(12),
@@ -632,14 +567,20 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('ไม่สามารถโหลดแผนที่ได้',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    'ไม่สามารถโหลดแผนที่ได้',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary)),
+                  Text(
+                    'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   TextButton.icon(
                     onPressed: () {
@@ -653,7 +594,9 @@ class _HomeMapBackgroundState extends State<HomeMapBackground>
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                     ),
                   ),
                 ],
