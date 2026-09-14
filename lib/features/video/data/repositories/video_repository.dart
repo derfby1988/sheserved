@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../../../services/auth_service.dart';
 import '../../models/video_models.dart';
+
+/// ผลลัพธ์การอัปเดตสถานะภารกิจ (mission lifecycle)
+/// — ใช้แยกสาเหตุความล้มเหลวให้ UI แสดงได้ตรงจริง แทน boolean เดียว
+class RescueStatusUpdateResult {
+  final bool success;
+
+  /// สาเหตุเมื่อล้มเหลว:
+  /// `NO_IDENTITY` | `NO_VIDEO` | `RATE_LIMITED` | `NOT_FOUND` |
+  /// `ALREADY_CLOSED` | `UNAUTHORIZED` | `NETWORK` | `SERVER`
+  final String? errorCode;
+
+  /// ข้อความจาก server (ถ้ามี) — ห้ามมี PII
+  final String? message;
+
+  const RescueStatusUpdateResult._(this.success, this.errorCode, this.message);
+
+  const RescueStatusUpdateResult.success() : this._(true, null, null);
+
+  const RescueStatusUpdateResult.failure(String code, [String? message])
+    : this._(false, code, message);
+
+  /// Local DB ไม่พบ responseId นี้ (id เก่า/ไม่ตรง) — client ต้อง re-sync
+  bool get isNotFound => errorCode == 'NOT_FOUND';
+}
 
 /// Repository สำหรับจัดการข้อมูลวิดีโอ
 class VideoRepository {
@@ -18,7 +43,42 @@ class VideoRepository {
   /// จำนวนภาพถ่ายสูงสุดสำหรับโหมดไทยมุงโดยเฟพาะ (ตามแผน §4 Thai Mhung)
   static const int maxThaiMhungPhotos = 3;
 
-  VideoRepository(this._client);
+  VideoRepository(this._client) {
+    // Phase 16: clear shared emergency-list cache เมื่อ logout หรือสลับบัญชี
+    // (raw list เป็น public data แต่ clear เพื่อ defense-in-depth บน device เดียวกัน)
+    _trendingCacheUserId = AuthService.instance.currentUser?.id.toString();
+    AuthService.instance.addListener(_onAuthUserChanged);
+  }
+
+  // ── Phase 16: bounded in-memory cache สำหรับ emergency list หน้าแรก ──
+  // ทุก consumer (Home / EmergencyLivePage / DonationAdmin) ใช้ page=1 limit=20
+  // → แชร์ได้เพราะเป็น raw list; per-user filter ทำที่ฝั่ง UI เสมอ
+  static const Duration _trendingCacheTtl = Duration(seconds: 30);
+
+  /// Kill switch — ตั้งเป็น false เพื่อกลับไปใช้ network-only path เดิม
+  static bool trendingCacheEnabled = true;
+
+  List<Video>? _trendingCacheData;
+  DateTime? _trendingCacheFetchedAt;
+  int _trendingCacheGeneration = 0;
+  ({Future<List<Video>> future, int generation})? _trendingInFlight;
+  String? _trendingCacheUserId;
+
+  /// ล้าง shared in-memory cache ของลิสต์เหตุฉุกเฉิน
+  /// (in-flight request ยังทำงานต่อแต่ผลลัพธ์จะถูก discard ผ่าน generation)
+  void invalidateTrendingCache() {
+    _trendingCacheGeneration++;
+    _trendingCacheData = null;
+    _trendingCacheFetchedAt = null;
+    _trendingInFlight = null;
+  }
+
+  void _onAuthUserChanged() {
+    final userId = AuthService.instance.currentUser?.id.toString();
+    if (userId == _trendingCacheUserId) return;
+    _trendingCacheUserId = userId;
+    invalidateTrendingCache();
+  }
 
   /// ตรวจสอบ Cooldown การอัปโหลด
   bool get canUpload {
@@ -137,7 +197,64 @@ class VideoRepository {
     }
   }
 
-  Future<List<Video>> getEmergencyVideos({int page = 1, int limit = 20}) async {
+  Future<List<Video>> getEmergencyVideos({
+    int page = 1,
+    int limit = 20,
+    bool forceRefresh = false,
+  }) async {
+    // Cache เฉพาะหน้าแรกที่ทุก consumer ใช้ร่วมกัน (page=1, limit=20)
+    // page อื่น/limit อื่น → ยิง network ตรงตามเดิม
+    if (!trendingCacheEnabled || page != 1 || limit != 20) {
+      return (await _fetchEmergencyVideos(page: page, limit: limit)).videos;
+    }
+
+    if (forceRefresh) {
+      // เหตุการณ์ใหม่/invalidation — ทำให้ request ที่ค้างอยู่ stale ทันที
+      _trendingCacheGeneration++;
+    } else {
+      final cached = _trendingCacheData;
+      final fetchedAt = _trendingCacheFetchedAt;
+      if (cached != null &&
+          fetchedAt != null &&
+          DateTime.now().difference(fetchedAt) < _trendingCacheTtl) {
+        return List<Video>.of(cached);
+      }
+      // Dedupe: แชร์ in-flight Future ที่ยังทันสมัยอยู่ (กัน consumer ยิงซ้ำ)
+      final inFlight = _trendingInFlight;
+      if (inFlight != null &&
+          inFlight.generation == _trendingCacheGeneration) {
+        return inFlight.future.then((videos) => List<Video>.of(videos));
+      }
+    }
+
+    final int generation = _trendingCacheGeneration;
+    final Future<List<Video>> future =
+        _fetchEmergencyVideos(page: page, limit: limit).then((result) {
+      // เขียน cache เฉพาะ generation ล่าสุด + response จาก Local API เท่านั้น
+      // (Supabase fallback ขาด joined fields: user_name/address → ไม่เขียน cache)
+      if (generation == _trendingCacheGeneration && result.source == 'local') {
+        _trendingCacheData = List<Video>.unmodifiable(result.videos);
+        _trendingCacheFetchedAt = DateTime.now();
+      }
+      return result.videos;
+    });
+    _trendingInFlight = (future: future, generation: generation);
+    try {
+      return List<Video>.of(await future);
+    } finally {
+      final inFlight = _trendingInFlight;
+      if (inFlight != null && inFlight.generation == generation) {
+        _trendingInFlight = null;
+      }
+    }
+  }
+
+  /// Fetch emergency list จาก network — คืน source ของข้อมูลเพื่อให้
+  /// caller ตัดสินใจว่าเขียนลง shared cache ได้หรือไม่ (fallback มี field ไม่ครบ)
+  Future<({List<Video> videos, String source})> _fetchEmergencyVideos({
+    required int page,
+    required int limit,
+  }) async {
     // Attempt Local API first
     try {
       final response = await http
@@ -149,20 +266,28 @@ class VideoRepository {
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
-        return data.map((json) => Video.fromJson(json)).toList();
+        return (
+          videos: data.map((json) => Video.fromJson(json)).toList(),
+          source: 'local',
+        );
       }
     } catch (e) {
       debugPrint('VideoRepository: Local emergency list failed - $e');
     }
 
+    // Supabase fallback — normalize type filter ให้ตรง Local API
+    // (emergency + emergency_photo ตาม query ใน routes/video.js /emergency/list)
     final offset = (page - 1) * limit;
     final response = await _client
         .from('videos')
         .select()
-        .eq('type', 'emergency')
+        .inFilter('type', const ['emergency', 'emergency_photo'])
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
-    return (response as List).map((json) => Video.fromJson(json)).toList();
+    return (
+      videos: (response as List).map((json) => Video.fromJson(json)).toList(),
+      source: 'supabase',
+    );
   }
 
   /// ดึงภาพไทยมุงที่เกี่ยวข้องกับหมวดหมู่เหตุการณ์
@@ -318,18 +443,10 @@ class VideoRepository {
       debugPrint(
         'VideoRepository: ❌ Both Local and Supabase acceptIncident failed: $supabaseErr',
       );
-
-      // ✅ FK violation (code 23503) = video exists only in Local DB, not synced to Supabase yet
-      // → Return a generated local responseId so the UI can proceed without Supabase
-      final errStr = supabaseErr.toString();
-      if (errStr.contains('23503') || errStr.contains('foreign key')) {
-        final localResponseId =
-            '${DateTime.now().millisecondsSinceEpoch}-local';
-        debugPrint(
-          'VideoRepository: ⚠️ Video is Local-only. Using local responseId: $localResponseId',
-        );
-        return localResponseId;
-      }
+      // ✅ ห้ามสร้าง responseId ปลอม (เช่น '<timestamp>-local') เด็ดขาด:
+      // status update ใช้ Local Postgres เป็น source of truth — id ที่ไม่มี
+      // ใน Local DB จะทำให้ผู้ใช้ "จบภารกิจ" ไม่ได้ตลอดไป (404 ทุกครั้ง)
+      // คืน null เพื่อให้ UI แจ้งว่ายังรับงานไม่สำเร็จ แล้วให้ผู้ใช้ลองใหม่
     }
 
     return null;
@@ -837,59 +954,97 @@ class VideoRepository {
   ///    รับประกันการบันทึกสถานะลง Local Postgres แม้ WebSocket หลุด
   ///    และทำ Real-time Broadcast + Chat Archiving ที่ Server ในคราวเดียว
   /// ✅ Dual-Write / Fallback: Supabase Cloud
-  Future<bool> updateRescueStatus({
+  Future<RescueStatusUpdateResult> updateRescueStatus({
     required String responseId,
     required String status,
     String? videoId,
     String? volunteerId,
     String? notes,
   }) async {
-    bool localSuccess = false;
     final effectiveVolunteerId =
         volunteerId ?? AuthService.instance.userId ?? '';
 
-    // ---- Primary Path: Local API ----
-    if (videoId != null &&
-        videoId.isNotEmpty &&
-        effectiveVolunteerId.isNotEmpty) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
-              headers: {
-                'Content-Type': 'application/json',
-                'x-user-id': effectiveVolunteerId,
-              },
-              body: jsonEncode({
-                'responseId': responseId,
-                'status': status,
-                'notes': notes,
-              }),
-            )
-            .timeout(const Duration(seconds: 6));
-
-        if (response.statusCode == 200) {
-          localSuccess = true;
-          debugPrint(
-            'VideoRepository: ✅ Local updateRescueStatus succeeded (status=$status, responseId=$responseId)',
-          );
-        } else {
-          debugPrint(
-            'VideoRepository: ⚠️ Local updateRescueStatus returned ${response.statusCode}: ${response.body}',
-          );
-        }
-      } catch (e) {
-        debugPrint('VideoRepository: ⚠️ Local updateRescueStatus failed: $e');
-      }
+    if (effectiveVolunteerId.isEmpty) {
+      return const RescueStatusUpdateResult.failure(
+        'NO_IDENTITY',
+        'ไม่พบข้อมูลผู้ใช้',
+      );
+    }
+    if (videoId == null || videoId.isEmpty) {
+      return const RescueStatusUpdateResult.failure('NO_VIDEO', 'ไม่พบเหตุการณ์');
     }
 
-    // ---- Dual-Write / Fallback: Supabase Cloud ----
+    // ---- Primary Path: Local API (source of truth ของ mission lifecycle) ----
+    // ต้องสำเร็จที่ Local Postgres เท่านั้น — เพราะ responders/active-rescues
+    // อ่านจาก Local DB และ Supabase copy อาจไม่มีแถวนี้ (FK violation ตอน accept)
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': effectiveVolunteerId,
+            },
+            body: jsonEncode({
+              'responseId': responseId,
+              'status': status,
+              'notes': notes,
+            }),
+          )
+          .timeout(const Duration(seconds: 6));
+
+      if (response.statusCode == 200) {
+        // ✅ Local DB สำเร็จ = สำเร็จ — mirror ไป Supabase เป็น best-effort
+        // (ล้มเหลวได้โดยไม่กระทบผลลัพธ์ และไม่ทำให้ UI รายงานผิด)
+        unawaited(
+          _mirrorRescueStatusToSupabase(
+            videoId: videoId,
+            volunteerId: effectiveVolunteerId,
+            status: status,
+            notes: notes,
+          ),
+        );
+        debugPrint(
+          'VideoRepository: ✅ Local updateRescueStatus succeeded (status=$status)',
+        );
+        return const RescueStatusUpdateResult.success();
+      }
+
+      final code = switch (response.statusCode) {
+        429 => 'RATE_LIMITED',
+        404 => 'NOT_FOUND',
+        409 => 'ALREADY_CLOSED',
+        401 || 403 => 'UNAUTHORIZED',
+        _ => 'SERVER',
+      };
+      debugPrint(
+        'VideoRepository: ⚠️ Local updateRescueStatus failed '
+        '(${response.statusCode}, code=$code)',
+      );
+      return RescueStatusUpdateResult.failure(
+        code,
+        _extractApiErrorMessage(response.body),
+      );
+    } catch (e) {
+      debugPrint('VideoRepository: ⚠️ Local updateRescueStatus network error: $e');
+      return const RescueStatusUpdateResult.failure('NETWORK');
+    }
+  }
+
+  /// Mirror สถานะภารกิจไป Supabase Cloud (best-effort, ไม่ใช่ source of truth)
+  /// match ด้วย (video_id, volunteer_id) ตาม UNIQUE constraint — ไม่ใช้ `id`
+  /// เพราะ dual-write ตอน accept อาจสร้าง id คนละค่ากับ Local DB
+  Future<void> _mirrorRescueStatusToSupabase({
+    required String videoId,
+    required String volunteerId,
+    required String status,
+    String? notes,
+  }) async {
     try {
       final Map<String, dynamic> updates = {
         'status': status,
         'updated_at': AppConfig.currentUtc.toIso8601String(),
       };
-
       if (status == 'arrived') {
         updates['arrived_at'] = AppConfig.currentUtc.toIso8601String();
       }
@@ -901,14 +1056,23 @@ class VideoRepository {
       await _client
           .from('incident_responses')
           .update(updates)
-          .eq('id', responseId);
-      return true;
+          .eq('video_id', videoId)
+          .eq('volunteer_id', volunteerId);
     } catch (e) {
-      debugPrint(
-        'VideoRepository: Supabase updateRescueStatus error (non-critical if local succeeded): $e',
-      );
-      return localSuccess;
+      debugPrint('VideoRepository: Supabase mirror updateRescueStatus skipped: $e');
     }
+  }
+
+  /// ดึงข้อความ error จาก body ของ Local API (ถ้า parse ได้) — ห้ามมี PII
+  String? _extractApiErrorMessage(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final error = decoded['error']?.toString();
+        if (error != null && error.isNotEmpty) return error;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// ผู้แจ้งเหตุยกเลิกภารกิจทั้งหมดบนเหตุการณ์ของตนเอง

@@ -659,14 +659,22 @@ class FitnessBuddiesRepository {
     await _client.from('fitness_group_sessions').delete().eq('id', sessionId);
   }
 
-  Future<String> bookSession(String sessionId, String userId) async {
+  Future<String> bookSession(
+    String sessionId,
+    String userId, {
+    String? positionId,
+  }) async {
     final currentUserId = AuthService.instance.currentUser?.id;
     if (currentUserId == null || currentUserId != userId) {
       throw StateError('UNAUTHORIZED');
     }
     final result = await _client.rpc(
       'book_fitness_session',
-      params: {'p_session_id': sessionId, 'p_user_id': userId},
+      params: {
+        'p_session_id': sessionId,
+        'p_user_id': userId,
+        if (positionId != null) 'p_position_id': positionId,
+      },
     );
     final bookingId = result is String
         ? result
@@ -740,7 +748,7 @@ class FitnessBuddiesRepository {
     final res = await _client
         .from('fitness_group_bookings')
         .select(
-          'id, status, created_at, user:users!fitness_group_bookings_user_id_fkey(first_name, last_name, profile_image_url, id), session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
+          'id, status, created_at, position:fitness_group_positions(id, label, slots, icon, color), user:users!fitness_group_bookings_user_id_fkey(first_name, last_name, profile_image_url, id), session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
         )
         .eq('user_id', userId)
         .eq('status', 'pending')
@@ -814,10 +822,47 @@ class FitnessBuddiesRepository {
       groupId: bookingGroupId,
       actorUserId: actorUserId,
     );
-    await _client.rpc(
-      'approve_fitness_session_booking',
-      params: {'p_booking_id': bookingId, 'p_owner_id': actorUserId},
-    );
+    try {
+      await _client.rpc(
+        'approve_fitness_session_booking',
+        params: {'p_booking_id': bookingId, 'p_owner_id': actorUserId},
+      );
+    } catch (e) {
+      if (e.toString().contains('POSITION_FULL')) {
+        // Broadcast WebSocket event to applicant so UI can offer "เปลี่ยนตำแหน่ง"
+        try {
+          final bRow = await _client
+              .from('fitness_group_bookings')
+              .select(
+                'user_id, session_id, session:fitness_group_sessions(id, group_id, group:fitness_groups(id, name))',
+              )
+              .eq('id', bookingId)
+              .maybeSingle();
+          if (bRow != null) {
+            final applicantId = bRow['user_id']?.toString() ?? '';
+            final session = bRow['session'];
+            final groupId = (session is Map ? session['group_id'] : null)?.toString() ?? '';
+            final group = session is Map ? session['group'] : null;
+            final groupName = (group is Map ? group['name'] : null)?.toString() ?? 'ก๊วนกีฬา';
+            final sessionId = bRow['session_id']?.toString() ?? '';
+            if (applicantId.isNotEmpty) {
+              _emitFitnessBookingStatus(
+                recipientUserIds: [applicantId],
+                bookingId: bookingId,
+                sessionId: sessionId,
+                groupId: groupId,
+                groupName: groupName,
+                status: 'position_full',
+                message: 'ตำแหน่งที่คุณเลือกเต็มแล้ว กรุณาเลือกตำแหน่งใหม่',
+                requesterId: actorUserId,
+                actorUserId: actorUserId,
+              );
+            }
+          }
+        } catch (_) {}
+      }
+      rethrow;
+    }
 
     final booking = await _client
         .from('fitness_group_bookings')
@@ -965,6 +1010,7 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
     String? note,
+    String? ownerPositionId,
     List<Map<String, dynamic>>? costItems,
   }) async {
     await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
@@ -986,6 +1032,7 @@ class FitnessBuddiesRepository {
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
       if (note != null) 'note': note,
+      if (ownerPositionId != null) 'owner_position_id': ownerPositionId,
     };
     final res = await _client
         .from('fitness_group_sessions')
@@ -1017,12 +1064,14 @@ class FitnessBuddiesRepository {
     required String nameTh,
     String? nameEn,
     required String proposedBy,
+    String? fieldLayout,
   }) async {
     final data = {
       'name_th': nameTh,
       if (nameEn != null && nameEn.isNotEmpty) 'name_en': nameEn,
       'status': 'proposed',
       'proposed_by': proposedBy,
+      if (fieldLayout != null) 'field_layout': fieldLayout,
     };
     final res = await _client.from('sports').insert(data).select('id').single();
     return res['id'].toString();
@@ -1041,6 +1090,7 @@ class FitnessBuddiesRepository {
     required String sportId,
     required String reviewedBy,
     String? icon,
+    String? fieldLayout,
   }) async {
     await _client
         .from('sports')
@@ -1049,9 +1099,20 @@ class FitnessBuddiesRepository {
           'reviewed_by': reviewedBy,
           'rejection_reason': null,
           if (icon != null && icon.isNotEmpty) 'icon': icon,
+          if (fieldLayout != null) 'field_layout': fieldLayout,
         })
         .eq('id', sportId)
         .eq('status', 'proposed');
+  }
+
+  Future<void> updateSportFieldLayout({
+    required String sportId,
+    required String fieldLayout,
+  }) async {
+    await _client
+        .from('sports')
+        .update({'field_layout': fieldLayout})
+        .eq('id', sportId);
   }
 
   Future<void> rejectSport({
@@ -1137,6 +1198,7 @@ class FitnessBuddiesRepository {
     double? lat,
     double? lng,
     String? note,
+    String? ownerPositionId,
     List<Map<String, dynamic>>? costItems,
   }) async {
     if (capacity != null && (capacity < 1 || capacity > 30)) {
@@ -1151,6 +1213,7 @@ class FitnessBuddiesRepository {
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
     if (note != null) data['note'] = note;
+    if (ownerPositionId != null) data['owner_position_id'] = ownerPositionId;
     if (data.isEmpty && costItems == null) return;
     final groupId = await _getSessionGroupId(sessionId);
     await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
@@ -1159,6 +1222,24 @@ class FitnessBuddiesRepository {
           .from('fitness_group_sessions')
           .update(data)
           .eq('id', sessionId);
+
+      if (ownerPositionId != null) {
+        // Also sync the owner's booking position
+        final group = await _client
+            .from('fitness_groups')
+            .select('created_by')
+            .eq('id', groupId)
+            .maybeSingle();
+        final ownerId = group?['created_by']?.toString();
+        if (ownerId != null) {
+          await _client
+              .from('fitness_group_bookings')
+              .update({'position_id': ownerPositionId})
+              .eq('session_id', sessionId)
+              .eq('user_id', ownerId)
+              .eq('status', 'confirmed');
+        }
+      }
     }
     if (costItems != null) {
       await replaceSessionCostItems(
@@ -1732,7 +1813,7 @@ class FitnessBuddiesRepository {
       _client
           .from('fitness_group_bookings')
           .select(
-            'id, created_at, user:users!fitness_group_bookings_user_id_fkey(first_name, last_name, profile_image_url, id), session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
+            'id, created_at, position:fitness_group_positions(id, label, slots, icon, color), user:users!fitness_group_bookings_user_id_fkey(first_name, last_name, profile_image_url, id), session:fitness_group_sessions!inner(id, group_id, starts_at, ends_at)',
           )
           .eq('session.group_id', groupId)
           .eq('status', 'pending')
@@ -1912,5 +1993,85 @@ class FitnessBuddiesRepository {
         .order('created_at', ascending: false)
         .limit(limit);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Phase 15: Simulated field lineup and player positions
+  // ══════════════════════════════════════════════════════════════════
+
+  /// List active positions of a group (manager view or authenticated member).
+  Future<List<Map<String, dynamic>>> listGroupPositions(
+    String groupId, {
+    bool activeOnly = true,
+  }) async {
+    var query = _client
+        .from('fitness_group_positions')
+        .select('*')
+        .eq('group_id', groupId);
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+    final res = await query.order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// List active positions via public view (anonymous read support).
+  Future<List<Map<String, dynamic>>> listPublicGroupPositions(
+    String groupId,
+  ) async {
+    final res = await _client
+        .from('fitness_group_positions_public')
+        .select('*')
+        .eq('group_id', groupId);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// List taken count per position for the given sessions via public view.
+  Future<List<Map<String, dynamic>>> listSessionPositionAvailability(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return [];
+    final res = await _client
+        .from('fitness_session_position_taken_public')
+        .select('*')
+        .inFilter('session_id', sessionIds);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Atomic replacement of fitness group positions using RPC.
+  Future<void> replaceGroupPositions({
+    required String groupId,
+    required String actorUserId,
+    required List<Map<String, dynamic>> positions,
+  }) async {
+    await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
+    await _client.rpc(
+      'replace_fitness_group_positions',
+      params: {
+        'p_group_id': groupId,
+        'p_actor_id': actorUserId,
+        'p_positions': positions,
+      },
+    );
+  }
+
+  /// Change booking position (member or applicant action).
+  Future<void> setBookingPosition({
+    required String bookingId,
+    required String userId,
+    required String? positionId,
+  }) async {
+    final currentUserId = AuthService.instance.currentUser?.id;
+    if (currentUserId == null || currentUserId != userId) {
+      throw StateError('UNAUTHORIZED');
+    }
+    await _client.rpc(
+      'set_booking_position',
+      params: {
+        'p_booking_id': bookingId,
+        'p_user_id': userId,
+        'p_position_id': positionId,
+      },
+    );
   }
 }

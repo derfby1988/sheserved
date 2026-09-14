@@ -13,6 +13,7 @@ import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
+import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 
@@ -50,15 +51,33 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   bool _showImageSection = false;
   bool _showSettingsSection = false;
   bool _showCostsSection = false;
+  bool _showPositionsSection = false;
   // Phase 9.1: draft cost standards, written to DB after the group exists.
   List<Map<String, dynamic>> _groupFeeDrafts = [];
   List<Map<String, dynamic>> _roundExpenseDrafts = [];
+  // Phase 15: draft player positions on field
+  List<Map<String, dynamic>> _positionDrafts = [];
   gm.GoogleMapController? _mapController;
   bool _mapLoadLogged = false;
   final _searchPlaceCtrl = TextEditingController();
   bool _isSearchingPlace = false;
   List<Map<String, dynamic>> _placeSearchResults = [];
   String? _placeSearchMessage;
+
+  Map<String, dynamic>? get _selectedSportData {
+    if (_sportId == null) return null;
+    return _sports.cast<Map<String, dynamic>?>().firstWhere(
+      (s) => s?['id']?.toString() == _sportId,
+      orElse: () => null,
+    );
+  }
+
+  String? get _fieldLayout {
+    final s = _selectedSportData;
+    final layout = s?['field_layout']?.toString();
+    if (layout == 'single' || layout == 'double') return layout;
+    return null;
+  }
 
   bool _hasUnsavedChanges() {
     return _nameCtrl.text.trim().isNotEmpty ||
@@ -74,7 +93,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _requiresOwnerApproval ||
         !_ownerAutoJoin ||
         _groupFeeDrafts.isNotEmpty ||
-        _roundExpenseDrafts.isNotEmpty;
+        _roundExpenseDrafts.isNotEmpty ||
+        _positionDrafts.isNotEmpty;
   }
 
   Future<void> _handleBackRequest() async {
@@ -297,6 +317,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           pricingUnit: tpl['pricing_unit']?.toString(),
           defaultQuantity: (tpl['default_quantity'] as num?)?.toDouble() ?? 1,
           paymentTiming: tpl['payment_timing'].toString(),
+        );
+      }
+      // Phase 15: persist drafted positions on pitch layout atomically
+      if (_fieldLayout != null && _positionDrafts.isNotEmpty) {
+        await _repo.replaceGroupPositions(
+          groupId: groupId,
+          actorUserId: user.id,
+          positions: _positionDrafts,
         );
       }
       if (!mounted) return;
@@ -635,6 +663,40 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               ),
                               child: _buildCostStandardsEditor(),
                             ),
+                            if (_fieldLayout != null) ...[
+                              const SizedBox(height: 32),
+                              _buildCollapsibleSection(
+                                title: 'ตำแหน่งผู้เล่นที่ต้องการบนสนาม',
+                                icon: Icons.sports_soccer_rounded,
+                                expanded: _showPositionsSection,
+                                onToggle: () => setState(
+                                  () => _showPositionsSection =
+                                      !_showPositionsSection,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'กำหนดตำแหน่งผู้เล่นล่วงหน้าเพื่อให้สมาชิกเลือกตำแหน่งที่ต้องการเล่นเมื่อจองรอบนัด',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    PositionLineupEditor(
+                                      layout: _fieldLayout!,
+                                      positions: _positionDrafts,
+                                      onChanged: (newPositions) {
+                                        setState(() {
+                                          _positionDrafts = newPositions;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 32),
                             _buildModernSection(
                               title: 'สถานที่ตั้งสนาม',

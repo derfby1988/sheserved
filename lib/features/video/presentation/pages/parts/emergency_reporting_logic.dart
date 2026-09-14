@@ -300,12 +300,14 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
 
   Future<void> _uploadIncident(File file) async {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const AlertDialog(content: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text('กำลังอัปโหลดข้อมูลเหตุฉุกเฉิน...')])));
+    String? insertedVideoId;
     try {
       final userId = AuthService.instance.userId;
       if (userId == null) throw Exception("User not logged in");
       final videoId = await ServiceLocator.instance.videoRepository.uploadEmergencyVideo(userId: userId, videoFile: file, gpsTracks: _recordedGpsTracks, categoryId: _selectedEmergencyCategoryId);
       final ws = WebSocketService();
       if (videoId != null && mounted) {
+        insertedVideoId = videoId;
         final newVideo = Video(id: videoId, userId: userId, title: 'Emergency Incident', type: VideoType.emergency, status: VideoStatus.processing, latitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['latitude'] : 0.0, longitude: _recordedGpsTracks.isNotEmpty ? _recordedGpsTracks.last['longitude'] : 0.0, createdAt: AppConfig.currentUtc, localFilePath: file.path, categoryId: _selectedEmergencyCategoryId, categoryName: _selectedEmergencyCategory?.name ?? 'เหตุฉุกเฉิน');
         setState(() { _trendingVideos.insert(0, newVideo); _currentVideoId = videoId; _currentVideo = newVideo; });
         _initializePlayer(file.path, isLocal: true);
@@ -330,6 +332,17 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
+      // Phase 16: rollback การ์ด optimistic ที่เพิ่มไปแล้วก่อน flow ล้มเหลว
+      // (การ์ดยังไม่ยืนยันจาก server — ไม่เขียนลง shared cache อยู่แล้ว)
+      if (insertedVideoId != null) {
+        setState(() {
+          _trendingVideos.removeWhere((v) => v.id == insertedVideoId);
+          if (_currentVideoId == insertedVideoId) {
+            _currentVideoId = null;
+            _currentVideo = null;
+          }
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
     }
   }

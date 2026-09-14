@@ -177,6 +177,12 @@ module.exports = (pool) => {
 
             const videoRecord = result.rows[0];
 
+            // ✅ Phase 16: เหตุฉุกเฉินใหม่ต้องขึ้น list ทันที — invalidate เฉพาะ
+            // type 'emergency' (fail-open: invalidateCachePattern จับ error เอง)
+            if ((type || 'normal') === 'emergency') {
+                invalidateCachePattern('video:emergency:list:*');
+            }
+
             // 2. Handle GPS Tracks if provided
             if (gpsTracks) {
                 try {
@@ -381,6 +387,12 @@ module.exports = (pool) => {
 
             const videoRecord = result.rows[0];
 
+            // ✅ Phase 16: เหตุฉุกเฉินแบบภาพถ่ายใหม่ต้องขึ้น list ทันที —
+            // invalidate เฉพาะ emergency_photo (thai_mhung_photo ไม่อยู่ใน list query)
+            if (videoType === 'emergency_photo') {
+                invalidateCachePattern('video:emergency:list:*');
+            }
+
             // ✅ อัปเดต Thumbnail ให้กับเหตุการณ์หลัก (Incident) โดยอัปเดตเสมอเพื่ออัปเดตภาพ Animated ล่าสุด
             if (isThaiMhung && validatedIncidentId && thumbnailUrl) {
                 try {
@@ -555,6 +567,9 @@ module.exports = (pool) => {
 
     // Get emergency videos list (trending) - with user info & interaction counts
     router.get('/emergency/list', ipLimiter, async (req, res) => {
+        // ✅ Phase 16 (secure plan 04): response มีข้อมูลผู้แจ้ง/ที่อยู่เหตุการณ์ —
+        // ห้าม proxy/browser cache; Redis internal cache ยังทำงานตามปกติ
+        res.set('Cache-Control', 'no-store');
         const { page, limit, offset } = clampPagination(req);
         const cacheKey = `video:emergency:list:v2:${page}:${limit}`;
 
@@ -692,6 +707,29 @@ module.exports = (pool) => {
             const isVideoOwner = videoRes.rows[0]?.user_id === userId;
             const io = socketService.getIO();
 
+            // ✅ Terminal-state guard: ห้ามเปิดภารกิจที่ปิดแล้วกลับมา
+            // (resolved/cancelled → สถานะที่ไม่ใช่ terminal) แต่ยัง idempotent
+            // เมื่อยิงซ้ำด้วยสถานะ terminal เดิม — กันกด "ถึงที่เกิดเหตุแล้ว"
+            // บนภารกิจที่จบไปแล้วทำให้สถานะย้อนกลับ
+            if (!isVideoOwner) {
+                const guardSql = responseId
+                    ? 'SELECT status FROM incident_responses WHERE id = $1 AND volunteer_id = $2'
+                    : 'SELECT status FROM incident_responses WHERE video_id = $1 AND volunteer_id = $2';
+                const guardParams = responseId ? [responseId, volunteerId] : [id, volunteerId];
+                const currentRes = await pool.query(guardSql, guardParams);
+                const currentStatus = currentRes.rows[0]?.status;
+                if (
+                    (currentStatus === 'resolved' || currentStatus === 'cancelled') &&
+                    status !== 'resolved' && status !== 'cancelled'
+                ) {
+                    return res.status(409).json({
+                        error: 'ภารกิจนี้ปิดไปแล้ว ไม่สามารถเปลี่ยนสถานะได้',
+                        code: 'MISSION_ALREADY_CLOSED',
+                        currentStatus
+                    });
+                }
+            }
+
             let query;
             let params;
             if (isVideoOwner) {
@@ -759,7 +797,13 @@ module.exports = (pool) => {
             const result = await pool.query(query, params);
 
             if (result.rows.length === 0) {
-                return res.status(404).json({ error: 'Incident response not found or not authorized' });
+                // ✅ code ให้ client แยกสาเหตุได้ (responseId ไม่ตรง / ไม่ใช่ของ
+                // volunteer คนนี้) แทนข้อความรวม — client จะได้ re-sync กับ
+                // Local DB แล้วลองใหม่แทนการค้าง panel ตลอดไป
+                return res.status(404).json({
+                    error: 'Incident response not found or not authorized',
+                    code: 'MISSION_RESPONSE_NOT_FOUND'
+                });
             }
 
             const updatedRow = result.rows[0];

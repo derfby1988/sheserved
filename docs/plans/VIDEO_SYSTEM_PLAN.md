@@ -1596,6 +1596,46 @@ return false;
 
 ---
 
+### Bug Fix #12 — รับภารกิจแล้วกลับเข้าหน้าต้องกดรับใหม่ + กด "จบภารกิจ" ไม่สำเร็จ (Mission Lifecycle Restore & Status Reliability) — ต่อจาก #8/#9
+**วันที่:** 2026-09-14
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `websocket-server/server.js`, `lib/features/video/data/repositories/video_repository.dart`, `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart`, `lib/features/video/presentation/pages/emergency_live_page.dart`
+
+**อาการ (จากทดสอบจริงบนมือถือ):**
+1. จิตอาสากดรับภารกิจแล้วกด "จบภารกิจ" → SnackBar แดง "ไม่สามารถบันทึกสถานะได้ กรุณาลองใหม่อีกครั้ง" และ Rescue Control Panel ค้างอยู่
+2. ออกจากหน้าแล้วกลับเข้าเหตุการณ์เดิม → ถูกบังคับให้กดรับภารกิจซ้ำ (ทั้งที่ `incident_responses` ยัง active)
+
+**สาเหตุ (Root Causes — 4 จุด):**
+1. **Restore ไม่ครบ**: `_restoreActiveMissionIfNeeded()` คืนเฉพาะ `_pendingMissionVideoId` (จาก `getActiveRescues()`) แต่ `_currentResponseId` จะถูกตั้งก็ต่อเมื่อ `_loadResponders()` ทำงานเสร็จเท่านั้น — ซึ่งอยู่ **ท้ายสุด** ของ `_loadInitialData()` หลัง round-trip ของ interaction summary/video/GPS → มีช่วงที่ `_currentResponseId == null` ทำให้ `_isEligibleResponder()` คืน true → ปุ่ม "ตอบรับช่วยเหลือ" แสดง → กดซ้ำ → `POST /:id/accept` upsert รีเซ็ตสถานะเป็น `en_route`
+2. **Socket เขียน DB ก่อน HTTP**: `_updateRescueStatus()` emit `rescue-status-update` แบบ fire-and-forget **ก่อน** เรียก HTTP → เมื่อ socket สำเร็จแต่ HTTP ล้มเหลว (เช่น 429 rate limit) DB ถูกปิดภารกิจแล้ว แต่ UI รายงานล้มเหลวและค้าง panel → ผู้ใช้กดซ้ำและเข้าใจว่า "จบภารกิจไม่ได้"
+3. **Repository คืน `true` จาก Supabase แม้ Local ล้มเหลว**: `updateRescueStatus()` fallback Supabase ด้วย `.eq('id', responseId)` (id อาจไม่ตรงกับแถวใน Supabase) และไม่ได้ตรวจ affected rows → รายงานสำเร็จ/ล้มเหลวไม่ตรงกับ Local DB (source of truth)
+4. **responseId ปลอมจาก accept fallback**: เมื่อ Local API ล่มและ Supabase insert โดน FK violation → เดิมสร้าง id ปลอม `<timestamp>-local` → status update จะ 404 ทุกครั้งตลอดไป (ภารกิจปิดไม่ได้)
+
+**วิธีแก้ไข (Implemented):**
+1. **Mission Lifecycle Restore (Flutter)**: `_restoreActiveMissionIfNeeded()` ตั้ง `_currentResponseId` จาก `incident_responses.id` ที่ได้จาก `getActiveRescues()` (Local-first) **ทันที** เมื่อวิดีโอที่เปิดอยู่คือภารกิจนั้น (`missionVideoId == _currentVideoId`) พร้อมเรียก `_checkPrivacyPermissions()` + `_initCompass()` + `_startResponderTracking()` — ปิดหน้าต่างที่ปุ่มรับงานยังแสดง; ตั้ง `_currentResponseId` เฉพาะเมื่อเป็นภารกิจของวิดีโอที่เปิดอยู่เท่านั้น (ไม่ให้ Control Panel ไปโผล่บนเหตุการณ์อื่นที่แค่เปิดดู)
+2. **HTTP = source of truth ของ mission lifecycle (Flutter)**: `_updateRescueStatus()` เลิก emit socket ก่อน HTTP — รอผลจาก `POST /api/videos/:id/status` เท่านั้น (server อัปเดต DB + emit `rescue-incoming`/`rescue-status-updated`/`rescue-cancelled` ในคำขอเดียวอยู่แล้ว)
+3. **Repository คืนผลลัพธ์ที่แยกสาเหตุได้ (Flutter)**: `updateRescueStatus()` คืน `RescueStatusUpdateResult { success, errorCode, message }` โดย map HTTP status → `RATE_LIMITED(429)` / `NOT_FOUND(404)` / `ALREADY_CLOSED(409)` / `UNAUTHORIZED(401,403)` / `NETWORK` / `SERVER`; Local สำเร็จ = สำเร็จ แล้ว mirror ไป Supabase แบบ best-effort ด้วย `.eq('video_id').eq('volunteer_id')` (ไม่ใช้ `id`) — **ไม่มีการรายงานสำเร็จจาก Supabase เมื่อ Local ล้มเหลว**
+4. **Self-heal เมื่อ id ไม่ตรง (Flutter)**: เมื่อได้ `NOT_FOUND`/`ALREADY_CLOSED`/`UNAUTHORIZED` → `_syncMissionStateFromLocalDb()` re-sync กับ `getActiveRescues()`: พบภารกิจของวิดีโอนี้ → adopt `id` จริงแล้วลองใหม่ 1 ครั้ง; ไม่พบ → ล้าง `_currentResponseId`/`_pendingMissionVideoId` + หยุด tracking + คำนวณ filter ใหม่ (ปิด panel ที่ค้าง)
+5. **ห้ามสร้าง responseId ปลอม (Flutter)**: `acceptIncident()` คืน `null` เมื่อ Local ล้มและ Supabase ล้ม — UI แจ้งว่ายังรับงานไม่สำเร็จ ให้ลองใหม่ (id ต้องมาจาก Local DB เท่านั้น)
+6. **Server: Terminal-state guard + error code (routes/video.js)**: `POST /:id/status` ปฏิเสธการเปลี่ยนจาก `resolved`/`cancelled` ไปเป็นสถานะที่ไม่ใช่ terminal ด้วย `409 { code: 'MISSION_ALREADY_CLOSED', currentStatus }` (ยัง idempotent เมื่อยิงซ้ำด้วยสถานะ terminal เดิม) และ `404` ตอบ `code: 'MISSION_RESPONSE_NOT_FOUND'` เพื่อให้ client แยกสาเหตุและ re-sync ได้
+7. **Server: Authorization + validation ของ socket (server.js)**: `socket.on('rescue-status-update')` ตรวจ (a) `status` อยู่ใน allowlist (b) `socket.userId` ตรงกับ `volunteerId` (defense-in-depth) (c) `responseId` เป็นของ volunteer คนนั้นจริงก่อนเขียน DB (d) terminal-state guard เดียวกับ HTTP — ปฏิเสธด้วย ack `{success:false, error}` แทนการเขียน/แจ้งเตือนเงียบๆ (e) **idempotent timestamp**: `arrived_at`/`resolved_at` ตั้งเฉพาะเมื่อยังไม่มีค่า (เดิมเขียนทับทุกครั้ง ทำให้ยิงซ้ำแล้วเวลาเลื่อน)
+8. **`_startResponderTracking()` idempotent (Flutter)**: ยกเลิก `_myLocationStreamSub` เดิมก่อนสร้างใหม่ — กัน GPS stream ซ้ำเมื่อ restore + `_loadResponders()` ทำงานทั้งคู่
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- รับภารกิจแล้วกลับเข้าหน้าเดิม → เห็น Rescue Control Panel ทันที ไม่มีปุ่ม "ตอบรับช่วยเหลือ" แม้ในช่วงที่ `_loadResponders()` ยังไม่เสร็จ
+- กด "จบภารกิจ" → สำเร็จแบบ idempotent (ยิงซ้ำได้ 200) และ panel ปิด
+- ถ้า responseId ที่ client ถือไม่ตรงกับ Local DB → re-sync แล้วจบภารกิจได้ในการกดครั้งเดียว (ไม่ค้างถาวร)
+- กด "ถึงที่เกิดเหตุแล้ว" บนภารกิจที่ปิดแล้ว → `409 MISSION_ALREADY_CLOSED` + UI แจ้งตรงสาเหตุ
+- rate limit → ข้อความ "ระบบจำกัดการทำรายการชั่วคราว" (ไม่ใช่ข้อความรวมที่ทำให้เข้าใจผิด)
+
+**ข้อจำกัดที่ยังเหลือ — งานต่อเนื่องที่รอการตัดสินใจ (Follow-up Items):**
+
+| # | ข้อจำกัด | ผลกระทบปัจจุบัน | แนวทางแก้ที่เสนอ | เงื่อนไขก่อน implement |
+|---|---|---|---|---|
+| F1 | `strictRateLimiter` เป็น **instance เดียว** (`rate:{userId}`, 10 req/min, `middleware/rate-limiter.js:338`) ใช้ร่วมกันทุก route ที่ mount — `/:id/accept`, `/:id/status`, `/:id/interactions` (`routes/video.js:615,691,1152`) รวมถึง victims/consultation/admin — การกดไลก์/ส่งกำลังใจหลายครั้งอาจกิน budget จน mission write โดน 429 | ผู้ใช้เห็น "ระบบจำกัดการทำรายการชั่วคราว" และต้อง retry เอง — UI แจ้งตรงสาเหตุแล้ว ไม่ค้าง panel และไม่ corrupt state | แยก bucket ด้วย `keyPrefix` เฉพาะกลุ่ม: `missionRateLimiter = rateLimiter({ maxRequests: 10, windowSec: 60, keyPrefix: 'rate:mission' })` สำหรับ `accept`/`status` เท่านั้น — **แยก key ไม่เพิ่ม maxRequests** (ไม่ลด protection เดิม); interactions/endpoint อื่นคง strict เดิม | **ต้องผ่าน secure plan 03 ก่อน** — rate limit เป็น documented security control ห้ามแก้เพื่อ UX โดยไม่ review; หลังแก้ต้องทดสอบ: (a) abuse ยังโดน 429 (b) interactions จำนวนมากไม่กิน budget ของ mission write (c) budget รวมต่อ user ไม่เพิ่มจนเปิดช่อง abuse |
+| F2 | Flutter ไม่ subscribe `rescue-cancelled`/`rescue-status-updated` — server broadcast แล้ว (`io.emit('rescue-cancelled', {videoId, volunteerId})` ที่ `routes/video.js:862`, `server.js:1607`; `rescue-status-updated` เข้า `video-{id}` room) แต่ `WebSocketService` listen เฉพาะ `rescue-incoming` (`websocket_service.dart:349`) — **ข้อควรรู้:** `volunteerId` ใน payload คือ **ผู้กระทำ (actor)** ไม่ใช่ผู้ที่ถูกยกเลิก; ใน reporter-cancel path actor คือผู้แจ้ง และเหตุหนึ่งรับได้หลายอาชีพ จึงห้ามล้าง panel จาก `videoId` อย่างเดียว | ภารกิจที่ถูกผู้แจ้งยกเลิก (หรืออัปเดตจากอีกเครื่อง) ยังแสดง panel ค้างจนกว่าผู้ใช้กดสถานะ → ได้ 409 + self-heal ล้างให้ — ปลอดภัยแต่ไม่ real-time | เพิ่ม `rescueCancelledStream`/`rescueStatusUpdatedStream` ใน `WebSocketService` (pattern เดียวกับ `rescueIncomingStream`) + subscribe ใน `emergency_websocket_logic.dart`: เมื่อ `videoId` ตรง `_pendingMissionVideoId`/`_currentVideoId` และ actor `volunteerId` ไม่ใช่ตนเอง → เรียก `_syncMissionStateFromLocalDb()` (re-sync `getActiveRescues()` — ใช้กลไก self-heal ที่มีอยู่) เพื่อยืนยันว่าภารกิจของตนเองถูกยกเลิกจริงก่อนล้าง `_currentResponseId`/`_pendingMissionVideoId` + หยุด tracking/compass + `_computeMissionTrendingFilter()` + SnackBar "ผู้แจ้งยกเลิกภารกิจแล้ว" (กันเคสจิตอาสาอีกอาชีพยกเลิกเองแล้ว panel ของเราหายผิด) | client-side เพิ่ม listener เท่านั้น ไม่เปลี่ยน authorization — ความเสี่ยงต่ำ; **เกี่ยวข้อง Phase 16 item 6** — ถ้า implement พร้อมกันควรใช้ request generation/debounce ชุดเดียวกัน; ต้อง `mounted` check และห้ามแสดง raw/unfiltered card ระหว่าง recompute |
+
+---
+
 ### Bug Fix #5 — iOS White Screen / Startup Hang (Timeout Management)
 **ไฟล์ที่เกี่ยวข้อง:** `lib/services/sync_service.dart`, `lib/services/service_locator.dart`
 
@@ -5116,18 +5156,28 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 | ลำดับ | งาน | เหตุผลและเงื่อนไข |
 |---|---|---|
-| 1 | **Parallel load** — เริ่ม `_loadTrendingVideos()` พร้อม initialization อื่น | ไม่เปลี่ยน API/data contract; ต้องรอ categories และ list พร้อมก่อน mission filtering |
-| 2 | **Server invalidation หลัง INSERT** — แก้ทั้ง video upload และ photo upload | แก้ stale-gap โดยตรง; invalidate หลัง DB insert สำเร็จเท่านั้น และ Redis ล้มเหลวต้อง fail-open |
-| 3 | **In-memory cache ขั้นพื้นฐาน** ที่ `VideoRepository` | cache เฉพาะ raw list page 1, bounded TTL/size, dedupe in-flight; ต้อง clear เมื่อ logout/switch user |
-| 4 | **Shared prefetch** | ใช้ repository singleton เดียวกันจาก Home, EmergencyLivePage และ DonationAdmin; ห้ามผูก state ระหว่าง widget โดยตรง |
+| 1 | **Parallel load** — เริ่ม `_loadTrendingVideos()` พร้อม initialization อื่น | ไม่เปลี่ยน API/data contract หรือ layout; ต้องรอ categories และ mission filter พร้อมก่อนปล่อยการ์ด; ทุก `setState` ต้องตรวจ `mounted` และ page/request generation |
+| 2 | **Server invalidation หลัง INSERT** — แก้ทั้ง video upload และ photo upload | แก้ stale-gap โดยตรง; invalidate เฉพาะ emergency type หลัง insert สำเร็จเท่านั้น; Redis ล้มเหลวต้องไม่ทำให้ upload ล้มเหลว |
+| 3 | **In-memory cache ขั้นพื้นฐาน** ที่ `VideoRepository` | cache เฉพาะ server-confirmed raw list page 1, bounded TTL/size, dedupe in-flight; เปิดด้วย feature flag/rollback ได้ และต้อง clear เมื่อ logout/switch user |
+| 4 | **Shared prefetch** | ใช้ repository singletonเดียวกันจาก Home, EmergencyLivePage และ DonationAdmin; ห้ามผูก state ระหว่าง widget โดยตรง และต้องคง network path เดิมเป็น fallback |
+
+**Guardrails ที่ต้องผ่านก่อนถือว่า low-risk:**
+
+- Parallel load ต้องไม่เปลี่ยนลำดับการแสดงผลของ current video, mission lock, reporter lock หรือ responder/GPS initialization; ถ้า page ถูกเปลี่ยน/ปิดระหว่าง request ให้ทิ้งผลลัพธ์ที่มาถึงช้า
+- `_missionFilterReady` เป็น gate ของการแสดงผล ไม่ใช่ gate ของการ fetch: ให้ยิง trending, categories และ reporter-active check ขนานกัน; ผู้ชมทั่วไปก็ต้องผ่าน gate เดียวกันเพื่อไม่ให้ UI behavior แตกต่างตาม role
+- Cache ต้องคืน **copy ของ list** หรือ immutable snapshot ไม่คืน mutable list เดียวให้หลาย consumer แก้ไขร่วมกัน; ห้ามให้ Home/DonationAdmin แก้ raw cache โดยตรง
+- Shared cache เก็บเฉพาะ response ที่ server ยืนยันแล้ว; optimistic card ของผู้แจ้งยังเป็น page-local เท่านั้น และไม่ถูก prefetch ไปยัง consumer อื่น
+- Server invalidation ต้อง conditional ตาม `type` (`emergency`/`emergency_photo`) เพื่อไม่เพิ่ม Redis work ให้ upload ประเภทอื่น; failure ของ invalidation ต้องมี metric/log ที่ไม่เปิดเผย PII แต่ไม่ rollback database insert
+- เปิด client cache หลัง baseline test ด้วย feature flag หรือ kill switch และต้องเปรียบเทียบกับ network-only path ก่อน/หลัง; ถ้า cache ผิดให้ปิดกลับ network-only ได้ทันที
 
 #### 16.2.2 ควรทำหลังจากวัดผล — ความเสี่ยงปานกลาง
 
 | ลำดับ | งาน | เงื่อนไขก่อนเปิดใช้ |
 |---|---|---|
 | 5 | **SWR และ `forceRefresh`** | ต้องมี request generation/version เพื่อป้องกัน response เก่าเขียนทับ response ใหม่; ต้องวัด stale age, hit rate, API latency และ error rate |
-| 6 | **ปรับ Redis TTL เป็น `TTL.VIDEO_LIST`** | ทำหลังวัด Redis hit rate และ PostgreSQL load; การ invalidate ครบถ้วนต้องผ่านการทดสอบก่อน ไม่ควรลด TTL โดยอัตโนมัติ |
-| 7 | **Thumbnail `precacheImage`** 2–3 รายการแรก | ทำหลัง list สำเร็จเท่านั้น; จำกัดจำนวน/ขนาดและใช้เฉพาะ server-generated `thumbnail_url` |
+| 6 | **Recompute mission filter หลัง WebSocket refresh** | หลัง `emergency-notification` โหลด raw list ใหม่แล้ว ต้องคำนวณ `_computeMissionTrendingFilter()` ใหม่ โดยเริ่มจากกรณีที่ `videoId` ใหม่หรือ list เปลี่ยนจริง; ต้องมี debounce/coalescing, request generation และวัดจำนวน filter requests, latency, PostgreSQL/API load และความถี่การเปลี่ยนการ์ดก่อนเปิดใช้; งานที่เกี่ยวข้อง: Bug Fix #12 F2 (`rescue-cancelled`/`rescue-status-updated` subscription) — ถ้า implement พร้อมกันควรใช้ generation/debounce ชุดเดียวกัน |
+| 7 | **ปรับ Redis TTL เป็น `TTL.VIDEO_LIST`** | ทำหลังวัด Redis hit rate และ PostgreSQL load; การ invalidate ครบถ้วนต้องผ่านการทดสอบก่อน ไม่ควรลด TTL โดยอัตโนมัติ |
+| 8 | **Thumbnail `precacheImage`** 2–3 รายการแรก | ทำหลัง list สำเร็จเท่านั้น; จำกัดจำนวน/ขนาดและใช้เฉพาะ server-generated `thumbnail_url` |
 
 #### 16.2.3 ควรเลื่อนหรือแยกเป็น Phase ย่อย — ความเสี่ยงสูงกว่า
 
@@ -5161,10 +5211,12 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 **Contract ของ client cache (บังคับ):**
 - แคชเฉพาะ **ลิสต์ดิบ (unfiltered)** page=1 เท่านั้น — `_filteredTrendingVideos()` ต้องคำนวณใหม่ทุกครั้งจากลิสต์ดิบ ห้ามแคชผลที่ผ่าน eligibility/reporter-lock แล้ว
 - API: `getEmergencyVideos({page, limit, forceRefresh})` — page>1 ไม่เข้า cache (ป้องกัน key หลากหลาย + ตรง secure plan 03 R4: key bound เดียว)
-- Invalidation ฝั่ง client: (a) bounded TTL, (b) WebSocket `emergency-notification` → `forceRefresh: true`, (c) logout/switch user → clear memory cache, (d) optimistic write-through ต้องมี deduplication ด้วย `videoId` และ rollback เมื่อ upload ล้มเหลว
+- Invalidation ฝั่ง client: (a) bounded TTL, (b) WebSocket `emergency-notification` → `forceRefresh: true`, (c) logout/switch user → clear memory cache
+- **ห้ามเขียน optimistic entry ของผู้แจ้งลง shared cache**: shared cache เก็บเฉพาะข้อมูลที่ **server ยืนยันแล้ว** เท่านั้น — การ์ดของผู้แจ้งยังคงเป็น page-local (`emergency_reporting_logic.dart:310`) เหมือนเดิม; เหตุผล: (1) การ์ด optimistic ขาด field ที่ endpoint join มา (`user_name`, `user_avatar`, address, counts, thumbnail) → หน้าอื่นจะแสดงช่องว่าง (2) `DonationAdminPage` ไม่กรอง self-report (ต่างจาก `home_page.dart:872` ที่ `continue` ทิ้ง) → อาจโชว์การ์ดยังไม่ยืนยัน (3) ตัดปัญหา dedupe/rollback ทั้งหมด; ให้การ์ดจริงเข้าถึงทุกหน้าผ่าน `emergency-notification` → `forceRefresh` แทน
 - fail-open: ถ้า cache มีปัญหา → ยิง network เหมือนเดิม (เหมือน `cacheAside` ฝั่ง server ที่ fallback DB)
 - SWR เปิดใช้หลังผ่าน metrics gate; ต้องมี request generation/version เพื่อ discard response เก่าที่กลับมาหลัง request ใหม่
 - เวลา panel แสดงจาก cache ให้ตั้ง `_isLoadingTrending = true` ต่อระหว่าง revalidate แล้วแทนที่เมื่อข้อมูลใหม่มา (SWR) — อย่าบล็อก UI
+- **ห้ามแสดงการ์ดก่อน mission filter พร้อม (`_missionFilterReady`)**: panel ต้องคง skeleton ตราบใดที่ `_isLoadingTrending || !_missionFilterReady` — เพราะ `_filteredTrendingVideos()` คืนลิสต์ดิบทั้งหมดเมื่อ `_isVolunteerCapable`/`_isReporterLocked` ยังเป็นค่าเริ่มต้น false (`emergency_live_page.dart:163-170`) → volunteer/reporter อาจเห็นการ์ดที่ไม่มีสิทธิ์แวบหนึ่งแล้วหาย; `_missionFilterReady` ต้อง set true แม้ filter ล้มเหลว (fail-open ไปพฤติกรรมเดิม) แต่ต้อง log
 - ห้ามถือว่า `Cache-Control: no-store` ปิด Redis internal cache; header นี้มีผลกับ browser/proxy/CDN เท่านั้น
 
 ### 16.4 การตรวจสอบความขัดแย้ง (Compliance Review — ตรวจละเอียดแล้ว)
@@ -5218,7 +5270,7 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 1. **Privacy ของ public response:** endpoint ยังส่งชื่อผู้แจ้งและข้อมูลสถานที่ให้ client ทุกคนได้อยู่แล้ว; Phase 16 ไม่ได้แก้ authorization/privacy contract นี้ จึงต้องมี security/privacy phase แยกหากข้อกำหนดเปลี่ยน
 2. **Local storage privacy:** memory cache ลดความเสี่ยงด้าน persistence แต่ข้อมูลยังอยู่ใน process memory; local DB ยังไม่ควรทำจนกว่าจะมี encryption และ data minimization
 3. **Race condition:** request เก่าอาจตอบหลัง `forceRefresh`; implementation ต้องใช้ generation/version และไม่เขียนผลลัพธ์ stale ทับข้อมูลใหม่
-4. **Optimistic insertion:** การ์ดชั่วคราวอาจซ้ำหรือค้างเมื่อ upload ล้มเหลว; ต้อง dedupe ด้วย `videoId`, ระบุ optimistic state และ rollback ได้
+4. **Optimistic insertion:** ลดความเสี่ยงด้วยการ **ไม่เขียน optimistic entry ลง shared cache** (page-local เท่านั้น) — เหลือเพียงความเสี่ยงในหน้าของผู้แจ้งเอง: การ์ดอาจค้างถ้า flow หลัง insert โยน error → ต้อง rollback และ merge by `videoId` กันซ้ำ
 5. **TTL/DB load:** การลด TTL อาจเพิ่ม PostgreSQL load; ต้องใช้ metrics และ rollback ได้ ไม่ถือว่า 60 วินาทีเป็นค่าที่ปลอดภัยโดยอัตโนมัติ
 6. **Role/RLS evolution:** หาก endpoint กลายเป็น per-user หรือ RLS ถูก tighten ต้องเปลี่ยน cache key/version และตรวจ policy ก่อนเปิด cache ต่อ
 7. **Cache-Control scope:** `no-store` ป้องกัน proxy/CDN/browser caching แต่ไม่ใช่กลไก invalidate Redis และไม่ลบข้อมูลที่อยู่ใน client memory
@@ -5228,28 +5280,38 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 ### 16.5 Implementation Steps (เรียงลำดับ)
 
 **Step 1 — Server invalidation (ควรทำทันที):**
-- [ ] เพิ่ม `await invalidateCachePattern('video:emergency:list:*')` หลัง `INSERT INTO videos` สำเร็จ — **2 จุด**: upload video (`routes/video.js` ~บรรทัด 176) และ upload-photos (`routes/video.js` ~บรรทัด 380, เฉพาะเมื่อ `videoType === 'emergency_photo'` ไม่ใช่ `thai_mhung_photo`)
-- [ ] คง fail-open behavior เมื่อ Redis ใช้งานไม่ได้ และทดสอบว่าการ invalidate ไม่ทำให้ upload ล้มเหลวหลัง DB insert สำเร็จ
+- [ ] เพิ่ม `invalidateCachePattern('video:emergency:list:*')` หลัง `INSERT INTO videos` สำเร็จ — **2 จุด**: upload video (`routes/video.js` ~บรรทัด 176) เฉพาะ `type === 'emergency'` และ upload-photos (`routes/video.js` ~บรรทัด 380) เฉพาะ `videoType === 'emergency_photo'` ไม่ใช่ `thai_mhung_photo`
+- [ ] ใช้ invalidation แบบ best-effort: Redis error ต้องถูกจับ/มี metric แต่ต้องไม่ทำให้ response upload กลายเป็น failure หรือพยายาม rollback database insert
+- [ ] ทดสอบว่า normal video และ `thai_mhung_photo` ไม่ trigger emergency-list invalidation โดยไม่จำเป็น
 - [ ] เพิ่ม `res.set('Cache-Control', 'no-store')` ที่ endpoint ตาม secure plan 04; ย้ำว่า header นี้ไม่ปิด Redis internal cache
 
-**Step 2 — Flutter parallel load (ควรทำทันที):**
-- [ ] ใน `_loadInitialData()`: ยิง `_loadTrendingVideos()` แบบไม่ await ตั้งแต่ต้น โดยไม่รอ categories/video/GPS
-- [ ] เปลี่ยนจุดเรียก `_computeMissionTrendingFilter()` ให้รอ `Future.wait([categories, trending])` — รักษา invariant เดิม
+**Step 2 — Flutter parallel load + filter-ready gate (ควรทำทันที):**
+- [ ] ใน `_loadInitialData()`: เริ่ม `_loadTrendingVideos()` แบบขนานตั้งแต่ต้น โดยไม่รอ categories/video/GPS; await ผลเฉพาะในจุดที่จำเป็นต่อ filter/ก่อนใช้ข้อมูล
+- [ ] เปลี่ยนจุดเรียก `_computeMissionTrendingFilter()` ให้รอ `Future.wait([categories, trending])` — รักษา invariant เดิม และไม่ปล่อยให้ background result เรียก `setState` หลัง page dispose
+- [ ] **ยิง `getReporterActiveIncidentVideoIds(userId)` แบบขนานตั้งแต่ต้น** (ใช้แค่ `userId` ไม่ต้องรอ categories/list) เพื่อให้ filter พร้อมเกือบพร้อมกับลิสต์ — ลดเวลาที่ต้องแสดง skeleton
+- [ ] เพิ่ม flag `_missionFilterReady = false`; set `true` หลัง `_computeMissionTrendingFilter()` ทำงานครบ (รวม taken-by-profession) — ถ้า error ให้ set `true` แบบ fail-open ไปพฤติกรรมเดิมพร้อม log
+- [ ] panel แสดง skeleton ตราบใดที่ `_isLoadingTrending || !_missionFilterReady` — กันการ์ดที่ไม่มีสิทธิ์แวบแล้วหาย (ไม่ใช่ชะลอแบบไม่มีเหตุผล เพราะ reporter check ขนานอยู่แล้ว)
 - [ ] ทำ `_loadMoreTrendingVideos()` ไม่เปลี่ยน (page>1 ไม่เข้า cache)
 
 **Step 3 — Bounded in-memory cache (ควรทำทันทีหลังวัด baseline):**
 - [ ] เพิ่ม `_trendingCache` และ `_trendingInFlight` ใน `VideoRepository` singleton; จำกัดเฉพาะ page=1 และ limit ที่กำหนด
 - [ ] เริ่มจาก cache-aside/fresh-cache ก่อน; เปิด SWR หลังมี metrics และ acceptance gate
-- [ ] dedupe concurrent requests และกำหนด max entries/TTL/memory policy
+- [ ] dedupe concurrent requests และกำหนด max entries/TTL/memory policy; คืน immutable snapshot/copy เพื่อป้องกัน consumer แก้ shared list
+- [ ] cache เฉพาะรายการที่ parse/validate สำเร็จและ server response สำเร็จ; local API fail แล้ว Supabase fallback ต้องไม่ทำให้ dataset เปลี่ยนเงียบๆ — ปัจจุบัน fallback query กรองเฉพาะ `emergency` ขณะที่ local endpoint รองรับ `emergency_photo` (`video_repository.dart:159-165`, `routes/video.js:585`), จึงต้อง normalize query ให้ตรงกันหรือ **ไม่เขียน fallback ที่ semantics ต่างกันลง shared cache** จนกว่าจะกำหนด source contract ชัดเจน; ห้ามเขียน response ที่ schema ไม่ครบลง cache โดยไม่ระบุ source
 - [ ] เพิ่ม `invalidateTrendingCache()`; logout/user switch ต้อง clear memory cache
+- [ ] เปิดด้วย feature flag/kill switch และคง network-only fallback เพื่อ rollback โดยไม่เปลี่ยน UI
 - [ ] WebSocket `emergency-notification` ใช้ `forceRefresh: true`
 - [ ] เพิ่ม request generation/version เพื่อ discard response เก่าที่กลับมาหลัง request ใหม่
-- [ ] optimistic write-through ต้อง dedupe ด้วย `videoId`, ตรวจข้อมูลให้ครบ และ rollback เมื่อ upload/reporting ล้มเหลว
+- [ ] **ไม่เขียน optimistic entry เข้า cache** — คง page-local insert เดิม (`emergency_reporting_logic.dart:310`); เพิ่ม rollback ลบ entry ในเครื่องถ้า reporting flow โยน error หลัง insert เพื่อไม่ให้การ์ดค้างในหน้า
+- [ ] ตอนอ่าน/แสดงผล ให้ merge ด้วย `videoId` ระหว่างลิสต์จาก cache กับ `_currentVideo` ของหน้า (มีอยู่แล้วใน `_filteredTrendingVideos()` `emergency_navigation_logic.dart:251-274`) — กันการ์ดซ้ำเมื่อ server list มาถึง
+- [ ] เมื่อ `emergency-notification` / `video-ready` ของวิดีโอตัวเอง → `forceRefresh` เพื่อให้การ์ดที่ยืนยันแล้วเข้าทุกหน้า
 
 **Step 4 — Shared prefetch (หลังวัดผล cache):**
 - [ ] `HomePage._loadActiveAlerts()`, `EmergencyLivePage` และ `DonationAdminPage` เรียก repository method เดียวกัน
 - [ ] ใช้ in-flight Future เดียวกัน; ห้ามแชร์ filtered list หรือ UI state ระหว่าง consumer
 - [ ] ไม่บังคับว่าผู้ใช้ต้องเปิด Home ก่อน และต้อง fallback ได้เมื่อเข้า EmergencyLivePage โดยตรง
+- [ ] ตรวจว่า shared raw list ไม่มี page-local optimistic entry และแต่ละ consumer ทำ self-report/mission filtering ตามกฎของตนเอง
+- [ ] หาก cache flag ปิดหรือ repository cache error ให้ทุก consumer กลับไป network path เดิมโดยไม่เปลี่ยน layout
 
 **Step 5 — SWR/TTL tuning และ thumbnail precache (ความเสี่ยงปานกลาง):**
 - [ ] เปิด SWR หลังวัด hit/miss, stale age, API latency, PostgreSQL load และ error rate
@@ -5266,10 +5328,12 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 | สถานการณ์ | การจัดการ |
 |---|---|
-| Local API ล่ม → fallback Supabase | cache ต้องจำ `source`; ข้อมูลจาก Supabase อาจขาด field ที่ local API join มา → เขียน cache ได้ แต่ TTL เดียวกัน |
+| Local API ล่ม → fallback Supabase | ต้องแยก `source`; ถ้า Supabase result ไม่ครบ type/fields เทียบเท่า local endpoint ให้ใช้ network result เฉพาะครั้งนั้นและ **ไม่เขียนลง shared cache** จนกว่า semantics จะถูกทำให้ตรงกัน |
 | เหตุใหม่เกิดขณะ cache ยังสด | WS `emergency-notification` → `forceRefresh` + server invalidate-on-insert; ต้อง discard response รุ่นเก่าถ้ามาถึงภายหลัง |
-| ผู้แจ้งเห็นการ์ดตนเองทันที | optimistic entry ต้องมี stable `videoId`, dedupe, สถานะชั่วคราว และ rollback เมื่อ upload/reporting ล้มเหลว |
+| WS refresh ของ volunteer/reporter | **ยังไม่ recompute mission filter ใน low-risk implementation**; จึงอาจไม่เห็นเหตุใหม่ที่มีสิทธิ์จนกว่าจะเปิดหน้า/โหลดเพิ่ม/มี mission-state refresh — จัดเป็น medium-risk item 6; เมื่อทำต้อง recompute หลัง raw list เปลี่ยน, debounce/coalesce event burst และห้ามแสดง raw list ก่อน gate พร้อม |
+| ผู้แจ้งเห็นการ์ดตนเองทันที | คง page-local insert เดิม (การ์ดมี `videoId` จริงจาก `uploadEmergencyVideo`) — **ไม่เขียนลง shared cache**; rollback ลบในเครื่องถ้า flow error; merge by `videoId` กันซ้ำ |
 | ผู้ใช้สลับบัญชีบน device เดียวกัน | clear memory cache ตอน logout/user switch; Hive ยังไม่อยู่ใน implementation แรก |
+| Volunteer/reporter เข้าหน้าด้วย warm cache | panel คง skeleton จนกว่า `_missionFilterReady` — กันการ์ดที่ไม่มีสิทธิ์แวบแล้วหาย; ยังเร็วกว่าเดิมเพราะ reporter check ขนานกับ trending fetch |
 | 2 หน้าเรียกพร้อมกัน (Home + Live) | in-flight Future share — ไม่ยิงซ้ำ และต้องแยก raw list จาก filtered UI state |
 | `_switchVideo` → `_loadInitialData` ใหม่ | cache hit ทำให้ไม่เสียเวลา re-fetch; forceRefresh เฉพาะเหตุการณ์ที่กำหนด |
 | Redis ล่ม | `cacheAside` fail-open → DB ตรง (พฤติกรรมเดิม) |
@@ -5279,16 +5343,23 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 **Server:**
 - [ ] `INSERT` เหตุใหม่ → `GET /emergency/list` ถัดไปเห็นการ์ดใหม่ทันทีหลัง invalidation (ไม่ผูก acceptance กับ TTL 60s)
+- [ ] normal video และ `thai_mhung_photo` ไม่ invalidate emergency-list cache
+- [ ] Redis invalidation error ไม่ทำให้ upload response fail และมี metric ที่ไม่ log PII
 - [ ] `curl` ซ้ำ 2 ครั้ง → ครั้งที่ 2 log `[Cache] 💾/hit` และ response เท่ากัน
 - [ ] ปิด Redis → endpoint ยังตอบ 200 (fail-open)
 - [ ] `Cache-Control: no-store` อยู่ใน response header
 
 **Flutter:**
 - [ ] เปิด `EmergencyLivePage` ครั้งแรก → panel มี skeleton/loading แต่ request trending เริ่มทันที (ดู timestamp log ไม่ต้องรอ video/GPS)
-- [ ] ออกแล้วเข้าใหม่ภายใน 30s → การ์ดขึ้นในเฟรมแรกจาก cache + revalidate แทนที่หลัง network ตอบ
+- [ ] เปิดหน้าพร้อม active mission/current video → player, GPS, responder, mission lock และ reporter lock ทำงานเหมือนเดิม
+- [ ] volunteer/reporter เข้าหน้าด้วย warm cache → **ไม่มีการ์ดที่ไม่มีสิทธิ์โผล่ก่อนถูกกรอง** (ไม่มี flicker); panel แสดง skeleton จน `_missionFilterReady`
+- [ ] ออกแล้วเข้าใหม่ภายใน TTL → การ์ดขึ้นจาก cache โดย layout/interaction เดิมไม่เปลี่ยน
+- [ ] Home + EmergencyLivePage + DonationAdmin เรียกพร้อมกัน → network request เดียว, แต่ filtered result ของแต่ละ consumer ไม่ปะปนกัน และ raw list ไม่ถูก mutate
 - [ ] รับ `emergency-notification` → list มีการ์ดใหม่ (ไม่ใช่ stale cache)
-- [ ] ผู้แจ้งสร้างเหตุ → การ์ดตนเองอยู่ในหน้าเดียวกันทันที, ไม่ซ้ำหลัง refresh และ rollback ได้เมื่อ upload/reporting ล้มเหลว
+- [ ] (เฉพาะ medium-risk item 6 หลังอนุมัติ) volunteer/reporter ได้ mission-filter result ใหม่หลัง WebSocket refresh โดยไม่ยิง filter ซ้ำถี่เกินเมื่อ event มาเป็นชุด, response เก่าไม่เขียนทับผลใหม่ และไม่มี raw/unfiltered card flash
+- [ ] ผู้แจ้งสร้างเหตุ → การ์ดตนเองอยู่ในหน้าเดียวกันทันที (page-local), ไม่ซ้ำหลัง refresh, rollback ได้เมื่อ reporting ล้มเหลว และ **การ์ดที่ยังไม่ยืนยันต้องไม่โผล่ใน Home/DonationAdmin ผ่าน cache**
 - [ ] logout → login คนอื่น → ไม่มีลิสต์เก่าค้างใน memory cache
+- [ ] ปิด feature flag/cache หรือ cache error → network-only path ทำงานและ UI เดิมยังใช้ได้
 - [ ] ปิด Local API บังคับ fallback Supabase → แอปไม่พัง, cache ทำงานปกติ
 - [ ] (เฉพาะ local-persistence sub-phase ที่อนุมัติภายหลัง) kill app แล้วเปิดใหม่ → ตรวจ encryption, TTL และการอ่าน cache อย่างปลอดภัย
 
@@ -5299,9 +5370,12 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 ### 16.8 Acceptance Criteria
 
-- การ์ดยอดนิยมแสดงในเฟรมแรกเมื่อมี cache (warm re-entry และ cold start ถ้าทำ Step 4)
+- การ์ดยอดนิยมแสดงในเฟรมแรกเมื่อมี cache (warm re-entry; cold start ยังใช้ network เพราะ local persistence อยู่นอก scope แรก)
 - เหตุการณ์ใหม่ปรากฏใน panel ภายใน ≤ รอบเดียวของ emergency-notification (ไม่ติด stale 10 นาที)
 - ไม่มีการแคชผลที่ผ่าน per-user filter
+- ไม่มีการ์ดที่ไม่มีสิทธิ์แสดงก่อน mission filter คำนวณเสร็จ (`_missionFilterReady` gate)
+- UI layout, card design, tab behavior, player/GPS, mission lock และ reporter lock ไม่เปลี่ยนจาก network-only baseline
+- ปิด feature flag แล้วพฤติกรรมกลับ network-only ได้โดยไม่ต้อง migration หรือเปลี่ยน API contract
 - implementation แรกไม่เพิ่ม infrastructure/ค่าใช้จ่าย — ใช้ Redis และ bounded memory cache ที่มีอยู่; Hive ไม่อยู่ใน scope แรก
 - ไม่ขัดกฎ secure plan 01 (กฎที่ 6), 03 (R4, edge-cache), 04 (no-store, kDebugMode), 05 (no PII in log)
 - local persistence จะมี acceptance criteria แยกได้ต่อเมื่อผ่าน encryption/privacy/dependency gate

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
 class ProposeSportPage extends StatefulWidget {
   const ProposeSportPage({super.key});
@@ -15,6 +16,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameThCtrl = TextEditingController();
   final _nameEnCtrl = TextEditingController();
+  String _fieldLayout = 'none'; // 'none', 'single', 'double'
   bool _submitting = false;
 
   @override
@@ -37,6 +39,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
         nameTh: _nameThCtrl.text.trim(),
         nameEn: _nameEnCtrl.text.trim().isEmpty ? null : _nameEnCtrl.text.trim(),
         proposedBy: user.id,
+        fieldLayout: _fieldLayout,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งคำขอเพิ่มประเภทกีฬาสำเร็จ')));
@@ -71,6 +74,30 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
                 maxLength: 60,
               ),
               const SizedBox(height: 16),
+              const Text('รูปแบบสนามจำลองที่แนะนำ (แอดมินจะพิจารณาอนุมัติ):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'none', label: Text('ไม่ใช้ตำแหน่ง')),
+                  ButtonSegment(value: 'single', label: Text('สนาม 1 ฝั่ง')),
+                  ButtonSegment(value: 'double', label: Text('สนาม 2 ฝั่ง')),
+                ],
+                selected: {_fieldLayout},
+                onSelectionChanged: (set) => setState(() => _fieldLayout = set.first),
+              ),
+              if (_fieldLayout != 'none') ...[
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: 140,
+                    child: CustomPaint(
+                      painter: FieldCanvasPainter(layout: _fieldLayout),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _submitting ? null : _submit,
                 icon: _submitting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send),

@@ -17,6 +17,10 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   Future<void> _startResponderTracking() async {
     if (_currentResponseId == null) return;
+    // ✅ Idempotent: ยกเลิก stream ตำแหน่งเดิมก่อนเริ่มใหม่ — ป้องกัน
+    // subscription ซ้ำเมื่อ restore ภารกิจ (mission restore + _loadResponders)
+    await _myLocationStreamSub?.cancel();
+    _myLocationStreamSub = null;
     final locService = LocationTrackingService();
     final isAlwaysGranted = await locService.isBackgroundPermissionGranted();
     if (!isAlwaysGranted) {
@@ -128,13 +132,39 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       final active = await ServiceLocator.instance.videoRepository
           .getActiveRescues(userId);
       if (!mounted || active.isEmpty) return false;
-      final missionVideoId = active.first['video_id']?.toString();
+      final mission = active.first;
+      final missionVideoId = mission['video_id']?.toString();
       if (missionVideoId == null || missionVideoId.isEmpty) return false;
-      // ✅ จำภารกิจค้างไว้ (user-level) — ใช้กรองกล่องยอดนิยมและบล็อกรับงานซ้อน
-      if (_pendingMissionVideoId != missionVideoId && mounted) {
-        setState(() => _pendingMissionVideoId = missionVideoId);
+      // ✅ Mission Lifecycle Restore: คืน `incident_responses.id` จาก Local DB
+      // (source of truth) เข้า `_currentResponseId` ด้วย — ไม่ใช่แค่ videoId
+      // มิฉะนั้นผู้ใช้จะเห็นปุ่ม "ตอบรับช่วยเหลือ" อีกครั้งและถูกบังคับให้
+      // กดรับงานซ้ำ (upsert รีเซ็ตสถานะ) ทั้งที่ภารกิจยัง active อยู่
+      final responseId = mission['id']?.toString();
+      if (responseId == null || responseId.isEmpty) {
+        debugPrint(
+          '[MissionRestore] active rescue ไม่มี id — ข้ามการ restore สถานะภารกิจ',
+        );
+        return false;
       }
-      if (missionVideoId == _currentVideoId) return false;
+      // ✅ ตั้ง `_currentResponseId` เฉพาะเมื่อวิดีโอที่เปิดอยู่ "คือภารกิจนั้น"
+      // เท่านั้น — ไม่งั้น control panel (นำทาง/ถึงที่เกิดเหตุ/จบภารกิจ)
+      // จะไปโผล่บนเหตุการณ์อื่นที่ผู้ใช้แค่เปิดดู
+      final isCurrentMission = missionVideoId == _currentVideoId;
+      if (mounted) {
+        setState(() {
+          // ✅ จำภารกิจค้างไว้ (user-level) — ใช้กรองกล่องยอดนิยมและบล็อกรับงานซ้อน
+          _pendingMissionVideoId = missionVideoId;
+          if (isCurrentMission) _currentResponseId = responseId;
+        });
+        if (isCurrentMission) {
+          // เริ่ม state ที่ผูกกับภารกิจทันที — ปิดหน้าต่างที่ปุ่ม "ตอบรับช่วยเหลือ"
+          // ยังแสดงอยู่ก่อน _loadResponders() จะทำงานเสร็จ (idempotent)
+          _checkPrivacyPermissions();
+          _initCompass();
+          _startResponderTracking();
+        }
+      }
+      if (isCurrentMission) return false;
       // ✅ ผู้ใช้เลือกเปิดเหตุการณ์ใดเหตุการณ์หนึ่งมาเอง → ปล่อยให้ดูได้
       // (การบล็อกอยู่ที่ปุ่มรับงานใน _acceptRescue ตามนโยบาย Mission Lock)
       if (_currentVideoId != null) return false;
@@ -147,12 +177,26 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
+  /// Phase 16: เริ่มตรวจภารกิจค้างของผู้แจ้งตั้งแต่ต้นหน้า (ใช้แค่ userId —
+  /// ไม่ต้องรอ categories หรือลิสต์) เพื่อให้ filter พร้อมเกือบพร้อมกับ trending
+  Future<Set<String>> _loadReporterActiveMissionVideoIds() {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return Future.value(<String>{});
+    return ServiceLocator.instance.videoRepository
+        .getReporterActiveIncidentVideoIds(user.id.toString());
+  }
+
   /// ✅ Mission Trending Filter: คำนวณชุด video_ids ที่จะแสดงในกล่องยอดนิยม
   /// ตามบทบาทของผู้ใช้:
   /// - จิตอาสา: ใช้เกณฑ์ _isEligibleResponder (Rule 3-5 + resolved)
   /// - ผู้แจ้งเหตุที่มีภารกิจค้าง: ล็อกให้เห็นเฉพาะการ์ดของตนเองที่มีภารกิจค้าง
   /// - ผู้ชมทั่วไป: เห็นทุกการ์ดตามปกติ
-  Future<void> _computeMissionTrendingFilter() async {
+  ///
+  /// [reporterMissions] — future ที่ยิงขนานไว้ล่วงหน้า (Phase 16);
+  /// ถ้าไม่ส่งมาจะ fetch ที่นี่เหมือนเดิม
+  Future<void> _computeMissionTrendingFilter([
+    Future<Set<String>>? reporterMissions,
+  ]) async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
     final userProfId = user.professionId;
@@ -214,8 +258,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     // หมายเหตุ: ไม่จำกัดเฉพาะการที่ผู้ใช้มีการ์ดใน _trendingVideos เพราะ
     // เหตุการณ์ของผู้ใช้อาจอยู่นอก 20 อันดับแรก แต่ยังมีภารกิจค้างอยู่
     try {
-      final active = await ServiceLocator.instance.videoRepository
-          .getReporterActiveIncidentVideoIds(userIdStr);
+      // Phase 16: ใช้ future ที่ยิงขนานไว้ตั้งแต่ต้นหน้า ถ้ามี
+      final active = await (reporterMissions ??
+          _loadReporterActiveMissionVideoIds());
       if (mounted) {
         setState(() {
           _reporterActiveMissionVideoIds
@@ -276,11 +321,19 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   void _loadInitialData() async {
+    final int generation = ++_initDataGeneration;
     _fetchProfessionName();
+    // ✅ Phase 16: ยิง trending + reporter-mission check ขนานตั้งแต่ต้น
+    // (filter ต้องรอ categories + list พร้อม แต่ fetch ไม่จำเป็นต้องรอ)
+    final trendingFuture = _loadTrendingVideos(generation: generation);
+    final reporterMissionsFuture = _loadReporterActiveMissionVideoIds();
     await _loadEmergencyCategories();
+    if (!mounted || generation != _initDataGeneration) return;
     // ✅ จิตอาสาที่มีภารกิจค้าง → เลือกเหตุการณ์ของภารกิจทันที (auto-select)
     final switchedToMission = await _restoreActiveMissionIfNeeded();
-    if (switchedToMission) return;
+    if (switchedToMission || !mounted || generation != _initDataGeneration) {
+      return;
+    }
     if (_currentVideoId != null) {
       // หมายเหตุ: ไม่เรียก _recordView() แล้ว เพราะ WebSocket Server นับ unique viewers ผ่าน room membership
       final summary = await ServiceLocator.instance.videoRepository
@@ -354,9 +407,16 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         }
       }
     }
-    await _loadTrendingVideos();
+    await trendingFuture;
+    if (!mounted || generation != _initDataGeneration) return;
     // ✅ คำนวณชุดการ์ดที่มีสิทธิเข้าร่วม (ใช้กรองกล่องยอดนิยมเมื่อมีภารกิจค้าง)
-    await _computeMissionTrendingFilter();
+    // Phase 16: reporter check ถูกยิงขนานไว้แล้วตั้งแต่ต้นหน้า → ใช้ผลที่รออยู่
+    try {
+      await _computeMissionTrendingFilter(reporterMissionsFuture);
+    } finally {
+      // Phase 16: ปลด gate แสดงการ์ดแม้ filter ล้มเหลว (fail-open ตามพฤติกรรมเดิม)
+      if (mounted) setState(() => _missionFilterReady = true);
+    }
     if (_currentVideoId != null) {
       _loadResponders();
       _loadGalleryPhotos();
@@ -679,28 +739,36 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   //   try { final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'view', createdAt: AppConfig.currentUtc); await ServiceLocator.instance.videoRepository.addInteraction(interaction); } catch (_) {}
   // }
 
-  Future<void> _loadTrendingVideos() async {
+  Future<void> _loadTrendingVideos({
+    bool forceRefresh = false,
+    int? generation,
+  }) async {
     try {
       _trendingPage = 1;
       _hasMoreTrending = true;
       final videos = await ServiceLocator.instance.videoRepository
-          .getEmergencyVideos(page: _trendingPage, limit: 20);
-      if (mounted) {
-        setState(() {
-          _trendingVideos = videos;
-          _isLoadingTrending = false;
-          if (videos.length < 20) _hasMoreTrending = false;
-        });
-      }
+          .getEmergencyVideos(
+            page: _trendingPage,
+            limit: 20,
+            forceRefresh: forceRefresh,
+          );
+      if (!mounted) return;
+      // Phase 16: ทิ้งผลลัพธ์จาก init run ที่ stale (เช่น _switchVideo แล้ว)
+      if (generation != null && generation != _initDataGeneration) return;
+      setState(() {
+        _trendingVideos = videos;
+        _isLoadingTrending = false;
+        if (videos.length < 20) _hasMoreTrending = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingTrending = false);
-        ErrorHandler.showErrorSnackBar(
-          context,
-          e,
-          onRetry: _loadTrendingVideos,
-        );
-      }
+      if (!mounted) return;
+      if (generation != null && generation != _initDataGeneration) return;
+      setState(() => _isLoadingTrending = false);
+      ErrorHandler.showErrorSnackBar(
+        context,
+        e,
+        onRetry: () => _loadTrendingVideos(),
+      );
     }
   }
 
@@ -786,20 +854,11 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     final userId = AuthService.instance.currentUser?.id;
     if (userId == null) return;
 
-    // Fast-path: emit socket event if connected for instant real-time notification
-    final socket = WebSocketService().socket;
-    if (socket != null && socket.connected) {
-      socket.emit('rescue-status-update', {
-        'videoId': videoId,
-        'volunteerId': userId,
-        'victimId': _currentVideo?.userId,
-        'status': status,
-        'responseId': responseId,
-      });
-    }
-
-    // Primary source of truth: HTTP call to ensure DB is updated even if socket is disconnected/drops
-    final success = await ServiceLocator.instance.videoRepository
+    // ✅ HTTP Local API = source of truth ของ mission lifecycle เท่านั้น
+    // (server อัปเดต DB + แจ้งผู้แจ้งเหตุ/ห้องวิดีโอในคำขอเดียว)
+    // ⚠️ ห้าม emit socket ก่อน HTTP: เดิมทำให้ DB ถูกอัปเดตสำเร็จทาง socket
+    // ขณะที่ HTTP ล้มเหลว → UI รายงานว่าล้มเหลวและค้าง panel ทั้งที่ภารกิจปิดแล้ว
+    var result = await ServiceLocator.instance.videoRepository
         .updateRescueStatus(
           responseId: responseId,
           status: status,
@@ -809,55 +868,144 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
     if (!mounted) return;
 
-    if (success) {
-      if (status == 'resolved' || status == 'cancelled') {
-        setState(() {
-          _currentResponseId = null;
-          _pendingMissionVideoId = null;
-        });
-        _compassSub?.cancel();
-        _compassSub = null;
-        // ✅ ล้าง reporter lock / volunteer filter ใหม่ เนื่องจากภารกิจจบ
-        // แล้ว ผู้ใช้อาจกลับสู่สถานะผู้ชมทั่วไปหรือเหลือภารกิจค้างอื่น
-        _computeMissionTrendingFilter();
+    // ✅ Self-heal: Local DB ไม่พบ responseId นี้ (id เก่า/ไม่ตรง/ถูกสร้างจาก
+    // ฝั่งอื่น) → re-sync กับ Local DB จริงก่อนรายงานผล เพื่อไม่ให้ผู้ใช้
+    // "จบภารกิจไม่ได้" ตลอดไป
+    if (!result.success &&
+        (result.isNotFound ||
+            result.errorCode == 'ALREADY_CLOSED' ||
+            result.errorCode == 'UNAUTHORIZED')) {
+      final synced = await _syncMissionStateFromLocalDb();
+      if (!mounted) return;
+      if (synced) {
+        final syncedId = _currentResponseId;
+        if (syncedId == null) {
+          // ภารกิจถูกปิด/ยกเลิกไปแล้ว → ล้างสถานะ UI เรียบร้อย
+          _showRescueStatusMessage('ภารกิจนี้ถูกปิดไปแล้ว', Colors.blueGrey);
+          return;
+        }
+        if (syncedId != responseId) {
+          // adopt id จริงจาก Local DB แล้วลองใหม่หนึ่งครั้ง
+          result = await ServiceLocator.instance.videoRepository
+              .updateRescueStatus(
+                responseId: syncedId,
+                status: status,
+                videoId: videoId,
+                volunteerId: userId,
+              );
+          if (!mounted) return;
+        }
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'อัปเดตสถานะเป็น: ${status == 'arrived' ? 'มาถึงแล้ว' : 'เสร็จสิ้น'}',
-            style: const TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      if (status == 'resolved' || status == 'cancelled') {
-        Future.delayed(const Duration(milliseconds: 600), () {
-          if (mounted) Navigator.of(context).pop();
-        });
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'ไม่สามารถบันทึกสถานะได้ กรุณาลองใหม่อีกครั้ง',
-            style: TextStyle(
-              fontFamily: 'SukhumvitSet',
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
+
+    if (result.success) {
+      _applyRescueStatusSuccess(status);
+      return;
+    }
+
+    _showRescueStatusMessage(_rescueStatusErrorMessage(result), Colors.red);
+  }
+
+  /// ข้อความ error ที่ตรงสาเหตุจริง (ห้ามใช้ข้อความรวมที่ไม่บอกอะไร)
+  String _rescueStatusErrorMessage(RescueStatusUpdateResult result) {
+    switch (result.errorCode) {
+      case 'RATE_LIMITED':
+        return 'ระบบจำกัดการทำรายการชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
+      case 'NOT_FOUND':
+        return 'ไม่พบภารกิจนี้ในเซิร์ฟเวอร์หลัก (อาจถูกปิดไปแล้ว)';
+      case 'ALREADY_CLOSED':
+        return 'ภารกิจนี้ปิดไปแล้ว ไม่สามารถเปลี่ยนสถานะได้';
+      case 'UNAUTHORIZED':
+        return 'ไม่ได้รับอนุญาตให้อัปเดตภารกิจนี้ — กรุณาเข้าสู่ระบบใหม่';
+      case 'NETWORK':
+        return 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบเครือข่ายแล้วลองใหม่';
+      default:
+        return result.message?.isNotEmpty == true
+            ? 'ไม่สามารถบันทึกสถานะได้: ${result.message}'
+            : 'ไม่สามารถบันทึกสถานะได้ กรุณาลองใหม่อีกครั้ง';
+    }
+  }
+
+  void _showRescueStatusMessage(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _applyRescueStatusSuccess(String status) {
+    if (status == 'resolved' || status == 'cancelled') {
+      setState(() {
+        _currentResponseId = null;
+        _pendingMissionVideoId = null;
+      });
+      _compassSub?.cancel();
+      _compassSub = null;
+      _myLocationStreamSub?.cancel();
+      _myLocationStreamSub = null;
+      // ✅ ล้าง reporter lock / volunteer filter ใหม่ เนื่องจากภารกิจจบ
+      // แล้ว ผู้ใช้อาจกลับสู่สถานะผู้ชมทั่วไปหรือเหลือภารกิจค้างอื่น
+      _computeMissionTrendingFilter();
+    }
+
+    _showRescueStatusMessage(
+      'อัปเดตสถานะเป็น: ${status == 'arrived' ? 'มาถึงแล้ว' : 'เสร็จสิ้น'}',
+      Colors.green,
+    );
+
+    if (status == 'resolved' || status == 'cancelled') {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) Navigator.of(context).pop();
+      });
+    }
+  }
+
+  /// Re-sync สถานะภารกิจจาก Local DB (source of truth) เมื่อ update ล้มเหลว
+  /// - พบภารกิจ active ของวิดีโอนี้ → adopt `incident_responses.id` จริง
+  /// - ไม่พบเลย → ล้างสถานะภารกิจใน UI (ปิด panel)
+  /// คืน true เมื่อได้คำตอบที่เชื่อถือได้จาก Local DB
+  Future<bool> _syncMissionStateFromLocalDb() async {
+    final userId = AuthService.instance.userId;
+    final videoId = _currentVideoId;
+    if (userId == null || videoId == null) return false;
+    List<Map<String, dynamic>> active;
+    try {
+      active = await ServiceLocator.instance.videoRepository
+          .getActiveRescues(userId);
+    } catch (e) {
+      debugPrint('[MissionSync] active rescues lookup failed: $e');
+      return false;
+    }
+    if (!mounted) return false;
+    final mine = active.where((m) => m['video_id']?.toString() == videoId);
+    if (mine.isEmpty) {
+      setState(() {
+        _currentResponseId = null;
+        _pendingMissionVideoId = null;
+      });
+      _compassSub?.cancel();
+      _compassSub = null;
+      _myLocationStreamSub?.cancel();
+      _myLocationStreamSub = null;
+      _computeMissionTrendingFilter();
+      return true;
+    }
+    final realId = mine.first['id']?.toString();
+    if (realId != null && realId.isNotEmpty && realId != _currentResponseId) {
+      setState(() => _currentResponseId = realId);
+    }
+    return true;
   }
 
   /// ✅ Reporter Mission Lock: ผู้แจ้งยกเลิกภารกิจทั้งหมดบนเหตุการณ์ของตนเอง

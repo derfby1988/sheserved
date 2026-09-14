@@ -14,6 +14,7 @@ import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../find_buddies/presentation/widgets/group_chat_popup.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
+import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
 class _GroupPageResult {
   final List<Map<String, dynamic>> groups;
@@ -36,6 +37,7 @@ class SportClubPage extends StatefulWidget {
 
 class _SportClubPageState extends State<SportClubPage> {
   late final FitnessBuddiesRepository _repo;
+  SupabaseClient get _client => Supabase.instance.client;
   List<Map<String, dynamic>> _groups = [];
   List<Map<String, dynamic>> _sports = [];
   String? _sportId;
@@ -322,13 +324,39 @@ class _SportClubPageState extends State<SportClubPage> {
         .where((id) => id.isNotEmpty)
         .toList();
     var costItemsBySession = <String, List<Map<String, dynamic>>>{};
+    List<Map<String, dynamic>> groupPositions = [];
+    String? fieldLayout;
+    Map<String, Map<String, int>> sessionPositionTaken = {}; // session_id -> (position_id -> count)
+
     try {
-      final allItems = await _repo.listPublicSessionCostItems(sessionIds);
+      final results = await Future.wait<dynamic>([
+        _repo.listPublicSessionCostItems(sessionIds),
+        _repo.listPublicGroupPositions(groupId),
+        _repo.listSessionPositionAvailability(sessionIds),
+        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+      ]);
+      final allItems = results[0] as List<Map<String, dynamic>>;
       for (final item in allItems) {
         final sid = item['session_id']?.toString() ?? '';
         if (sid.isNotEmpty) {
           costItemsBySession.putIfAbsent(sid, () => []).add(item);
         }
+      }
+      groupPositions = results[1] as List<Map<String, dynamic>>;
+      final takenList = results[2] as List<Map<String, dynamic>>;
+      for (final t in takenList) {
+        final sid = t['session_id']?.toString() ?? '';
+        final pid = t['position_id']?.toString() ?? '';
+        final count = (t['taken_count'] as num?)?.toInt() ?? 0;
+        if (sid.isNotEmpty && pid.isNotEmpty) {
+          sessionPositionTaken.putIfAbsent(sid, () => {})[pid] = count;
+        }
+      }
+      final gRow = results[3] as Map<String, dynamic>?;
+      final sport = gRow?['sport'];
+      final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (rawLayout == 'single' || rawLayout == 'double') {
+        fieldLayout = rawLayout;
       }
     } catch (_) {}
     if (!mounted) return;
@@ -444,14 +472,148 @@ class _SportClubPageState extends State<SportClubPage> {
                             borderRadius: BorderRadius.circular(16),
                             onTap: isFull
                                 ? null
-                                : () {
-                                    Navigator.pop(ctx);
-                                    _book(
-                                      s['id'].toString(),
-                                      requiresOwnerApproval:
-                                          requiresOwnerApproval,
-                                      groupId: groupId,
-                                    );
+                                : () async {
+                                    if (groupPositions.isNotEmpty && fieldLayout != null) {
+                                      // Position picker flow
+                                      final takenMap = sessionPositionTaken[s['id']?.toString()] ?? {};
+                                      final chosenPosId = await showModalBottomSheet<String>(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        shape: const RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                                        ),
+                                        builder: (bctx) {
+                                          String? tempSelectedId;
+                                          return StatefulBuilder(
+                                            builder: (bctx, setModalState) {
+                                              return SafeArea(
+                                                top: false,
+                                                child: Padding(
+                                                  padding: EdgeInsets.only(
+                                                    left: 16,
+                                                    right: 16,
+                                                    top: 14,
+                                                    bottom: MediaQuery.of(bctx).viewInsets.bottom + 20,
+                                                  ),
+                                                  child: Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Center(
+                                                        child: Container(
+                                                          width: 40,
+                                                          height: 4,
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.grey.shade300,
+                                                            borderRadius: BorderRadius.circular(2),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 12),
+                                                      Row(
+                                                        children: [
+                                                          Container(
+                                                            padding: const EdgeInsets.all(8),
+                                                            decoration: BoxDecoration(
+                                                              color: AppColors.primary.withValues(alpha: 0.15),
+                                                              shape: BoxShape.circle,
+                                                            ),
+                                                            child: const Icon(Icons.sports_soccer_rounded, color: AppColors.primaryDark, size: 20),
+                                                          ),
+                                                          const SizedBox(width: 10),
+                                                          const Expanded(
+                                                            child: Text(
+                                                              'เลือกตำแหน่งที่ต้องการเล่น',
+                                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      const Text(
+                                                        'แตะหมุดบนสนามจำลอง หรือเลือกจากรายการด้านล่าง',
+                                                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                                                      ),
+                                                      const SizedBox(height: 12),
+                                                      PositionLineupView(
+                                                        layout: fieldLayout!,
+                                                        positions: groupPositions,
+                                                        takenCounts: takenMap,
+                                                        selectedPositionId: tempSelectedId,
+                                                        onPositionSelected: (pid) {
+                                                          setModalState(() => tempSelectedId = pid);
+                                                        },
+                                                      ),
+                                                      const SizedBox(height: 12),
+                                                      Wrap(
+                                                        spacing: 8,
+                                                        runSpacing: 8,
+                                                        children: groupPositions.map((pos) {
+                                                          final pid = pos['id']?.toString() ?? '';
+                                                          final label = pos['label']?.toString() ?? '';
+                                                          final slots = (pos['slots'] as num?)?.toInt() ?? 1;
+                                                          final taken = takenMap[pid] ?? 0;
+                                                          final remaining = slots - taken;
+                                                          final isFullPos = remaining <= 0;
+                                                          final isSelected = tempSelectedId == pid;
+                                                          final color = parseHexColor(pos['color']?.toString());
+
+                                                          return ChoiceChip(
+                                                            selected: isSelected,
+                                                            avatar: CircleAvatar(
+                                                              backgroundColor: isFullPos ? Colors.grey : color,
+                                                              radius: 8,
+                                                            ),
+                                                            label: Text('$label (${isFullPos ? 'เต็ม' : 'ว่าง $remaining'})'),
+                                                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                                                            onSelected: isFullPos
+                                                                ? null
+                                                                : (_) => setModalState(() => tempSelectedId = pid),
+                                                          );
+                                                        }).toList(),
+                                                      ),
+                                                      const SizedBox(height: 20),
+                                                      SizedBox(
+                                                        width: double.infinity,
+                                                        height: 48,
+                                                        child: ElevatedButton(
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor: AppColors.primary,
+                                                            foregroundColor: Colors.white,
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                          ),
+                                                          onPressed: tempSelectedId == null
+                                                              ? null
+                                                              : () => Navigator.pop(bctx, tempSelectedId),
+                                                          child: const Text('ยืนยันตำแหน่งนี้', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          );
+                                        },
+                                      );
+                                      if (chosenPosId == null) return;
+                                      if (!ctx.mounted) return;
+                                      Navigator.pop(ctx);
+                                      _book(
+                                        s['id'].toString(),
+                                        requiresOwnerApproval: requiresOwnerApproval,
+                                        groupId: groupId,
+                                        positionId: chosenPosId,
+                                      );
+                                    } else {
+                                      Navigator.pop(ctx);
+                                      _book(
+                                        s['id'].toString(),
+                                        requiresOwnerApproval:
+                                            requiresOwnerApproval,
+                                        groupId: groupId,
+                                      );
+                                    }
                                   },
                             child: Padding(
                               padding: const EdgeInsets.all(14),
@@ -687,6 +849,7 @@ class _SportClubPageState extends State<SportClubPage> {
     String sessionId, {
     required bool requiresOwnerApproval,
     String? groupId,
+    String? positionId,
   }) async {
     final user = AuthService.instance.currentUser;
     if (user == null) {
@@ -703,7 +866,7 @@ class _SportClubPageState extends State<SportClubPage> {
       return;
     }
     try {
-      await _repo.bookSession(sessionId, user.id);
+      await _repo.bookSession(sessionId, user.id, positionId: positionId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -725,6 +888,15 @@ class _SportClubPageState extends State<SportClubPage> {
 
   String _mapBookingError(Object e) {
     final raw = e.toString();
+    if (raw.contains('POSITION_REQUIRED')) {
+      return 'ก๊วนนี้กำหนดตำแหน่งผู้เล่น กรุณาเลือกตำแหน่งก่อนจอง';
+    }
+    if (raw.contains('POSITION_FULL')) {
+      return 'ตำแหน่งที่คุณเลือกเต็มแล้ว กรุณาเลือกตำแหน่งอื่น';
+    }
+    if (raw.contains('POSITION_INVALID')) {
+      return 'ตำแหน่งที่เลือกไม่ถูกต้องหรือถูกปิดแล้ว';
+    }
     if (raw.contains('GROUP_FULL') || raw.contains('SESSION_FULL')) {
       return 'รอบนัดนี้เต็มแล้ว กรุณาเลือกรอบนัดอื่น';
     }
@@ -751,6 +923,15 @@ class _SportClubPageState extends State<SportClubPage> {
 
   String _mapManagementError(Object e) {
     final raw = e.toString();
+    if (raw.contains('POSITION_REQUIRED')) {
+      return 'ต้องระบุตำแหน่งของผู้ดูแลก๊วนสำหรับรอบนัดนี้';
+    }
+    if (raw.contains('POSITION_FULL')) {
+      return 'ตำแหน่งที่เลือกเต็มแล้ว กรุณาเลือกตำแหน่งอื่น';
+    }
+    if (raw.contains('POSITION_INVALID')) {
+      return 'ตำแหน่งที่เลือกไม่ถูกต้องหรือถูกปิดแล้ว';
+    }
     if (raw.contains('SESSION_CAPACITY_BELOW_CONFIRMED')) {
       return 'จำนวนคนสูงสุดต้องไม่น้อยกว่าจำนวนผู้ยืนยันแล้วในรอบนี้';
     }
@@ -783,6 +964,10 @@ class _SportClubPageState extends State<SportClubPage> {
 
   String _mapApprovalError(Object e) {
     final raw = e.toString();
+    if (raw.contains('POSITION_FULL')) {
+      return 'ตำแหน่งที่ผู้สมัครเลือกเต็มแล้ว ไม่สามารถอนุมัติได้\n'
+          '(ระบบคงคำขอไว้เป็น "รออนุมัติ" และแจ้งผู้สมัครให้เลือกตำแหน่งใหม่แล้ว)';
+    }
     if (raw.contains('SESSION_FULL')) {
       return 'รอบนัดนี้เต็มแล้ว ไม่สามารถอนุมัติผู้ขอรายนี้ได้\n'
           'กรุณาปฏิเสธคำขอ หรือเพิ่ม capacity ของรอบนัดก่อน';
@@ -2262,6 +2447,19 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                 >
                                                               >[],
                                                         ),
+                                                    _repo
+                                                        .listPublicGroupPositions(
+                                                          g['id'].toString(),
+                                                        )
+                                                        .catchError(
+                                                          (_) =>
+                                                              <
+                                                                Map<
+                                                                  String,
+                                                                  dynamic
+                                                                >
+                                                              >[],
+                                                        ),
                                                   ]),
                                                   builder: (context, snapshot) {
                                                     final items =
@@ -2291,6 +2489,12 @@ class _SportClubPageState extends State<SportClubPage> {
                                                         const <
                                                           Map<String, dynamic>
                                                         >[];
+                                                    final groupPositions =
+                                                        (snapshot.data?.length ?? 0) > 4
+                                                            ? (snapshot.data?[4] as List?)
+                                                                    ?.cast<Map<String, dynamic>>() ??
+                                                                []
+                                                            : <Map<String, dynamic>>[];
                                                     final costItemsBySession =
                                                         <
                                                           String,
@@ -2399,6 +2603,31 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                             hasCover
                                                                             ? Colors.white70
                                                                             : Colors.grey[800],
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          if (groupPositions.isNotEmpty)
+                                                            Padding(
+                                                              padding: const EdgeInsets.only(top: 4),
+                                                              child: textPill(
+                                                                Row(
+                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  children: [
+                                                                    Icon(
+                                                                      Icons.sports_soccer_rounded,
+                                                                      size: 13,
+                                                                      color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                                                                    ),
+                                                                    const SizedBox(width: 4),
+                                                                    Text(
+                                                                      'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                                                                      style: TextStyle(
+                                                                        fontSize: 12,
+                                                                        fontWeight: FontWeight.w500,
+                                                                        color: hasCover ? Colors.white70 : Colors.grey[800],
                                                                       ),
                                                                     ),
                                                                   ],
@@ -2583,6 +2812,30 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                           hasCover
                                                                           ? Colors.white70
                                                                           : Colors.grey[800],
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        if (groupPositions.isNotEmpty)
+                                                          Padding(
+                                                            padding: const EdgeInsets.only(bottom: 8),
+                                                            child: textPill(
+                                                              Row(
+                                                                mainAxisSize: MainAxisSize.min,
+                                                                children: [
+                                                                  Icon(
+                                                                    Icons.sports_soccer_rounded,
+                                                                    size: 13,
+                                                                    color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                                                                  ),
+                                                                  const SizedBox(width: 4),
+                                                                  Text(
+                                                                    'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                                                                    style: TextStyle(
+                                                                      fontSize: 12,
+                                                                      color: hasCover ? Colors.white70 : Colors.grey[800],
                                                                     ),
                                                                   ),
                                                                 ],
@@ -2823,6 +3076,32 @@ class _SportClubPageState extends State<SportClubPage> {
     bool waitingForRefresh = refreshFuture != null;
     var refreshListenerAttached = false;
 
+    // Phase 15: load group positions, field layout, and owner auto join state
+    List<Map<String, dynamic>> groupPositions = [];
+    String? fieldLayout;
+    bool ownerAutoJoin = true;
+    String? selectedOwnerPositionId;
+    bool loadingPositions = true;
+    try {
+      final results = await Future.wait<dynamic>([
+        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _repo.listGroupPositions(groupId, activeOnly: true),
+      ]);
+      final gRow = results[0] as Map<String, dynamic>?;
+      ownerAutoJoin = gRow?['owner_auto_join'] != false;
+      final sport = gRow?['sport'];
+      final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (rawLayout == 'single' || rawLayout == 'double') {
+        fieldLayout = rawLayout;
+      }
+      groupPositions = results[1] as List<Map<String, dynamic>>;
+      if (ownerAutoJoin && groupPositions.isNotEmpty) {
+        selectedOwnerPositionId = groupPositions.first['id']?.toString();
+      }
+    } catch (_) {}
+    loadingPositions = false;
+    if (!mounted) return;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2960,6 +3239,12 @@ class _SportClubPageState extends State<SportClubPage> {
                 );
                 return;
               }
+              if (ownerAutoJoin && groupPositions.isNotEmpty && selectedOwnerPositionId == null) {
+                setModalState(
+                  () => errorText = 'กรุณาเลือกตำแหน่งของเจ้าของก๊วนสำหรับรอบนัดนี้',
+                );
+                return;
+              }
               setModalState(() => submitting = true);
               try {
                 await _repo.createSession(
@@ -2972,6 +3257,9 @@ class _SportClubPageState extends State<SportClubPage> {
                   note: noteCtrl.text.trim().isEmpty
                       ? null
                       : noteCtrl.text.trim(),
+                  ownerPositionId: ownerAutoJoin && groupPositions.isNotEmpty
+                      ? selectedOwnerPositionId
+                      : null,
                   costItems: List<Map<String, dynamic>>.from(costItems),
                 );
                 if (!mounted) return;
@@ -3085,6 +3373,65 @@ class _SportClubPageState extends State<SportClubPage> {
                           setModalState(() => capacity = value.toInt()),
                     ),
                     const SizedBox(height: 12),
+                    if (ownerAutoJoin && groupPositions.isNotEmpty && fieldLayout != null) ...[
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.person_pin_circle_rounded,
+                              size: 16,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'ตำแหน่งของผู้ดูแลก๊วนในรอบนี้',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'เนื่องจากเปิด "เข้าร่วมทุกรอบอัตโนมัติ" กรุณาเลือกตำแหน่งของเจ้าของก๊วนบนสนามจำลอง',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 10),
+                      PositionLineupView(
+                        layout: fieldLayout,
+                        positions: groupPositions,
+                        selectedPositionId: selectedOwnerPositionId,
+                        onPositionSelected: (posId) {
+                          setModalState(() => selectedOwnerPositionId = posId);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: groupPositions.map((pos) {
+                          final posId = pos['id']?.toString() ?? '';
+                          final label = pos['label']?.toString() ?? '';
+                          final isSelected = selectedOwnerPositionId == posId;
+                          final color = parseHexColor(pos['color']?.toString());
+                          return ChoiceChip(
+                            selected: isSelected,
+                            avatar: CircleAvatar(
+                              backgroundColor: color,
+                              radius: 8,
+                            ),
+                            label: Text(label),
+                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                            onSelected: (_) => setModalState(() => selectedOwnerPositionId = posId),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     _buildSessionCostItemsSection(
                       sheetContext: ctx,
                       groupId: groupId,
@@ -3536,14 +3883,81 @@ class _SportClubPageState extends State<SportClubPage> {
                                     ],
                                   ),
                                 ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'รอบนัด',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                    FutureBuilder<List<dynamic>>(
+                      future: Future.wait([
+                        _repo.listPublicGroupPositions(groupId),
+                        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+                      ]),
+                      builder: (pctx, psnap) {
+                        if (psnap.hasData) {
+                          final positions = (psnap.data?[0] as List?)?.cast<Map<String, dynamic>>() ?? [];
+                          final gRow = psnap.data?[1] as Map<String, dynamic>?;
+                          final sport = gRow?['sport'];
+                          final layout = sport is Map ? sport['field_layout']?.toString() : null;
+                          if (positions.isNotEmpty && (layout == 'single' || layout == 'double')) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.sports_soccer_rounded,
+                                        size: 16,
+                                        color: AppColors.primaryDark,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'ตำแหน่งผู้เล่นที่ก๊วนเปิดรับ',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isAdmin)
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          foregroundColor: AppColors.primaryDark,
+                                        ),
+                                        onPressed: () {
+                                          Navigator.pop(ctx);
+                                          _showEditGroupSheet(group);
+                                        },
+                                        icon: const Icon(Icons.tune_rounded, size: 15),
+                                        label: const Text('จัดการ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                PositionLineupView(
+                                  layout: layout!,
+                                  positions: positions,
+                                ),
+                              ],
+                            );
+                          }
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'รอบนัด',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                             if ((isAdmin || canSelectSession) &&
                                 sessions.isNotEmpty)
                               Padding(
@@ -4380,8 +4794,22 @@ class _SportClubPageState extends State<SportClubPage> {
     bool ownerAutoJoin = originalOwnerAutoJoin;
     final groupId = group['id'].toString();
     var costStandards = <Map<String, dynamic>>[];
+    var groupPositions = <Map<String, dynamic>>[];
+    String? fieldLayout;
     try {
-      costStandards = await _repo.listGroupCostStandards(groupId);
+      final results = await Future.wait<dynamic>([
+        _repo.listGroupCostStandards(groupId),
+        _repo.listGroupPositions(groupId, activeOnly: true),
+        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+      ]);
+      costStandards = results[0] as List<Map<String, dynamic>>;
+      groupPositions = results[1] as List<Map<String, dynamic>>;
+      final gRow = results[2] as Map<String, dynamic>?;
+      final sport = gRow?['sport'];
+      final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (rawLayout == 'single' || rawLayout == 'double') {
+        fieldLayout = rawLayout;
+      }
     } catch (_) {}
     if (!mounted) return;
 
@@ -4500,6 +4928,43 @@ class _SportClubPageState extends State<SportClubPage> {
                           setSheetState(() {});
                         },
                       ),
+                      if (fieldLayout != null) ...[
+                        const Divider(height: 24),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.sports_soccer_rounded,
+                                size: 16,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'จัดการตำแหน่งผู้เล่นบนสนาม',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'แก้ไขตำแหน่งผู้เล่นบนสนามจำลองของก๊วน (กดบันทึกเพื่อบันทึกการเปลี่ยนแปลงทั้งหมด)',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 12),
+                        PositionLineupEditor(
+                          layout: fieldLayout,
+                          positions: groupPositions,
+                          onChanged: (updated) {
+                            groupPositions = updated;
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
@@ -4560,6 +5025,13 @@ class _SportClubPageState extends State<SportClubPage> {
                                 genderPreference: genderPref,
                                 requiresOwnerApproval: requiresApproval,
                               );
+                              if (fieldLayout != null) {
+                                await _repo.replaceGroupPositions(
+                                  groupId: groupId,
+                                  actorUserId: userId,
+                                  positions: groupPositions,
+                                );
+                              }
                               if (!ctx.mounted) return;
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(content: Text('อัปเดตก๊วนแล้ว')),
@@ -4624,6 +5096,37 @@ class _SportClubPageState extends State<SportClubPage> {
     final confirmedCount = (session['confirmed_count'] as num?)?.toInt() ?? 0;
     final pendingCount = (session['pending_count'] as num?)?.toInt() ?? 0;
     final hasBookings = confirmedCount > 0 || pendingCount > 0;
+
+    // Phase 15: load group positions, field layout, and session owner_position_id
+    List<Map<String, dynamic>> groupPositions = [];
+    String? fieldLayout;
+    bool ownerAutoJoin = true;
+    String? editOwnerPositionId = session['owner_position_id']?.toString();
+    Map<String, int> takenCounts = {};
+    try {
+      final results = await Future.wait<dynamic>([
+        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _repo.listGroupPositions(groupId, activeOnly: true),
+        _repo.listSessionPositionAvailability([sessionId]),
+      ]);
+      final gRow = results[0] as Map<String, dynamic>?;
+      ownerAutoJoin = gRow?['owner_auto_join'] != false;
+      final sport = gRow?['sport'];
+      final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (rawLayout == 'single' || rawLayout == 'double') {
+        fieldLayout = rawLayout;
+      }
+      groupPositions = results[1] as List<Map<String, dynamic>>;
+      final takenList = results[2] as List<Map<String, dynamic>>;
+      for (final t in takenList) {
+        final pid = t['position_id']?.toString() ?? '';
+        final count = (t['taken_count'] as num?)?.toInt() ?? 0;
+        if (pid.isNotEmpty) takenCounts[pid] = count;
+      }
+      if (ownerAutoJoin && groupPositions.isNotEmpty && editOwnerPositionId == null) {
+        editOwnerPositionId = groupPositions.first['id']?.toString();
+      }
+    } catch (_) {}
     if (!mounted) return;
 
     await showModalBottomSheet(
@@ -4749,6 +5252,74 @@ class _SportClubPageState extends State<SportClubPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    if (ownerAutoJoin && groupPositions.isNotEmpty && fieldLayout != null) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.person_pin_circle_rounded,
+                              size: 16,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'ตำแหน่งของผู้ดูแลก๊วนในรอบนี้',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'แตะเพื่อเปลี่ยนตำแหน่งของเจ้าของก๊วนบนสนามจำลอง',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 10),
+                      PositionLineupView(
+                        layout: fieldLayout,
+                        positions: groupPositions,
+                        takenCounts: takenCounts,
+                        selectedPositionId: editOwnerPositionId,
+                        onPositionSelected: (posId) {
+                          setSheetState(() => editOwnerPositionId = posId);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: groupPositions.map((pos) {
+                          final posId = pos['id']?.toString() ?? '';
+                          final label = pos['label']?.toString() ?? '';
+                          final isSelected = editOwnerPositionId == posId;
+                          final color = parseHexColor(pos['color']?.toString());
+                          final slots = (pos['slots'] as num?)?.toInt() ?? 1;
+                          final taken = takenCounts[posId] ?? 0;
+                          final isCurrentOwnerPos = session['owner_position_id']?.toString() == posId;
+                          final availableSlots = isCurrentOwnerPos ? slots : (slots - taken);
+                          final isFull = availableSlots <= 0;
+
+                          return ChoiceChip(
+                            selected: isSelected,
+                            avatar: CircleAvatar(
+                              backgroundColor: isFull ? Colors.grey : color,
+                              radius: 8,
+                            ),
+                            label: Text('$label (${isFull ? 'เต็ม' : 'ว่าง $availableSlots'})'),
+                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                            onSelected: isFull && !isSelected
+                                ? null
+                                : (_) => setSheetState(() => editOwnerPositionId = posId),
+                          );
+                        }).toList(),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     _buildSessionCostItemsSection(
                       sheetContext: ctx,
@@ -4822,6 +5393,9 @@ class _SportClubPageState extends State<SportClubPage> {
                               note: noteCtrl.text.trim().isEmpty
                                   ? null
                                   : noteCtrl.text.trim(),
+                              ownerPositionId: ownerAutoJoin && groupPositions.isNotEmpty
+                                  ? editOwnerPositionId
+                                  : null,
                               costItems: List<Map<String, dynamic>>.from(
                                 costItems,
                               ),
@@ -4879,6 +5453,9 @@ class _SportClubPageState extends State<SportClubPage> {
     final requestedAt = DateTime.tryParse(
       booking['created_at']?.toString() ?? '',
     );
+    final posData = booking['position'];
+    final posLabel = posData is Map ? posData['label']?.toString() : null;
+
     final requestTimeLabel = requestedAt == null
         ? 'เวลาที่ขอเข้าร่วมไม่พร้อมใช้งาน'
         : 'ขอเข้าร่วมเมื่อ ${_formatThaiBuddhistDateTime(requestedAt.toLocal())}';
@@ -4891,7 +5468,50 @@ class _SportClubPageState extends State<SportClubPage> {
         child: image.isEmpty ? const Icon(Icons.person) : null,
       ),
       title: Text(fullName.isNotEmpty ? fullName : 'ไม่ระบุชื่อ'),
-      subtitle: Text('รออนุมัติ\n$requestTimeLabel'),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('รออนุมัติ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+              if (posLabel != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'ตำแหน่ง: $posLabel',
+                    style: const TextStyle(fontSize: 11, color: AppColors.primaryDark, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(requestTimeLabel, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      ),
+      trailing: !canManage && userId == AuthService.instance.currentUser?.id
+          ? OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: AppColors.primaryDark,
+                side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              onPressed: () => _showChangePositionDialog(
+                sheetContext: actionContext,
+                bookingId: bookingId,
+                sessionId: sessionId,
+                groupId: groupId,
+                setSheetState: setSheetState,
+              ),
+              child: const Text('เปลี่ยนตำแหน่ง', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            )
+          : null,
     );
     if (!canManage) return tile;
 
@@ -4942,6 +5562,170 @@ class _SportClubPageState extends State<SportClubPage> {
       ),
       child: tile,
     );
+  }
+
+  // ── Phase 15: Change booking position dialog ──
+  Future<void> _showChangePositionDialog({
+    required BuildContext sheetContext,
+    required String bookingId,
+    required String sessionId,
+    required String groupId,
+    required StateSetter setSheetState,
+  }) async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return;
+    try {
+      final results = await Future.wait<dynamic>([
+        _repo.listPublicGroupPositions(groupId),
+        _repo.listSessionPositionAvailability([sessionId]),
+        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+      ]);
+      final positions = results[0] as List<Map<String, dynamic>>;
+      final takenList = results[1] as List<Map<String, dynamic>>;
+      final gRow = results[2] as Map<String, dynamic>?;
+      final sport = gRow?['sport'];
+      final layout = sport is Map ? sport['field_layout']?.toString() : 'single';
+
+      final takenMap = <String, int>{};
+      for (final t in takenList) {
+        final pid = t['position_id']?.toString() ?? '';
+        final count = (t['taken_count'] as num?)?.toInt() ?? 0;
+        if (pid.isNotEmpty) takenMap[pid] = count;
+      }
+
+      if (!sheetContext.mounted) return;
+      final newPosId = await showModalBottomSheet<String>(
+        context: sheetContext,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (bctx) {
+          String? selectedPos;
+          return StatefulBuilder(
+            builder: (bctx, setModalState) {
+              return SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 14,
+                    bottom: MediaQuery.of(bctx).viewInsets.bottom + 20,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.swap_horiz_rounded, color: AppColors.primaryDark, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'เปลี่ยนตำแหน่งบนสนาม',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      PositionLineupView(
+                        layout: layout ?? 'single',
+                        positions: positions,
+                        takenCounts: takenMap,
+                        selectedPositionId: selectedPos,
+                        onPositionSelected: (pid) {
+                          setModalState(() => selectedPos = pid);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: positions.map((pos) {
+                          final pid = pos['id']?.toString() ?? '';
+                          final label = pos['label']?.toString() ?? '';
+                          final slots = (pos['slots'] as num?)?.toInt() ?? 1;
+                          final taken = takenMap[pid] ?? 0;
+                          final remaining = slots - taken;
+                          final isFull = remaining <= 0;
+                          final isSelected = selectedPos == pid;
+                          final color = parseHexColor(pos['color']?.toString());
+
+                          return ChoiceChip(
+                            selected: isSelected,
+                            avatar: CircleAvatar(
+                              backgroundColor: isFull ? Colors.grey : color,
+                              radius: 8,
+                            ),
+                            label: Text('$label (${isFull ? 'เต็ม' : 'ว่าง $remaining'})'),
+                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                            onSelected: isFull
+                                ? null
+                                : (_) => setModalState(() => selectedPos = pid),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: selectedPos == null
+                              ? null
+                              : () => Navigator.pop(bctx, selectedPos),
+                          child: const Text('บันทึกการเปลี่ยนตำแหน่ง', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+      if (newPosId == null) return;
+      await _repo.setBookingPosition(
+        bookingId: bookingId,
+        userId: user.id,
+        positionId: newPosId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('เปลี่ยนตำแหน่งสำเร็จแล้ว')),
+      );
+      setSheetState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('เปลี่ยนตำแหน่งไม่สำเร็จ: ${_mapBookingError(e)}')),
+      );
+    }
   }
 
   // ── Phase 8: Approve single booking (direct, no dialog needed) ──

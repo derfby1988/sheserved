@@ -29,6 +29,7 @@ import 'dart:io';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../../models/video_models.dart';
+import '../../data/repositories/video_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/live_view_widget.dart';
 import 'widgets/thai_mhung_ruler_gallery_widget.dart';
@@ -184,6 +185,13 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   bool _hasMoreTrending = true;
   bool _isLoadingMoreTrending = false;
   bool _isLoadingTrending = true;
+  // ✅ Phase 16: gate การแสดงการ์ดจนกว่า mission filter คำนวณเสร็จ —
+  // กันการ์ดที่ผู้ใช้ไม่มีสิทธิ์เห็น (volunteer/reporter lock) แวบขึ้น
+  // ก่อนถูกกรองออกเมื่อลิสต์มาจาก cache ในเฟรมแรก
+  bool _missionFilterReady = false;
+  // Phase 16: generation ของ _loadInitialData — ทิ้งผล request เก่าที่กลับมา
+  // หลัง _switchVideo หรือ run ใหม่เริ่มแล้ว
+  int _initDataGeneration = 0;
   String? _highlightVideoId;
 
   int _prepCountdown = 0;
@@ -1082,7 +1090,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           // การ์ดภารกิจตนเอง + การ์ดที่ได้รับแจ้งเตือน/มีสิทธิเข้าร่วมเป็นจิตอาสา
           trendingVideos: _filteredTrendingVideos(),
           onLoadMoreTrending: _loadMoreTrendingVideos,
-          isLoadingTrending: _isLoadingTrending,
+          isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
           highlightVideoId: _highlightVideoId,
           canViewUnblurred: _canViewUnblurred,
           yieldWayCount: '$_yieldWayCount คน',

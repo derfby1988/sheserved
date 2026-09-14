@@ -243,9 +243,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
         setState(() {
           _highlightVideoId = data['videoId'];
         });
-        _loadTrendingVideos();
+        // Phase 16: เหตุการณ์ใหม่ → บังคับข้าม shared cache
+        _loadTrendingVideos(forceRefresh: true);
       } else {
-        _loadTrendingVideos();
+        _loadTrendingVideos(forceRefresh: true);
       }
 
       // ✅ ถ้าเป็นไทยมุงแจ้งภาพในเหตุการณ์ที่กำลังเปิดอยู่ ให้รีโหลด Gallery

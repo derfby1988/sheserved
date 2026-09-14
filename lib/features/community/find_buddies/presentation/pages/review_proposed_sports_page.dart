@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
 class ReviewProposedSportsPage extends StatefulWidget {
   const ReviewProposedSportsPage({super.key});
@@ -48,28 +49,84 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
     });
   }
 
-  Future<void> _approve(String id) async {
+  Future<void> _approve(Map<String, dynamic> sport) async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
-    final icon = await showDialog<String>(
+    final initialLayout = sport['field_layout']?.toString() ?? 'none';
+
+    final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('เลือกไอคอนประจำกีฬา (ไม่บังคับ)'),
-          content: TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(hintText: 'วางอีโมจิ เช่น ⚽ 🏀 🎾'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, ''), child: const Text('ข้าม')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('อนุมัติ')),
-          ],
+        final ctrl = TextEditingController(text: sport['icon']?.toString() ?? '');
+        String selectedLayout = (initialLayout == 'single' || initialLayout == 'double') ? initialLayout : 'none';
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text('อนุมัติกีฬา: ${sport['name_th'] ?? ''}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: ctrl,
+                      decoration: const InputDecoration(
+                        labelText: 'ไอคอนประจำกีฬา',
+                        hintText: 'วางอีโมจิ เช่น ⚽ 🏀 🎾',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('ยืนยันรูปแบบสนาม (Field Layout):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'none', label: Text('ไม่ใช้')),
+                        ButtonSegment(value: 'single', label: Text('1 ฝั่ง')),
+                        ButtonSegment(value: 'double', label: Text('2 ฝั่ง')),
+                      ],
+                      selected: {selectedLayout},
+                      onSelectionChanged: (set) => setDialogState(() => selectedLayout = set.first),
+                    ),
+                    if (selectedLayout != 'none') ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          height: 100,
+                          child: CustomPaint(
+                            painter: FieldCanvasPainter(layout: selectedLayout),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, {
+                    'icon': ctrl.text.trim(),
+                    'field_layout': selectedLayout,
+                  }),
+                  child: const Text('อนุมัติ'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
-    if (icon == null) return;
-    await _repo.approveSport(sportId: id, reviewedBy: user.id, icon: icon.isEmpty ? null : icon);
+    if (result == null) return;
+    final icon = result['icon'] ?? '';
+    final layout = result['field_layout'] ?? 'none';
+    await _repo.approveSport(
+      sportId: sport['id'].toString(),
+      reviewedBy: user.id,
+      icon: icon.isEmpty ? null : icon,
+      fieldLayout: layout,
+    );
     _load();
   }
 
@@ -107,6 +164,9 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                 itemCount: _items.length,
                 itemBuilder: (context, i) {
                   final s = _items[i];
+                  final layout = s['field_layout']?.toString() ?? 'none';
+                  final layoutLabel = layout == 'double' ? 'สนาม 2 ฝั่ง' : (layout == 'single' ? 'สนาม 1 ฝั่ง' : 'ไม่ใช้สนาม');
+
                   return Card(
                     child: ListTile(
                       leading: Text.rich(
@@ -116,12 +176,12 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                         ),
                       ),
                       title: Text(s['name_th']?.toString() ?? ''),
-                      subtitle: Text(s['name_en']?.toString() ?? ''),
+                      subtitle: Text('${s['name_en'] ?? ''} • แนะนำ: $layoutLabel'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(onPressed: () => _reject(s['id'].toString()), icon: const Icon(Icons.close, color: Colors.red)),
-                          IconButton(onPressed: () => _approve(s['id'].toString()), icon: const Icon(Icons.check, color: Colors.green)),
+                          IconButton(onPressed: () => _approve(s), icon: const Icon(Icons.check, color: Colors.green)),
                         ],
                       ),
                     ),

@@ -1527,23 +1527,63 @@ io.on('connection', (socket) => {
 
   // Handle Rescue Status Updates (Feedback Loop to Victim + DB Persistence)
   socket.on('rescue-status-update', async (data, callback) => {
-    const { videoId, volunteerId, status, victimId, responseId } = data;
-    console.log(`[Rescue] Volunteer: ${volunteerId} updated status to ${status} for incident ${videoId}`);
+    const { videoId, volunteerId, status, victimId, responseId } = data || {};
+    const ack = (payload) => {
+      if (typeof callback === 'function') callback(payload);
+    };
+    const RESCUE_STATUSES = ['accepted', 'en_route', 'arrived', 'resolved', 'cancelled'];
 
-    // 1. Persist to DB as single source of truth
-    if (pool && responseId) {
+    // ✅ Authorization: ต้องมี responseId อ้างอิงได้ และตัวตนต้องตรงกัน
+    // (defense-in-depth เทียบกับ socket.userId ที่ผูกตอน connection)
+    if (!status || !RESCUE_STATUSES.includes(status)) {
+      console.warn('[Rescue] Rejected: invalid status');
+      return ack({ success: false, error: 'INVALID_STATUS' });
+    }
+    if (socket.userId && volunteerId && socket.userId !== volunteerId) {
+      console.warn('[Rescue] Rejected: volunteer identity mismatch');
+      return ack({ success: false, error: 'IDENTITY_MISMATCH' });
+    }
+    const actorId = socket.userId || volunteerId;
+    if (!responseId || !actorId) {
+      console.warn('[Rescue] Rejected: missing responseId/actor');
+      return ack({ success: false, error: 'MISSING_RESPONSE_ID' });
+    }
+
+    console.log(`[Rescue] Volunteer: ${actorId} updated status to ${status} for incident ${videoId}`);
+
+    // 1. Persist — เฉพาะ response ที่เป็นของ volunteer คนนี้เท่านั้น
+    if (pool) {
       try {
-        const updates = { status, updated_at: new Date().toISOString() };
-        if (status === 'arrived') updates.arrived_at = new Date().toISOString();
-        if (status === 'resolved' || status === 'cancelled') updates.resolved_at = new Date().toISOString();
+        const owner = await pool.query(
+          'SELECT status FROM incident_responses WHERE id = $1 AND volunteer_id = $2',
+          [responseId, actorId]
+        );
+        if (owner.rows.length === 0) {
+          console.warn('[Rescue] Rejected: response not found or not owned by volunteer');
+          return ack({ success: false, error: 'NOT_FOUND' });
+        }
 
-        const setClauses = Object.entries(updates).map(([key, _], i) => `${key} = $${i + 1}`).join(', ');
-        const values = Object.values(updates);
-        values.push(responseId);
+        // ✅ Terminal-state guard: ห้ามเปิดภารกิจที่ปิดแล้วกลับมา
+        // (ยัง idempotent เมื่อยิงซ้ำด้วยสถานะ terminal เดิม)
+        const currentStatus = owner.rows[0].status;
+        if (
+          (currentStatus === 'resolved' || currentStatus === 'cancelled') &&
+          status !== 'resolved' && status !== 'cancelled'
+        ) {
+          console.warn('[Rescue] Rejected: mission already closed');
+          return ack({ success: false, error: 'MISSION_ALREADY_CLOSED' });
+        }
 
+        // ✅ Idempotent เหมือน POST /:id/status — arrived_at/resolved_at
+        // ถูกตั้งเฉพาะเมื่อยังไม่มีค่า (ยิงซ้ำไม่ทำให้ timestamp เลื่อน)
         await pool.query(
-          `UPDATE incident_responses SET ${setClauses} WHERE id = $${values.length}`,
-          values
+          `UPDATE incident_responses
+             SET status = $1,
+                 updated_at = CURRENT_TIMESTAMP,
+                 arrived_at = CASE WHEN $1 = 'arrived' AND arrived_at IS NULL THEN CURRENT_TIMESTAMP ELSE arrived_at END,
+                 resolved_at = CASE WHEN $1 IN ('resolved', 'cancelled') AND resolved_at IS NULL THEN CURRENT_TIMESTAMP ELSE resolved_at END
+           WHERE id = $2`,
+          [status, responseId]
         );
         console.log(`[Rescue] DB updated: response ${responseId} -> ${status}`);
       } catch (dbErr) {
@@ -1555,7 +1595,7 @@ io.on('connection', (socket) => {
     if (victimId) {
       io.to(`user-${victimId}`).emit('rescue-incoming', {
         videoId,
-        volunteerId,
+        volunteerId: actorId,
         status,
         timestamp: new Date().toISOString()
       });
@@ -1564,7 +1604,7 @@ io.on('connection', (socket) => {
 
     // 3. If cancelled, also notify other connected volunteers so they know the spot is open
     if (status === 'cancelled') {
-      io.emit('rescue-cancelled', { videoId, volunteerId });
+      io.emit('rescue-cancelled', { videoId, volunteerId: actorId });
     }
 
     // 4. Archive chat if resolved or cancelled to save space in main tables
@@ -1573,9 +1613,7 @@ io.on('connection', (socket) => {
     }
 
     // 5. Acknowledge caller if callback provided
-    if (typeof callback === 'function') {
-      callback({ success: true, status, responseId });
-    }
+    ack({ success: true, status, responseId });
   });
 
 
