@@ -105,6 +105,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
                 const SizedBox(height: 16),
                 FieldStylePicker(
                   value: _fieldStyle,
+                  sportName: _nameThCtrl.text.trim(),
                   onChanged: (s) => setState(() => _fieldStyle = s),
                 ),
               ],

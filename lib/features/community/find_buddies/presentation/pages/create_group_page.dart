@@ -12,8 +12,10 @@ import '../../../../../../services/platform_service.dart';
 import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../find_buddies/domain/models/sport_skill_level.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
+import '../../../find_buddies/presentation/widgets/skill_level_chips.dart';
 import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 
@@ -23,6 +25,7 @@ class CreateGroupPage extends StatefulWidget {
   @override
   State<CreateGroupPage> createState() => _CreateGroupPageState();
 }
+
 
 class _CreateGroupPageState extends State<CreateGroupPage>
     with AutomaticKeepAliveClientMixin {
@@ -55,11 +58,15 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   // Phase 9.1: draft cost standards, written to DB after the group exists.
   List<Map<String, dynamic>> _groupFeeDrafts = [];
   List<Map<String, dynamic>> _roundExpenseDrafts = [];
+  // Phase 16: Sport Skill Levels
+  List<String> _targetSkillLevels = ['all'];
+  final _skillNoteCtrl = TextEditingController();
   // Phase 15: draft player positions on field
   List<Map<String, dynamic>> _positionDrafts = [];
   gm.GoogleMapController? _mapController;
   bool _mapLoadLogged = false;
   final _searchPlaceCtrl = TextEditingController();
+
   bool _isSearchingPlace = false;
   List<Map<String, dynamic>> _placeSearchResults = [];
   String? _placeSearchMessage;
@@ -162,8 +169,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     _nameCtrl.dispose();
     _descCtrl.dispose();
     _searchPlaceCtrl.dispose();
+    _skillNoteCtrl.dispose();
     super.dispose();
   }
+
 
   @override
   void didChangeDependencies() {
@@ -294,6 +303,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         postalCode: _selectedAddress?.postalCode,
         lat: _lat,
         lng: _lng,
+        targetSkillLevels: _targetSkillLevels,
+        skillLevelNote: _skillNoteCtrl.text.trim().isEmpty ? null : _skillNoteCtrl.text.trim(),
       );
       // Phase 9.1: persist drafted cost standards now that group_id exists.
       for (final fee in _groupFeeDrafts) {
@@ -565,6 +576,19 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     const SizedBox(height: 8),
                                     _buildRecentNames(),
                                   ],
+                                  const SizedBox(height: 20),
+                                  const Divider(),
+                                  const SizedBox(height: 12),
+                                  SkillLevelSelector(
+                                    availableLevels: resolveSkillLevelsForSport(sportData: _selectedSportData),
+                                    selectedLevels: _targetSkillLevels,
+                                    onLevelsChanged: (levels) {
+                                      setState(() {
+                                        _targetSkillLevels = levels;
+                                      });
+                                    },
+                                    noteController: _skillNoteCtrl,
+                                  ),
                                 ],
                               ),
                             ),

@@ -120,6 +120,7 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                       const SizedBox(height: 16),
                       FieldStylePicker(
                         value: selectedStyle,
+                        sportName: sport['name_th']?.toString(),
                         onChanged: (s) => setDialogState(() => selectedStyle = s),
                       ),
                     ],

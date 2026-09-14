@@ -24,7 +24,7 @@
   - ขวา: ปุ่มรีเฟรช, ปุ่มค้นหา (เปิด `_showSearchDialog()`), ปุ่มเมนูเพิ่มเติม (ก๊วนของฉัน + สลับมุมมอง รายการ/แผนที่), ปุ่มแจ้งเตือน และปุ่มตะกร้าตามมาตรฐานของ `TlzAppTopBar`
 - การจัดวางปุ่ม: ลดจำนวนปุ่มหลักเพื่อรักษาพื้นที่ชื่อหน้า โดยเก็บ action ที่ใช้รองลงมาไว้ใน `PopupMenuButton` (`more_vert`)
 - หน้า "รายการก๊วน"
-  - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม (เฉพาะ admin `role == 'admin'`; ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้) — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
+  - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม นำทางไปยังหน้าเสนอกีฬาใหม่ (`/community/sport-club/sport/propose`) สำหรับผู้ใช้งานทุกคน — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
   - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **สรุปค่าก๊วนมาตรฐานและค่าใช้จ่ายของรอบนัดถัดไปพร้อมจำนวนที่ว่าง**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับผู้จัดการก๊วน)
   - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนที่เข้าร่วมได้ทันที" (กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก; ก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ)
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
@@ -47,7 +47,7 @@
 - ตัวอย่าง: ⚽ ฟุตบอล, 🏀 บาสเกตบอล, 🏸 แบดมินตัน, 🏊 ว่ายน้ำ, 🏃 วิ่ง, 🚴 ปั่นจักรยาน, 🧗 ปีนผา, 🥾 เดินป่า, 🧘 โยคะ, 🥊 มวยไทย, 🎾 เทนนิส, 🏓 ปิงปอง, 🏐 วอลเลย์บอล, 🏋️ เวทเทรนนิ่ง, 🎮 อีสปอร์ต
 - `sports.icon` (TEXT) เก็บ emoji แสดงผลใน: sport chip แถวหมวดหมู่, การ์ดก๊วน, dropdown เลือกกีฬาในหน้าสร้างก๊วน, รายการรออนุมัติ
 - กีฬาที่ผู้ใช้เสนอใหม่ (ไม่มีใน seed): admin ใส่ emoji icon ได้ตอนอนุมัติผ่าน dialog ในหน้า `ReviewProposedSportsPage`
-- ปุ่ม "+" ทรงกลม: เฉพาะ admin (`role == 'admin'`) เท่านั้น ผู้ใช้ทั่วไปไม่เห็นปุ่มนี้ (`SizedBox.shrink()`); ปุ่มอยู่นอก scroll area ติดขวาของแถบ chip
+- ปุ่ม "+" ทรงกลม: ปุ่มเพิ่มชนิดกีฬาติดขวาของแถบ chip สำหรับกดเพื่อเสนอกีฬาใหม่ (`/community/sport-club/sport/propose`) เปิดให้ผู้ใช้งานทุกคนกดเสนอประเภทกีฬาใหม่ได้ (หากยังไม่ล็อกอิน ระบบจะนำทางไปหน้า Login ก่อนกลับมาหน้าเสนอกีฬาให้อัตโนมัติ)
 - การเรียงลำดับ chip กีฬา: เรียงตามพยัญชนะหลักตัวแรกของชื่อไทยแบบ ascending (ก → ฮ) โดยข้ามสระนำหน้า (เ แ โ ใ ไ) ผ่าน `_thaiFirstConsonantIndex()` และ `_compareThaiAsc()` ใน `fitness_buddies_repository.dart`; chip "ทั้งหมด" เป็นตัวแรกเสมอ (hardcoded ใน UI)
 - **เรียงตามความถี่ใช้งาน (สำหรับผู้ใช้ที่ล็อกอิน):** ประเภทกีฬาที่ผู้ใช้เคยสร้างก๊วนหรือเข้าร่วมก๊วน จะถูกจัดวางซ้ายสุดก่อน เรียงตามความถี่จากมากไปน้อย (ผ่าน `getUserSportFrequency()`) ส่วนประเภทที่ไม่เคยใช้เรียง ก → ฮ ตามหลัง; ผู้ใช้ที่ยังไม่ล็อกอินเรียง ก → ฮ ทั้งหมด
 - Seed migration เป็น idempotent (`NOT EXISTS` + `UPDATE` icon สำหรับกีฬาที่มีอยู่แต่ยังไม่มี icon)
@@ -566,7 +566,7 @@ Scaffold
 
 ## Roadmap ปรับปรุงจากผลวิเคราะห์ Gap (2026-08-22) — เรียงตามความสำคัญ
 
-> ผลตรวจสอบโค้ดจริง ณ 2026-08-25: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage, swipe actions ในรายละเอียดก๊วน และ owner participation/owner rejoin ตาม Phase 9 ทำครบแล้ว — **ระบบค่าใช้จ่ายมาตรฐานก๊วน + ค่าใช้จ่ายเฉพาะรอบตาม Phase 9.1 (ปรับรายละเอียด 2026-09-08) ยังไม่ implement**; ช่องว่างเดิมที่เหลือคือการทดสอบ E2E (Phase 6) และการทดสอบ regression บน environment จริง
+> ผลตรวจสอบโค้ดจริง ณ 2026-09-14: หน้ารายการ/bottom sheet รายละเอียด/สร้างก๊วน/สร้างรอบนัด/จอง-อนุมัติผ่าน RPC/เสนอ-รีวิวกีฬา/booking detail/WebSocket headsector/migrations/ก๊วนของฉัน/แชท/บล็อก/แชท popup ฝั่ง ChatRoomPage, swipe actions ในรายละเอียดก๊วน, owner participation/owner rejoin ตาม Phase 9, ระบบค่าใช้จ่าย Phase 14, ระบบตำแหน่งผู้เล่น Position Lineup (Phase 15) และ **ระบบระดับทักษะผู้เล่นตามชนิดกีฬา Sport Skill Levels + Admin Customization UI (Phase 16)** ทำเสร็จสมบูรณ์เรียบร้อยแล้ว
 
 ### Phase 1 — ปักหมุดพิกัดตอนสร้างก๊วน + Pagination ✅ เสร็จแล้ว (ปรับ page size 10 และ filtered-page loading 2026-08-30)
 - ปัญหา: ฟอร์ม `create_group_page.dart` ไม่มีการเก็บ `lat/lng` เลย → ก๊วนใหม่ไม่มีพิกัด, มุมมองแผนที่ใน `sport_club_page.dart` ไม่มี marker, ตัวกรองรัศมี (กม.) ไม่ทำงานจริง
@@ -2116,7 +2116,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 
 ---
 
-## Phase 15 — ระบบตำแหน่งผู้เล่นบนสนามจำลอง (Position Lineup) ⏳ รอ implement
+## Phase 15 — ระบบตำแหน่งผู้เล่นบนสนามจำลอง (Position Lineup) ✅ Implement แล้ว (2026-09-14)
 
 > ตัดสินใจ 2026-09-13 — เจ้าของก๊วนระบุตำแหน่งผู้เล่นที่ต้องการเชิญบนสนามจำลอง (1 หรือ 2 ฝั่งตาม `sports.field_layout`), วางไอคอนตำแหน่งลงพื้นที่สนามและลากย้ายได้, กำหนดไอคอน/สี/ชื่อตำแหน่ง/จำนวนที่รับต่อตำแหน่ง ผู้เข้าร่วมรวมถึง owner auto-join ต้องเลือกตำแหน่งที่ยังว่างตอนจองรอบนั้นและถูกนับใน slot; ทุกตำแหน่งเต็ม = เข้าร่วมรอบนั้นไม่ได้
 >
@@ -2230,9 +2230,16 @@ GROUP BY 1, 2;
 - **`FieldLayout` parser**: `'none'|'single'|'double'` จาก `sports.field_layout`
 - **`PositionLineupEditor`** (StatefulWidget): `CustomPaint` วาดสนาม — `single` = กรอบเดียว, `double` = 2 ช่องแบ่งเส้นกลาง; `GestureDetector` แตะพื้นที่ว่างเพิ่ม marker; marker เป็น `Positioned` widget ลากได้ (`onPanUpdate` clamp ใน canvas; `double` layout อัปเดต `side` ตามครึ่งที่ลากไป); แตะ marker แก้ไข/ลบ
 - **`PositionLineupView`** — render-only (สำหรับ detail/picker) แสดง marker + `เหลือ N` ใต้ไอคอนเมื่อส่ง availability เข้ามา
-- **`showPositionMarkerEditor(ctx, {existing})`** — bottom sheet: label (≤60 ตัวอักษร ห้ามว่าง), grid เลือกไอคอน, palette สี, stepper จำนวนที่รับ 1–50
-- **`kPositionIconChoices`** (key → IconData + ป้ายไทย): `player`, `goalkeeper`, `defender`, `midfielder`, `forward`, `shooter`, `captain`, `marker`
+- **`showPositionMarkerEditor(ctx, {existing})`** — bottom sheet: label (≤60 ตัวอักษร ห้ามว่าง), grid เลือกไอคอนตำแหน่งแบบแสดงเฉพาะรูปไอคอน (ไม่มีข้อความชื่อกำกับ) ขนาด 40×40 dp จัดวางในกล่องเลื่อน (`maxHeight: 180` พร้อม `Scrollbar`), palette สี, stepper จำนวนที่รับ 1–50
+- **`kPositionIconChoices`** (key → IconData + ป้ายไทย): ขยายรองรับไอคอน 72 แบบ ครอบคลุมผู้เล่นทั่วไป, กีฬาบอล, ไม้แร็กเกต, กรีฑา, ยิม, ทางน้ำ, ล้อเลื่อน, บทบาททีม, เพลย์เมกเกอร์, แท็กติกการเล่น, ทิศทาง และโซนสนาม
 - **`kPositionColorChoices`** — palette สี ~8 สีเก็บเป็น `#RRGGBB`
+- **`kFieldStylePresets` & `kFieldCategories`** — รองรับลักษณะเส้นสนามครอบคลุมทุกชนิดกีฬา (~25+ Presets):
+  - **บอล / ทีม (`ball`)**: `football`, `futsal`, `basketball`, `volleyball`, `beach_volleyball`, `takraw`, `rugby`, `american_football`, `baseball`, `cricket`, `field_hockey`, `ice_hockey`
+  - **แร็กเก็ต / โต๊ะ (`racquet`)**: `badminton`, `tennis`, `table_tennis`, `pickleball`, `squash`
+  - **ต่อสู้ / เวที (`combat`)**: `boxing`, `taekwondo`, `martial_arts`, `wrestling`, `fencing`
+  - **ลู่ / สระ / เป้า (`track_target`)**: `running_track`, `swimming`, `snooker`, `bowling`, `archery`
+  - **ทั่วไป (`generic`)**: `generic`
+- **`FieldStylePicker`** (StatefulWidget) — แถบ Category Filter แบบแท็บย่อยแถวเดียวแนวนอน (`SingleChildScrollView`) พร้อมระบบ Auto-Focus และ Smart Default (`getDefaultFieldStyleForSport`) ที่แมปตามชนิดกีฬาให้อัตโนมัติ
 
 ### 15.6 UI Integration Points
 
@@ -2282,3 +2289,109 @@ GROUP BY 1, 2;
 - **Widget test**: editor เพิ่ม/ลาก/แก้/ลบ marker, side อัปเดตถูกตอนลากข้ามฝั่ง, picker disable ตำแหน่งเต็ม, pending position-full แสดง action เปลี่ยนตำแหน่ง, field layout NULL/none ซ่อน editor, ก๊วนไม่มีตำแหน่ง flow เดิม, create-session sheet แสดง/ซ่อน owner picker ตามเงื่อนไข, loading/error/empty/full state, เลือกผ่าน marker และรายการให้ผลเดียวกัน, validation ไม่ปิด sheet, RPC error คง draft, edit state ตำแหน่งเดิม inactive บังคับเลือกใหม่, dirty-confirmation, ป้องกัน double submit, keyboard/safe-area และ semantic labels
 - **Integration/E2E test**: สร้างก๊วนพร้อม positions ต้อง atomic, แก้ positions แล้ว retry ได้, admin review ต้องกำหนด field layout ก่อนอนุมัติ, notification ไปยังผู้สมัครเมื่อ approve ชน POSITION_FULL, เปลี่ยนตำแหน่ง pending/confirmed สำเร็จและไม่ทำให้ booking/slot หลุด invariant
 - **Gate 15:** แอดมินกำหนด `field_layout` ให้กีฬาเดิมครบก่อนเปิดใช้, เจ้าของก๊วนวาง/ลาก/แก้ตำแหน่งบนสนาม 1–2 ฝั่งได้ตาม layout, ผู้เข้าร่วมรวม owner auto-join เลือกได้เฉพาะตำแหน่งที่ยังว่างของรอบนั้น, เต็มหมดเข้าร่วมไม่ได้, pending ไม่ถือ slotแต่ approve ตรวจ slot อีกครั้งและคง pending เมื่อเต็ม, ก๊วนที่ไม่ใช้ฟีเจอร์ทำงานเหมือนเดิมทุกจุด และผ่าน regression ของ join/approve/cancel เดิม
+
+---
+
+## Phase 16 — ระบบระบุระดับทักษะผู้เล่นตามชนิดกีฬา (Sport Skill Levels) ✅ เสร็จสมบูรณ์
+
+> ตัดสินใจ 2026-09-14 — เจ้าของก๊วน/รอบนัดสามารถระบุช่วงระดับฝีมือของผู้เล่นที่ต้องการเปิดรับได้ โดยระบบรองรับทั้ง "เกณฑ์มาตรฐานกลาง" (Beginner, Intermediate, Advanced) และ "เกณฑ์เฉพาะชนิดกีฬา" (เช่น แบดมินตัน P/C/B, เทนนิส NTRP, วิ่งตาม Pace) โดยผู้เล่นไม่ต้องมีระบบคะแนนในโปรไฟล์ล่วงหน้า และใช้การแจ้งเตือนแนะนำ (Soft Warning / Self-Confirmation) เพื่อให้ผู้เล่นประเมินความเหมาะสมด้วยตนเองก่อนกดยืนยันจองรอบ
+
+### 16.1 การตัดสินใจเชิงออกแบบ (Decision Log)
+
+- **กำหนดที่ระดับก๊วนและรอบนัด (Group & Session Level)** — เจ้าของก๊วนกำหนดระดับเริ่มต้นระดับก๊วน (`fitness_groups.target_skill_levels`) และสามารถปรับเปลี่ยนเฉพาะรอบนัดได้ (`fitness_group_sessions.target_skill_levels`) เช่น ก๊วนปกติรับทุกระดับ แต่รอบวันเสาร์จัดสำหรับระดับแข่งขัน
+- **ไม่ต้องเก็บ Rating Profile ของผู้ใช้** — ผู้เล่นสามารถเข้าร่วมได้ทันทีโดยไม่ต้องผ่านการวัดระดับทางการล่วงหน้า ลดอุปสรรคการเข้าใช้งาน (Frictionless Onboarding)
+- **สเกลระดับ 2 ชั้น (Hybrid Skill Scales)**:
+  1. **เกณฑ์มาตรฐานกลาง (Standard Generic Levels)**: ใช้กับกีฬาทั่วไปที่ไม่มีสเกลเฉพาะ มี 4 ระดับ:
+     - `all`: เปิดรับทุกระดับ (All Levels / ไม่จำกัดฝีมือ)
+     - `beginner`: มือใหม่ / เริ่มเล่น (Beginner)
+     - `intermediate`: ปานกลาง / เล่นเป็นประจำ (Intermediate)
+     - `advanced`: ระดับสูง / นักกีฬาแข่งขัน (Advanced / Competitive)
+  2. **เกณฑ์เฉพาะกีฬา (Sport-Specific Preset Levels)**: คอนฟิกในคอลัมน์ `sports.skill_levels` เช่น:
+     - **แบดมินตัน**: `bg` (มือใหม่หัดเล่น), `p_minus` (P-), `p` (P ตีเกมได้), `p_plus` (P+), `c` (C คล่องตัว), `b` (B ระดับแข่งขัน), `a` (A มือโปร/อดีตนักกีฬา)
+     - **เทนนิส / พิกเคิลบอล**: `ntrp_2` (2.0-2.5 มือใหม่), `ntrp_3` (3.0-3.5 ปานกลาง), `ntrp_4` (4.0-4.5 ขั้นสูง), `ntrp_5` (5.0+ แข่งขัน)
+     - **วิ่ง / เดินวิ่ง**: `fun_run` (เดิน-วิ่งเพื่อสุขภาพ), `pace_7_8` (Pace 7-8 สบายๆ), `pace_6` (Pace 6 มินิมาราธอน), `pace_5` (Pace 5 วิ่งเร็ว), `sub_pace_4` (Sub-4 ซีเรียส)
+- **การเลือกแบบช่วงระดับ (Range / Multi-Select)** — เจ้าของก๊วนสามารถเลือกเป็นระดับเดี่ยว หรือเลือกหลายระดับต่อเนื่องกัน เช่น "มือ P ถึง C" หรือ "มือใหม่ และ ปานกลาง"
+- **การบังคับใช้แบบ Soft Warning & Self-Confirmation**:
+  - บนการ์ดและหน้ารายละเอียดจะแสดงป้ายระดับทักษะพร้อมเกณฑ์อธิบายชัดเจน
+  - ตอนผู้เล่นกดจองรอบ (Join Sheet) ระบบจะแสดงเกณฑ์ระดับของรอบนั้น พร้อมตัวเลือกให้ผู้เล่นประเมิน/ยืนยันตนเอง (Self-Declaration)
+  - หากผู้เล่นระบุระดับที่อยู่นอกเกณฑ์ ระบบจะขึ้นเตือน Soft Warning ว่า "ระดับของคุณอาจไม่ตรงกับระดับที่ก๊วนนี้เน้นเล่น ต้องการส่งคำขอหรือไม่?" โดยยังอนุญาตให้ส่งคำขอได้เพื่อให้ผู้จัดการก๊วนพิจารณา
+  - ในก๊วนแบบปิด (Private Group) ผู้จัดการก๊วนจะเห็นระดับที่ผู้สมัครประเมินตนเอง (`declared_skill_level`) ประกอบการตัดสินใจกดอนุมัติ
+
+### 16.2 Data Model Changes
+
+```sql
+-- 1. sports: เก็บโครงสร้างเกณฑ์ระดับเฉพาะของกีฬาแต่ละชนิด (ถ้าเป็น NULL จะ fallback ใช้เกณฑ์มาตรฐานกลาง)
+ALTER TABLE public.sports
+  ADD COLUMN IF NOT EXISTS skill_levels JSONB NULL;
+
+-- 2. fitness_groups: ระดับทักษะที่ก๊วนเปิดรับ และคำอธิบายเพิ่มเติม
+ALTER TABLE public.fitness_groups
+  ADD COLUMN IF NOT EXISTS target_skill_levels TEXT[] NOT NULL DEFAULT '{all}',
+  ADD COLUMN IF NOT EXISTS skill_level_note VARCHAR(150) NULL;
+
+CREATE INDEX IF NOT EXISTS idx_fg_target_skill_levels
+  ON public.fitness_groups USING GIN (target_skill_levels);
+
+-- 3. fitness_group_sessions: ระดับทักษะเฉพาะรอบนัด (NULL = สืบทอดจาก fitness_groups)
+ALTER TABLE public.fitness_group_sessions
+  ADD COLUMN IF NOT EXISTS target_skill_levels TEXT[] NULL;
+
+-- 4. fitness_group_bookings: ระดับที่ผู้สมัครประเมินตนเองตอนส่งคำขอ
+ALTER TABLE public.fitness_group_bookings
+  ADD COLUMN IF NOT EXISTS declared_skill_level VARCHAR(32) NULL;
+```
+
+### 16.3 Public Views และ RPC Updates
+
+- **`fitness_groups_public` View**: ขยายเพื่อเปิดเผย `target_skill_levels`, `skill_level_note` สำหรับการอ่านแบบ Anonymous/Public
+- **`create_group` & `update_group`**: รับพารามิเตอร์ `p_target_skill_levels` และ `p_skill_level_note`
+- **`book_fitness_session`**: รับพารามิเตอร์ `p_declared_skill_level VARCHAR DEFAULT NULL` เพื่อบันทึกลงใน `fitness_group_bookings`
+
+### 16.4 UI Integration Points
+
+1. **`create_group_page.dart` (สร้างก๊วน) & `_showEditGroupSheet` (แก้ไขก๊วน)**:
+   - เพิ่ม Section **"ระดับฝีมือของผู้เล่นที่เปิดรับ"**:
+     - เปลี่ยนแปลงตัวเลือกชิปตามกีฬาที่เลือกอัตโนมัติ (Dynamic Skill Chips ตาม `sports.skill_levels`)
+     - รองรับการแตะเลือกหลายระดับต่อเนื่อง หรือปุ่ม "เปิดรับทุกระดับ (All Levels)"
+     - ช่องข้อความสั้น `skill_level_note` (เช่น "เน้นสนุก ออกกำลังกาย ไม่ซีเรียสผลแพ้ชนะ")
+2. **`sport_club_page.dart` (การ์ดก๊วน & หน้าฟีด)**:
+   - เพิ่ม Badge ระดับบนการ์ดก๊วน เช่น `🎯 มือ P - C` หรือ `🎯 ทุกระดับ` ในตำแหน่งที่เห็นเด่นชัด
+   - **Quick Filter / Search Sheet**: เพิ่มตัวกรองค้นหาก๊วนตาม "ระดับฝีมือ" เพื่อให้ผู้ใช้ค้นหาก๊วนที่เข้ากับระดับตนเองได้ทันที
+3. **Session Booking Sheet (การจองรอบนัด)**:
+   - แสดง Section สรุป "ระดับฝีมือของรอบนี้"
+   - ตัวเลือกให้ผู้ใช้ระบุระดับตนเอง (Self-declaration) สอดคล้องกับสเกลของกีฬานั้นๆ
+   - Dialog แจ้งเตือน Soft Warning หากเลือกระดับที่ไม่ตรงกับช่วงที่ก๊วนเปิดรับ
+4. **Member Management & Pending Requests**:
+   - ผู้จัดการก๊วนเห็นป้ายระดับที่ผู้สมัครระบุ (`declared_skill_level`) ใต้ชื่อผู้ขอเข้าร่วม ช่วยให้พิจารณาอนุมัติได้อย่างมั่นใจ
+5. **`propose_sport_page.dart` & `review_proposed_sports_page.dart`**:
+   - ผู้เสนอกีฬาและแอดมินสามารถกำหนดเกณฑ์ระดับทักษะเฉพาะกีฬาได้ (Preset Custom Levels)
+
+### 16.5 Test Plan และ Acceptance Criteria
+
+- **DB & Migrations**: ทดสอบ Constraint, GIN Index บน `target_skill_levels`, ค่า Default `{all}`, RPC อัปเดตและบันทึก `declared_skill_level` ถูกต้อง
+- **Widget Test**:
+  - `create_group_page.dart`: สลับชนิดกีฬาแล้ว Chip ระดับเปลี่ยนตามสเกลของกีฬา, บันทึกระดับสำเร็จ
+  - การ์ดก๊วนบน Feed: แสดง Badge ระดับถูกต้องตามข้อมูลจริง
+  - ตัวกรองระดับฝีมือ: กรองก๊วนที่มีระดับตรงกับที่เลือกได้ถูกต้อง
+  - Join Sheet: แสดงข้อความเตือน Soft Warning เมื่อระดับไม่ตรง แต่ยังกดยืนยันได้
+- **Gate 16**: ก๊วนสามารถกำหนดระดับทักษะที่รับได้ทั้งแบบมาตรฐานและเฉพาะกีฬา, การ์ดก๊วนแสดงระดับชัดเจน, มีตัวกรองค้นหาตามระดับ, ผู้เล่นสามารถประเมินตนเองและรับการแจ้งเตือนแนะนำก่อนจองรอบโดยไม่ถูกบล็อกการใช้งาน และผ่าน regression เดิมของระบบก๊วนทั้งหมด
+
+### 16.6 สรุปสถานะการพัฒนาจริง (Implementation Status — 2026-09-14) ✅
+
+- **DB Migration (`20260914140000_sport_skill_levels.sql`)**:
+  - เพิ่มคอลัมน์ `sports.skill_levels` (JSONB)
+  - เพิ่ม `target_skill_levels` (TEXT[]) และ `skill_level_note` (VARCHAR) ใน `fitness_groups` & `fitness_group_sessions`
+  - เพิ่ม `declared_skill_level` ใน `fitness_group_bookings`
+  - Seed ค่าเริ่มต้นสเกลเฉพาะกีฬา (แบดมินตัน, เทนนิส/พิกเคิลบอล, วิ่ง)
+  - อัปเดต public view `fitness_groups_public` และ RPC `book_fitness_session`
+- **Admin Customization UI ([manage_sports_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/community/find_buddies/presentation/pages/manage_sports_page.dart))**:
+  - เพิ่มเมนูและ Dialog ให้ Admin เลือกสลับสเกลระดับฝีมือประจำชนิดกีฬา (เกณฑ์มาตรฐานกลาง, แบดมินตัน, เทนนิส, วิ่ง หรือกำหนดเอง) ได้จากในแอปโดยตรง
+- **Group Creation & Edit UI**:
+  - [create_group_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/community/find_buddies/presentation/pages/create_group_page.dart): เพิ่ม `SkillLevelSelector` เลือกช่วงระดับฝีมือและคำอธิบายเพิ่มเติม
+  - [sport_club_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/community/find_buddies/presentation/pages/sport_club_page.dart): เพิ่ม `SkillLevelSelector` ในหน้าต่างแก้ไขก๊วน `_showEditGroupSheet`
+- **Feed & Pending Requests Display**:
+  - [sport_club_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/community/find_buddies/presentation/pages/sport_club_page.dart): แสดง `SkillLevelBadge` บน Card ก๊วนในหน้าฟีด และแสดง Badge `declared_skill_level` ในรายการสมาชิกที่รออนุมัติ
+- **Automated Tests**:
+  - ผ่านคำสั่งทดสอบ `flutter test test/features/community/find_buddies/presentation/widgets/position_lineup_test.dart` รวม 22/22 tests
+
+

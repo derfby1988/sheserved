@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
+import '../../../find_buddies/domain/models/sport_skill_level.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
-/// Admin page to manage field_layout of already-approved sports.
-/// Lets admin set/clear `single` or `double` layout so that the
-/// Phase 15 position feature becomes available for a given sport.
+/// Admin page to manage field_layout and skill_levels of already-approved sports.
 class ManageSportsPage extends StatefulWidget {
   const ManageSportsPage({super.key});
 
   @override
   State<ManageSportsPage> createState() => _ManageSportsPageState();
 }
+
 
 class _ManageSportsPageState extends State<ManageSportsPage> {
   late final FitnessBuddiesRepository _repo;
@@ -78,10 +78,19 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
   Future<void> _editLayout(Map<String, dynamic> sport) async {
     final sportId = sport['id'].toString();
     final current = sport['field_layout']?.toString();
+    final sportName = sport['name_th']?.toString();
+
+    FieldStyle selectedStyle = FieldStyle.fromJson(sport['field_style']);
+    if (sport['field_style'] == null || selectedStyle.preset == 'generic') {
+      final suggested = getDefaultFieldStyleForSport(sportName);
+      if (suggested.preset != 'generic') {
+        selectedStyle = suggested;
+      }
+    }
+
     String selected = (current == 'single' || current == 'double' || current == 'none')
         ? current!
-        : 'none';
-    FieldStyle selectedStyle = FieldStyle.fromJson(sport['field_style']);
+        : (selectedStyle.preset != 'generic' ? 'double' : 'none');
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -146,6 +155,7 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
                       const SizedBox(height: 16),
                       FieldStylePicker(
                         value: selectedStyle,
+                        sportName: sportName,
                         onChanged: (s) =>
                             setDialogState(() => selectedStyle = s),
                       ),
@@ -213,11 +223,214 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
     }
   }
 
+  Future<void> _editSkillLevels(Map<String, dynamic> sport) async {
+    final sportId = sport['id'].toString();
+    final sportName = sport['name_th']?.toString() ?? '';
+    final currentSkillLevels = sport['skill_levels'] as Map<String, dynamic>?;
+
+    String selectedPresetKey = 'generic';
+    if (currentSkillLevels != null && currentSkillLevels['name'] != null) {
+      final name = currentSkillLevels['name'].toString();
+      if (name.contains('แบดมินตัน')) {
+        selectedPresetKey = 'badminton';
+      } else if (name.contains('NTRP')) {
+        selectedPresetKey = 'tennis';
+      } else if (name.contains('Pace')) {
+        selectedPresetKey = 'running';
+      } else {
+        selectedPresetKey = 'custom';
+      }
+    } else {
+      // Check by sport name default
+      final levels = resolveSkillLevelsForSport(sportData: sport);
+      if (levels == kBadmintonSkillLevels) {
+        selectedPresetKey = 'badminton';
+      } else if (levels == kTennisPickleballSkillLevels) {
+        selectedPresetKey = 'tennis';
+      } else if (levels == kRunningSkillLevels) {
+        selectedPresetKey = 'running';
+      }
+    }
+
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            List<SportSkillLevel> previewLevels = kGenericSkillLevels;
+            String presetName = 'เกณฑ์มาตรฐานกลาง';
+
+            if (selectedPresetKey == 'badminton') {
+              previewLevels = kBadmintonSkillLevels;
+              presetName = 'มาตรฐานระดับมือแบดมินตัน (BG, P-, P, P+, C, B, A)';
+            } else if (selectedPresetKey == 'tennis') {
+              previewLevels = kTennisPickleballSkillLevels;
+              presetName = 'NTRP Rating Scale (2.0 - 5.0+)';
+            } else if (selectedPresetKey == 'running') {
+              previewLevels = kRunningSkillLevels;
+              presetName = 'ช่วงความเร็วการวิ่ง (Fun Run - Sub 4)';
+            } else if (selectedPresetKey == 'custom' && currentSkillLevels != null) {
+              previewLevels = resolveSkillLevelsForSport(sportData: sport);
+              presetName = currentSkillLevels['name']?.toString() ?? 'เกณฑ์เฉพาะกีฬา';
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.stars_rounded, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'กำหนดเกณฑ์ระดับฝีมือ: $sportName',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'เลือกรูปแบบสเกลระดับฝีมือประจำชนิดกีฬา:',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: selectedPresetKey,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'generic',
+                          child: Text('เกณฑ์มาตรฐานกลาง (Beginner, Intermediate, Advanced)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'badminton',
+                          child: Text('แบดมินตัน (BG, P-, P, P+, C, B, A)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'tennis',
+                          child: Text('เทนนิส / พิกเคิลบอล (NTRP 2.0 - 5.0+)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'running',
+                          child: Text('วิ่ง / เดินวิ่ง (Pace range)'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() => selectedPresetKey = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'ตัวอย่างรายการระดับ ($presetName):',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: previewLevels.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 8, endIndent: 8),
+                        itemBuilder: (ctx, idx) {
+                          final lvl = previewLevels[idx];
+                          return ListTile(
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                            title: Text(
+                              lvl.labelTh,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: lvl.description != null
+                                ? Text(
+                                    lvl.description!,
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('ยกเลิก'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Map<String, dynamic>? jsonToSave;
+                    if (selectedPresetKey != 'generic') {
+                      jsonToSave = {
+                        'type': 'custom',
+                        'name': presetName,
+                        'levels': previewLevels.map((l) => l.toJson()).toList(),
+                      };
+                    }
+                    Navigator.pop(context, jsonToSave);
+                  },
+                  child: const Text('บันทึก'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null && selectedPresetKey == 'generic' && currentSkillLevels == null) return;
+    
+    setState(() => _updating[sportId] = true);
+    try {
+      await _repo.updateSportSkillLevels(
+        sportId: sportId,
+        skillLevels: result,
+      );
+      if (!mounted) return;
+      setState(() {
+        final idx = _items.indexWhere((s) => s['id'].toString() == sportId);
+        if (idx >= 0) {
+          _items[idx] = {
+            ..._items[idx],
+            'skill_levels': result,
+          };
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('อัปเดตเกณฑ์ระดับฝีมือของ "$sportName" เรียบร้อยแล้ว')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('อัปเดตไม่สำเร็จ: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _updating[sportId] = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('จัดการรูปแบบสนามกีฬา'),
+        title: const Text('จัดการรูปแบบและเกณฑ์กีฬา'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
@@ -261,6 +474,8 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
                           final layout = s['field_layout']?.toString();
                           final isUpdating = _updating[sportId] == true;
                           final isNull = layout == null;
+                          final skillLevels = s['skill_levels'];
+                          final hasCustomSkill = skillLevels != null && skillLevels is Map && skillLevels['levels'] is List;
 
                           return Card(
                             elevation: 1,
@@ -297,6 +512,7 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Wrap(
                                   spacing: 6,
+                                  runSpacing: 4,
                                   children: [
                                     if (s['name_en'] != null && s['name_en'].toString().isNotEmpty)
                                       Text(
@@ -318,6 +534,25 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
                                         ),
                                       ),
                                     ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: hasCustomSkill
+                                            ? AppColors.primary.withValues(alpha: 0.12)
+                                            : Colors.grey.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        hasCustomSkill
+                                            ? '🎯 ${skillLevels['name'] ?? 'เกณฑ์เฉพาะ'}'
+                                            : '🎯 เกณฑ์มาตรฐาน',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: hasCustomSkill ? AppColors.primaryDark : Colors.grey.shade700,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -327,10 +562,20 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
                                       height: 24,
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
-                                  : IconButton(
-                                      onPressed: () => _editLayout(s),
-                                      icon: const Icon(Icons.tune_rounded),
-                                      tooltip: 'แก้ไขรูปแบบสนาม',
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          onPressed: () => _editSkillLevels(s),
+                                          icon: const Icon(Icons.stars_rounded, color: AppColors.primary),
+                                          tooltip: 'ตั้งค่าระดับฝีมือ',
+                                        ),
+                                        IconButton(
+                                          onPressed: () => _editLayout(s),
+                                          icon: const Icon(Icons.tune_rounded),
+                                          tooltip: 'แก้ไขรูปแบบสนาม',
+                                        ),
+                                      ],
                                     ),
                             ),
                           );
@@ -340,3 +585,4 @@ class _ManageSportsPageState extends State<ManageSportsPage> {
     );
   }
 }
+

@@ -27,7 +27,7 @@ Map<String, dynamic> _marker({
 }
 
 Widget _wrap(Widget child) {
-  return MaterialApp(home: Scaffold(body: child));
+  return MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
 }
 
 void main() {
@@ -41,7 +41,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      expect(find.textContaining('ยังไม่มีตำแหน่ง'), findsOneWidget);
+      expect(find.textContaining('แตะที่สนามเพื่อวางตำแหน่งผู้เล่น'), findsOneWidget);
     });
 
     testWidgets('shows add button when enabled', (tester) async {
@@ -92,11 +92,13 @@ void main() {
         ),
       ));
       await tester.pump();
-      // Tap the first delete icon
-      final deleteButtons = find.byIcon(Icons.delete_rounded);
-      expect(deleteButtons, findsNWidgets(2));
-      await tester.tap(deleteButtons.first);
-      await tester.pump();
+      final deleteInkWell = find.ancestor(
+        of: find.byIcon(Icons.close_rounded),
+        matching: find.byType(InkWell),
+      ).first;
+      await tester.ensureVisible(deleteInkWell);
+      await tester.tap(deleteInkWell);
+      await tester.pumpAndSettle();
       expect(captured, isNotNull);
       expect(captured!.length, 1);
       expect(captured!.first['id'], 'p2');
@@ -169,13 +171,8 @@ void main() {
         ),
       ));
       await tester.pump();
-      // Find the GestureDetector wrapping the marker and tap it
-      final gestures = find.byType(GestureDetector);
-      // Tap the first marker gesture detector
-      if (gestures.evaluate().length > 1) {
-        await tester.tap(gestures.at(1), warnIfMissed: false);
-        await tester.pump();
-      }
+      await tester.tap(find.textContaining('กองหน้า'), warnIfMissed: false);
+      await tester.pump();
       expect(selected, isNull);
     });
 
@@ -194,11 +191,8 @@ void main() {
         ),
       ));
       await tester.pump();
-      final gestures = find.byType(GestureDetector);
-      if (gestures.evaluate().length > 1) {
-        await tester.tap(gestures.at(1), warnIfMissed: false);
-        await tester.pump();
-      }
+      await tester.tap(find.textContaining('กองหน้า'), warnIfMissed: false);
+      await tester.pump();
       expect(selected, 'p1');
     });
 
@@ -249,7 +243,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      expect(find.byType(CustomPaint), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
     });
 
     testWidgets('paints double layout without throwing', (tester) async {
@@ -261,7 +255,7 @@ void main() {
         ),
       ));
       await tester.pump();
-      expect(find.byType(CustomPaint), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
     });
   });
 
@@ -286,4 +280,45 @@ void main() {
       expect(parseHexColor(''), const Color(0xFF2196F3));
     });
   });
+
+  group('kPositionIconChoices', () {
+    test('contains rich set of sport and position icon choices', () {
+      expect(kPositionIconChoices.length, greaterThanOrEqualTo(50));
+      // Essential keys must be preserved
+      expect(kPositionIconChoices.containsKey('player'), isTrue);
+      expect(kPositionIconChoices.containsKey('forward'), isTrue);
+      expect(kPositionIconChoices.containsKey('midfielder'), isTrue);
+      expect(kPositionIconChoices.containsKey('defender'), isTrue);
+      expect(kPositionIconChoices.containsKey('goalkeeper'), isTrue);
+      expect(kPositionIconChoices.containsKey('shooter'), isTrue);
+      expect(kPositionIconChoices.containsKey('captain'), isTrue);
+      expect(kPositionIconChoices.containsKey('marker'), isTrue);
+    });
+
+    testWidgets('showPositionMarkerEditor opens and displays icon-only selection tiles', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () => showPositionMarkerEditor(ctx),
+              child: const Text('Open Editor'),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Open Editor'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('เพิ่มตำแหน่งผู้เล่น'), findsOneWidget);
+      expect(find.text('เลือกไอคอนตำแหน่ง'), findsOneWidget);
+      expect(find.textContaining('แบบ'), findsOneWidget);
+
+      // Verify icons are present
+      expect(find.byIcon(Icons.person_rounded), findsWidgets);
+      expect(find.byIcon(Icons.sports_soccer_rounded), findsWidgets);
+    });
+  });
 }
+
+

@@ -15,8 +15,11 @@ import '../../../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../find_buddies/presentation/widgets/group_chat_popup.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
+import '../../../find_buddies/domain/models/sport_skill_level.dart';
+import '../../../find_buddies/presentation/widgets/skill_level_chips.dart';
 
 class _GroupPageResult {
+
   final List<Map<String, dynamic>> groups;
   final int nextOffset;
   final bool hasMore;
@@ -2638,6 +2641,15 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                   ],
                                                                 ),
                                                               ),
+                                                           Padding(
+                                                             padding: const EdgeInsets.only(top: 4),
+                                                             child: SkillLevelBadge(
+                                                               targetSkillLevels: (g['target_skill_levels'] is List)
+                                                                   ? (g['target_skill_levels'] as List).map((e) => e.toString()).toList()
+                                                                   : null,
+                                                               availableLevels: resolveSkillLevelsForSport(sportData: g['sport'] is Map<String, dynamic> ? g['sport'] : null),
+                                                             ),
+                                                           ),
                                                             ),
                                                           if (_myBlockedGroupIds
                                                               .contains(gid))
@@ -4798,6 +4810,12 @@ class _SportClubPageState extends State<SportClubPage> {
       text: group['description']?.toString() ?? '',
     );
     String genderPref = group['gender_preference']?.toString() ?? 'any';
+    List<String> targetSkillLevels = (group['target_skill_levels'] is List)
+        ? (group['target_skill_levels'] as List).map((e) => e.toString()).toList()
+        : ['all'];
+    final skillNoteCtrl = TextEditingController(
+      text: group['skill_level_note']?.toString() ?? '',
+    );
     final originalOwnerAutoJoin = group['owner_auto_join'] != false;
     final isGroupOwner = group['created_by']?.toString() == userId;
     bool requiresApproval = group['requires_owner_approval'] == true;
@@ -4807,22 +4825,24 @@ class _SportClubPageState extends State<SportClubPage> {
     var groupPositions = <Map<String, dynamic>>[];
     String? fieldLayout;
     FieldStyle fieldStyle = FieldStyle.fallback;
+    Map<String, dynamic>? sportData;
     try {
       final results = await Future.wait<dynamic>([
         _repo.listGroupCostStandards(groupId),
         _repo.listGroupPositions(groupId, activeOnly: true),
-        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('sport:sports(field_layout, field_style, skill_levels, name_th, name_en)').eq('id', groupId).maybeSingle(),
       ]);
       costStandards = results[0] as List<Map<String, dynamic>>;
       groupPositions = results[1] as List<Map<String, dynamic>>;
       final gRow = results[2] as Map<String, dynamic>?;
       final sport = gRow?['sport'];
-      final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
-      if (sport is Map) {
+      if (sport is Map<String, dynamic>) {
+        sportData = sport;
         fieldStyle = FieldStyle.fromJson(sport['field_style']);
-      }
-      if (rawLayout == 'single' || rawLayout == 'double') {
-        fieldLayout = rawLayout;
+        final rawLayout = sport['field_layout']?.toString();
+        if (rawLayout == 'single' || rawLayout == 'double') {
+          fieldLayout = rawLayout;
+        }
       }
     } catch (_) {}
     if (!mounted) return;
@@ -4927,6 +4947,15 @@ class _SportClubPageState extends State<SportClubPage> {
                               setSheetState(() => ownerAutoJoin = v),
                         ),
                       ],
+                      const SizedBox(height: 16),
+                      SkillLevelSelector(
+                        availableLevels: resolveSkillLevelsForSport(sportData: sportData),
+                        selectedLevels: targetSkillLevels,
+                        onLevelsChanged: (lvls) {
+                          setSheetState(() => targetSkillLevels = lvls);
+                        },
+                        noteController: skillNoteCtrl,
+                      ),
                       const Divider(height: 24),
                       _buildGroupCostStandardsManager(
                         sheetContext: ctx,
@@ -5039,6 +5068,8 @@ class _SportClubPageState extends State<SportClubPage> {
                                 cancelOwnerBookings: cancelOwnerBookings,
                                 genderPreference: genderPref,
                                 requiresOwnerApproval: requiresApproval,
+                                targetSkillLevels: targetSkillLevels,
+                                skillLevelNote: skillNoteCtrl.text.trim().isEmpty ? null : skillNoteCtrl.text.trim(),
                               );
                               if (fieldLayout != null) {
                                 await _repo.replaceGroupPositions(
@@ -5475,6 +5506,7 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     final posData = booking['position'];
     final posLabel = posData is Map ? posData['label']?.toString() : null;
+    final declaredSkill = booking['declared_skill_level']?.toString();
 
     final requestTimeLabel = requestedAt == null
         ? 'เวลาที่ขอเข้าร่วมไม่พร้อมใช้งาน'
@@ -5491,11 +5523,12 @@ class _SportClubPageState extends State<SportClubPage> {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
             children: [
               const Text('รออนุมัติ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-              if (posLabel != null) ...[
-                const SizedBox(width: 8),
+              if (posLabel != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
@@ -5507,7 +5540,18 @@ class _SportClubPageState extends State<SportClubPage> {
                     style: const TextStyle(fontSize: 11, color: AppColors.primaryDark, fontWeight: FontWeight.bold),
                   ),
                 ),
-              ],
+              if (declaredSkill != null && declaredSkill.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '🎯 ระดับมือ: $declaredSkill',
+                    style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.bold),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 2),
@@ -6324,18 +6368,15 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Widget _buildAddSportFab() {
-    final user = AuthService.instance.currentUser;
-    final isAdmin = user?.role == 'admin';
-    if (!isAdmin) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
       ),
       padding: const EdgeInsets.only(left: 4, right: 8),
       child: InkWell(
         onTap: () {
-          Navigator.pushNamed(context, '/community/sport-club/sport/manage');
+          Navigator.pushNamed(context, '/community/sport-club/sport/propose');
         },
         customBorder: const CircleBorder(),
         child: Container(

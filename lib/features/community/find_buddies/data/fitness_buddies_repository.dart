@@ -314,6 +314,7 @@ class FitnessBuddiesRepository {
     String? q,
     String? province,
     String? district,
+    String? skillLevel,
     bool openOnly = false,
     int limit = 50,
     int offset = 0,
@@ -327,6 +328,9 @@ class FitnessBuddiesRepository {
     if (district != null && district.isNotEmpty)
       query = query.eq('district', district);
     if (q != null && q.isNotEmpty) query = query.ilike('name', '%$q%');
+    if (skillLevel != null && skillLevel.isNotEmpty && skillLevel != 'all') {
+      query = query.or('target_skill_levels.cs.{"$skillLevel"},target_skill_levels.cs.{"all"}');
+    }
     // Phase 13.0: fitness_groups_public view only exposes visibility='public' groups
     if (openOnly) {
       query = query.eq('requires_owner_approval', false);
@@ -346,7 +350,7 @@ class FitnessBuddiesRepository {
     if (sportIds.isNotEmpty) {
       final sportsRes = await _client
           .from('sports')
-          .select('id, name_th, icon')
+          .select('id, name_th, name_en, icon, skill_levels')
           .inFilter('id', sportIds.toList());
       for (final s in sportsRes as List) {
         final id = s['id']?.toString();
@@ -663,6 +667,7 @@ class FitnessBuddiesRepository {
     String sessionId,
     String userId, {
     String? positionId,
+    String? declaredSkillLevel,
   }) async {
     final currentUserId = AuthService.instance.currentUser?.id;
     if (currentUserId == null || currentUserId != userId) {
@@ -674,6 +679,7 @@ class FitnessBuddiesRepository {
         'p_session_id': sessionId,
         'p_user_id': userId,
         if (positionId != null) 'p_position_id': positionId,
+        if (declaredSkillLevel != null) 'p_declared_skill_level': declaredSkillLevel,
       },
     );
     final bookingId = result is String
@@ -973,6 +979,8 @@ class FitnessBuddiesRepository {
     String? postalCode,
     double? lat,
     double? lng,
+    List<String>? targetSkillLevels,
+    String? skillLevelNote,
   }) async {
     _assertCurrentUser(userId);
     final data = {
@@ -990,6 +998,10 @@ class FitnessBuddiesRepository {
       if (postalCode != null) 'postal_code': postalCode,
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
+      'target_skill_levels': targetSkillLevels != null && targetSkillLevels.isNotEmpty
+          ? targetSkillLevels
+          : ['all'],
+      if (skillLevelNote != null) 'skill_level_note': skillLevelNote,
       'created_by': userId,
     };
     final res = await _client
@@ -1011,6 +1023,7 @@ class FitnessBuddiesRepository {
     double? lng,
     String? note,
     String? ownerPositionId,
+    List<String>? targetSkillLevels,
     List<Map<String, dynamic>>? costItems,
   }) async {
     await _requireGroupManager(groupId: groupId, actorUserId: actorUserId);
@@ -1033,6 +1046,7 @@ class FitnessBuddiesRepository {
       if (lng != null) 'lng': lng,
       if (note != null) 'note': note,
       if (ownerPositionId != null) 'owner_position_id': ownerPositionId,
+      if (targetSkillLevels != null) 'target_skill_levels': targetSkillLevels,
     };
     final res = await _client
         .from('fitness_group_sessions')
@@ -1135,6 +1149,19 @@ class FitnessBuddiesRepository {
         .eq('id', sportId);
   }
 
+  Future<void> updateSportSkillLevels({
+    required String sportId,
+    required Map<String, dynamic>? skillLevels,
+  }) async {
+    await _client
+        .from('sports')
+        .update({
+          'skill_levels': skillLevels,
+        })
+        .eq('id', sportId);
+  }
+
+
   Future<void> rejectSport({
     required String sportId,
     required String reviewedBy,
@@ -1169,6 +1196,8 @@ class FitnessBuddiesRepository {
     String? postalCode,
     double? lat,
     double? lng,
+    List<String>? targetSkillLevels,
+    String? skillLevelNote,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -1184,6 +1213,8 @@ class FitnessBuddiesRepository {
     if (postalCode != null) data['postal_code'] = postalCode;
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
+    if (targetSkillLevels != null) data['target_skill_levels'] = targetSkillLevels;
+    if (skillLevelNote != null) data['skill_level_note'] = skillLevelNote;
     if (data.isEmpty && ownerAutoJoin == null) return;
 
     final group = await _requireGroupManager(
