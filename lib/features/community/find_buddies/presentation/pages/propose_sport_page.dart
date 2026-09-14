@@ -17,6 +17,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
   final _nameThCtrl = TextEditingController();
   final _nameEnCtrl = TextEditingController();
   String _fieldLayout = 'none'; // 'none', 'single', 'double'
+  FieldStyle _fieldStyle = FieldStyle.fallback;
   bool _submitting = false;
 
   @override
@@ -40,6 +41,7 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
         nameEn: _nameEnCtrl.text.trim().isEmpty ? null : _nameEnCtrl.text.trim(),
         proposedBy: user.id,
         fieldLayout: _fieldLayout,
+        fieldStyle: _fieldLayout == 'none' ? null : _fieldStyle.toJson(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งคำขอเพิ่มประเภทกีฬาสำเร็จ')));
@@ -90,11 +92,20 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: SizedBox(
+                    width: double.infinity,
                     height: 140,
                     child: CustomPaint(
-                      painter: FieldCanvasPainter(layout: _fieldLayout),
+                      painter: FieldCanvasPainter(
+                        layout: _fieldLayout,
+                        style: _fieldStyle,
+                      ),
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                FieldStylePicker(
+                  value: _fieldStyle,
+                  onChanged: (s) => setState(() => _fieldStyle = s),
                 ),
               ],
               const SizedBox(height: 24),

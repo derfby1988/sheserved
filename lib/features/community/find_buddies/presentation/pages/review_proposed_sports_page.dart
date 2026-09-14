@@ -14,6 +14,7 @@ class ReviewProposedSportsPage extends StatefulWidget {
 class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
   late final FitnessBuddiesRepository _repo;
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _items = [];
 
   @override
@@ -40,13 +41,24 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final res = await _repo.listProposedSports();
-    if (!mounted) return;
     setState(() {
-      _items = res;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final res = await _repo.listProposedSports();
+      if (!mounted) return;
+      setState(() {
+        _items = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _approve(Map<String, dynamic> sport) async {
@@ -54,14 +66,16 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
     if (user == null) return;
     final initialLayout = sport['field_layout']?.toString() ?? 'none';
 
-    final result = await showDialog<Map<String, String>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
         final ctrl = TextEditingController(text: sport['icon']?.toString() ?? '');
         String selectedLayout = (initialLayout == 'single' || initialLayout == 'double') ? initialLayout : 'none';
+        FieldStyle selectedStyle = FieldStyle.fromJson(sport['field_style']);
 
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
+            final previewLayout = selectedLayout == 'none' ? 'single' : selectedLayout;
             return AlertDialog(
               title: Text('อนุมัติกีฬา: ${sport['name_th'] ?? ''}'),
               content: SingleChildScrollView(
@@ -93,11 +107,20 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: SizedBox(
-                          height: 100,
+                          width: double.infinity,
+                          height: 110,
                           child: CustomPaint(
-                            painter: FieldCanvasPainter(layout: selectedLayout),
+                            painter: FieldCanvasPainter(
+                              layout: previewLayout,
+                              style: selectedStyle,
+                            ),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      FieldStylePicker(
+                        value: selectedStyle,
+                        onChanged: (s) => setDialogState(() => selectedStyle = s),
                       ),
                     ],
                   ],
@@ -109,6 +132,7 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                   onPressed: () => Navigator.pop(context, {
                     'icon': ctrl.text.trim(),
                     'field_layout': selectedLayout,
+                    'field_style': selectedStyle.toJson(),
                   }),
                   child: const Text('อนุมัติ'),
                 ),
@@ -119,13 +143,17 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
       },
     );
     if (result == null) return;
-    final icon = result['icon'] ?? '';
-    final layout = result['field_layout'] ?? 'none';
+    final icon = result['icon']?.toString() ?? '';
+    final layout = result['field_layout']?.toString() ?? 'none';
+    final style = result['field_style'] is Map
+        ? Map<String, dynamic>.from(result['field_style'] as Map)
+        : null;
     await _repo.approveSport(
       sportId: sport['id'].toString(),
       reviewedBy: user.id,
       icon: icon.isEmpty ? null : icon,
       fieldLayout: layout,
+      fieldStyle: style,
     );
     _load();
   }
@@ -158,37 +186,77 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
       appBar: AppBar(title: const Text('ตรวจคำขอเพิ่มประเภทกีฬา')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: () async => _load(),
-              child: ListView.builder(
-                itemCount: _items.length,
-                itemBuilder: (context, i) {
-                  final s = _items[i];
-                  final layout = s['field_layout']?.toString() ?? 'none';
-                  final layoutLabel = layout == 'double' ? 'สนาม 2 ฝั่ง' : (layout == 'single' ? 'สนาม 1 ฝั่ง' : 'ไม่ใช้สนาม');
-
-                  return Card(
-                    child: ListTile(
-                      leading: Text.rich(
-                        TextSpan(
-                          text: s['icon']?.toString() ?? '🏅',
-                          style: _emojiTextStyle(context).merge(const TextStyle(fontSize: 24)),
-                        ),
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 12),
+                      const Text('โหลดไม่สำเร็จ',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(_error!,
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _load,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('ลองใหม่'),
                       ),
-                      title: Text(s['name_th']?.toString() ?? ''),
-                      subtitle: Text('${s['name_en'] ?? ''} • แนะนำ: $layoutLabel'),
-                      trailing: Row(
+                    ],
+                  ),
+                )
+              : _items.isEmpty
+                  ? Center(
+                      child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(onPressed: () => _reject(s['id'].toString()), icon: const Icon(Icons.close, color: Colors.red)),
-                          IconButton(onPressed: () => _approve(s), icon: const Icon(Icons.check, color: Colors.green)),
+                          const Icon(Icons.check_circle_outline, size: 48, color: Colors.green),
+                          const SizedBox(height: 12),
+                          const Text('ไม่มีคำขอที่รอตรวจ',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _load,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('รีเฟรช'),
+                          ),
                         ],
                       ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () async => _load(),
+                      child: ListView.builder(
+                        itemCount: _items.length,
+                        itemBuilder: (context, i) {
+                          final s = _items[i];
+                          final layout = s['field_layout']?.toString() ?? 'none';
+                          final layoutLabel = layout == 'double' ? 'สนาม 2 ฝั่ง' : (layout == 'single' ? 'สนาม 1 ฝั่ง' : 'ไม่ใช้สนาม');
+
+                          return Card(
+                            child: ListTile(
+                              leading: Text.rich(
+                                TextSpan(
+                                  text: s['icon']?.toString() ?? '🏅',
+                                  style: _emojiTextStyle(context).merge(const TextStyle(fontSize: 24)),
+                                ),
+                              ),
+                              title: Text(s['name_th']?.toString() ?? ''),
+                              subtitle: Text('${s['name_en'] ?? ''} • แนะนำ: $layoutLabel'),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(onPressed: () => _reject(s['id'].toString()), icon: const Icon(Icons.close, color: Colors.red)),
+                                  IconButton(onPressed: () => _approve(s), icon: const Icon(Icons.check, color: Colors.green)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  );
-                },
-              ),
-            ),
     );
   }
 }

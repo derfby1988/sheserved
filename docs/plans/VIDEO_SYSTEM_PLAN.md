@@ -5385,3 +5385,147 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 - Step 1 (server): revert การเพิ่ม invalidate + TTL — endpoint กลับไปพฤติกรรมเดิม ไม่มี data migration
 - Step 2-5 (Flutter): revert code — cache/parallelization เป็น additive layer; หาก SWR/TTL tuning มีปัญหาให้ปิดด้วย feature flag หรือกลับไป fresh-cache/network path
 - Local-persistence sub-phase (ถ้าได้รับอนุมัติภายหลัง): ใช้ migration/clear procedure ที่ผ่าน privacy review; ห้ามลบ box โดยไม่มี explicit approval และ backup/retention policy ที่เหมาะสม
+
+---
+
+## 17. Phase — Unified Mission Accept Guards (รวมเงื่อนไขการรับงานทุกเส้นทาง — แผนงาน ยังไม่ Implement)
+
+> **ที่มา:** ตรวจสอบเส้นทางรับงานของจิตอาสาเทียบกับเงื่อนไขหลัก (Rule 1-5 + Mission Lock) พบว่าเส้นทางหลักบน `EmergencyLivePage` ตรงแผนครบ แต่เส้นทางเสริม 2 จุดไม่ผ่านกฎใดเลย และ repository fallback กลืนการปฏิเสธของ server — ทำให้ภารกิจซ้อน / รับเหตุตัวเอง / รับเหตุที่จบแล้ว / phantom responseId เกิดได้จริงที่ระดับข้อมูล
+>
+> **หลักการของ Phase นี้:** กฎการรับงานต้องบังคับที่ **server (source of truth)** เป็นอย่างสุดท้าย — client guard มีไว้เพื่อ UX เท่านั้น (block ก่อนกด ไม่ต้องรอ round-trip) — เลื่อน "Backend Guard สำหรับอนาคต" (§Responder Response System, Reporter Mission Lock) มาเป็นปัจจุบัน
+
+### 17.0 สถานะปัจจุบันที่ตรวจสอบแล้ว (Verified — 2026-09-14)
+
+**เส้นทางที่ถูกต้องอยู่แล้ว (ไม่แตะ):**
+
+- `EmergencyLivePage._isEligibleResponder()` — Rule 1-5 ครบ: `_hasRejected` / `_currentResponseId != null` / เจ้าของวิดีโอ / category+profession match แบบ No-Fallback (Bug Fix #4) / same-profession active ใน `_responders` (`emergency_navigation_logic.dart:1109-1151`)
+- `EmergencyLivePage._acceptRescue()` — Mission Lock ผ่าน `getActiveRescues()` ก่อน dialog + confirmation dialog + auto-switch กลับภารกิจ (`emergency_navigation_logic.dart:1153-1257`)
+- `POST /:id/accept` — มี guard เดิม: video ต้องอยู่ Local DB + `resolved` โดยอาชีพเดียวกัน → `409 MISSION_ALREADY_RESOLVED` (`routes/video.js:615-682`)
+- Trending filter ใช้เกณฑ์เดียวกัน + resolved ผ่าน `taken-by-profession` (`emergency_navigation_logic.dart:217-253`)
+
+**ช่องโหว่ที่พบ (ทุกจุด verify จากโค้ดจริง):**
+
+| # | จุด | ปัญหา |
+|---|---|---|
+| A | `VideoRepository.acceptIncident()` | non-200 **ทุกสถานะ** (409/429/401/403/404/500) ไม่ throw → ตกไป Supabase fallback insert → คืน Supabase `id` ที่ไม่มีใน Local DB = **phantom id ประเภทเดียวกับ `<timestamp>-local` ที่ Bug Fix #12 ข้อ 5 ตัดออกไปแล้ว** — server ปฏิเสธแต่ client แสดงว่าสำเร็จ + สร้างแถวรกใน Supabase (`video_repository.dart:392-452`) |
+| B | `/rescue-map` → `RescuePage._acceptRescue()` | เข้าถึงจาก drawer (`tlz_drawer.dart:591`) — เรียก `acceptIncident` ตรงๆ **ไม่มีกฎใดเลย**: ไม่ตรวจ owner (Rule 3), profession (Rule 4), same-profession (Rule 5), mission lock, ไม่มี confirmation dialog; alert มาจาก `emergencyNotificationStream` ที่ไม่กรอง (`rescue_page.dart:154-233`) |
+| C | DonationAdmin `_ResponderHelpPanel` | filter มี fallback ฝ่า No-Professional-Fallback: `category == null` → `isRelevant = true`, `categoryId == null` → `isRelevant = true` (วิดีโอไม่มีหมวดแสดงให้ทุกคน) + `_handleAcceptHelp` ไม่มี mission lock / owner check / ไม่กรอง resolved (`donation_admin_page.dart:2283-2311`, `2367-2399`) |
+| D | Server `POST /:id/accept` | ตรวจเฉพาะ video-exists + resolved-same-profession — **ไม่มี** mission-lock / owner / profession / same-profession-active guard ระดับ DB → B, C และ direct API สร้างภารกิจผิดกฎได้จริง |
+
+### 17.1 ลำดับการดำเนินงาน (บังคับตามลำดับนี้)
+
+| ลำดับ | งาน | ความเสี่ยง | เหตุผลของลำดับ |
+|---|---|---|---|
+| **1+2 (ทำคู่กัน)** | Server guard ใน `POST /:id/accept` **+** `acceptIncident()` หยุด fallback เมื่อ server ปฏิเสธ | ปานกลาง + ต่ำ | **ต้องลงพร้อมกัน** — ถ้า server เริ่มตอบ 403/409 ใหม่ แต่ client ยัง fallback เหมือนเดิม error จะถูกกลืนและเขียน Supabase ต่อ; server guard เป็น root fix ของ B/C/D, client fix ปิด A และทำให้ error code ถึง UI ได้ |
+| **3** | DonationAdmin `_ResponderHelpPanel` — ลบ fallback + เพิ่ม guard | ต่ำ | presentation-layer alignment — หลังข้อ 1+2 แล้ว server block อยู่แล้ว ข้อนี้ทำให้ผู้ใช้ไม่เห็นการ์ดที่ไม่มีสิทธิตั้งแต่ต้น |
+| **4** | `RescuePage` — **ต้องตัดสินใจ 3a vs 3b ก่อน implement** | ต่ำ (3a) / product decision (3b) | หลีกเลี่ยง rule duplication — ดู §17.3 |
+
+### 17.2 ขั้นตอน 1+2 — Server Guard + Client No-Fallback (ทำคู่กัน)
+
+#### 17.2.1 Server: เพิ่ม guard ใน `POST /:id/accept` (`websocket-server/routes/video.js`)
+
+เพิ่มตรวจก่อน upsert **ตามลำดับ** (fail-fast ถูกสุดก่อน):
+
+1. **Owner check (Rule 3)** — query เดียวรวมกับ video-exists เดิม: `SELECT user_id, category_id FROM videos WHERE id = $1` → `user_id === responderId` → `403 { code: 'OWNER_CANNOT_ACCEPT' }`
+2. **Mission Lock** — `incident_responses` ของ volunteer นี้มี status `accepted`/`arrived`/`en_route` ที่ video อื่น → `409 { code: 'MISSION_LOCK_ACTIVE', activeVideoId }` (ส่ง videoId ให้ client auto-switch ได้เหมือน flow เดิม)
+3. **Profession match (Rule 4)** — `donation_categories.volunteer_profession_ids` ของ `videos.category_id`:
+   - ไม่มี category หรือ list ว่าง → `403 { code: 'NO_ELIGIBLE_PROFESSION' }` (ตรง Bug Fix #4 — แก้ที่ DB ไม่ใช่โค้ด)
+   - `users.profession_id` ของ responder เป็น null หรือไม่อยู่ใน list → `403 { code: 'PROFESSION_MISMATCH' }`
+4. **Same-profession active (Rule 5)** — มี response active บนวิดีโอนี้โดยผู้ที่มี profession เดียวกัน → `409 { code: 'SAME_PROFESSION_ALREADY_ACCEPTED' }`
+5. คง guard เดิม: resolved-by-same-profession → `409 MISSION_ALREADY_RESOLVED` (อยู่ก่อน/หลังก็ได้ แต่ควรรวมกับข้อ 4 ใน query เดียวถ้าเป็นไปได้)
+
+**ข้อกำหนด:**
+- ทุก guard เป็น `SELECT` เท่านั้น ไม่แตะ transaction/upsert เดิม; รวม query ให้น้อยสุดเท่าที่อ่านง่าย (accept เป็น low-frequency + มี `strictRateLimiter` 10/min อยู่แล้ว)
+- **ต้องตรวจ type ของ `donation_categories.volunteer_profession_ids` ก่อนเขียน query** (`text[]` vs `jsonb` — ดู migration/DDL จริง) และ fallback อาชีพผ่าน `user_group_roles` ตาม pattern เดียวกับ `GET /:id/responders` (`routes/video.js:930-939`)
+- error message ภาษาไทยตรงสาเหตุ + `code` คงที่เสมอ — client ใช้ code แยกพฤติกรรม (MISSION_LOCK_ACTIVE → auto-switch เหมือน client-side lock เดิม)
+- **ห้าม** เปลี่ยน `requireAuth`/`strictRateLimiter`/`duplicateCheckMiddleware` เดิม
+- fail-open ไม่ใช้กับ guard เหล่านี้ — query ล้ม = 500 ปฏิเสธ (ห้าม fail-open เพราะเป็น authorization check)
+
+#### 17.2.2 Flutter: `acceptIncident()` หยุด fallback เมื่อ server ปฏิเสธ (`video_repository.dart`)
+
+- non-2xx ที่ server **ตอบโดยเจตนา** (4xx ทั้งหมด: 400/401/403/404/409/429) → **ห้าม fallback ไป Supabase** — parse `code` จาก body แล้วคืนผลลัพธ์ที่แยกสาเหตุได้ (เช่น `AcceptIncidentResult { success, errorCode, message, responseId }` ตาม pattern `RescueStatusUpdateResult` ที่มีอยู่แล้ว)
+- fallback Supabase คงไว้เฉพาะ **network error / timeout / 5xx** เท่านั้น (Local API เข้าถึงไม่ได้จริง)
+- **คำเตือน**: Supabase fallback id ยังเป็น phantom ต่อ Local DB เสมอ — หาก fallback insert สำเร็จ ต้องถือว่า "รับสำเร็จชั่วคราว" และบังคับ re-sync ผ่าน `getActiveRescues()` ก่อน status update ครั้งแรก (self-heal ของ Bug Fix #12 รองรับอยู่แล้ว); พิจารณาตัด Supabase fallback ออกในอนาคตหากต้องการ source of truth เดียวสมบูรณ์
+- caller ทั้ง 3 (`emergency_navigation_logic._acceptRescue`, `rescue_page._acceptRescue`, `donation_admin._handleAcceptHelp`) ต้องรองรับ result type ใหม่ — แสดง `message` จาก server ตรงๆ แทนข้อความรวม
+
+### 17.3 ขั้นตอน 3 — DonationAdmin `_ResponderHelpPanel` (หลังขั้นตอน 1+2)
+
+- [ ] **ลบ fallback ที่ฝ่า No-Professional-Fallback**: `category == null` → ไม่แสดง (ไม่ใช่ `isRelevant = true`); `categoryId == null` → ไม่แสดง — ตรง Bug Fix #4 ("วิดีโอไม่มี category = ไม่มีสิทธิให้ใครรับ")
+- [ ] กรองเหตุของตัวเองออก (Rule 3): `video.userId == user.id` → ข้าม (pattern เดียวกับ `home_page.dart` self-report exclusion)
+- [ ] กรองเหตุที่มีอาชีพเดียวกันรับ/จบแล้ว: ใช้ `getTakenIncidentVideoIdsByProfession()` (endpoint เดิม รวม `resolved` แล้ว) — ไม่เขียน query ใหม่
+- [ ] `_handleAcceptHelp`: เพิ่ม mission-lock check (`getActiveRescues()` ก่อน accept → SnackBar + ถ้าเหตุอื่นให้แจ้งเส้นทางกลับ) — หลังขั้นตอน 1 server จะ block อยู่แล้ว ข้อนี้เพื่อ UX (ไม่ต้องกดแล้วเจอ error)
+- [ ] แสดงข้อความ error จาก `AcceptIncidentResult.message` ตรงๆ (เช่น "มีจิตอาสาอาชีพเดียวกันรับแล้ว")
+- [ ] การ์ดที่กดรับสำเร็จต้องหายจาก list ทันที (refresh หลัง push กลับมาจาก `EmergencyLivePage`)
+
+### 17.4 ขั้นตอน 4 — `RescuePage` (ต้องตัดสินใจก่อน: 3a vs 3b)
+
+**3b — Redirect/deprecate (แนะนำ):** `/rescue-map` ใน drawer (`tlz_drawer.dart:591`) เปลี่ยนไปเปิด `EmergencyLivePage` (หรือหน้าที่มี guard ครบ) แทน เหตุผล:
+- `RescuePage` ไม่มี Trending filter / Control Panel / mission restore / reporter lock เทียบเท่า — maintain ให้เทียบเท่า = เขียนหน้าเดิมซ้ำ
+- กฎชุดเดียวกันอยู่ 2 ที่ = divergence risk (สาเหตุที่ปัญหา B เกิดขึ้นแล้ว)
+- หาก map view ยังจำเป็น ให้ strip ปุ่มรับงานออกจาก `RescuePage` เหลือเพียง map/alert view → ทุก accept ผ่าน `EmergencyLivePage` เท่านั้น
+
+**3a — เพิ่ม guard ใน `RescuePage` (ถ้าหน้ายังต้องอยู่):**
+- [ ] `getActiveRescues()` check ก่อน accept (mission lock) + confirmation dialog
+- [ ] แสดง `AcceptIncidentResult.message` จาก server (server guard จากขั้นตอน 1 เป็นตัวบังคับจริง — **ไม่ copy `_isEligibleResponder` ทั้งชุดมา** เพราะเป็น rule duplication)
+- [ ] กรอง `_activeEmergencies` ขั้นต้น: ข้าม alert ของตัวเอง (`senderId == user.id`) — profession/resolved filter ปล่อยให้ server guard + error message จัดการ
+
+**เงื่อนไขตัดสินใจ:** ถ้า `/rescue-map` ไม่มีผู้ใช้จริง/ทำหน้าที่ซ้ำ EmergencyLivePage → 3b; ถ้าจำเป็นต้องมี map-centric flow → 3a
+
+### 17.5 Edge Cases
+
+| สถานการณ์ | การจัดการ |
+|---|---|
+| Client เก่า (ยังไม่ parse `code`) ชน guard ใหม่ | non-200 เดิมตกไป Supabase fallback → หลังขั้นตอน 1+2 client ใหม่จะไม่ fallback; client เก่าอาจสร้าง Supabase row รกได้ชั่วคราว — Local DB ยังสะอาด (source of truth) ต้อง monitor log `Supabase sync failed` |
+| `users.profession_id` เป็น null ทั้งที่มี `user_group_roles` | ใช้ fallback query เดียวกับ `GET /:id/responders` (LATERAL `ugr` → `professions`) — ห้าม deny ผู้ใช้ที่มี role แต่ `profession_id` null โดยไม่ตรวจ `ugr` ก่อน |
+| `volunteer_profession_ids` type | ตรวจ DDL จริงก่อนเขียน query — `text[]` ใช้ `= ANY($1)`, `jsonb` ใช้ `?`/`@>` |
+| Upsert เดิม (`ON CONFLICT (video_id, volunteer_id)`) | คงไว้ — re-accept เหตุเดิมของตัวเองที่ยัง active = idempotent (ไม่ถือว่า mission lock เพราะ `video_id != $2` exclude ตัวเอง) |
+| Reporter cancel path ใน `POST /:id/status` | ไม่เกี่ยว — guard นี้อยู่ที่ `/accept` เท่านั้น |
+| Rate limit | guard queries อยู่ใน request เดิม — ไม่เพิ่ม request ฝั่ง client, ไม่กระทบ F1 (Bug Fix #12) |
+
+### 17.6 Testing Checklist
+
+**Server (ทดสอบจริงกับ Local API):**
+- [ ] volunteer รับเหตุปกติที่มีสิทธิ → 200 + `responseId` (regression — เส้นทางหลักต้องไม่พัง)
+- [ ] เจ้าของวิดีโอเรียก accept เอง → `403 OWNER_CANNOT_ACCEPT`
+- [ ] volunteer มีภารกิจ active ที่เหตุอื่น → `409 MISSION_LOCK_ACTIVE` + `activeVideoId` ถูกต้อง
+- [ ] วิดีโอไม่มี category / category ไม่มี `volunteer_profession_ids` → `403 NO_ELIGIBLE_PROFESSION`
+- [ ] profession ไม่ตรง → `403 PROFESSION_MISMATCH`
+- [ ] มี response active อาชีพเดียวกันอยู่แล้ว → `409 SAME_PROFESSION_ALREADY_ACCEPTED`
+- [ ] เหตุ resolved โดยอาชีพเดียวกัน → `409 MISSION_ALREADY_RESOLVED` (guard เดิมยังทำงาน)
+- [ ] re-accept เหตุเดิมที่ตัวเอง active อยู่ → 200 idempotent (upsert ไม่ถูก mission-lock block)
+
+**Flutter:**
+- [ ] `acceptIncident` เจอ 403/409 → **ไม่มี** Supabase insert + คืน result พร้อม code/message (ตรวจ log ว่าไม่มี `Synced acceptIncident to Supabase`)
+- [ ] `acceptIncident` เจอ network error/5xx → fallback Supabase ทำงานเหมือนเดิม
+- [ ] EmergencyLivePage: กดรับเหตุที่มีสิทธิ → สำเร็จเหมือนเดิม; เจอ `MISSION_LOCK_ACTIVE` → SnackBar + auto-switch เหมือน client-side lock เดิม
+- [ ] DonationAdmin: วิดีโอไม่มี category / เหตุตัวเอง / เหตุที่จบแล้ว → ไม่แสดงใน list
+- [ ] DonationAdmin: กดรับขณะมีภารกิจค้าง → block ด้วยข้อความชัดเจน (ไม่เด้งเข้าหน้า Live แล้วค้าง)
+- [ ] `/rescue-map` (ถ้าเลือก 3a): รับซ้อน → block; เหตุตัวเอง → ไม่แสดง/ไม่รับได้; (ถ้าเลือก 3b): drawer → เข้า EmergencyLivePage
+
+**Security regression:**
+- [ ] ไม่มี guard ใด fail-open — query error → 500 ปฏิเสธเสมอ
+- [ ] ไม่มี log ใหม่ที่มี PII (ชื่อ/ที่อยู่) — log เฉพาะ code/videoId/userId
+- [ ] ไม่เปลี่ยน `requireAuth`/`strictRateLimiter`/`duplicateCheckMiddleware` เดิม
+
+### 17.7 Acceptance Criteria
+
+- ทุกเส้นทางรับงาน (EmergencyLivePage, DonationAdmin, `/rescue-map`, direct API) ถูกบังคับ Rule 3/4/5 + Mission Lock ที่ **server** เหมือนกัน — ไม่มีวิธีสร้าง `incident_responses` ที่ฝ่ากฎได้โดยไม่ผ่าน guard
+- Server-reject (4xx) ไม่มีทางกลายเป็น Supabase insert — `responseId` ที่ client ถือมาจาก Local DB เท่านั้น (ยกเว้น fallback เมื่อ Local ล่มจริง ซึ่งต้อง re-sync ก่อนใช้)
+- DonationAdmin ไม่แสดงเหตุที่ผู้ใช้ไม่มีสิทธิตาม Rule 3/4/5+resolved
+- `/rescue-map` ไม่สามารถ accept โดยข้ามกฎ (3a) หรือไม่มี accept path ของตัวเองอีกต่อไป (3b)
+- เส้นทางหลัก EmergencyLivePage รับงานปกติไม่มี regression — ทุกข้อความ error แสดงภาษาไทยตรงสาเหตุ
+
+### 17.8 Rollback
+
+- Server guard: revert guard block ใน `POST /:id/accept` — ไม่มี data migration; error code ใหม่ไม่มีผลกับ client เก่า (ตก fallback เดิม)
+- Client `acceptIncident`: revert เป็น non-200 → fallback เดิมได้ (แต่จะเปิด phantom path กลับมา — ระบุไว้ใน commit message)
+- DonationAdmin filter: revert เป็น `isRelevant = true` fallback เดิม
+- 3a: revert เฉพาะ guard/dialog ที่เพิ่ม; 3b: revert drawer route กลับ `RescuePage`
+
+### 17.9 ความสัมพันธ์กับส่วนอื่นของแผน
+
+- **Bug Fix #4** (No Professional Fallback): ขยายขอบเขตจาก `_isEligibleResponder()` จุดเดียว → server + ทุก accept path
+- **Bug Fix #10** (Accept Guard resolved): เพิ่ม guard ข้างๆ `MISSION_ALREADY_RESOLVED` เดิม ตาม defense-in-depth เดียวกัน
+- **Bug Fix #12** (ข้อ 5: ห้าม phantom id): ปิดรูรั่วที่เหลือผ่าน Supabase fallback — ทำให้ "id ต้องมาจาก Local DB" สมบูรณ์
+- **Bug Fix #12 F1** (rate limit): guard อยู่ใน request เดิม ไม่เพิ่ม call — ไม่เกี่ยวข้อง
+- **Reporter Mission Lock — Backend Guard** (§Responder Response System): Phase นี้ implement ฝั่ง volunteer accept; backend guard ฝั่ง reporter (ห้ามแจ้งเหตุซ้อนที่ insert) ยังเป็นงานต่างหาก ไม่รวมใน Phase นี้

@@ -568,6 +568,16 @@ class _TlzDrawerState extends State<TlzDrawer>
                                     ),
                                     _buildMenuItem(
                                       context,
+                                      title: 'เสนอกีฬาใหม่',
+                                      icon: Icons.sports_baseball_outlined,
+                                      onTap: () => _navigateTo(
+                                        context,
+                                        '/community/sport-club/sport/propose',
+                                      ),
+                                      isSubItem: true,
+                                    ),
+                                    _buildMenuItem(
+                                      context,
                                       title: 'ดูแลผู้สูงอายุ',
                                       icon: Icons.people_outline,
                                       onTap: () =>
@@ -844,6 +854,26 @@ class _TlzDrawerState extends State<TlzDrawer>
                                         onTap: () => _navigateTo(
                                           context,
                                           '/admin/platform-settings',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'จัดการรูปแบบสนามกีฬา',
+                                        icon: Icons.sports_soccer_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/community/sport-club/sport/manage',
+                                        ),
+                                        isSubItem: true,
+                                      ),
+                                      _buildMenuItem(
+                                        context,
+                                        title: 'ตรวจคำขอเพิ่มกีฬา',
+                                        icon: Icons.fact_check_outlined,
+                                        onTap: () => _navigateTo(
+                                          context,
+                                          '/community/sport-club/sport/review',
                                         ),
                                         isSubItem: true,
                                       ),

@@ -79,6 +79,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     return null;
   }
 
+  FieldStyle get _fieldStyle => FieldStyle.fromJson(_selectedSportData?['field_style']);
+
   bool _hasUnsavedChanges() {
     return _nameCtrl.text.trim().isNotEmpty ||
         _descCtrl.text.trim().isNotEmpty ||
@@ -686,6 +688,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     const SizedBox(height: 12),
                                     PositionLineupEditor(
                                       layout: _fieldLayout!,
+                                      fieldStyle: _fieldStyle,
                                       positions: _positionDrafts,
                                       onChanged: (newPositions) {
                                         setState(() {
@@ -2057,7 +2060,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       return;
     }
 
-    gm.GoogleMapController? dialogController;
     gm.LatLng? picked;
     gm.LatLng? tempPicked;
     if (_lat != null && _lng != null) {
@@ -2093,7 +2095,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               ),
               body: gm.GoogleMap(
                 onMapCreated: (controller) {
-                  dialogController = controller;
+                  // controller retained by GoogleMap widget
                 },
                 initialCameraPosition: gm.CameraPosition(
                   target: picked ?? const gm.LatLng(13.7563, 100.5018),

@@ -326,6 +326,7 @@ class _SportClubPageState extends State<SportClubPage> {
     var costItemsBySession = <String, List<Map<String, dynamic>>>{};
     List<Map<String, dynamic>> groupPositions = [];
     String? fieldLayout;
+    FieldStyle fieldStyle = FieldStyle.fallback;
     Map<String, Map<String, int>> sessionPositionTaken = {}; // session_id -> (position_id -> count)
 
     try {
@@ -333,7 +334,7 @@ class _SportClubPageState extends State<SportClubPage> {
         _repo.listPublicSessionCostItems(sessionIds),
         _repo.listPublicGroupPositions(groupId),
         _repo.listSessionPositionAvailability(sessionIds),
-        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
       ]);
       final allItems = results[0] as List<Map<String, dynamic>>;
       for (final item in allItems) {
@@ -355,6 +356,9 @@ class _SportClubPageState extends State<SportClubPage> {
       final gRow = results[3] as Map<String, dynamic>?;
       final sport = gRow?['sport'];
       final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (sport is Map) {
+        fieldStyle = FieldStyle.fromJson(sport['field_style']);
+      }
       if (rawLayout == 'single' || rawLayout == 'double') {
         fieldLayout = rawLayout;
       }
@@ -537,6 +541,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                                       const SizedBox(height: 12),
                                                       PositionLineupView(
                                                         layout: fieldLayout!,
+                                                        fieldStyle: fieldStyle,
                                                         positions: groupPositions,
                                                         takenCounts: takenMap,
                                                         selectedPositionId: tempSelectedId,
@@ -3079,18 +3084,21 @@ class _SportClubPageState extends State<SportClubPage> {
     // Phase 15: load group positions, field layout, and owner auto join state
     List<Map<String, dynamic>> groupPositions = [];
     String? fieldLayout;
+    FieldStyle fieldStyle = FieldStyle.fallback;
     bool ownerAutoJoin = true;
     String? selectedOwnerPositionId;
-    bool loadingPositions = true;
     try {
       final results = await Future.wait<dynamic>([
-        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
         _repo.listGroupPositions(groupId, activeOnly: true),
       ]);
       final gRow = results[0] as Map<String, dynamic>?;
       ownerAutoJoin = gRow?['owner_auto_join'] != false;
       final sport = gRow?['sport'];
       final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (sport is Map) {
+        fieldStyle = FieldStyle.fromJson(sport['field_style']);
+      }
       if (rawLayout == 'single' || rawLayout == 'double') {
         fieldLayout = rawLayout;
       }
@@ -3099,7 +3107,6 @@ class _SportClubPageState extends State<SportClubPage> {
         selectedOwnerPositionId = groupPositions.first['id']?.toString();
       }
     } catch (_) {}
-    loadingPositions = false;
     if (!mounted) return;
 
     await showModalBottomSheet(
@@ -3403,6 +3410,7 @@ class _SportClubPageState extends State<SportClubPage> {
                       const SizedBox(height: 10),
                       PositionLineupView(
                         layout: fieldLayout,
+                        fieldStyle: fieldStyle,
                         positions: groupPositions,
                         selectedPositionId: selectedOwnerPositionId,
                         onPositionSelected: (posId) {
@@ -3886,7 +3894,7 @@ class _SportClubPageState extends State<SportClubPage> {
                     FutureBuilder<List<dynamic>>(
                       future: Future.wait([
                         _repo.listPublicGroupPositions(groupId),
-                        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+                        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
                       ]),
                       builder: (pctx, psnap) {
                         if (psnap.hasData) {
@@ -3894,6 +3902,7 @@ class _SportClubPageState extends State<SportClubPage> {
                           final gRow = psnap.data?[1] as Map<String, dynamic>?;
                           final sport = gRow?['sport'];
                           final layout = sport is Map ? sport['field_layout']?.toString() : null;
+                          final fStyle = sport is Map ? FieldStyle.fromJson(sport['field_style']) : FieldStyle.fallback;
                           if (positions.isNotEmpty && (layout == 'single' || layout == 'double')) {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3941,6 +3950,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                 const SizedBox(height: 10),
                                 PositionLineupView(
                                   layout: layout!,
+                                  fieldStyle: fStyle,
                                   positions: positions,
                                 ),
                               ],
@@ -4796,17 +4806,21 @@ class _SportClubPageState extends State<SportClubPage> {
     var costStandards = <Map<String, dynamic>>[];
     var groupPositions = <Map<String, dynamic>>[];
     String? fieldLayout;
+    FieldStyle fieldStyle = FieldStyle.fallback;
     try {
       final results = await Future.wait<dynamic>([
         _repo.listGroupCostStandards(groupId),
         _repo.listGroupPositions(groupId, activeOnly: true),
-        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
       ]);
       costStandards = results[0] as List<Map<String, dynamic>>;
       groupPositions = results[1] as List<Map<String, dynamic>>;
       final gRow = results[2] as Map<String, dynamic>?;
       final sport = gRow?['sport'];
       final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (sport is Map) {
+        fieldStyle = FieldStyle.fromJson(sport['field_style']);
+      }
       if (rawLayout == 'single' || rawLayout == 'double') {
         fieldLayout = rawLayout;
       }
@@ -4959,6 +4973,7 @@ class _SportClubPageState extends State<SportClubPage> {
                         const SizedBox(height: 12),
                         PositionLineupEditor(
                           layout: fieldLayout,
+                          fieldStyle: fieldStyle,
                           positions: groupPositions,
                           onChanged: (updated) {
                             groupPositions = updated;
@@ -5100,12 +5115,13 @@ class _SportClubPageState extends State<SportClubPage> {
     // Phase 15: load group positions, field layout, and session owner_position_id
     List<Map<String, dynamic>> groupPositions = [];
     String? fieldLayout;
+    FieldStyle fieldStyle = FieldStyle.fallback;
     bool ownerAutoJoin = true;
     String? editOwnerPositionId = session['owner_position_id']?.toString();
     Map<String, int> takenCounts = {};
     try {
       final results = await Future.wait<dynamic>([
-        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
         _repo.listGroupPositions(groupId, activeOnly: true),
         _repo.listSessionPositionAvailability([sessionId]),
       ]);
@@ -5113,6 +5129,9 @@ class _SportClubPageState extends State<SportClubPage> {
       ownerAutoJoin = gRow?['owner_auto_join'] != false;
       final sport = gRow?['sport'];
       final rawLayout = sport is Map ? sport['field_layout']?.toString() : null;
+      if (sport is Map) {
+        fieldStyle = FieldStyle.fromJson(sport['field_style']);
+      }
       if (rawLayout == 'single' || rawLayout == 'double') {
         fieldLayout = rawLayout;
       }
@@ -5283,6 +5302,7 @@ class _SportClubPageState extends State<SportClubPage> {
                       const SizedBox(height: 10),
                       PositionLineupView(
                         layout: fieldLayout,
+                        fieldStyle: fieldStyle,
                         positions: groupPositions,
                         takenCounts: takenCounts,
                         selectedPositionId: editOwnerPositionId,
@@ -5578,13 +5598,14 @@ class _SportClubPageState extends State<SportClubPage> {
       final results = await Future.wait<dynamic>([
         _repo.listPublicGroupPositions(groupId),
         _repo.listSessionPositionAvailability([sessionId]),
-        _client.from('fitness_groups').select('sport:sports(field_layout)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
       ]);
       final positions = results[0] as List<Map<String, dynamic>>;
       final takenList = results[1] as List<Map<String, dynamic>>;
       final gRow = results[2] as Map<String, dynamic>?;
       final sport = gRow?['sport'];
       final layout = sport is Map ? sport['field_layout']?.toString() : 'single';
+      final fStyle = sport is Map ? FieldStyle.fromJson(sport['field_style']) : FieldStyle.fallback;
 
       final takenMap = <String, int>{};
       for (final t in takenList) {
@@ -5650,6 +5671,7 @@ class _SportClubPageState extends State<SportClubPage> {
                       const SizedBox(height: 12),
                       PositionLineupView(
                         layout: layout ?? 'single',
+                        fieldStyle: fStyle,
                         positions: positions,
                         takenCounts: takenMap,
                         selectedPositionId: selectedPos,

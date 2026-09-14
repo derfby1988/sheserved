@@ -37,12 +37,92 @@ Color parseHexColor(String? hexString, {Color fallback = const Color(0xFF2196F3)
   }
 }
 
+/// Line-marking presets available for simulated fields.
+const Map<String, String> kFieldStylePresets = {
+  'generic': 'ทั่วไป (เส้นขอบ)',
+  'football': 'ฟุตบอล / ฟุตซอล',
+  'badminton': 'แบดมินตัน',
+  'basketball': 'บาสเกตบอล',
+  'volleyball': 'วอลเลย์บอล',
+  'tennis': 'เทนนิส',
+};
+
+/// Surface color palette for simulated fields (#RRGGBB).
+const List<String> kFieldSurfaceColors = [
+  '#2E7D32', // หญ้าเขียว / Grass green
+  '#1565C0', // น้ำเงิน / Blue court
+  '#EF6C00', // ดิน/ส้ม / Clay orange
+  '#6D4C41', // ไม้ / Wood brown
+  '#00838F', // เทอร์ควอยซ์ / Teal
+  '#546E7A', // เทา / Grey
+  '#B71C1C', // แดง / Red
+  '#7B1FA2', // ม่วง / Purple
+];
+
+/// Line color palette for field markings (#RRGGBB).
+const List<String> kFieldLineColors = [
+  '#FFFFFF', // ขาว
+  '#FFF176', // เหลืองอ่อน
+  '#212121', // ดำ
+];
+
+/// Field appearance config stored in sports.field_style (JSONB).
+class FieldStyle {
+  final String preset; // key in kFieldStylePresets
+  final String surface; // '#RRGGBB'
+  final String line; // '#RRGGBB'
+
+  const FieldStyle({
+    this.preset = 'generic',
+    this.surface = '#2E7D32',
+    this.line = '#FFFFFF',
+  });
+
+  static const FieldStyle fallback = FieldStyle();
+
+  factory FieldStyle.fromJson(dynamic json) {
+    if (json is! Map) return fallback;
+    final preset = json['preset']?.toString() ?? 'generic';
+    return FieldStyle(
+      preset: kFieldStylePresets.containsKey(preset) ? preset : 'generic',
+      surface: json['surface']?.toString() ?? '#2E7D32',
+      line: json['line']?.toString() ?? '#FFFFFF',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'preset': preset,
+        'surface': surface,
+        'line': line,
+      };
+
+  FieldStyle copyWith({String? preset, String? surface, String? line}) {
+    return FieldStyle(
+      preset: preset ?? this.preset,
+      surface: surface ?? this.surface,
+      line: line ?? this.line,
+    );
+  }
+}
+
+Color _darkenColor(Color c, double factor) {
+  final hsl = HSLColor.fromColor(c);
+  return hsl
+      .withLightness((hsl.lightness * factor).clamp(0.0, 1.0))
+      .toColor();
+}
+
 /// Custom painter for grass field (single or double side) with subtle markings.
 class FieldCanvasPainter extends CustomPainter {
   final String layout; // 'single' or 'double'
   final bool isDark;
+  final FieldStyle style;
 
-  FieldCanvasPainter({required this.layout, this.isDark = false});
+  FieldCanvasPainter({
+    required this.layout,
+    this.isDark = false,
+    this.style = FieldStyle.fallback,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -50,13 +130,15 @@ class FieldCanvasPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(16));
 
+    final surface = parseHexColor(style.surface, fallback: const Color(0xFF2E7D32));
+    final surfaceDark = _darkenColor(surface, 0.66);
     final basePaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: isDark
-            ? [const Color(0xFF1E3A2B), const Color(0xFF14291E)]
-            : [const Color(0xFF2E7D32), const Color(0xFF1B5E20)],
+            ? [_darkenColor(surface, 0.45), _darkenColor(surface, 0.32)]
+            : [surface, surfaceDark],
       ).createShader(rect);
     canvas.drawRRect(rrect, basePaint);
 
@@ -75,8 +157,9 @@ class FieldCanvasPainter extends CustomPainter {
     }
 
     // Boundary lines
+    final lineColor = parseHexColor(style.line, fallback: Colors.white);
     final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.6)
+      ..color = lineColor.withValues(alpha: 0.6)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -87,58 +170,205 @@ class FieldCanvasPainter extends CustomPainter {
     );
     canvas.drawRRect(pitchRect, linePaint);
 
-    // Center markings
-    if (layout == 'double') {
-      final midX = size.width / 2;
+    final isDouble = layout == 'double';
+    final midX = size.width / 2;
+    final netPaint = Paint()
+      ..color = lineColor.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6;
+    final dotPaint = Paint()
+      ..color = lineColor.withValues(alpha: 0.8)
+      ..style = PaintingStyle.fill;
+
+    switch (style.preset) {
+      case 'football':
+        _paintFootball(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        break;
+      case 'badminton':
+        _paintBadminton(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        break;
+      case 'volleyball':
+        _paintVolleyball(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        break;
+      case 'tennis':
+        _paintTennis(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        break;
+      case 'basketball':
+        _paintBasketball(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        break;
+      default: // generic — boundary only + center line when double
+        if (isDouble) {
+          canvas.drawLine(
+            Offset(midX, innerInset),
+            Offset(midX, size.height - innerInset),
+            linePaint,
+          );
+        }
+    }
+  }
+
+  void _paintFootball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint,
+      double innerInset, bool isDouble, double midX) {
+    if (isDouble) {
       canvas.drawLine(
         Offset(midX, innerInset),
         Offset(midX, size.height - innerInset),
         linePaint,
       );
-      // Center circle
       final centerCircleRadius = (size.height - innerInset * 2) * 0.22;
       canvas.drawCircle(Offset(midX, size.height / 2), centerCircleRadius, linePaint);
-      final dotPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.8)
-        ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(midX, size.height / 2), 3.5, dotPaint);
 
-      // Penalty boxes on left & right
       final boxWidth = size.width * 0.16;
       final boxHeight = size.height * 0.45;
       final boxTop = (size.height - boxHeight) / 2;
-
-      // Left box
       canvas.drawRect(
         Rect.fromLTWH(innerInset, boxTop, boxWidth, boxHeight),
         linePaint,
       );
-      // Right box
       canvas.drawRect(
         Rect.fromLTWH(size.width - innerInset - boxWidth, boxTop, boxWidth, boxHeight),
         linePaint,
       );
     } else {
-      // Single side: Goal box at top or bottom (standard half-pitch / court)
       final boxWidth = size.width * 0.44;
       final boxHeight = size.height * 0.26;
       final boxLeft = (size.width - boxWidth) / 2;
-
-      // Bottom box
       canvas.drawRect(
         Rect.fromLTWH(boxLeft, size.height - innerInset - boxHeight, boxWidth, boxHeight),
         linePaint,
       );
-
-      // Top arc or center arc
       final arcRadius = size.width * 0.22;
       canvas.drawCircle(Offset(size.width / 2, innerInset), arcRadius, linePaint);
     }
   }
 
+  void _paintBadminton(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
+      double innerInset, bool isDouble, double midX) {
+    // Singles sidelines inset from top/bottom edges.
+    final sideInset = size.height * 0.12;
+    final topY = innerInset + sideInset;
+    final botY = size.height - innerInset - sideInset;
+
+    if (isDouble) {
+      // Net at center.
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      // Per half: short service line ~22% from net + singles sidelines.
+      final halfW = midX - innerInset;
+      for (final dir in [-1.0, 1.0]) {
+        final shortServiceX = midX + dir * halfW * 0.22;
+        canvas.drawLine(Offset(shortServiceX, innerInset), Offset(shortServiceX, size.height - innerInset), linePaint);
+        // Long service (doubles) line near back boundary.
+        final backX = midX + dir * halfW * 0.88;
+        canvas.drawLine(Offset(backX, topY), Offset(backX, botY), linePaint);
+      }
+    } else {
+      // Full court without net: doubles boundary + singles sidelines + service lines.
+      canvas.drawLine(Offset(innerInset, topY), Offset(size.width - innerInset, topY), linePaint);
+      canvas.drawLine(Offset(innerInset, botY), Offset(size.width - innerInset, botY), linePaint);
+      final courtW = size.width - innerInset * 2;
+      canvas.drawLine(Offset(innerInset + courtW * 0.28, topY), Offset(innerInset + courtW * 0.28, botY), linePaint);
+      canvas.drawLine(Offset(innerInset + courtW * 0.72, topY), Offset(innerInset + courtW * 0.72, botY), linePaint);
+      canvas.drawLine(Offset(midX, topY), Offset(midX, botY), linePaint);
+    }
+  }
+
+  void _paintVolleyball(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
+      double innerInset, bool isDouble, double midX) {
+    if (isDouble) {
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      // Attack (3m) line ~25% from net on each half.
+      final halfW = midX - innerInset;
+      for (final dir in [-1.0, 1.0]) {
+        final attackX = midX + dir * halfW * 0.30;
+        canvas.drawLine(Offset(attackX, innerInset), Offset(attackX, size.height - innerInset), linePaint);
+      }
+    } else {
+      // Center + attack lines.
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      final courtW = size.width - innerInset * 2;
+      canvas.drawLine(Offset(innerInset + courtW * 0.25, innerInset), Offset(innerInset + courtW * 0.25, size.height - innerInset), linePaint);
+      canvas.drawLine(Offset(innerInset + courtW * 0.75, innerInset), Offset(innerInset + courtW * 0.75, size.height - innerInset), linePaint);
+    }
+  }
+
+  void _paintTennis(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
+      double innerInset, bool isDouble, double midX) {
+    // Singles sidelines inset from top/bottom edges.
+    final sideInset = size.height * 0.10;
+    final topY = innerInset + sideInset;
+    final botY = size.height - innerInset - sideInset;
+    final midY = size.height / 2;
+
+    if (isDouble) {
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      final halfW = midX - innerInset;
+      for (final dir in [-1.0, 1.0]) {
+        // Service line ~32% from net.
+        final serviceX = midX + dir * halfW * 0.34;
+        canvas.drawLine(Offset(serviceX, topY), Offset(serviceX, botY), linePaint);
+        // Center service line from net to service line.
+        canvas.drawLine(Offset(midX, midY), Offset(serviceX, midY), linePaint);
+      }
+      // Singles sidelines.
+      canvas.drawLine(Offset(innerInset, topY), Offset(midX, topY), linePaint);
+      canvas.drawLine(Offset(innerInset, botY), Offset(midX, botY), linePaint);
+      canvas.drawLine(Offset(midX, topY), Offset(size.width - innerInset, topY), linePaint);
+      canvas.drawLine(Offset(midX, botY), Offset(size.width - innerInset, botY), linePaint);
+    } else {
+      canvas.drawLine(Offset(innerInset, topY), Offset(size.width - innerInset, topY), linePaint);
+      canvas.drawLine(Offset(innerInset, botY), Offset(size.width - innerInset, botY), linePaint);
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      final halfW = midX - innerInset;
+      for (final dir in [-1.0, 1.0]) {
+        final serviceX = midX + dir * halfW * 0.38;
+        canvas.drawLine(Offset(serviceX, topY), Offset(serviceX, botY), linePaint);
+        canvas.drawLine(Offset(midX, midY), Offset(serviceX, midY), linePaint);
+      }
+    }
+  }
+
+  void _paintBasketball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint,
+      double innerInset, bool isDouble, double midX) {
+    if (isDouble) {
+      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
+      final centerCircleRadius = (size.height - innerInset * 2) * 0.20;
+      canvas.drawCircle(Offset(midX, size.height / 2), centerCircleRadius, linePaint);
+      canvas.drawCircle(Offset(midX, size.height / 2), 3.5, dotPaint);
+      // Key + free-throw arc near each end.
+      final keyW = size.width * 0.13;
+      final keyH = size.height * 0.34;
+      final keyTop = (size.height - keyH) / 2;
+      canvas.drawRect(Rect.fromLTWH(innerInset, keyTop, keyW, keyH), linePaint);
+      canvas.drawRect(Rect.fromLTWH(size.width - innerInset - keyW, keyTop, keyW, keyH), linePaint);
+      canvas.drawArc(
+        Rect.fromCenter(center: Offset(innerInset + keyW, size.height / 2), width: keyH, height: keyH),
+        -1.5708, 3.1416, false, linePaint,
+      );
+      canvas.drawArc(
+        Rect.fromCenter(center: Offset(size.width - innerInset - keyW, size.height / 2), width: keyH, height: keyH),
+        1.5708, 3.1416, false, linePaint,
+      );
+    } else {
+      final keyW = size.width * 0.36;
+      final keyH = size.height * 0.26;
+      final keyLeft = (size.width - keyW) / 2;
+      canvas.drawRect(Rect.fromLTWH(keyLeft, size.height - innerInset - keyH, keyW, keyH), linePaint);
+      canvas.drawArc(
+        Rect.fromCenter(center: Offset(size.width / 2, size.height - innerInset - keyH), width: keyW, height: keyW * 0.7),
+        3.1416, 3.1416, false, linePaint,
+      );
+      canvas.drawCircle(Offset(size.width / 2, innerInset), size.width * 0.20, linePaint);
+    }
+  }
+
   @override
   bool shouldRepaint(covariant FieldCanvasPainter oldDelegate) {
-    return oldDelegate.layout != layout || oldDelegate.isDark != isDark;
+    return oldDelegate.layout != layout ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.style.preset != style.preset ||
+        oldDelegate.style.surface != style.surface ||
+        oldDelegate.style.line != style.line;
   }
 }
 
@@ -148,6 +378,7 @@ class PositionLineupEditor extends StatefulWidget {
   final List<Map<String, dynamic>> positions;
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
   final bool enabled;
+  final FieldStyle fieldStyle;
 
   const PositionLineupEditor({
     super.key,
@@ -155,6 +386,7 @@ class PositionLineupEditor extends StatefulWidget {
     required this.positions,
     required this.onChanged,
     this.enabled = true,
+    this.fieldStyle = FieldStyle.fallback,
   });
 
   @override
@@ -315,6 +547,7 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
                         child: CustomPaint(
                           painter: FieldCanvasPainter(
                             layout: widget.layout,
+                            style: widget.fieldStyle,
                           ),
                         ),
                       ),
@@ -548,6 +781,7 @@ class PositionLineupView extends StatelessWidget {
   final Map<String, int>? takenCounts; // position_id -> taken count
   final String? selectedPositionId;
   final ValueChanged<String>? onPositionSelected;
+  final FieldStyle fieldStyle;
 
   const PositionLineupView({
     super.key,
@@ -556,6 +790,7 @@ class PositionLineupView extends StatelessWidget {
     this.takenCounts,
     this.selectedPositionId,
     this.onPositionSelected,
+    this.fieldStyle = FieldStyle.fallback,
   });
 
   @override
@@ -579,6 +814,7 @@ class PositionLineupView extends StatelessWidget {
                   child: CustomPaint(
                     painter: FieldCanvasPainter(
                       layout: layout,
+                      style: fieldStyle,
                     ),
                   ),
                 ),
@@ -913,4 +1149,137 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
       );
     },
   );
+}
+
+/// Shared picker for field appearance (line preset + surface/line colors).
+/// Controlled widget — parent keeps the [value] and rebuilds on [onChanged].
+class FieldStylePicker extends StatelessWidget {
+  final FieldStyle value;
+  final ValueChanged<FieldStyle> onChanged;
+
+  const FieldStylePicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'ลักษณะเส้นสนาม',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: kFieldStylePresets.entries.map((e) {
+            final selected = value.preset == e.key;
+            return ChoiceChip(
+              label: Text(e.value, style: const TextStyle(fontSize: 12)),
+              selected: selected,
+              onSelected: (_) => onChanged(value.copyWith(preset: e.key)),
+              selectedColor: AppColors.primary.withValues(alpha: 0.2),
+              labelStyle: TextStyle(
+                color: selected ? AppColors.primaryDark : Colors.black87,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'สีพื้นสนาม',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: kFieldSurfaceColors.map((hex) {
+            final c = parseHexColor(hex);
+            final selected = value.surface.toUpperCase() == hex.toUpperCase();
+            return Semantics(
+              label: 'สีพื้นสนาม $hex',
+              selected: selected,
+              button: true,
+              child: GestureDetector(
+                onTap: () => onChanged(value.copyWith(surface: hex)),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: c,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? AppColors.primaryDark : Colors.white,
+                      width: selected ? 3 : 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: selected
+                      ? const Icon(Icons.check, color: Colors.white, size: 16)
+                      : null,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'สีเส้นสนาม',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: kFieldLineColors.map((hex) {
+            final c = parseHexColor(hex);
+            final selected = value.line.toUpperCase() == hex.toUpperCase();
+            return Semantics(
+              label: 'สีเส้นสนาม $hex',
+              selected: selected,
+              button: true,
+              child: GestureDetector(
+                onTap: () => onChanged(value.copyWith(line: hex)),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: c,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? AppColors.primaryDark : Colors.grey.shade400,
+                      width: selected ? 3 : 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: selected
+                      ? Icon(Icons.check,
+                          color: hex == '#212121' ? Colors.white : Colors.black87,
+                          size: 16)
+                      : null,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
 }

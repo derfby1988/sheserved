@@ -1065,13 +1065,16 @@ class FitnessBuddiesRepository {
     String? nameEn,
     required String proposedBy,
     String? fieldLayout,
+    Map<String, dynamic>? fieldStyle,
   }) async {
     final data = {
       'name_th': nameTh,
       if (nameEn != null && nameEn.isNotEmpty) 'name_en': nameEn,
-      'status': 'proposed',
+      'status': 'pending',
       'proposed_by': proposedBy,
+      'proposed_at': DateTime.now().toIso8601String(),
       if (fieldLayout != null) 'field_layout': fieldLayout,
+      if (fieldStyle != null) 'field_style': fieldStyle,
     };
     final res = await _client.from('sports').insert(data).select('id').single();
     return res['id'].toString();
@@ -1081,8 +1084,8 @@ class FitnessBuddiesRepository {
     final res = await _client
         .from('sports')
         .select('*')
-        .eq('status', 'proposed')
-        .order('created_at', ascending: true);
+        .eq('status', 'pending')
+        .order('proposed_at', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -1091,18 +1094,21 @@ class FitnessBuddiesRepository {
     required String reviewedBy,
     String? icon,
     String? fieldLayout,
+    Map<String, dynamic>? fieldStyle,
   }) async {
     await _client
         .from('sports')
         .update({
           'status': 'approved',
           'reviewed_by': reviewedBy,
+          'reviewed_at': DateTime.now().toIso8601String(),
           'rejection_reason': null,
           if (icon != null && icon.isNotEmpty) 'icon': icon,
           if (fieldLayout != null) 'field_layout': fieldLayout,
+          if (fieldStyle != null) 'field_style': fieldStyle,
         })
         .eq('id', sportId)
-        .eq('status', 'proposed');
+        .eq('status', 'pending');
   }
 
   Future<void> updateSportFieldLayout({
@@ -1112,6 +1118,20 @@ class FitnessBuddiesRepository {
     await _client
         .from('sports')
         .update({'field_layout': fieldLayout})
+        .eq('id', sportId);
+  }
+
+  Future<void> updateSportFieldConfig({
+    required String sportId,
+    String? fieldLayout,
+    Map<String, dynamic>? fieldStyle,
+  }) async {
+    await _client
+        .from('sports')
+        .update({
+          if (fieldLayout != null) 'field_layout': fieldLayout,
+          'field_style': fieldStyle,
+        })
         .eq('id', sportId);
   }
 
@@ -1128,7 +1148,7 @@ class FitnessBuddiesRepository {
           'rejection_reason': reason,
         })
         .eq('id', sportId)
-        .eq('status', 'proposed');
+        .eq('status', 'pending');
   }
 
   // ── Phase 4: Update group ──
