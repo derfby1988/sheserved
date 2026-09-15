@@ -36,13 +36,28 @@ class OtpService {
       );
     }
 
-    // Check rate limiting
-    if (_isRateLimited(normalizedPhone)) {
-      _log('sendOtp rejected: rate limited');
-      return OtpResult(
-        success: false,
-        message: 'ส่ง OTP บ่อยเกินไป กรุณารอสักครู่',
-      );
+    // ใน Console Mode (โหมดทดสอบ): ไม่ติด rate limit และถ้ารหัสเดิมยังไม่หมดอายุให้ reuse รหัสเดิม
+    if (AppConfig.useConsoleOtp) {
+      final existing = _otpStorage[normalizedPhone];
+      if (existing != null && DateTime.now().isBefore(existing.expiresAt)) {
+        _log('reusing valid OTP for $normalizedPhone: ${existing.otp}');
+        _printOtpToConsole(normalizedPhone, existing.otp, existing.expiresAt);
+        return OtpResult(
+          success: true,
+          message: 'ส่งรหัส OTP แล้ว (ดูใน Console)',
+          isConsoleMode: true,
+          otpCode: existing.otp,
+        );
+      }
+    } else {
+      // Check rate limiting สำหรับ Production SMS จริงเท่านั้น
+      if (_isRateLimited(normalizedPhone)) {
+        _log('sendOtp rejected: rate limited');
+        return OtpResult(
+          success: false,
+          message: 'ส่ง OTP บ่อยเกินไป กรุณารอสักครู่',
+        );
+      }
     }
 
     // Generate OTP
@@ -60,12 +75,13 @@ class OtpService {
 
     // Send OTP based on mode
     if (AppConfig.useConsoleOtp) {
-      // Console Mode - แสดงใน debug console
+      // Console Mode - แสดงใน debug console และส่ง otpCode ไปด้วย
       _printOtpToConsole(normalizedPhone, otp, expiresAt);
       return OtpResult(
         success: true,
         message: 'ส่งรหัส OTP แล้ว (ดูใน Console)',
         isConsoleMode: true,
+        otpCode: otp,
       );
     } else {
       // Production Mode - ส่ง SMS จริงผ่าน Supabase
@@ -140,17 +156,19 @@ class OtpService {
     final normalizedPhone = _normalizePhoneNumber(phoneNumber);
     _log('resendOtp called phone=$normalizedPhone');
     
-    // Check cooldown (60 seconds)
-    final existingOtp = _otpStorage[normalizedPhone];
-    if (existingOtp != null) {
-      final secondsSinceCreated = DateTime.now().difference(existingOtp.createdAt).inSeconds;
-      if (secondsSinceCreated < 60) {
-        final waitTime = 60 - secondsSinceCreated;
-        _log('resendOtp rejected: cooldown active waitTime=$waitTime');
-        return OtpResult(
-          success: false,
-          message: 'กรุณารอ $waitTime วินาที ก่อนขอรหัสใหม่',
-        );
+    // Check cooldown (60 seconds) เฉพาะในโหมดส่ง SMS จริง
+    if (!AppConfig.useConsoleOtp) {
+      final existingOtp = _otpStorage[normalizedPhone];
+      if (existingOtp != null) {
+        final secondsSinceCreated = DateTime.now().difference(existingOtp.createdAt).inSeconds;
+        if (secondsSinceCreated < 60) {
+          final waitTime = 60 - secondsSinceCreated;
+          _log('resendOtp rejected: cooldown active waitTime=$waitTime');
+          return OtpResult(
+            success: false,
+            message: 'กรุณารอ $waitTime วินาที ก่อนขอรหัสใหม่',
+          );
+        }
       }
     }
 
@@ -222,20 +240,20 @@ class OtpService {
 
   void _printOtpToConsole(String phone, String otp, DateTime expiresAt) {
     final expiresIn = expiresAt.difference(DateTime.now()).inMinutes;
-    
-    debugPrint('');
-    debugPrint('[OTP] ╔══════════════════════════════════════════╗');
-    debugPrint('[OTP] ║       📱 OTP VERIFICATION (Console)      ║');
-    debugPrint('[OTP] ╠══════════════════════════════════════════╣');
-    debugPrint('[OTP] ║  Phone: $phone');
-    debugPrint('[OTP] ║  ┌─────────────────────────────────────┐ ║');
-    debugPrint('[OTP] ║  │         OTP Code: $otp            │ ║');
-    debugPrint('[OTP] ║  └─────────────────────────────────────┘ ║');
-    debugPrint('[OTP] ║  Expires in: $expiresIn minutes');
-    debugPrint('[OTP] ║                                          ║');
-    debugPrint('[OTP] ║  ⚠️  Console Mode - ไม่ส่ง SMS จริง      ║');
-    debugPrint('[OTP] ╚══════════════════════════════════════════╝');
-    debugPrint('');
+    final banner = '''
+
+==================================================
+  📱 [OTP VERIFICATION] - CONSOLE MODE
+==================================================
+  Phone: $phone
+  >>> OTP CODE: $otp <<<
+  Expires in: $expiresIn minutes
+==================================================
+''';
+    // ใช้ทั้ง print() (เขียนลง stdout ตรงๆ) และ debugPrint()
+    // ignore: avoid_print
+    print(banner);
+    debugPrint(banner);
   }
 
   Future<OtpResult> _sendRealSms(String phone, String otp) async {
@@ -289,10 +307,12 @@ class OtpResult {
   final bool success;
   final String message;
   final bool isConsoleMode;
+  final String? otpCode;
 
   OtpResult({
     required this.success,
     required this.message,
     this.isConsoleMode = false,
+    this.otpCode,
   });
 }

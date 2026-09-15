@@ -2641,16 +2641,16 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                   ],
                                                                 ),
                                                               ),
-                                                           Padding(
-                                                             padding: const EdgeInsets.only(top: 4),
-                                                             child: SkillLevelBadge(
-                                                               targetSkillLevels: (g['target_skill_levels'] is List)
-                                                                   ? (g['target_skill_levels'] as List).map((e) => e.toString()).toList()
-                                                                   : null,
-                                                               availableLevels: resolveSkillLevelsForSport(sportData: g['sport'] is Map<String, dynamic> ? g['sport'] : null),
-                                                             ),
-                                                           ),
                                                             ),
+                                                          Padding(
+                                                            padding: const EdgeInsets.only(top: 4),
+                                                            child: SkillLevelBadge(
+                                                              targetSkillLevels: (g['target_skill_levels'] is List)
+                                                                  ? (g['target_skill_levels'] as List).map((e) => e.toString()).toList()
+                                                                  : null,
+                                                              availableLevels: resolveSkillLevelsForSport(sportData: g['sport'] is Map<String, dynamic> ? g['sport'] : null),
+                                                            ),
+                                                          ),
                                                           if (_myBlockedGroupIds
                                                               .contains(gid))
                                                             Align(

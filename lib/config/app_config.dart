@@ -85,7 +85,7 @@ class AppConfig {
   /// ⚠️ อย่าเปิด true พร้อมกันกับการลบ backend URL — ต้องตั้ง [backendApiUrl] ก่อน
   static const bool useBackendAuth = bool.fromEnvironment(
     'USE_BACKEND_AUTH',
-    defaultValue: true,
+    defaultValue: false,
   );
 
   /// Base URL ของ websocket-server backend (Caddy reverse proxy)

@@ -45,12 +45,16 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
   Timer? _countdownTimer;
   bool _isConsoleMode = false;
   bool _isAutoVerifying = false;
+  String? _currentOtpCode;
 
   @override
   void initState() {
     super.initState();
     _otpController.addListener(_handleOtpChanged);
-    _sendOtp();
+    // ส่ง OTP ทันทีที่เปิด Dialog
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sendOtp();
+    });
   }
 
   @override
@@ -117,6 +121,9 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
       setState(() {
         _isSending = false;
         _isConsoleMode = result.isConsoleMode;
+        if (result.otpCode != null) {
+          _currentOtpCode = result.otpCode;
+        }
         if (!result.success) {
           _errorMessage = result.message;
         } else {
@@ -197,6 +204,9 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
     if (mounted) {
       setState(() {
         _isSending = false;
+        if (result.otpCode != null) {
+          _currentOtpCode = result.otpCode;
+        }
         if (!result.success) {
           _errorMessage = result.message;
         } else {
@@ -265,30 +275,96 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
               ),
             ),
 
-            // Console Mode Notice
+            // Console Mode Notice & Quick Auto-fill
             if (_isConsoleMode) ...[
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.amber.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.shade300, width: 1.5),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Column(
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.amber.shade700),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'โหมดทดสอบ: ดู OTP ใน Console',
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.developer_mode, size: 18, color: Colors.amber.shade800),
+                        const SizedBox(width: 8),
+                        Text(
+                          'โหมดทดสอบ (Console Mode)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.amber.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_currentOtpCode != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'OTP: ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                          Text(
+                            _currentOtpCode!,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 3,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      InkWell(
+                        onTap: () {
+                          _otpController.text = _currentOtpCode!;
+                        },
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade200,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.touch_app, size: 14, color: Colors.brown.shade800),
+                              const SizedBox(width: 4),
+                              Text(
+                                'แตะเพื่อกรอกรหัสนี้อัตโนมัติ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.brown.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'กำลังดึงรหัส OTP...',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.amber.shade700,
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
