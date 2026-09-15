@@ -958,6 +958,9 @@ class _SportClubPageState extends State<SportClubPage> {
     if (raw.contains('BOOKING_NOT_CONFIRMED')) {
       return 'ผู้ใช้นี้ไม่ได้ยืนยันเข้าร่วมรอบนี้แล้ว';
     }
+    if (raw.contains('CANNOT_REDUCE_LAYOUT_ACTIVE_BOOKINGS')) {
+      return 'ไม่สามารถลดขนาดสนามได้ เนื่องจากมีรอบนัดที่มีการจองตำแหน่งที่ถูกตัดออก';
+    }
     if (raw.contains('OWNER_USE_PARTICIPATION_TOGGLE')) {
       return 'เจ้าของก๊วนต้องใช้เมนูการเข้าร่วมของเจ้าของก๊วน';
     }
@@ -4830,7 +4833,7 @@ class _SportClubPageState extends State<SportClubPage> {
       final results = await Future.wait<dynamic>([
         _repo.listGroupCostStandards(groupId),
         _repo.listGroupPositions(groupId, activeOnly: true),
-        _client.from('fitness_groups').select('sport:sports(field_layout, field_style, skill_levels, name_th, name_en)').eq('id', groupId).maybeSingle(),
+        _client.from('fitness_groups').select('field_layout, sport:sports(field_layout, field_style, skill_levels, name_th, name_en)').eq('id', groupId).maybeSingle(),
       ]);
       costStandards = results[0] as List<Map<String, dynamic>>;
       groupPositions = results[1] as List<Map<String, dynamic>>;
@@ -4839,9 +4842,10 @@ class _SportClubPageState extends State<SportClubPage> {
       if (sport is Map<String, dynamic>) {
         sportData = sport;
         fieldStyle = FieldStyle.fromJson(sport['field_style']);
+        final groupLayout = gRow?['field_layout']?.toString();
         final rawLayout = sport['field_layout']?.toString();
         if (rawLayout == 'single' || rawLayout == 'double') {
-          fieldLayout = rawLayout;
+          fieldLayout = groupLayout ?? rawLayout;
         }
       }
     } catch (_) {}
@@ -5000,8 +5004,47 @@ class _SportClubPageState extends State<SportClubPage> {
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                         const SizedBox(height: 12),
+                        if (sportData?['field_layout'] != null && sportData?['field_layout'] != 'none') ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<String>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: 'single',
+                                  label: Text('ครึ่งสนาม (1 ฝั่ง)'),
+                                ),
+                                ButtonSegment(
+                                  value: 'double',
+                                  label: Text('เต็มสนาม (2 ฝั่ง)'),
+                                ),
+                              ],
+                              selected: {fieldLayout ?? 'double'},
+                              onSelectionChanged: (Set<String> newSelection) {
+                                setSheetState(() {
+                                  fieldLayout = newSelection.first;
+                                  // Reset positions draft because the layout changed
+                                  groupPositions.clear();
+                                });
+                              },
+                              style: ButtonStyle(
+                                backgroundColor: WidgetStateProperty.resolveWith<Color>(
+                                  (Set<WidgetState> states) {
+                                    if (states.contains(WidgetState.selected)) {
+                                      return AppColors.primary.withOpacity(0.1);
+                                    }
+                                    return Colors.transparent;
+                                  },
+                                ),
+                                side: WidgetStateProperty.all(
+                                  BorderSide(color: Colors.grey.shade300),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         PositionLineupEditor(
-                          layout: fieldLayout,
+                          layout: fieldLayout!,
                           fieldStyle: fieldStyle,
                           positions: groupPositions,
                           onChanged: (updated) {
@@ -5070,6 +5113,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                 requiresOwnerApproval: requiresApproval,
                                 targetSkillLevels: targetSkillLevels,
                                 skillLevelNote: skillNoteCtrl.text.trim().isEmpty ? null : skillNoteCtrl.text.trim(),
+                                fieldLayout: fieldLayout,
                               );
                               if (fieldLayout != null) {
                                 await _repo.replaceGroupPositions(

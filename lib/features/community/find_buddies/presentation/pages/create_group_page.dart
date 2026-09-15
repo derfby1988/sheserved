@@ -71,6 +71,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   List<Map<String, dynamic>> _placeSearchResults = [];
   String? _placeSearchMessage;
 
+  String? _customFieldLayout;
+
   Map<String, dynamic>? get _selectedSportData {
     if (_sportId == null) return null;
     return _sports.cast<Map<String, dynamic>?>().firstWhere(
@@ -80,6 +82,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   }
 
   String? get _fieldLayout {
+    if (_customFieldLayout != null) return _customFieldLayout;
     final s = _selectedSportData;
     final layout = s?['field_layout']?.toString();
     if (layout == 'single' || layout == 'double') return layout;
@@ -305,6 +308,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         lng: _lng,
         targetSkillLevels: _targetSkillLevels,
         skillLevelNote: _skillNoteCtrl.text.trim().isEmpty ? null : _skillNoteCtrl.text.trim(),
+        fieldLayout: _customFieldLayout,
       );
       // Phase 9.1: persist drafted cost standards now that group_id exists.
       for (final fee in _groupFeeDrafts) {
@@ -710,6 +714,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                       ),
                                     ),
                                     const SizedBox(height: 12),
+                                    if (_selectedSportData?['field_layout'] != null && _selectedSportData?['field_layout'] != 'none') ...[
+                                      _buildFieldLayoutSelector(),
+                                      const SizedBox(height: 16),
+                                    ],
                                     PositionLineupEditor(
                                       layout: _fieldLayout!,
                                       fieldStyle: _fieldStyle,
@@ -2514,5 +2522,60 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     if (result != null && mounted) {
       setState(() => _roundExpenseDrafts[index] = result);
     }
+  }
+
+  Widget _buildFieldLayoutSelector() {
+    final layout = _fieldLayout ?? 'double';
+    if (layout == 'none') return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'รูปแบบสนาม',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'single',
+                label: Text('ครึ่งสนาม (1 ฝั่ง)'),
+              ),
+              ButtonSegment(
+                value: 'double',
+                label: Text('เต็มสนาม (2 ฝั่ง)'),
+              ),
+            ],
+            selected: {layout},
+            onSelectionChanged: (Set<String> newSelection) {
+              setState(() {
+                _customFieldLayout = newSelection.first;
+                // Reset positions draft because the layout changed
+                _positionDrafts.clear();
+              });
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith<Color>(
+                (Set<WidgetState> states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return AppColors.primary.withOpacity(0.1);
+                  }
+                  return Colors.transparent;
+                },
+              ),
+              side: WidgetStateProperty.all(
+                BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

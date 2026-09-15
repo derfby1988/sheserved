@@ -981,6 +981,7 @@ class FitnessBuddiesRepository {
     double? lng,
     List<String>? targetSkillLevels,
     String? skillLevelNote,
+    String? fieldLayout,
   }) async {
     _assertCurrentUser(userId);
     final data = {
@@ -1002,6 +1003,7 @@ class FitnessBuddiesRepository {
           ? targetSkillLevels
           : ['all'],
       if (skillLevelNote != null) 'skill_level_note': skillLevelNote,
+      if (fieldLayout != null) 'field_layout': fieldLayout,
       'created_by': userId,
     };
     final res = await _client
@@ -1198,6 +1200,7 @@ class FitnessBuddiesRepository {
     double? lng,
     List<String>? targetSkillLevels,
     String? skillLevelNote,
+    String? fieldLayout,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -1215,6 +1218,18 @@ class FitnessBuddiesRepository {
     if (lng != null) data['lng'] = lng;
     if (targetSkillLevels != null) data['target_skill_levels'] = targetSkillLevels;
     if (skillLevelNote != null) data['skill_level_note'] = skillLevelNote;
+    if (fieldLayout != null) {
+      if (fieldLayout == 'single') {
+        final canReduce = await _client.rpc(
+          'can_reduce_group_field_layout',
+          params: {'p_group_id': groupId},
+        );
+        if (canReduce != true) {
+          throw StateError('CANNOT_REDUCE_LAYOUT_ACTIVE_BOOKINGS');
+        }
+      }
+      data['field_layout'] = fieldLayout;
+    }
     if (data.isEmpty && ownerAutoJoin == null) return;
 
     final group = await _requireGroupManager(
