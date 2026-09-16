@@ -1282,6 +1282,50 @@ class _SportClubPageState extends State<SportClubPage> {
     return sessions;
   }
 
+  Widget _buildSessionMetaView(Map<String, dynamic> session) {
+    final placeName = session['place_name']?.toString().trim() ?? '';
+    final note = session['note']?.toString().trim() ?? '';
+    if (placeName.isEmpty && note.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (placeName.isNotEmpty)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.place_outlined,
+                  size: 16,
+                  color: Colors.grey.shade700,
+                ),
+                const SizedBox(width: 6),
+                Expanded(child: Text(placeName)),
+              ],
+            ),
+          if (note.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: placeName.isNotEmpty ? 4 : 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.notes_rounded,
+                    size: 16,
+                    color: Colors.grey.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(note)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Phase 9.1: renders the line items of one session inside the detail
   /// sheet's per-round expansion tile.
   Widget _buildSessionCostItemsView(Map<String, dynamic> session) {
@@ -4302,169 +4346,109 @@ class _SportClubPageState extends State<SportClubPage> {
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.15,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.card_membership_rounded,
-                                    size: 16,
-                                    color: AppColors.primaryDark,
+                            if ((group['description']?.toString() ?? '')
+                                .trim()
+                                .isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Text(
+                                  group['description'].toString().trim(),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.4,
+                                    color: Colors.grey.shade700,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'ค่าใช้จ่ายมาตรฐานก๊วน',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                if (isAdmin)
-                                  TextButton.icon(
-                                    style: TextButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      foregroundColor: AppColors.primaryDark,
-                                    ),
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _showEditGroupSheet(group);
-                                    },
-                                    icon: const Icon(
-                                      Icons.tune_rounded,
-                                      size: 15,
-                                    ),
-                                    label: const Text(
-                                      'จัดการ',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            if (groupFees.isEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade50,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.grey.shade200,
-                                  ),
-                                ),
-                                child: Row(
+                              ),
+                            if ((group['sport_name']?.toString() ?? '')
+                                    .trim()
+                                    .isNotEmpty ||
+                                (group['province']?.toString() ?? '')
+                                    .trim()
+                                    .isNotEmpty ||
+                                (group['district']?.toString() ?? '')
+                                    .trim()
+                                    .isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
                                   children: [
-                                    Icon(
-                                      Icons.info_outline_rounded,
-                                      size: 16,
-                                      color: Colors.grey.shade500,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
+                                    if ((group['sport_name']?.toString() ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                      _detailInfoChip(
+                                        '${group['sport_icon']?.toString() ?? '🏅'} ${group['sport_name']}',
+                                        Icons.sports_rounded,
                                       ),
-                                    ),
+                                    if ((group['province']?.toString() ?? '')
+                                            .trim()
+                                            .isNotEmpty ||
+                                        (group['district']?.toString() ?? '')
+                                            .trim()
+                                            .isNotEmpty)
+                                      _detailInfoChip(
+                                        [
+                                              group['province']?.toString(),
+                                              group['district']?.toString(),
+                                            ]
+                                            .where(
+                                              (value) =>
+                                                  value != null &&
+                                                  value.trim().isNotEmpty,
+                                            )
+                                            .join(' · '),
+                                        Icons.location_on_outlined,
+                                      ),
                                   ],
                                 ),
-                              )
-                            else
-                              for (final fee in groupFees)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 6),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade200,
+                              ),
+                            if (group['gender_preference']?.toString() !=
+                                    null ||
+                                group['target_skill_levels'] is List)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    _detailInfoChip(
+                                      switch (group['gender_preference']
+                                          ?.toString()) {
+                                        'male' => 'ชวนผู้ชาย',
+                                        'female' => 'ชวนผู้หญิง',
+                                        _ => 'เปิดรับทุกเพศ',
+                                      },
+                                      Icons.people_outline_rounded,
                                     ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 32,
-                                        height: 32,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primary.withValues(
-                                            alpha: 0.12,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.card_membership_rounded,
-                                          size: 17,
-                                          color: AppColors.primaryDark,
-                                        ),
+                                    if (group['target_skill_levels'] is List)
+                                      SkillLevelBadge(
+                                        targetSkillLevels:
+                                            (group['target_skill_levels']
+                                                    as List)
+                                                .map(
+                                                  (level) => level.toString(),
+                                                )
+                                                .toList(),
+                                        isCompact: false,
                                       ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              fee['name']?.toString() ?? '',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 1),
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  formatBaht(
-                                                    fee['amount'] as num?,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        AppColors.primaryDark,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      paymentTimingBadge(
-                                        fee['payment_timing']?.toString(),
-                                      ),
-                                    ],
+                                  ],
+                                ),
+                              ),
+                            if ((group['skill_level_note']?.toString() ?? '')
+                                .trim()
+                                .isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  group['skill_level_note'].toString().trim(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
                                   ),
                                 ),
+                              ),
                             FutureBuilder<List<dynamic>>(
                               future: Future.wait([
                                 _repo.listPublicGroupPositions(groupId),
@@ -4617,6 +4601,7 @@ class _SportClubPageState extends State<SportClubPage> {
                                   final pendingForSession =
                                       pendingBySession[sessionId] ?? [];
                                   final sessionChildren = <Widget>[
+                                    _buildSessionMetaView(s),
                                     _buildSessionCostItemsView(s),
                                   ];
 
@@ -5127,6 +5112,192 @@ class _SportClubPageState extends State<SportClubPage> {
                                   ),
                               ],
                             ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.card_membership_rounded,
+                                    size: 16,
+                                    color: AppColors.primaryDark,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'ค่าใช้จ่ายมาตรฐานก๊วน',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                if (isAdmin)
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      foregroundColor: AppColors.primaryDark,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _showEditGroupSheet(group);
+                                    },
+                                    icon: const Icon(
+                                      Icons.tune_rounded,
+                                      size: 15,
+                                    ),
+                                    label: const Text(
+                                      'จัดการ',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (groupFees.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline_rounded,
+                                      size: 16,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              for (final fee in groupFees)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.card_membership_rounded,
+                                          size: 17,
+                                          color: AppColors.primaryDark,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              fee['name']?.toString() ?? '',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  formatBaht(
+                                                    fee['amount'] as num?,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        AppColors.primaryDark,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      paymentTimingBadge(
+                                        fee['payment_timing']?.toString(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            if ((group['venue_photo_url']?.toString() ?? '')
+                                .trim()
+                                .isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Image.network(
+                                    group['venue_photo_url'].toString(),
+                                    width: double.infinity,
+                                    height: 150,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      height: 150,
+                                      alignment: Alignment.center,
+                                      color: Colors.grey.shade100,
+                                      child: const Text(
+                                        'ไม่สามารถโหลดรูปสนามได้',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             if (canViewBlockedUsers &&
                                 blockedUsers.isNotEmpty) ...[
                               const SizedBox(height: 16),
@@ -5314,6 +5485,28 @@ class _SportClubPageState extends State<SportClubPage> {
         SnackBar(content: Text('ถอนไม่สำเร็จ: ${_mapManagementError(e)}')),
       );
     }
+  }
+
+  Widget _detailInfoChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.grey.shade700),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildGroupActionButtons({
