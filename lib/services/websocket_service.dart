@@ -50,6 +50,10 @@ class WebSocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   final _rescueIncomingController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _incidentProfessionQuotaFilledController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _rescueCancelledController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final _viewerCountController =
       StreamController<Map<String, dynamic>>.broadcast();
   final _cumulativeViewerCountController =
@@ -111,6 +115,10 @@ class WebSocketService {
       _emergencyNotificationController.stream;
   Stream<Map<String, dynamic>> get rescueIncomingStream =>
       _rescueIncomingController.stream;
+  Stream<Map<String, dynamic>> get incidentProfessionQuotaFilledStream =>
+      _incidentProfessionQuotaFilledController.stream;
+  Stream<Map<String, dynamic>> get rescueCancelledStream =>
+      _rescueCancelledController.stream;
   Stream<Map<String, dynamic>> get viewerCountStream =>
       _viewerCountController.stream;
   Stream<Map<String, dynamic>> get cumulativeViewerCountStream =>
@@ -349,6 +357,16 @@ class WebSocketService {
       _socket!.on('rescue-incoming', (data) {
         debugPrint('Rescue incoming notification received: $data');
         _rescueIncomingController.add(Map<String, dynamic>.from(data));
+      });
+
+      _socket!.on('incident-profession-quota-filled', (data) {
+        _incidentProfessionQuotaFilledController.add(
+          Map<String, dynamic>.from(data),
+        );
+      });
+
+      _socket!.on('rescue-cancelled', (data) {
+        _rescueCancelledController.add(Map<String, dynamic>.from(data));
       });
 
       _socket!.on('viewer-count', (data) {
@@ -894,6 +912,8 @@ class WebSocketService {
     _videoInteractionController.close();
     _emergencyNotificationController.close();
     _rescueIncomingController.close();
+    _incidentProfessionQuotaFilledController.close();
+    _rescueCancelledController.close();
     _viewerCountController.close();
     _emergencyChatController.close();
     _thaiMhungPhotoController.close();

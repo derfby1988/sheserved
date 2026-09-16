@@ -2024,7 +2024,7 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 
 ---
 
-## Phase 14.5 — Hybrid Group Filters บนหน้า Sport Club ⏳ รอ implement
+## Phase 14.5 — Hybrid Group Filters บนหน้า Sport Club ✅ Implement แล้ว (2026-09-16)
 
 > แผนนี้เลือก **ทางเลือกที่ 3: Hybrid** — ใช้ Quick Filter Chips สำหรับตัวกรองที่ใช้บ่อย และใช้ Advanced Filter Bottom Sheet สำหรับตัวกรองรายละเอียด โดยวางพื้นที่ตัวกรองไว้ถัดจากแถบประเภทกีฬาใน `sport_club_page.dart` ไม่แทนที่แถบกีฬาเดิมและไม่ลบ Search action เดิมในระยะแรก
 

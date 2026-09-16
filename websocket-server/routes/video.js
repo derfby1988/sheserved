@@ -634,19 +634,28 @@ module.exports = (pool) => {
                 `SELECT EXISTS (
                     SELECT 1
                     FROM incident_responses ir
-                    JOIN LATERAL (
+                    LEFT JOIN users u ON u.id = ir.volunteer_id
+                    LEFT JOIN LATERAL (
                         SELECT ugr.profession_id
                         FROM user_group_roles ugr
                         WHERE ugr.user_id = ir.volunteer_id
+                        ORDER BY ugr.created_at ASC
                         LIMIT 1
                     ) ugr ON true
                     WHERE ir.video_id = $1
                       AND ir.status = 'resolved'
-                      AND ugr.profession_id = (
-                          SELECT ugr2.profession_id
-                          FROM user_group_roles ugr2
-                          WHERE ugr2.user_id = $2
-                          LIMIT 1
+                      AND COALESCE(u.profession_id::text, ugr.profession_id::text) = (
+                          SELECT COALESCE(u2.profession_id::text, ugr2.profession_id::text)
+                          FROM users u2
+                          LEFT JOIN LATERAL (
+                              SELECT ugr2.profession_id
+                              FROM user_group_roles ugr2
+                              WHERE ugr2.user_id = $2
+                              ORDER BY ugr2.is_volunteer DESC NULLS LAST,
+                                       ugr2.display_order ASC NULLS LAST
+                              LIMIT 1
+                          ) ugr2 ON true
+                          WHERE u2.id = $2
                       )
                 ) AS resolved_by_same_profession`,
                 [id, responderId]
@@ -670,6 +679,29 @@ module.exports = (pool) => {
                  RETURNING id`,
                 [id, responderId, latitude || null, longitude || null]
             );
+
+            const professionResult = await pool.query(
+                `SELECT DISTINCT profession_id::text AS profession_id
+                 FROM (
+                    SELECT profession_id
+                    FROM users
+                    WHERE id = $1 AND profession_id IS NOT NULL
+                    UNION ALL
+                    SELECT profession_id
+                    FROM user_group_roles
+                    WHERE user_id = $1 AND profession_id IS NOT NULL
+                 ) professions`,
+                [responderId]
+            );
+            const io = socketService.getIO();
+            if (io) {
+                for (const row of professionResult.rows) {
+                    io.emit('incident-profession-quota-filled', {
+                        videoId: id,
+                        professionId: row.profession_id,
+                    });
+                }
+            }
 
             res.json({
                 message: 'Incident accepted',
@@ -961,13 +993,15 @@ module.exports = (pool) => {
             const result = await pool.query(
                 `SELECT DISTINCT ir.video_id
                  FROM incident_responses ir
-                 JOIN LATERAL (
+                 LEFT JOIN users u ON u.id = ir.volunteer_id
+                 LEFT JOIN LATERAL (
                     SELECT ugr.profession_id
                     FROM user_group_roles ugr
                     WHERE ugr.user_id = ir.volunteer_id
+                    ORDER BY ugr.created_at ASC
                     LIMIT 1
                  ) ugr ON true
-                 WHERE ugr.profession_id = $1
+                 WHERE COALESCE(u.profession_id::text, ugr.profession_id::text) = $1
                    AND ir.status IN ('accepted', 'arrived', 'en_route', 'resolved')`,
                 [professionId]
             );

@@ -115,7 +115,11 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // === Emergency Alert State ===
   StreamSubscription? _emergencySub;
+  StreamSubscription? _professionQuotaSub;
+  StreamSubscription? _rescueCancelledSub;
   final List<Map<String, dynamic>> _professionalAlerts = [];
+  final Set<String> _professionallyTakenVideoIds = {};
+  int _activeAlertsLoadGeneration = 0;
   final List<Map<String, dynamic>> _thaiMhungAlerts = [];
   final List<Map<String, dynamic>> _donationAlerts = [];
   final List<Map<String, dynamic>> _yieldWayAlerts =
@@ -194,6 +198,8 @@ class _HomePageState extends ConsumerState<HomePage>
     _listenForFitnessBookingStatus();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
+    _listenForProfessionQuotaFilled();
+    _listenForRescueCancelled();
     _listenForDonationStatus(); // Donation status notification
     final initUser = AuthService.instance.currentUser;
     debugPrint(
@@ -232,6 +238,8 @@ class _HomePageState extends ConsumerState<HomePage>
     AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.dispose();
     _emergencySub?.cancel();
+    _professionQuotaSub?.cancel();
+    _rescueCancelledSub?.cancel();
     _donationStatusSub?.cancel();
     _fitnessBookingSub?.cancel();
     _yieldWaySub?.cancel();
@@ -384,6 +392,62 @@ class _HomePageState extends ConsumerState<HomePage>
     }
   }
 
+  void _listenForProfessionQuotaFilled() {
+    _professionQuotaSub?.cancel();
+    _professionQuotaSub = WebSocketService().incidentProfessionQuotaFilledStream
+        .listen((data) {
+          if (!mounted) return;
+
+          final user = AuthService.instance.currentUser;
+          final videoId =
+              data['videoId']?.toString() ?? data['video_id']?.toString() ?? '';
+          final professionId =
+              data['professionId']?.toString() ??
+              data['profession_id']?.toString();
+          if (user == null ||
+              videoId.isEmpty ||
+              professionId == null ||
+              user.professionId?.toString() != professionId) {
+            return;
+          }
+
+          _professionallyTakenVideoIds.add(videoId);
+          _activeAlertsLoadGeneration++;
+          if (!mounted) return;
+          setState(() {
+            final hadAlerts = _professionalAlerts.isNotEmpty;
+            _professionalAlerts.removeWhere(
+              (alert) => alert['videoId']?.toString() == videoId,
+            );
+            if (_focusedAlert?['videoId']?.toString() == videoId) {
+              _focusedAlert = _professionalAlerts.isEmpty
+                  ? null
+                  : _professionalAlerts.first;
+            }
+            if (_professionalAlerts.isEmpty && hadAlerts) {
+              _loadConsultationPosition(introDelay: Duration.zero);
+            }
+          });
+
+          // Reconcile with the API so the state remains correct after reconnects.
+          unawaited(_loadActiveAlerts());
+        });
+  }
+
+  void _listenForRescueCancelled() {
+    _rescueCancelledSub?.cancel();
+    _rescueCancelledSub = WebSocketService().rescueCancelledStream.listen((
+      data,
+    ) {
+      if (!mounted) return;
+      final videoId =
+          data['videoId']?.toString() ?? data['video_id']?.toString() ?? '';
+      if (videoId.isNotEmpty) {
+        unawaited(_loadActiveAlerts());
+      }
+    });
+  }
+
   void _listenForEmergencyAlerts() {
     _emergencySub = WebSocketService().emergencyNotificationStream.listen((
       data,
@@ -501,13 +565,15 @@ class _HomePageState extends ConsumerState<HomePage>
       }
 
       // 3. Update State
+      final videoId =
+          data['videoId']?.toString() ?? data['video_id']?.toString() ?? '';
+      if (routeToProfessional &&
+          _professionallyTakenVideoIds.contains(videoId)) {
+        return;
+      }
       if (mounted) {
         setState(() {
           final alert = Map<String, dynamic>.from(data);
-          final videoId =
-              alert['videoId']?.toString() ??
-              alert['video_id']?.toString() ??
-              '';
 
           if (_dismissedAlertIds.contains(videoId)) return;
 
@@ -838,6 +904,7 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   Future<void> _loadActiveAlerts() async {
+    final loadGeneration = ++_activeAlertsLoadGeneration;
     final user = AuthService.instance.currentUser;
     if (user == null) return;
 
@@ -866,6 +933,9 @@ class _HomePageState extends ConsumerState<HomePage>
               userProfessionId,
             );
       }
+      _professionallyTakenVideoIds
+        ..removeAll(activeVideoIds.map((id) => id.toString()))
+        ..addAll(takenByMyProfession);
 
       for (var video in activeVideos) {
         // 0. Self-Reporter Exclusion
@@ -943,14 +1013,25 @@ class _HomePageState extends ConsumerState<HomePage>
         }
       }
 
-      if (mounted) {
+      if (mounted && loadGeneration == _activeAlertsLoadGeneration) {
         setState(() {
           final hadPro = _professionalAlerts.isNotEmpty;
 
           // Update Professional
-          _professionalAlerts.removeWhere(
-            (a) => _dismissedAlertIds.contains(a['videoId']),
-          );
+          final newProfessionalVideoIds = newProfessional
+              .map((alert) => alert['videoId']?.toString())
+              .whereType<String>()
+              .toSet();
+          final activeVideoIdsSet = activeVideoIds
+              .map((id) => id.toString())
+              .toSet();
+          _professionalAlerts.removeWhere((alert) {
+            final videoId = alert['videoId']?.toString();
+            return _dismissedAlertIds.contains(videoId) ||
+                (videoId != null &&
+                    activeVideoIdsSet.contains(videoId) &&
+                    !newProfessionalVideoIds.contains(videoId));
+          });
           for (var alert in newProfessional) {
             if (!_professionalAlerts.any(
               (a) => a['videoId'] == alert['videoId'],
@@ -1422,6 +1503,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (mounted) {
       setState(() {
         _professionalAlerts.clear();
+        _professionallyTakenVideoIds.clear();
         _focusedAlert = null;
       });
     }

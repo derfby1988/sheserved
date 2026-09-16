@@ -1636,6 +1636,44 @@ return false;
 
 ---
 
+### Bug Fix #13 — การ์ดแจ้งเตือนหน้า Home ไม่หายเมื่อโค้วตาอาชีพเต็ม + ไม่มี real-time removal (Profession Quota Alert Removal)
+**วันที่:** 2026-09-16
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `lib/services/websocket_service.dart`, `lib/features/home/presentation/pages/home_page.dart`
+
+**อาการ:** เมื่อจิตอาสาอาชีพหนึ่งรับงานเหตุการณ์ไปแล้ว การ์ดแจ้งเตือนสีแดง (`_professionalAlerts`) บนหน้า Home ของจิตอาสา**อาชีพเดียวกัน**คนอื่นยังค้างอยู่ — ไม่หายทันทีและไม่หายเลยแม้รอรอบ refresh เพราะ `_loadActiveAlerts()` เป็น add-only merge (ลบเฉพาะ `_dismissedAlertIds` ไม่ลบรายการที่หลุดจาก `newProfessional`)
+
+**สาเหตุ (Root Causes — 4 จุด):**
+1. **ไม่มี socket event แจ้ง "โค้วตาเต็ม"**: `POST /:id/accept` เขียน `incident_responses` แล้วตอบ HTTP อย่างเดียว — ไม่มี emit ใดๆ ไปหาจิตอาสาอาชีพเดียวกันคนอื่น
+2. **Add-only merge ใน `_loadActiveAlerts()`**: `_professionalAlerts.removeWhere` ลบเฉพาะ `_dismissedAlertIds` — alert ที่ถูก `takenByMyProfession` ครอบแล้วยังคงอยู่ในลิสต์ตลอดไปจนกว่าจะปัดทิ้งเองหรือ logout
+3. **Real-time listener ไม่เช็คโค้วตา**: `_listenForEmergencyAlerts()` ตรวจแค่ self-reporter/อาชีพตรง/รัศมี — ไม่เรียก `getTakenIncidentVideoIdsByProfession` ทำให้ alert ที่มาถึงช้ากว่า accept เด้งเข้ามาได้
+4. **Profession resolution ใช้ `user_group_roles` เท่านั้น**: query `taken-by-profession` และ resolved guard ใน `/accept` หา profession จาก `user_group_roles` (LIMIT 1 ไม่เรียง) — ไม่ตรงกับฝั่ง Flutter ที่ใช้ `user.professionId` (=`users.profession_id`) → คนที่มีเฉพาะ primary profession ไม่ถูกนับเป็น "รับแล้ว"
+
+**วิธีแก้ไข (Implemented):**
+1. **Socket event `incident-profession-quota-filled` (Server)**: `POST /:id/accept` หลัง upsert `incident_responses` สำเร็จ → ดึง profession ของ responder จาก `users.profession_id` UNION `user_group_roles.profession_id` → `io.emit('incident-profession-quota-filled', { videoId, professionId })` ต่อ profession (broadcast ให้ทุก client กรองเอง — ไม่มี PII ใน payload)
+2. **Stream ใหม่ใน `WebSocketService` (Flutter)**: `incidentProfessionQuotaFilledStream` + `rescueCancelledStream` (แก้ F2 บางส่วน — `rescueCancelledStream` ใช้ใน `home_page.dart` แล้ว แต่ยังไม่ subscribe ใน `emergency_websocket_logic.dart` ตาม scope เดิมของ F2)
+3. **ลบการ์ดทันที (Flutter)**: `HomePage._listenForProfessionQuotaFilled()` — เมื่อ `professionId` ของ event ตรง `user.professionId` → เพิ่มเข้า `_professionallyTakenVideoIds` + ลบออกจาก `_professionalAlerts` + อัปเดต `_focusedAlert` + คืนตำแหน่ง consultation widget เมื่อการ์ดหมด + `unawaited(_loadActiveAlerts())` เพื่อ reconcile
+4. **แก้ add-only merge**: `_loadActiveAlerts()` ลบ alert ที่ `videoId` ยังอยู่ใน `activeVideoIds` แต่ไม่อยู่ใน `newProfessionalVideoIds` (คง alert ของวิดีโอใหม่ที่ยังไม่อยู่ใน API list ไว้ — กันลบ alert real-time ที่มาก่อน list update)
+5. **Race guard `_activeAlertsLoadGeneration`**: ทุก `_loadActiveAlerts()` capture generation ก่อน await — event `incident-profession-quota-filled` ขณะ load อยู่จะ bump generation ทำให้ response เก่าถูกทิ้ง (`mounted && loadGeneration == _activeAlertsLoadGeneration`) ไม่เขียน state ทับของใหม่
+6. **กัน alert ที่มาถึงช้า**: `_listenForEmergencyAlerts()` เช็ค `_professionallyTakenVideoIds` ก่อน add เข้า `_professionalAlerts` — alert ที่มาหลัง quota เต็มจะไม่เด้งขึ้น
+7. **Slot reopen เมื่อยกเลิก**: `_listenForRescueCancelled()` → `_loadActiveAlerts()` เมื่อมี `rescue-cancelled` ที่ videoId ตรง — ช่องอาชีพกลับมาแสดงโดยไม่ต้องรอ timer 90 วิ (`cancelled` ไม่ถูกนับใน taken-by-profession อยู่แล้ว)
+8. **Profession resolution ตรงกันทั้งสองฝั่ง**: `taken-by-profession` และ resolved guard ใน `/accept` ใช้ `COALESCE(users.profession_id, user_group_roles.profession_id)` — `users.profession_id` เป็นลำดับแรกตามกฎ §7.3; ฝั่ง `user_group_roles` เรียง `created_at ASC` (ห้ามใช้ `is_volunteer`/`display_order` — column เหล่านั้นอยู่บน `professions` ไม่ใช่ `user_group_roles`)
+9. **Clear บน auth change**: `_onAuthChanged()` ล้าง `_professionallyTakenVideoIds` พร้อม `_professionalAlerts` — กัน stale taken-state ติดมากับ user คนใหม่
+
+**เงื่อนไข/ข้อจำกัดที่ต้องจำ:**
+- **โค้วตา = 1 คน/อาชีพ (binary)** — ไม่มี column `required_count`/N-slot ใน schema; `taken-by-profession` คืน "มี responder อาชีพนั้น ≥1 คน" เท่านั้น — ถ้าอนาคตต้องการหลายคน/อาชีพ ต้องเพิ่ม column บน `donation_categories` และเปลี่ยนเป็น `HAVING COUNT(*) >= required_count`
+- **`cancelled` เปิดช่องคืน** — status ที่นับเป็น taken: `accepted`, `arrived`, `en_route`, `resolved` เท่านั้น
+- **Event ไม่มี PII** — payload มีแค่ `videoId` + `professionId`; การกรองว่า "เป็นของอาชีพฉันไหม" ทำฝั่ง client (`user.professionId`)
+- **F2 ยังไม่ครบ** — `rescueCancelledStream` ใช้เฉพาะ Home; ยังไม่ได้ subscribe ใน `emergency_websocket_logic.dart` เพื่อล้าง mission panel บน Live page ตาม scope เดิม (actor vs target distinction ยังสำคัญ)
+- **`rescue-status-updated` ยังไม่ subscribe** — เหตุการณ์ที่มี responder ของ**อาชีพอื่น**ไปแล้วยังแสดงใน feed ของอาชีพเราได้ (multi-profession ตาม design) — ไม่ใช่ bug
+
+**ผลลัพธ์ที่ต้องยืนยันเสมอหลังแก้:**
+- จิตอาสา A (อาชีพ X) กดรับงาน → การ์ดแดงหน้า Home ของจิตอาสา B (อาชีพ X) หายทันทีผ่าน socket event โดยไม่ต้องรอ refresh
+- จิตอาสา C (อาชีพ Y ที่ยังว่าง) → ยังเห็นการ์ดเหตุการณ์เดิม (multi-profession ตาม design)
+- A ยกเลิกงาน → การ์ดกลับมาแสดงบน Home ของ B ในรอบ refresh ถัดไป (เร็วขึ้นเพราะ `rescue-cancelled` trigger)
+- Refresh/timer/`_loadActiveAlerts` ไม่ re-add alert ที่ quota เต็มแล้ว และ alert ที่มาถึงช้ากว่า accept ไม่เด้งขึ้น
+
+---
+
 ### Bug Fix #5 — iOS White Screen / Startup Hang (Timeout Management)
 **ไฟล์ที่เกี่ยวข้อง:** `lib/services/sync_service.dart`, `lib/services/service_locator.dart`
 

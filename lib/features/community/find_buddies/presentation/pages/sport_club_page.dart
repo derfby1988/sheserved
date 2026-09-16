@@ -19,7 +19,6 @@ import '../../../find_buddies/domain/models/sport_skill_level.dart';
 import '../../../find_buddies/presentation/widgets/skill_level_chips.dart';
 
 class _GroupPageResult {
-
   final List<Map<String, dynamic>> groups;
   final int nextOffset;
   final bool hasMore;
@@ -61,6 +60,9 @@ class _SportClubPageState extends State<SportClubPage> {
   double? _userLng;
   bool _locationEnabled = false;
   bool _filterOpenOnly = false;
+  bool _filterJoinedOnly = false;
+  bool _filterManagedOnly = false;
+  int _filterRequestId = 0;
   final _listScrollController = ScrollController();
   final _detailScrollController = ScrollController();
   static const _pageSize = 10;
@@ -111,6 +113,7 @@ class _SportClubPageState extends State<SportClubPage> {
     required Set<String> adminIds,
     required Set<String> joinedGroupIds,
     required Set<String> blockedGroupIds,
+    int? requestId,
   }) async {
     var nextOffset = offset;
     var hasMore = true;
@@ -127,6 +130,9 @@ class _SportClubPageState extends State<SportClubPage> {
         limit: _pageSize,
         offset: nextOffset,
       );
+      if (requestId != null && requestId != _filterRequestId) {
+        throw StateError('STALE_FILTER_REQUEST');
+      }
       if (page.isEmpty) {
         hasMore = false;
         break;
@@ -141,13 +147,26 @@ class _SportClubPageState extends State<SportClubPage> {
           .toList();
       final groupIdsWithSessions = await _repo
           .filterGroupIdsWithUpcomingSessions(groupIds);
+      if (requestId != null && requestId != _filterRequestId) {
+        throw StateError('STALE_FILTER_REQUEST');
+      }
 
       visibleGroups.addAll(
         locationFiltered.where((group) {
           final groupId = group['id']?.toString() ?? '';
+          final isManaged = isSheservedAdmin || adminIds.contains(groupId);
+          final isJoined = joinedGroupIds.contains(groupId);
+          final matchesPersonalFilter =
+              (!_filterJoinedOnly && !_filterManagedOnly) ||
+              (_filterJoinedOnly && isJoined) ||
+              (_filterManagedOnly && isManaged) ||
+              (_filterJoinedOnly &&
+                  _filterManagedOnly &&
+                  (isJoined || isManaged));
+          if (!matchesPersonalFilter) return false;
           if (isSheservedAdmin ||
-              adminIds.contains(groupId) ||
-              joinedGroupIds.contains(groupId) ||
+              isManaged ||
+              isJoined ||
               blockedGroupIds.contains(groupId)) {
             return true;
           }
@@ -172,6 +191,7 @@ class _SportClubPageState extends State<SportClubPage> {
         adminIds: _myAdminGroups,
         joinedGroupIds: _myJoinedGroupIds,
         blockedGroupIds: _myBlockedGroupIds,
+        requestId: _filterRequestId,
       );
       if (!mounted) return;
       setState(() {
@@ -187,6 +207,7 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Future<void> _init() async {
+    final requestId = ++_filterRequestId;
     try {
       final userId = AuthService.instance.currentUser?.id;
       final sports = await _repo.getApprovedSports(userId: userId);
@@ -210,9 +231,10 @@ class _SportClubPageState extends State<SportClubPage> {
         adminIds: adminIds,
         joinedGroupIds: joinedGroupIds,
         blockedGroupIds: blockedGroupIds,
+        requestId: requestId,
       );
 
-      if (!mounted) return;
+      if (!mounted || requestId != _filterRequestId) return;
       setState(() {
         _sports = sports;
         _groups = page.groups;
@@ -276,7 +298,8 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Future<void> _reload() async {
-    setState(() => _reloadingGroups = true);
+    final requestId = ++_filterRequestId;
+    if (mounted) setState(() => _reloadingGroups = true);
     final userId = AuthService.instance.currentUser?.id;
     try {
       final adminIds = userId != null
@@ -299,9 +322,10 @@ class _SportClubPageState extends State<SportClubPage> {
         adminIds: adminIds,
         joinedGroupIds: joinedGroupIds,
         blockedGroupIds: blockedGroupIds,
+        requestId: requestId,
       );
 
-      if (!mounted) return;
+      if (!mounted || requestId != _filterRequestId) return;
       setState(() {
         _groups = page.groups;
         _currentOffset = page.nextOffset;
@@ -312,8 +336,12 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = blockedGroupIds;
         _myCreatedSportIds = createdSportIds;
       });
+    } on StateError catch (error) {
+      if (error.message != 'STALE_FILTER_REQUEST') rethrow;
     } finally {
-      if (mounted) setState(() => _reloadingGroups = false);
+      if (mounted && requestId == _filterRequestId) {
+        setState(() => _reloadingGroups = false);
+      }
     }
   }
 
@@ -330,14 +358,19 @@ class _SportClubPageState extends State<SportClubPage> {
     List<Map<String, dynamic>> groupPositions = [];
     String? fieldLayout;
     FieldStyle fieldStyle = FieldStyle.fallback;
-    Map<String, Map<String, int>> sessionPositionTaken = {}; // session_id -> (position_id -> count)
+    Map<String, Map<String, int>> sessionPositionTaken =
+        {}; // session_id -> (position_id -> count)
 
     try {
       final results = await Future.wait<dynamic>([
         _repo.listPublicSessionCostItems(sessionIds),
         _repo.listPublicGroupPositions(groupId),
         _repo.listSessionPositionAvailability(sessionIds),
-        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
+        _client
+            .from('fitness_groups')
+            .select('sport:sports(field_layout, field_style)')
+            .eq('id', groupId)
+            .maybeSingle(),
       ]);
       final allItems = results[0] as List<Map<String, dynamic>>;
       for (final item in allItems) {
@@ -480,14 +513,20 @@ class _SportClubPageState extends State<SportClubPage> {
                             onTap: isFull
                                 ? null
                                 : () async {
-                                    if (groupPositions.isNotEmpty && fieldLayout != null) {
+                                    if (groupPositions.isNotEmpty &&
+                                        fieldLayout != null) {
                                       // Position picker flow
-                                      final takenMap = sessionPositionTaken[s['id']?.toString()] ?? {};
+                                      final takenMap =
+                                          sessionPositionTaken[s['id']
+                                              ?.toString()] ??
+                                          {};
                                       final chosenPosId = await showModalBottomSheet<String>(
                                         context: context,
                                         isScrollControlled: true,
                                         shape: const RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                                          borderRadius: BorderRadius.vertical(
+                                            top: Radius.circular(24),
+                                          ),
                                         ),
                                         builder: (bctx) {
                                           String? tempSelectedId;
@@ -500,38 +539,73 @@ class _SportClubPageState extends State<SportClubPage> {
                                                     left: 16,
                                                     right: 16,
                                                     top: 14,
-                                                    bottom: MediaQuery.of(bctx).viewInsets.bottom + 20,
+                                                    bottom:
+                                                        MediaQuery.of(
+                                                          bctx,
+                                                        ).viewInsets.bottom +
+                                                        20,
                                                   ),
                                                   child: Column(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
                                                       Center(
                                                         child: Container(
                                                           width: 40,
                                                           height: 4,
                                                           decoration: BoxDecoration(
-                                                            color: Colors.grey.shade300,
-                                                            borderRadius: BorderRadius.circular(2),
+                                                            color: Colors
+                                                                .grey
+                                                                .shade300,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  2,
+                                                                ),
                                                           ),
                                                         ),
                                                       ),
-                                                      const SizedBox(height: 12),
+                                                      const SizedBox(
+                                                        height: 12,
+                                                      ),
                                                       Row(
                                                         children: [
                                                           Container(
-                                                            padding: const EdgeInsets.all(8),
+                                                            padding:
+                                                                const EdgeInsets.all(
+                                                                  8,
+                                                                ),
                                                             decoration: BoxDecoration(
-                                                              color: AppColors.primary.withValues(alpha: 0.15),
-                                                              shape: BoxShape.circle,
+                                                              color: AppColors
+                                                                  .primary
+                                                                  .withValues(
+                                                                    alpha: 0.15,
+                                                                  ),
+                                                              shape: BoxShape
+                                                                  .circle,
                                                             ),
-                                                            child: const Icon(Icons.sports_soccer_rounded, color: AppColors.primaryDark, size: 20),
+                                                            child: const Icon(
+                                                              Icons
+                                                                  .sports_soccer_rounded,
+                                                              color: AppColors
+                                                                  .primaryDark,
+                                                              size: 20,
+                                                            ),
                                                           ),
-                                                          const SizedBox(width: 10),
+                                                          const SizedBox(
+                                                            width: 10,
+                                                          ),
                                                           const Expanded(
                                                             child: Text(
                                                               'เลือกตำแหน่งที่ต้องการเล่น',
-                                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                              style: TextStyle(
+                                                                fontSize: 16,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
                                                             ),
                                                           ),
                                                         ],
@@ -539,61 +613,138 @@ class _SportClubPageState extends State<SportClubPage> {
                                                       const SizedBox(height: 6),
                                                       const Text(
                                                         'แตะหมุดบนสนามจำลอง หรือเลือกจากรายการด้านล่าง',
-                                                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.grey,
+                                                        ),
                                                       ),
-                                                      const SizedBox(height: 12),
+                                                      const SizedBox(
+                                                        height: 12,
+                                                      ),
                                                       PositionLineupView(
                                                         layout: fieldLayout!,
                                                         fieldStyle: fieldStyle,
-                                                        positions: groupPositions,
+                                                        positions:
+                                                            groupPositions,
                                                         takenCounts: takenMap,
-                                                        selectedPositionId: tempSelectedId,
+                                                        selectedPositionId:
+                                                            tempSelectedId,
                                                         onPositionSelected: (pid) {
-                                                          setModalState(() => tempSelectedId = pid);
+                                                          setModalState(
+                                                            () =>
+                                                                tempSelectedId =
+                                                                    pid,
+                                                          );
                                                         },
                                                       ),
-                                                      const SizedBox(height: 12),
+                                                      const SizedBox(
+                                                        height: 12,
+                                                      ),
                                                       Wrap(
                                                         spacing: 8,
                                                         runSpacing: 8,
-                                                        children: groupPositions.map((pos) {
-                                                          final pid = pos['id']?.toString() ?? '';
-                                                          final label = pos['label']?.toString() ?? '';
-                                                          final slots = (pos['slots'] as num?)?.toInt() ?? 1;
-                                                          final taken = takenMap[pid] ?? 0;
-                                                          final remaining = slots - taken;
-                                                          final isFullPos = remaining <= 0;
-                                                          final isSelected = tempSelectedId == pid;
-                                                          final color = parseHexColor(pos['color']?.toString());
+                                                        children: groupPositions.map((
+                                                          pos,
+                                                        ) {
+                                                          final pid =
+                                                              pos['id']
+                                                                  ?.toString() ??
+                                                              '';
+                                                          final label =
+                                                              pos['label']
+                                                                  ?.toString() ??
+                                                              '';
+                                                          final slots =
+                                                              (pos['slots']
+                                                                      as num?)
+                                                                  ?.toInt() ??
+                                                              1;
+                                                          final taken =
+                                                              takenMap[pid] ??
+                                                              0;
+                                                          final remaining =
+                                                              slots - taken;
+                                                          final isFullPos =
+                                                              remaining <= 0;
+                                                          final isSelected =
+                                                              tempSelectedId ==
+                                                              pid;
+                                                          final color =
+                                                              parseHexColor(
+                                                                pos['color']
+                                                                    ?.toString(),
+                                                              );
 
                                                           return ChoiceChip(
-                                                            selected: isSelected,
+                                                            selected:
+                                                                isSelected,
                                                             avatar: CircleAvatar(
-                                                              backgroundColor: isFullPos ? Colors.grey : color,
+                                                              backgroundColor:
+                                                                  isFullPos
+                                                                  ? Colors.grey
+                                                                  : color,
                                                               radius: 8,
                                                             ),
-                                                            label: Text('$label (${isFullPos ? 'เต็ม' : 'ว่าง $remaining'})'),
-                                                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
-                                                            onSelected: isFullPos
+                                                            label: Text(
+                                                              '$label (${isFullPos ? 'เต็ม' : 'ว่าง $remaining'})',
+                                                            ),
+                                                            selectedColor:
+                                                                AppColors
+                                                                    .primary
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.25,
+                                                                    ),
+                                                            onSelected:
+                                                                isFullPos
                                                                 ? null
-                                                                : (_) => setModalState(() => tempSelectedId = pid),
+                                                                : (
+                                                                    _,
+                                                                  ) => setModalState(
+                                                                    () =>
+                                                                        tempSelectedId =
+                                                                            pid,
+                                                                  ),
                                                           );
                                                         }).toList(),
                                                       ),
-                                                      const SizedBox(height: 20),
+                                                      const SizedBox(
+                                                        height: 20,
+                                                      ),
                                                       SizedBox(
                                                         width: double.infinity,
                                                         height: 48,
                                                         child: ElevatedButton(
                                                           style: ElevatedButton.styleFrom(
-                                                            backgroundColor: AppColors.primary,
-                                                            foregroundColor: Colors.white,
-                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                            backgroundColor:
+                                                                AppColors
+                                                                    .primary,
+                                                            foregroundColor:
+                                                                Colors.white,
+                                                            shape: RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    12,
+                                                                  ),
+                                                            ),
                                                           ),
-                                                          onPressed: tempSelectedId == null
+                                                          onPressed:
+                                                              tempSelectedId ==
+                                                                  null
                                                               ? null
-                                                              : () => Navigator.pop(bctx, tempSelectedId),
-                                                          child: const Text('ยืนยันตำแหน่งนี้', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                                              : () => Navigator.pop(
+                                                                  bctx,
+                                                                  tempSelectedId,
+                                                                ),
+                                                          child: const Text(
+                                                            'ยืนยันตำแหน่งนี้',
+                                                            style: TextStyle(
+                                                              fontSize: 15,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                            ),
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -609,7 +760,8 @@ class _SportClubPageState extends State<SportClubPage> {
                                       Navigator.pop(ctx);
                                       _book(
                                         s['id'].toString(),
-                                        requiresOwnerApproval: requiresOwnerApproval,
+                                        requiresOwnerApproval:
+                                            requiresOwnerApproval,
                                         groupId: groupId,
                                         positionId: chosenPosId,
                                       );
@@ -2048,7 +2200,7 @@ class _SportClubPageState extends State<SportClubPage> {
                     IconButton(
                       tooltip: 'ค้นหา',
                       icon: const Icon(Icons.search, color: Colors.white),
-                      onPressed: _showSearchDialog,
+                      onPressed: _showAdvancedFilterSheet,
                     ),
                     PopupMenuButton<String>(
                       tooltip: 'เพิ่มเติม',
@@ -2126,9 +2278,13 @@ class _SportClubPageState extends State<SportClubPage> {
                               _buildAddSportFab(),
                             ],
                           ),
+                          const SizedBox(height: 10),
+                          _buildQuickFilterRow(),
                           const SizedBox(height: 16),
                           if (_loading || _reloadingGroups)
                             for (var i = 0; i < 3; i++) _buildSkeletonCard(),
+                          if (!_loading && !_reloadingGroups && _groups.isEmpty)
+                            _buildEmptyFilterState(),
                           if (!_loading && !_reloadingGroups) ...[
                             for (final g in _groups)
                               if (_canViewFullGroup(g))
@@ -2501,11 +2657,23 @@ class _SportClubPageState extends State<SportClubPage> {
                                                           Map<String, dynamic>
                                                         >[];
                                                     final groupPositions =
-                                                        (snapshot.data?.length ?? 0) > 4
-                                                            ? (snapshot.data?[4] as List?)
-                                                                    ?.cast<Map<String, dynamic>>() ??
-                                                                []
-                                                            : <Map<String, dynamic>>[];
+                                                        (snapshot
+                                                                    .data
+                                                                    ?.length ??
+                                                                0) >
+                                                            4
+                                                        ? (snapshot.data?[4]
+                                                                      as List?)
+                                                                  ?.cast<
+                                                                    Map<
+                                                                      String,
+                                                                      dynamic
+                                                                    >
+                                                                  >() ??
+                                                              []
+                                                        : <
+                                                            Map<String, dynamic>
+                                                          >[];
                                                     final costItemsBySession =
                                                         <
                                                           String,
@@ -2620,25 +2788,42 @@ class _SportClubPageState extends State<SportClubPage> {
                                                                 ),
                                                               ),
                                                             ),
-                                                          if (groupPositions.isNotEmpty)
+                                                          if (groupPositions
+                                                              .isNotEmpty)
                                                             Padding(
-                                                              padding: const EdgeInsets.only(top: 4),
+                                                              padding:
+                                                                  const EdgeInsets.only(
+                                                                    top: 4,
+                                                                  ),
                                                               child: textPill(
                                                                 Row(
-                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  mainAxisSize:
+                                                                      MainAxisSize
+                                                                          .min,
                                                                   children: [
                                                                     Icon(
-                                                                      Icons.sports_soccer_rounded,
+                                                                      Icons
+                                                                          .sports_soccer_rounded,
                                                                       size: 13,
-                                                                      color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                                                                      color:
+                                                                          hasCover
+                                                                          ? Colors.white70
+                                                                          : AppColors.primaryDark,
                                                                     ),
-                                                                    const SizedBox(width: 4),
+                                                                    const SizedBox(
+                                                                      width: 4,
+                                                                    ),
                                                                     Text(
                                                                       'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
                                                                       style: TextStyle(
-                                                                        fontSize: 12,
-                                                                        fontWeight: FontWeight.w500,
-                                                                        color: hasCover ? Colors.white70 : Colors.grey[800],
+                                                                        fontSize:
+                                                                            12,
+                                                                        fontWeight:
+                                                                            FontWeight.w500,
+                                                                        color:
+                                                                            hasCover
+                                                                            ? Colors.white70
+                                                                            : Colors.grey[800],
                                                                       ),
                                                                     ),
                                                                   ],
@@ -2646,12 +2831,34 @@ class _SportClubPageState extends State<SportClubPage> {
                                                               ),
                                                             ),
                                                           Padding(
-                                                            padding: const EdgeInsets.only(top: 4),
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  top: 4,
+                                                                ),
                                                             child: SkillLevelBadge(
-                                                              targetSkillLevels: (g['target_skill_levels'] is List)
-                                                                  ? (g['target_skill_levels'] as List).map((e) => e.toString()).toList()
+                                                              targetSkillLevels:
+                                                                  (g['target_skill_levels']
+                                                                      is List)
+                                                                  ? (g['target_skill_levels']
+                                                                            as List)
+                                                                        .map(
+                                                                          (
+                                                                            e,
+                                                                          ) => e
+                                                                              .toString(),
+                                                                        )
+                                                                        .toList()
                                                                   : null,
-                                                              availableLevels: resolveSkillLevelsForSport(sportData: g['sport'] is Map<String, dynamic> ? g['sport'] : null),
+                                                              availableLevels: resolveSkillLevelsForSport(
+                                                                sportData:
+                                                                    g['sport']
+                                                                        is Map<
+                                                                          String,
+                                                                          dynamic
+                                                                        >
+                                                                    ? g['sport']
+                                                                    : null,
+                                                              ),
                                                             ),
                                                           ),
                                                           if (_myBlockedGroupIds
@@ -2838,24 +3045,42 @@ class _SportClubPageState extends State<SportClubPage> {
                                                               ),
                                                             ),
                                                           ),
-                                                        if (groupPositions.isNotEmpty)
+                                                        if (groupPositions
+                                                            .isNotEmpty)
                                                           Padding(
-                                                            padding: const EdgeInsets.only(bottom: 8),
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  bottom: 8,
+                                                                ),
                                                             child: textPill(
                                                               Row(
-                                                                mainAxisSize: MainAxisSize.min,
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
                                                                 children: [
                                                                   Icon(
-                                                                    Icons.sports_soccer_rounded,
+                                                                    Icons
+                                                                        .sports_soccer_rounded,
                                                                     size: 13,
-                                                                    color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                                                                    color:
+                                                                        hasCover
+                                                                        ? Colors
+                                                                              .white70
+                                                                        : AppColors
+                                                                              .primaryDark,
                                                                   ),
-                                                                  const SizedBox(width: 4),
+                                                                  const SizedBox(
+                                                                    width: 4,
+                                                                  ),
                                                                   Text(
                                                                     'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
                                                                     style: TextStyle(
-                                                                      fontSize: 12,
-                                                                      color: hasCover ? Colors.white70 : Colors.grey[800],
+                                                                      fontSize:
+                                                                          12,
+                                                                      color:
+                                                                          hasCover
+                                                                          ? Colors.white70
+                                                                          : Colors.grey[800],
                                                                     ),
                                                                   ),
                                                                 ],
@@ -3001,6 +3226,187 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
+  int get _activeFilterCount => [
+    _q.trim().isNotEmpty,
+    _province?.trim().isNotEmpty == true,
+    _district?.trim().isNotEmpty == true,
+    _filterOpenOnly,
+    _filterJoinedOnly,
+    _filterManagedOnly,
+    _locationEnabled,
+  ].where((active) => active).length;
+
+  String get _filterSummary =>
+      _activeFilterCount == 0 ? 'ตัวกรอง' : 'ตัวกรอง ($_activeFilterCount)';
+
+  Future<bool> _requireLoginForFilter() async {
+    if (AuthService.instance.currentUser != null) return true;
+    await Navigator.pushNamed(
+      context,
+      '/login',
+      arguments: {'redirect': '/community/sport-club'},
+    );
+    return AuthService.instance.currentUser != null;
+  }
+
+  Future<void> _toggleQuickFilter(String filter) async {
+    if ((filter == 'joined' || filter == 'managed') &&
+        !await _requireLoginForFilter()) {
+      return;
+    }
+    if (filter == 'radius') {
+      if (!_locationEnabled) {
+        final ok = await _requestLocation();
+        if (!ok || !mounted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+        setState(() {
+          _locationEnabled = true;
+          _radiusKm ??= 10;
+        });
+      } else {
+        setState(() => _locationEnabled = false);
+      }
+    } else {
+      setState(() {
+        if (filter == 'open') _filterOpenOnly = !_filterOpenOnly;
+        if (filter == 'joined') _filterJoinedOnly = !_filterJoinedOnly;
+        if (filter == 'managed') _filterManagedOnly = !_filterManagedOnly;
+      });
+    }
+    await _reload();
+  }
+
+  Widget _buildQuickFilterRow() {
+    Widget chip({
+      required String key,
+      required String label,
+      required bool selected,
+      required IconData icon,
+      String? activeLabel,
+    }) {
+      final text = selected ? (activeLabel ?? label) : label;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Semantics(
+          button: true,
+          checked: selected,
+          label: 'ตัวกรองก๊วน$text ${selected ? 'เปิดอยู่' : 'ปิดอยู่'}',
+          child: FilterChip(
+            avatar: Icon(icon, size: 18),
+            label: Text(text),
+            selected: selected,
+            onSelected: (_) => _toggleQuickFilter(key),
+            selectedColor: AppColors.primary.withValues(alpha: 0.18),
+            checkmarkColor: AppColors.primaryDark,
+            materialTapTargetSize: MaterialTapTargetSize.padded,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 44,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                avatar: const Icon(Icons.tune_rounded, size: 18),
+                label: Text(_filterSummary),
+                onPressed: _showAdvancedFilterSheet,
+                tooltip: 'เปิดตัวกรองทั้งหมด',
+              ),
+            ),
+            chip(
+              key: 'open',
+              label: 'ยังเปิดรับ',
+              selected: _filterOpenOnly,
+              icon: Icons.lock_open_rounded,
+            ),
+            chip(
+              key: 'joined',
+              label: 'เป็นสมาชิก',
+              selected: _filterJoinedOnly,
+              icon: Icons.person_rounded,
+            ),
+            chip(
+              key: 'managed',
+              label: 'ก๊วนที่ดูแล',
+              selected: _filterManagedOnly,
+              icon: Icons.admin_panel_settings_rounded,
+            ),
+            chip(
+              key: 'radius',
+              label: 'รัศมี',
+              activeLabel: 'รัศมี ${(_radiusKm ?? 10).round()} กม.',
+              selected: _locationEnabled,
+              icon: Icons.near_me_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyFilterState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 56, horizontal: 16),
+      child: Column(
+        children: [
+          Icon(
+            Icons.filter_alt_off_rounded,
+            size: 48,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'ไม่พบก๊วนตามตัวกรองที่เลือก',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _activeFilterCount == 0
+                ? 'ลองรีเฟรชหรือเลือกกีฬาอื่น'
+                : _filterSummary,
+          ),
+          if (_activeFilterCount > 0) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _clearAllFilters,
+              icon: const Icon(Icons.clear_all_rounded),
+              label: const Text('ล้างตัวกรอง'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearAllFilters() async {
+    setState(() {
+      _q = '';
+      _province = null;
+      _district = null;
+      _filterOpenOnly = false;
+      _filterJoinedOnly = false;
+      _filterManagedOnly = false;
+      _locationEnabled = false;
+    });
+    await _reload();
+  }
+
   Widget _buildSportChip(String? id, String label, {String? icon}) {
     final isSelected = _sportId == id;
     final isMyCreated = id != null && _myCreatedSportIds.contains(id);
@@ -3104,7 +3510,11 @@ class _SportClubPageState extends State<SportClubPage> {
     String? selectedOwnerPositionId;
     try {
       final results = await Future.wait<dynamic>([
-        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
+        _client
+            .from('fitness_groups')
+            .select('owner_auto_join, sport:sports(field_layout, field_style)')
+            .eq('id', groupId)
+            .maybeSingle(),
         _repo.listGroupPositions(groupId, activeOnly: true),
       ]);
       final gRow = results[0] as Map<String, dynamic>?;
@@ -3261,9 +3671,12 @@ class _SportClubPageState extends State<SportClubPage> {
                 );
                 return;
               }
-              if (ownerAutoJoin && groupPositions.isNotEmpty && selectedOwnerPositionId == null) {
+              if (ownerAutoJoin &&
+                  groupPositions.isNotEmpty &&
+                  selectedOwnerPositionId == null) {
                 setModalState(
-                  () => errorText = 'กรุณาเลือกตำแหน่งของเจ้าของก๊วนสำหรับรอบนัดนี้',
+                  () => errorText =
+                      'กรุณาเลือกตำแหน่งของเจ้าของก๊วนสำหรับรอบนัดนี้',
                 );
                 return;
               }
@@ -3395,7 +3808,9 @@ class _SportClubPageState extends State<SportClubPage> {
                           setModalState(() => capacity = value.toInt()),
                     ),
                     const SizedBox(height: 12),
-                    if (ownerAutoJoin && groupPositions.isNotEmpty && fieldLayout != null) ...[
+                    if (ownerAutoJoin &&
+                        groupPositions.isNotEmpty &&
+                        fieldLayout != null) ...[
                       Row(
                         children: [
                           Container(
@@ -3413,7 +3828,10 @@ class _SportClubPageState extends State<SportClubPage> {
                           const SizedBox(width: 8),
                           const Text(
                             'ตำแหน่งของผู้ดูแลก๊วนในรอบนี้',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ],
                       ),
@@ -3448,8 +3866,12 @@ class _SportClubPageState extends State<SportClubPage> {
                               radius: 8,
                             ),
                             label: Text(label),
-                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
-                            onSelected: (_) => setModalState(() => selectedOwnerPositionId = posId),
+                            selectedColor: AppColors.primary.withValues(
+                              alpha: 0.25,
+                            ),
+                            onSelected: (_) => setModalState(
+                              () => selectedOwnerPositionId = posId,
+                            ),
                           );
                         }).toList(),
                       ),
@@ -3906,83 +4328,115 @@ class _SportClubPageState extends State<SportClubPage> {
                                     ],
                                   ),
                                 ),
-                    FutureBuilder<List<dynamic>>(
-                      future: Future.wait([
-                        _repo.listPublicGroupPositions(groupId),
-                        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
-                      ]),
-                      builder: (pctx, psnap) {
-                        if (psnap.hasData) {
-                          final positions = (psnap.data?[0] as List?)?.cast<Map<String, dynamic>>() ?? [];
-                          final gRow = psnap.data?[1] as Map<String, dynamic>?;
-                          final sport = gRow?['sport'];
-                          final layout = sport is Map ? sport['field_layout']?.toString() : null;
-                          final fStyle = sport is Map ? FieldStyle.fromJson(sport['field_style']) : FieldStyle.fallback;
-                          if (positions.isNotEmpty && (layout == 'single' || layout == 'double')) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.sports_soccer_rounded,
-                                        size: 16,
-                                        color: AppColors.primaryDark,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Expanded(
-                                      child: Text(
-                                        'ตำแหน่งผู้เล่นที่ก๊วนเปิดรับ',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                            FutureBuilder<List<dynamic>>(
+                              future: Future.wait([
+                                _repo.listPublicGroupPositions(groupId),
+                                _client
+                                    .from('fitness_groups')
+                                    .select(
+                                      'sport:sports(field_layout, field_style)',
+                                    )
+                                    .eq('id', groupId)
+                                    .maybeSingle(),
+                              ]),
+                              builder: (pctx, psnap) {
+                                if (psnap.hasData) {
+                                  final positions =
+                                      (psnap.data?[0] as List?)
+                                          ?.cast<Map<String, dynamic>>() ??
+                                      [];
+                                  final gRow =
+                                      psnap.data?[1] as Map<String, dynamic>?;
+                                  final sport = gRow?['sport'];
+                                  final layout = sport is Map
+                                      ? sport['field_layout']?.toString()
+                                      : null;
+                                  final fStyle = sport is Map
+                                      ? FieldStyle.fromJson(
+                                          sport['field_style'],
+                                        )
+                                      : FieldStyle.fallback;
+                                  if (positions.isNotEmpty &&
+                                      (layout == 'single' ||
+                                          layout == 'double')) {
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 16),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.primary
+                                                    .withValues(alpha: 0.15),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: const Icon(
+                                                Icons.sports_soccer_rounded,
+                                                size: 16,
+                                                color: AppColors.primaryDark,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Expanded(
+                                              child: Text(
+                                                'ตำแหน่งผู้เล่นที่ก๊วนเปิดรับ',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isAdmin)
+                                              TextButton.icon(
+                                                style: TextButton.styleFrom(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  foregroundColor:
+                                                      AppColors.primaryDark,
+                                                ),
+                                                onPressed: () {
+                                                  Navigator.pop(ctx);
+                                                  _showEditGroupSheet(group);
+                                                },
+                                                icon: const Icon(
+                                                  Icons.tune_rounded,
+                                                  size: 15,
+                                                ),
+                                                label: const Text(
+                                                  'จัดการ',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
                                         ),
-                                      ),
-                                    ),
-                                    if (isAdmin)
-                                      TextButton.icon(
-                                        style: TextButton.styleFrom(
-                                          visualDensity: VisualDensity.compact,
-                                          foregroundColor: AppColors.primaryDark,
+                                        const SizedBox(height: 10),
+                                        PositionLineupView(
+                                          layout: layout!,
+                                          fieldStyle: fStyle,
+                                          positions: positions,
                                         ),
-                                        onPressed: () {
-                                          Navigator.pop(ctx);
-                                          _showEditGroupSheet(group);
-                                        },
-                                        icon: const Icon(Icons.tune_rounded, size: 15),
-                                        label: const Text('จัดการ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                PositionLineupView(
-                                  layout: layout!,
-                                  fieldStyle: fStyle,
-                                  positions: positions,
-                                ),
-                              ],
-                            );
-                          }
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'รอบนัด',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                                      ],
+                                    );
+                                  }
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'รอบนัด',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             if ((isAdmin || canSelectSession) &&
                                 sessions.isNotEmpty)
                               Padding(
@@ -4814,7 +5268,9 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     String genderPref = group['gender_preference']?.toString() ?? 'any';
     List<String> targetSkillLevels = (group['target_skill_levels'] is List)
-        ? (group['target_skill_levels'] as List).map((e) => e.toString()).toList()
+        ? (group['target_skill_levels'] as List)
+              .map((e) => e.toString())
+              .toList()
         : ['all'];
     final skillNoteCtrl = TextEditingController(
       text: group['skill_level_note']?.toString() ?? '',
@@ -4833,7 +5289,13 @@ class _SportClubPageState extends State<SportClubPage> {
       final results = await Future.wait<dynamic>([
         _repo.listGroupCostStandards(groupId),
         _repo.listGroupPositions(groupId, activeOnly: true),
-        _client.from('fitness_groups').select('field_layout, sport:sports(field_layout, field_style, skill_levels, name_th, name_en)').eq('id', groupId).maybeSingle(),
+        _client
+            .from('fitness_groups')
+            .select(
+              'field_layout, sport:sports(field_layout, field_style, skill_levels, name_th, name_en)',
+            )
+            .eq('id', groupId)
+            .maybeSingle(),
       ]);
       costStandards = results[0] as List<Map<String, dynamic>>;
       groupPositions = results[1] as List<Map<String, dynamic>>;
@@ -4953,7 +5415,9 @@ class _SportClubPageState extends State<SportClubPage> {
                       ],
                       const SizedBox(height: 16),
                       SkillLevelSelector(
-                        availableLevels: resolveSkillLevelsForSport(sportData: sportData),
+                        availableLevels: resolveSkillLevelsForSport(
+                          sportData: sportData,
+                        ),
                         selectedLevels: targetSkillLevels,
                         onLevelsChanged: (lvls) {
                           setSheetState(() => targetSkillLevels = lvls);
@@ -4982,7 +5446,9 @@ class _SportClubPageState extends State<SportClubPage> {
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.15),
+                                color: AppColors.primary.withValues(
+                                  alpha: 0.15,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
@@ -4994,7 +5460,10 @@ class _SportClubPageState extends State<SportClubPage> {
                             const SizedBox(width: 8),
                             const Text(
                               'จัดการตำแหน่งผู้เล่นบนสนาม',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
@@ -5004,7 +5473,8 @@ class _SportClubPageState extends State<SportClubPage> {
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                         const SizedBox(height: 12),
-                        if (sportData?['field_layout'] != null && sportData?['field_layout'] != 'none') ...[
+                        if (sportData?['field_layout'] != null &&
+                            sportData?['field_layout'] != 'none') ...[
                           SizedBox(
                             width: double.infinity,
                             child: SegmentedButton<String>(
@@ -5027,14 +5497,19 @@ class _SportClubPageState extends State<SportClubPage> {
                                 });
                               },
                               style: ButtonStyle(
-                                backgroundColor: WidgetStateProperty.resolveWith<Color>(
-                                  (Set<WidgetState> states) {
-                                    if (states.contains(WidgetState.selected)) {
-                                      return AppColors.primary.withOpacity(0.1);
-                                    }
-                                    return Colors.transparent;
-                                  },
-                                ),
+                                backgroundColor:
+                                    WidgetStateProperty.resolveWith<Color>((
+                                      Set<WidgetState> states,
+                                    ) {
+                                      if (states.contains(
+                                        WidgetState.selected,
+                                      )) {
+                                        return AppColors.primary.withOpacity(
+                                          0.1,
+                                        );
+                                      }
+                                      return Colors.transparent;
+                                    }),
                                 side: WidgetStateProperty.all(
                                   BorderSide(color: Colors.grey.shade300),
                                 ),
@@ -5112,7 +5587,10 @@ class _SportClubPageState extends State<SportClubPage> {
                                 genderPreference: genderPref,
                                 requiresOwnerApproval: requiresApproval,
                                 targetSkillLevels: targetSkillLevels,
-                                skillLevelNote: skillNoteCtrl.text.trim().isEmpty ? null : skillNoteCtrl.text.trim(),
+                                skillLevelNote:
+                                    skillNoteCtrl.text.trim().isEmpty
+                                    ? null
+                                    : skillNoteCtrl.text.trim(),
                                 fieldLayout: fieldLayout,
                               );
                               if (fieldLayout != null) {
@@ -5196,7 +5674,11 @@ class _SportClubPageState extends State<SportClubPage> {
     Map<String, int> takenCounts = {};
     try {
       final results = await Future.wait<dynamic>([
-        _client.from('fitness_groups').select('owner_auto_join, sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
+        _client
+            .from('fitness_groups')
+            .select('owner_auto_join, sport:sports(field_layout, field_style)')
+            .eq('id', groupId)
+            .maybeSingle(),
         _repo.listGroupPositions(groupId, activeOnly: true),
         _repo.listSessionPositionAvailability([sessionId]),
       ]);
@@ -5217,7 +5699,9 @@ class _SportClubPageState extends State<SportClubPage> {
         final count = (t['taken_count'] as num?)?.toInt() ?? 0;
         if (pid.isNotEmpty) takenCounts[pid] = count;
       }
-      if (ownerAutoJoin && groupPositions.isNotEmpty && editOwnerPositionId == null) {
+      if (ownerAutoJoin &&
+          groupPositions.isNotEmpty &&
+          editOwnerPositionId == null) {
         editOwnerPositionId = groupPositions.first['id']?.toString();
       }
     } catch (_) {}
@@ -5346,7 +5830,9 @@ class _SportClubPageState extends State<SportClubPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
-                    if (ownerAutoJoin && groupPositions.isNotEmpty && fieldLayout != null) ...[
+                    if (ownerAutoJoin &&
+                        groupPositions.isNotEmpty &&
+                        fieldLayout != null) ...[
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -5365,7 +5851,10 @@ class _SportClubPageState extends State<SportClubPage> {
                           const SizedBox(width: 8),
                           const Text(
                             'ตำแหน่งของผู้ดูแลก๊วนในรอบนี้',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ],
                       ),
@@ -5396,8 +5885,11 @@ class _SportClubPageState extends State<SportClubPage> {
                           final color = parseHexColor(pos['color']?.toString());
                           final slots = (pos['slots'] as num?)?.toInt() ?? 1;
                           final taken = takenCounts[posId] ?? 0;
-                          final isCurrentOwnerPos = session['owner_position_id']?.toString() == posId;
-                          final availableSlots = isCurrentOwnerPos ? slots : (slots - taken);
+                          final isCurrentOwnerPos =
+                              session['owner_position_id']?.toString() == posId;
+                          final availableSlots = isCurrentOwnerPos
+                              ? slots
+                              : (slots - taken);
                           final isFull = availableSlots <= 0;
 
                           return ChoiceChip(
@@ -5406,11 +5898,17 @@ class _SportClubPageState extends State<SportClubPage> {
                               backgroundColor: isFull ? Colors.grey : color,
                               radius: 8,
                             ),
-                            label: Text('$label (${isFull ? 'เต็ม' : 'ว่าง $availableSlots'})'),
-                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                            label: Text(
+                              '$label (${isFull ? 'เต็ม' : 'ว่าง $availableSlots'})',
+                            ),
+                            selectedColor: AppColors.primary.withValues(
+                              alpha: 0.25,
+                            ),
                             onSelected: isFull && !isSelected
                                 ? null
-                                : (_) => setSheetState(() => editOwnerPositionId = posId),
+                                : (_) => setSheetState(
+                                    () => editOwnerPositionId = posId,
+                                  ),
                           );
                         }).toList(),
                       ),
@@ -5488,7 +5986,8 @@ class _SportClubPageState extends State<SportClubPage> {
                               note: noteCtrl.text.trim().isEmpty
                                   ? null
                                   : noteCtrl.text.trim(),
-                              ownerPositionId: ownerAutoJoin && groupPositions.isNotEmpty
+                              ownerPositionId:
+                                  ownerAutoJoin && groupPositions.isNotEmpty
                                   ? editOwnerPositionId
                                   : null,
                               costItems: List<Map<String, dynamic>>.from(
@@ -5571,35 +6070,58 @@ class _SportClubPageState extends State<SportClubPage> {
             spacing: 6,
             runSpacing: 4,
             children: [
-              const Text('รออนุมัติ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+              const Text(
+                'รออนุมัติ',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               if (posLabel != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     'ตำแหน่ง: $posLabel',
-                    style: const TextStyle(fontSize: 11, color: AppColors.primaryDark, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               if (declaredSkill != null && declaredSkill.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade100,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     '🎯 ระดับมือ: $declaredSkill',
-                    style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.amber.shade900,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 2),
-          Text(requestTimeLabel, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(
+            requestTimeLabel,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
         ],
       ),
       trailing: !canManage && userId == AuthService.instance.currentUser?.id
@@ -5607,7 +6129,9 @@ class _SportClubPageState extends State<SportClubPage> {
               style: OutlinedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 foregroundColor: AppColors.primaryDark,
-                side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                side: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.5),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
               onPressed: () => _showChangePositionDialog(
@@ -5617,7 +6141,10 @@ class _SportClubPageState extends State<SportClubPage> {
                 groupId: groupId,
                 setSheetState: setSheetState,
               ),
-              child: const Text('เปลี่ยนตำแหน่ง', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'เปลี่ยนตำแหน่ง',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
             )
           : null,
     );
@@ -5686,14 +6213,22 @@ class _SportClubPageState extends State<SportClubPage> {
       final results = await Future.wait<dynamic>([
         _repo.listPublicGroupPositions(groupId),
         _repo.listSessionPositionAvailability([sessionId]),
-        _client.from('fitness_groups').select('sport:sports(field_layout, field_style)').eq('id', groupId).maybeSingle(),
+        _client
+            .from('fitness_groups')
+            .select('sport:sports(field_layout, field_style)')
+            .eq('id', groupId)
+            .maybeSingle(),
       ]);
       final positions = results[0] as List<Map<String, dynamic>>;
       final takenList = results[1] as List<Map<String, dynamic>>;
       final gRow = results[2] as Map<String, dynamic>?;
       final sport = gRow?['sport'];
-      final layout = sport is Map ? sport['field_layout']?.toString() : 'single';
-      final fStyle = sport is Map ? FieldStyle.fromJson(sport['field_style']) : FieldStyle.fallback;
+      final layout = sport is Map
+          ? sport['field_layout']?.toString()
+          : 'single';
+      final fStyle = sport is Map
+          ? FieldStyle.fromJson(sport['field_style'])
+          : FieldStyle.fallback;
 
       final takenMap = <String, int>{};
       for (final t in takenList) {
@@ -5745,13 +6280,20 @@ class _SportClubPageState extends State<SportClubPage> {
                               color: AppColors.primary.withValues(alpha: 0.15),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.swap_horiz_rounded, color: AppColors.primaryDark, size: 20),
+                            child: const Icon(
+                              Icons.swap_horiz_rounded,
+                              color: AppColors.primaryDark,
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           const Expanded(
                             child: Text(
                               'เปลี่ยนตำแหน่งบนสนาม',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ],
@@ -5787,8 +6329,12 @@ class _SportClubPageState extends State<SportClubPage> {
                               backgroundColor: isFull ? Colors.grey : color,
                               radius: 8,
                             ),
-                            label: Text('$label (${isFull ? 'เต็ม' : 'ว่าง $remaining'})'),
-                            selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                            label: Text(
+                              '$label (${isFull ? 'เต็ม' : 'ว่าง $remaining'})',
+                            ),
+                            selectedColor: AppColors.primary.withValues(
+                              alpha: 0.25,
+                            ),
                             onSelected: isFull
                                 ? null
                                 : (_) => setModalState(() => selectedPos = pid),
@@ -5803,12 +6349,20 @@ class _SportClubPageState extends State<SportClubPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           onPressed: selectedPos == null
                               ? null
                               : () => Navigator.pop(bctx, selectedPos),
-                          child: const Text('บันทึกการเปลี่ยนตำแหน่ง', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                          child: const Text(
+                            'บันทึกการเปลี่ยนตำแหน่ง',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -5826,14 +6380,16 @@ class _SportClubPageState extends State<SportClubPage> {
         positionId: newPosId,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('เปลี่ยนตำแหน่งสำเร็จแล้ว')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('เปลี่ยนตำแหน่งสำเร็จแล้ว')));
       setSheetState(() {});
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เปลี่ยนตำแหน่งไม่สำเร็จ: ${_mapBookingError(e)}')),
+        SnackBar(
+          content: Text('เปลี่ยนตำแหน่งไม่สำเร็จ: ${_mapBookingError(e)}'),
+        ),
       );
     }
   }
@@ -6714,138 +7270,227 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
-  void _showSearchDialog() {
+  Future<void> _showAdvancedFilterSheet() async {
     final qController = TextEditingController(text: _q);
     final provinceController = TextEditingController(text: _province ?? '');
     final districtController = TextEditingController(text: _district ?? '');
-    showDialog(
+    var openOnly = _filterOpenOnly;
+    var joinedOnly = _filterJoinedOnly;
+    var managedOnly = _filterManagedOnly;
+    var locationEnabled = _locationEnabled;
+    var radiusKm = _radiusKm ?? 10;
+    var locationReady = _userLat != null && _userLng != null;
+
+    final applied = await showModalBottomSheet<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Center(child: Text('ค้นหาก๊วน')),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('ค้นหา'),
-                TextField(
-                  controller: qController,
-                  onChanged: (_) => setDialogState(() {}),
-                  onTapOutside: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  decoration: InputDecoration(
-                    hintText: 'ค้นหาก๊วน / สถานที่',
-                    suffixIcon: qController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'ล้างค่า',
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              qController.clear();
-                              setDialogState(() {});
-                            },
-                          ),
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          Future<void> enableLocation() async {
+            final ok = await _requestLocation();
+            if (!ok || !sheetContext.mounted) {
+              if (sheetContext.mounted) {
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง',
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                const Text('จังหวัด'),
-                TextField(
-                  controller: provinceController,
-                  onTapOutside: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  decoration: const InputDecoration(hintText: 'จังหวัด'),
-                ),
-                const SizedBox(height: 16),
-                const Text('อำเภอ'),
-                TextField(
-                  controller: districtController,
-                  onTapOutside: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  decoration: const InputDecoration(hintText: 'อำเภอ'),
-                ),
-                const SizedBox(height: 16),
-                CheckboxListTile(
-                  title: const Text('เฉพาะก๊วนที่เข้าร่วมได้ทันที'),
-                  subtitle: const Text('กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก'),
-                  value: _filterOpenOnly,
-                  onChanged: (v) =>
-                      setDialogState(() => _filterOpenOnly = v ?? false),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  title: const Text('ใช้ตำแหน่งปัจจุบัน'),
-                  subtitle: const Text('กรองก๊วนตามระยะทางจากคุณ'),
-                  value: _locationEnabled,
-                  onChanged: (v) async {
-                    if (v) {
-                      final ok = await _requestLocation();
-                      if (!ok) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง',
-                              ),
-                            ),
-                          );
-                        }
-                        return;
-                      }
-                    }
-                    setDialogState(() {
-                      _locationEnabled = v;
-                      if (v) _radiusKm ??= 10;
-                    });
-                  },
-                ),
-                if (_locationEnabled) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        const Text('รัศมี'),
-                        Expanded(
-                          child: Slider(
-                            value: (_radiusKm ?? 10).clamp(1, 50).toDouble(),
-                            min: 1,
-                            max: 50,
-                            divisions: 49,
-                            label: '${(_radiusKm ?? 10).round()} กม.',
-                            onChanged: (v) =>
-                                setDialogState(() => _radiusKm = v),
+                );
+              }
+              return;
+            }
+            setSheetState(() {
+              locationReady = true;
+              locationEnabled = true;
+            });
+          }
+
+          Future<void> togglePersonal(bool value, bool managed) async {
+            if (value && AuthService.instance.currentUser == null) {
+              final loggedIn = await _requireLoginForFilter();
+              if (!loggedIn || !sheetContext.mounted) return;
+            }
+            setSheetState(() {
+              if (managed) {
+                managedOnly = value;
+              } else {
+                joinedOnly = value;
+              }
+            });
+          }
+
+          return FractionallySizedBox(
+            heightFactor: 0.9,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 12,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 12,
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'ตัวกรองก๊วน',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text('${(_radiusKm ?? 10).round()} กม.'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          qController.clear();
+                          provinceController.clear();
+                          districtController.clear();
+                          setSheetState(() {
+                            openOnly = false;
+                            joinedOnly = false;
+                            managedOnly = false;
+                            locationEnabled = false;
+                          });
+                        },
+                        child: const Text('ล้างทั้งหมด'),
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        TextField(
+                          controller: qController,
+                          decoration: const InputDecoration(
+                            labelText: 'ค้นหาก๊วน / สถานที่',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: provinceController,
+                          decoration: const InputDecoration(
+                            labelText: 'จังหวัด',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: districtController,
+                          decoration: const InputDecoration(labelText: 'อำเภอ'),
+                        ),
+                        const SizedBox(height: 8),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('เฉพาะก๊วนที่เข้าร่วมได้ทันที'),
+                          subtitle: const Text('ไม่ต้องรอเจ้าของอนุมัติ'),
+                          value: openOnly,
+                          onChanged: (value) =>
+                              setSheetState(() => openOnly = value),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('เฉพาะก๊วนที่เป็นสมาชิก'),
+                          value: joinedOnly,
+                          onChanged: (value) => togglePersonal(value, false),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('เฉพาะก๊วนที่ดูแล'),
+                          value: managedOnly,
+                          onChanged: (value) => togglePersonal(value, true),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('ใช้ตำแหน่งปัจจุบัน'),
+                          subtitle: Text(
+                            locationEnabled && locationReady
+                                ? 'กรองก๊วนภายในรัศมี'
+                                : 'ต้องอนุญาตสิทธิ์ตำแหน่งก่อน',
+                          ),
+                          value: locationEnabled && locationReady,
+                          onChanged: (value) {
+                            if (value) {
+                              enableLocation();
+                            } else {
+                              setSheetState(() => locationEnabled = false);
+                            }
+                          },
+                        ),
+                        if (locationEnabled && locationReady)
+                          Row(
+                            children: [
+                              const Text('รัศมี'),
+                              Expanded(
+                                child: Slider(
+                                  value: radiusKm.clamp(1, 50).toDouble(),
+                                  min: 1,
+                                  max: 50,
+                                  divisions: 49,
+                                  label: '${radiusKm.round()} กม.',
+                                  onChanged: (value) =>
+                                      setSheetState(() => radiusKm = value),
+                                ),
+                              ),
+                              Text('${radiusKm.round()} กม.'),
+                            ],
+                          ),
                       ],
                     ),
                   ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          child: const Text('ยกเลิก'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(sheetContext, true),
+                          child: const Text('แสดงผลลัพธ์'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ยกเลิก'),
-            ),
-            TextButton(
-              onPressed: () {
-                _q = qController.text;
-                _province = provinceController.text.isEmpty
-                    ? null
-                    : provinceController.text;
-                _district = districtController.text.isEmpty
-                    ? null
-                    : districtController.text;
-                Navigator.pop(context);
-                _reload();
-              },
-              child: const Text('ค้นหา'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
+
+    final query = qController.text.trim();
+    final province = provinceController.text.trim();
+    final district = districtController.text.trim();
+    qController.dispose();
+    provinceController.dispose();
+    districtController.dispose();
+    if (applied != true || !mounted) return;
+    setState(() {
+      _q = query;
+      _province = province.isEmpty ? null : province;
+      _district = district.isEmpty ? null : district;
+      _filterOpenOnly = openOnly;
+      _filterJoinedOnly = joinedOnly;
+      _filterManagedOnly = managedOnly;
+      _locationEnabled = locationEnabled && locationReady;
+      _radiusKm = radiusKm;
+    });
+    await _reload();
   }
 }
