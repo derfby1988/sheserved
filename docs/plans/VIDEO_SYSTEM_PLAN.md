@@ -918,6 +918,19 @@ color: Colors.blue.withOpacity(0.6),
 - ✅ หน้าจอ
 - ✅ GitHub sync
 
+### Local Build Cache — เครื่องหลักเท่านั้น
+เพื่อป้องกันพื้นที่ดิสก์เครื่องหลักเต็ม ให้เก็บ cache และ build artifacts
+ไว้บน External Drive `/Volumes/PostgreSQL`:
+
+- Gradle: `/Volumes/PostgreSQL/dev-cache/gradle/.gradle`
+- Pub cache: `/Volumes/PostgreSQL/dev-cache/pub/.pub-cache`
+- Android SDK: `/Volumes/PostgreSQL/dev-cache/android/sdk`
+- Xcode DerivedData: `/Volumes/PostgreSQL/dev-cache/derived-data/DerivedData`
+
+การตั้งค่านี้เป็น machine-local configuration ไม่ต้อง sync ไปเครื่องรอง
+และไม่ควร commit path เหล่านี้ลง Git เครื่องรองสามารถใช้ cache และ SDK
+ของตัวเองได้ตามสภาพแวดล้อมของเครื่องนั้น
+
 ### ไม่ต้อง
 - ❌ เครื่องที่ 2 (Client Machine) ไม่ต้องเปิดระหว่างพัฒนา
 - ❌ SSH หรือ remote connection ไม่จำเป็น
