@@ -7323,6 +7323,61 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
+  Future<void> _maybePromptPositionSetup({
+    required String groupId,
+    required bool positionsConfigured,
+    required bool positionFeatureEnabled,
+    required bool ownerAutoJoin,
+  }) async {
+    if (positionsConfigured || !positionFeatureEnabled || !ownerAutoJoin) {
+      return;
+    }
+
+    Map<String, dynamic>? group;
+    for (final item in _groups) {
+      if (item['id']?.toString() == groupId) {
+        group = item;
+        break;
+      }
+    }
+    if (group == null) {
+      try {
+        final row = await _client
+            .from('fitness_groups')
+            .select('*')
+            .eq('id', groupId)
+            .maybeSingle();
+        if (row != null) {
+          group = Map<String, dynamic>.from(row);
+        }
+      } catch (_) {}
+    }
+    if (group == null || !mounted) return;
+
+    final shouldSetup = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ตั้งค่าตำแหน่งผู้เล่น'),
+        content: const Text(
+          'ก๊วนนี้ใช้ระบบตำแหน่งผู้เล่น แต่ยังไม่ได้กำหนดตำแหน่งที่เปิดรับ\n\n'
+          'แนะนำให้ตั้งค่าตำแหน่งก่อนสร้างรอบนัด เพื่อให้สมาชิกเลือกตำแหน่งได้เมื่อจอง',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('สร้างรอบนัดต่อ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('ตั้งค่าตำแหน่ง'),
+          ),
+        ],
+      ),
+    );
+    if (shouldSetup != true || !mounted) return;
+    await _showEditGroupSheet(group);
+  }
+
   Widget _buildFloatingButtons() {
     return Padding(
       padding: const EdgeInsets.only(right: 4, bottom: 4),
@@ -7350,16 +7405,25 @@ class _SportClubPageState extends State<SportClubPage> {
           if (newSportId != null && _sportId != newSportId) {
             setState(() => _sportId = newSportId);
           }
+          final positionsConfigured = result['positionsConfigured'] == true;
+          final positionFeatureEnabled =
+              result['positionFeatureEnabled'] == true;
+          final ownerAutoJoin = result['ownerAutoJoin'] != false;
           final refreshFuture = _reload();
           if (groupId.isNotEmpty) {
-            await _showCreateSessionSheet(
-              groupId,
-              refreshFuture: refreshFuture,
-            );
-            if (!mounted) return;
             try {
               await refreshFuture;
             } catch (_) {}
+            if (!mounted) return;
+            await _maybePromptPositionSetup(
+              groupId: groupId,
+              positionsConfigured: positionsConfigured,
+              positionFeatureEnabled: positionFeatureEnabled,
+              ownerAutoJoin: ownerAutoJoin,
+            );
+            if (!mounted) return;
+            await _showCreateSessionSheet(groupId);
+            if (!mounted) return;
             await _reload();
           } else {
             try {

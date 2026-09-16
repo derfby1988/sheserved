@@ -26,7 +26,6 @@ class CreateGroupPage extends StatefulWidget {
   State<CreateGroupPage> createState() => _CreateGroupPageState();
 }
 
-
 class _CreateGroupPageState extends State<CreateGroupPage>
     with AutomaticKeepAliveClientMixin {
   late final FitnessBuddiesRepository _repo;
@@ -54,7 +53,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   bool _showImageSection = false;
   bool _showSettingsSection = false;
   bool _showCostsSection = false;
-  bool _showPositionsSection = false;
   // Phase 9.1: draft cost standards, written to DB after the group exists.
   List<Map<String, dynamic>> _groupFeeDrafts = [];
   List<Map<String, dynamic>> _roundExpenseDrafts = [];
@@ -89,7 +87,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     return null;
   }
 
-  FieldStyle get _fieldStyle => FieldStyle.fromJson(_selectedSportData?['field_style']);
+  FieldStyle get _fieldStyle =>
+      FieldStyle.fromJson(_selectedSportData?['field_style']);
 
   bool _hasUnsavedChanges() {
     return _nameCtrl.text.trim().isNotEmpty ||
@@ -175,7 +174,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     _skillNoteCtrl.dispose();
     super.dispose();
   }
-
 
   @override
   void didChangeDependencies() {
@@ -307,7 +305,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         lat: _lat,
         lng: _lng,
         targetSkillLevels: _targetSkillLevels,
-        skillLevelNote: _skillNoteCtrl.text.trim().isEmpty ? null : _skillNoteCtrl.text.trim(),
+        skillLevelNote: _skillNoteCtrl.text.trim().isEmpty
+            ? null
+            : _skillNoteCtrl.text.trim(),
         fieldLayout: _customFieldLayout,
       );
       // Phase 9.1: persist drafted cost standards now that group_id exists.
@@ -352,7 +352,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       await _saveRecentName(_nameCtrl.text.trim());
       if (!mounted) return;
       // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId + sportId เพื่อให้หน้า SportClub เลือกแถบกีฬาและ scroll ไปการ์ดใหม่
-      Navigator.pop(context, {'groupId': groupId, 'sportId': _sportId});
+      Navigator.pop(context, {
+        'groupId': groupId,
+        'sportId': _sportId,
+        'positionsConfigured': _positionDrafts.isNotEmpty,
+        'positionFeatureEnabled':
+            _fieldLayout == 'single' || _fieldLayout == 'double',
+        'ownerAutoJoin': _ownerAutoJoin,
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -580,19 +587,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                     const SizedBox(height: 8),
                                     _buildRecentNames(),
                                   ],
-                                  const SizedBox(height: 20),
-                                  const Divider(),
-                                  const SizedBox(height: 12),
-                                  SkillLevelSelector(
-                                    availableLevels: resolveSkillLevelsForSport(sportData: _selectedSportData),
-                                    selectedLevels: _targetSkillLevels,
-                                    onLevelsChanged: (levels) {
-                                      setState(() {
-                                        _targetSkillLevels = levels;
-                                      });
-                                    },
-                                    noteController: _skillNoteCtrl,
-                                  ),
                                 ],
                               ),
                             ),
@@ -672,6 +666,55 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                         setState(() => _ownerAutoJoin = v),
                                   ),
                                   const Divider(height: 24),
+                                  SkillLevelSelector(
+                                    availableLevels: resolveSkillLevelsForSport(
+                                      sportData: _selectedSportData,
+                                    ),
+                                    selectedLevels: _targetSkillLevels,
+                                    onLevelsChanged: (levels) {
+                                      setState(() {
+                                        _targetSkillLevels = levels;
+                                      });
+                                    },
+                                    noteController: _skillNoteCtrl,
+                                  ),
+                                  if (_fieldLayout != null) ...[
+                                    const Divider(height: 24),
+                                    const Text(
+                                      'ตำแหน่งผู้เล่นที่ต้องการบนสนาม',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'กำหนดตำแหน่งผู้เล่นล่วงหน้าเพื่อให้สมาชิกเลือกตำแหน่งที่ต้องการเล่นเมื่อจองรอบนัด',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (_selectedSportData?['field_layout'] !=
+                                            null &&
+                                        _selectedSportData?['field_layout'] !=
+                                            'none') ...[
+                                      _buildFieldLayoutSelector(),
+                                      const SizedBox(height: 16),
+                                    ],
+                                    PositionLineupEditor(
+                                      layout: _fieldLayout!,
+                                      fieldStyle: _fieldStyle,
+                                      positions: _positionDrafts,
+                                      onChanged: (newPositions) {
+                                        setState(() {
+                                          _positionDrafts = newPositions;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                  const Divider(height: 24),
                                   _buildModernTextField(
                                     controller: _descCtrl,
                                     label: 'คำอธิบาย (ไม่บังคับ)',
@@ -693,45 +736,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               ),
                               child: _buildCostStandardsEditor(),
                             ),
-                            if (_fieldLayout != null) ...[
-                              const SizedBox(height: 32),
-                              _buildCollapsibleSection(
-                                title: 'ตำแหน่งผู้เล่นที่ต้องการบนสนาม',
-                                icon: Icons.sports_soccer_rounded,
-                                expanded: _showPositionsSection,
-                                onToggle: () => setState(
-                                  () => _showPositionsSection =
-                                      !_showPositionsSection,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'กำหนดตำแหน่งผู้เล่นล่วงหน้าเพื่อให้สมาชิกเลือกตำแหน่งที่ต้องการเล่นเมื่อจองรอบนัด',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    if (_selectedSportData?['field_layout'] != null && _selectedSportData?['field_layout'] != 'none') ...[
-                                      _buildFieldLayoutSelector(),
-                                      const SizedBox(height: 16),
-                                    ],
-                                    PositionLineupEditor(
-                                      layout: _fieldLayout!,
-                                      fieldStyle: _fieldStyle,
-                                      positions: _positionDrafts,
-                                      onChanged: (newPositions) {
-                                        setState(() {
-                                          _positionDrafts = newPositions;
-                                        });
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                             const SizedBox(height: 32),
                             _buildModernSection(
                               title: 'สถานที่ตั้งสนาม',
@@ -2543,14 +2547,8 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           width: double.infinity,
           child: SegmentedButton<String>(
             segments: const [
-              ButtonSegment(
-                value: 'single',
-                label: Text('ครึ่งสนาม (1 ฝั่ง)'),
-              ),
-              ButtonSegment(
-                value: 'double',
-                label: Text('เต็มสนาม (2 ฝั่ง)'),
-              ),
+              ButtonSegment(value: 'single', label: Text('ครึ่งสนาม (1 ฝั่ง)')),
+              ButtonSegment(value: 'double', label: Text('เต็มสนาม (2 ฝั่ง)')),
             ],
             selected: {layout},
             onSelectionChanged: (Set<String> newSelection) {
@@ -2561,14 +2559,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               });
             },
             style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith<Color>(
-                (Set<WidgetState> states) {
-                  if (states.contains(WidgetState.selected)) {
-                    return AppColors.primary.withOpacity(0.1);
-                  }
-                  return Colors.transparent;
-                },
-              ),
+              backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return AppColors.primary.withOpacity(0.1);
+                }
+                return Colors.transparent;
+              }),
               side: WidgetStateProperty.all(
                 BorderSide(color: Colors.grey.shade300),
               ),
