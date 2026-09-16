@@ -213,6 +213,7 @@ class _TlzDrawerState extends State<TlzDrawer>
       width: drawerWidth,
       child: Drawer(
         backgroundColor: Colors.transparent,
+        elevation: 0,
         child: GestureDetector(
           onHorizontalDragUpdate: _handleSwipeUpdate,
           onHorizontalDragEnd: _handleSwipeEnd,
@@ -563,16 +564,6 @@ class _TlzDrawerState extends State<TlzDrawer>
                                       onTap: () => _navigateTo(
                                         context,
                                         '/community/sport-club',
-                                      ),
-                                      isSubItem: true,
-                                    ),
-                                    _buildMenuItem(
-                                      context,
-                                      title: 'เสนอกีฬาใหม่',
-                                      icon: Icons.sports_baseball_outlined,
-                                      onTap: () => _navigateTo(
-                                        context,
-                                        '/community/sport-club/sport/propose',
                                       ),
                                       isSubItem: true,
                                     ),
