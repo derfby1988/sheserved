@@ -1,10 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../../../../core/constants/app_colors.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
@@ -52,7 +54,6 @@ class _SportClubPageState extends State<SportClubPage> {
   Set<String> _myBlockedGroupIds = {};
   Set<String> _myCreatedSportIds = {};
   bool _intentHandled = false;
-  bool _showMapView = false;
   String? _province;
   String? _district;
   double? _radiusKm;
@@ -62,7 +63,9 @@ class _SportClubPageState extends State<SportClubPage> {
   bool _filterOpenOnly = false;
   bool _filterJoinedOnly = false;
   bool _filterManagedOnly = false;
+  bool _showRadiusControl = false;
   int _filterRequestId = 0;
+  static const _filterPreferencesPrefix = 'sport_club_filters_v1_';
   final _listScrollController = ScrollController();
   final _detailScrollController = ScrollController();
   static const _pageSize = 10;
@@ -145,8 +148,14 @@ class _SportClubPageState extends State<SportClubPage> {
           .map((g) => g['id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
           .toList();
-      final groupIdsWithSessions = await _repo
-          .filterGroupIdsWithUpcomingSessions(groupIds);
+      // ผู้ใช้ทั่วไปเห็นทุกก๊วนที่มีรอบนัด (รวมรอบที่สิ้นสุดแล้ว)
+      final groupIdsWithAnySessions = await _repo.filterGroupIdsWithAnySessions(
+        groupIds,
+      );
+      // เมื่อกด filter "ยังเปิดรับ" ให้แสดงเฉพาะก๊วนที่ยังมีรอบนัดไม่สิ้นสุด
+      final groupIdsWithUpcomingSessions = _filterOpenOnly
+          ? await _repo.filterGroupIdsWithUpcomingSessions(groupIds)
+          : null;
       if (requestId != null && requestId != _filterRequestId) {
         throw StateError('STALE_FILTER_REQUEST');
       }
@@ -170,11 +179,15 @@ class _SportClubPageState extends State<SportClubPage> {
               blockedGroupIds.contains(groupId)) {
             return true;
           }
-          return groupIdsWithSessions.contains(groupId);
+          if (_filterOpenOnly) {
+            return groupIdsWithUpcomingSessions?.contains(groupId) ?? false;
+          }
+          return groupIdsWithAnySessions.contains(groupId);
         }),
       );
     }
 
+    _sortGroupsByDistance(visibleGroups);
     return _GroupPageResult(
       groups: visibleGroups,
       nextOffset: nextOffset,
@@ -196,6 +209,7 @@ class _SportClubPageState extends State<SportClubPage> {
       if (!mounted) return;
       setState(() {
         _groups.addAll(page.groups);
+        _sortGroupsByDistance(_groups);
         _currentOffset = page.nextOffset;
         _hasMore = page.hasMore;
         _isLoadingMore = false;
@@ -206,10 +220,79 @@ class _SportClubPageState extends State<SportClubPage> {
     }
   }
 
+  String _filterPreferencesKey(String userId) =>
+      '$_filterPreferencesPrefix$userId';
+
+  Future<void> _restoreFilterState(String? userId) async {
+    if (userId == null || userId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_filterPreferencesKey(userId));
+      if (raw == null || raw.isEmpty) return;
+      final saved = jsonDecode(raw);
+      if (saved is! Map) return;
+
+      _sportId = saved['sportId']?.toString();
+      _q = saved['q']?.toString() ?? '';
+      _province = saved['province']?.toString();
+      _district = saved['district']?.toString();
+      _filterOpenOnly = saved['openOnly'] == true;
+      _filterJoinedOnly = saved['joinedOnly'] == true;
+      _filterManagedOnly = saved['managedOnly'] == true;
+      _radiusKm = (saved['radiusKm'] as num?)?.toDouble() ?? 10;
+      _locationEnabled = saved['locationEnabled'] == true;
+
+      if (_locationEnabled) {
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.whileInUse ||
+            permission == LocationPermission.always) {
+          try {
+            final position = await Geolocator.getCurrentPosition();
+            _userLat = position.latitude;
+            _userLng = position.longitude;
+            _showRadiusControl = true;
+          } catch (_) {
+            _locationEnabled = false;
+          }
+        } else {
+          _locationEnabled = false;
+        }
+      }
+    } catch (_) {
+      // Ignore malformed or unavailable local preferences and use defaults.
+    }
+  }
+
+  Future<void> _persistFilterState() async {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null || userId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _filterPreferencesKey(userId),
+        jsonEncode({
+          'sportId': _sportId,
+          'q': _q,
+          'province': _province,
+          'district': _district,
+          'openOnly': _filterOpenOnly,
+          'joinedOnly': _filterJoinedOnly,
+          'managedOnly': _filterManagedOnly,
+          'locationEnabled': _locationEnabled,
+          'radiusKm': _radiusKm ?? 10,
+        }),
+      );
+    } catch (_) {
+      // Filtering must continue to work even when local storage is unavailable.
+    }
+  }
+
   Future<void> _init() async {
     final requestId = ++_filterRequestId;
     try {
       final userId = AuthService.instance.currentUser?.id;
+      await _restoreFilterState(userId);
+      if (requestId != _filterRequestId) return;
       final sports = await _repo.getApprovedSports(userId: userId);
       final adminIds = userId != null
           ? await _repo.listMyAdminGroupIds(userId)
@@ -1166,71 +1249,6 @@ class _SportClubPageState extends State<SportClubPage> {
               '${billingPeriodLabel(f['billing_period']?.toString())}',
         )
         .join(' · ');
-  }
-
-  /// Phase 9.1: compact per-item cost lines + round total for a session on
-  /// the group card.
-  List<Widget> _sessionCostLines(
-    List<Map<String, dynamic>> items,
-    bool hasCover,
-    Widget Function(Widget) textPill,
-  ) {
-    if (items.isEmpty) return const [];
-    return [
-      for (final item in items)
-        Padding(
-          padding: const EdgeInsets.only(left: 40, top: 2),
-          child: textPill(
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  costCategoryIcon(item['category']?.toString()),
-                  size: 13,
-                  color: hasCover ? Colors.white70 : Colors.grey.shade600,
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    '${item['name']}: ${sessionCostItemSummary(item)} · '
-                    '${paymentTimingLabel(item['payment_timing']?.toString())}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: hasCover ? Colors.white70 : Colors.grey[700],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      Padding(
-        padding: const EdgeInsets.only(left: 40, top: 2),
-        child: textPill(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.receipt_long_rounded,
-                size: 13,
-                color: hasCover ? Colors.white : AppColors.primaryDark,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'ค่าใช้จ่ายรอบนี้รวม ~${formatBaht(sessionCostItemsTotal(items))}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: hasCover ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ];
   }
 
   /// Phase 9.1: sessions with their public cost line items attached as
@@ -2202,33 +2220,6 @@ class _SportClubPageState extends State<SportClubPage> {
                       icon: const Icon(Icons.search, color: Colors.white),
                       onPressed: _showAdvancedFilterSheet,
                     ),
-                    PopupMenuButton<String>(
-                      tooltip: 'เพิ่มเติม',
-                      icon: const Icon(Icons.more_vert, color: Colors.white),
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'my_groups':
-                            Navigator.pushNamed(
-                              context,
-                              '/community/sport-club/my-groups',
-                            );
-                          case 'toggle_view':
-                            setState(() => _showMapView = !_showMapView);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'my_groups',
-                          child: Text('ก๊วนของฉัน'),
-                        ),
-                        PopupMenuItem(
-                          value: 'toggle_view',
-                          child: Text(
-                            _showMapView ? 'แสดงรายการ' : 'แสดงแผนที่',
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -2244,980 +2235,940 @@ class _SportClubPageState extends State<SportClubPage> {
                   topRight: Radius.circular(32),
                 ),
               ),
-              child: _showMapView && !_loading
-                  ? _buildMapView()
-                  : RefreshIndicator(
-                      onRefresh: _reload,
-                      child: ListView(
-                        controller: _listScrollController,
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      _buildSportChip(
-                                        null,
-                                        'ทั้งหมด',
-                                        icon: '🏅',
-                                      ),
-                                      ..._sports.map(
-                                        (s) => _buildSportChip(
-                                          s['id']?.toString(),
-                                          s['name_th']?.toString() ?? 'กีฬา',
-                                          icon: s['icon']?.toString(),
-                                        ),
-                                      ),
-                                    ],
+              child: RefreshIndicator(
+                onRefresh: _reload,
+                child: ListView(
+                  controller: _listScrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildSportChip(null, 'ทั้งหมด', icon: '🏅'),
+                                ..._sports.map(
+                                  (s) => _buildSportChip(
+                                    s['id']?.toString(),
+                                    s['name_th']?.toString() ?? 'กีฬา',
+                                    icon: s['icon']?.toString(),
                                   ),
                                 ),
-                              ),
-                              _buildAddSportFab(),
-                            ],
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 10),
-                          _buildQuickFilterRow(),
-                          const SizedBox(height: 16),
-                          if (_loading || _reloadingGroups)
-                            for (var i = 0; i < 3; i++) _buildSkeletonCard(),
-                          if (!_loading && !_reloadingGroups && _groups.isEmpty)
-                            _buildEmptyFilterState(),
-                          if (!_loading && !_reloadingGroups) ...[
-                            for (final g in _groups)
-                              if (_canViewFullGroup(g))
-                                InkWell(
-                                  onTap: () => _showGroupDetailSheet(g),
-                                  child: Builder(
-                                    builder: (context) {
-                                      final coverUrl =
-                                          (g['cover_image_url']?.toString() ??
-                                                  '')
-                                              .trim();
-                                      final hasCover = coverUrl.isNotEmpty;
-                                      final genderPref =
-                                          g['gender_preference']?.toString() ??
-                                          'any';
-                                      final isMalePref = genderPref == 'male';
-                                      final genderChipColor = isMalePref
-                                          ? Colors.blue
-                                          : Colors.pink;
-                                      Widget textPill(Widget child) => hasCover
-                                          ? Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 4,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withOpacity(
-                                                  0.5,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                border: Border.all(
-                                                  color: Colors.white
-                                                      .withOpacity(0.3),
-                                                ),
-                                              ),
-                                              child: child,
-                                            )
-                                          : child;
-                                      return Container(
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 8,
+                        ),
+                        _buildAddSportFab(),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _buildQuickFilterRow(),
+                    _buildRadiusControl(),
+                    const SizedBox(height: 16),
+                    if (_loading || _reloadingGroups)
+                      for (var i = 0; i < 3; i++) _buildSkeletonCard(),
+                    if (!_loading && !_reloadingGroups && _groups.isEmpty)
+                      _buildEmptyFilterState(),
+                    if (!_loading && !_reloadingGroups) ...[
+                      for (final g in _groups)
+                        if (_canViewFullGroup(g))
+                          InkWell(
+                            onTap: () => _showGroupDetailSheet(g),
+                            child: Builder(
+                              builder: (context) {
+                                final coverUrl =
+                                    (g['cover_image_url']?.toString() ?? '')
+                                        .trim();
+                                final hasCover = coverUrl.isNotEmpty;
+                                final genderPref =
+                                    g['gender_preference']?.toString() ?? 'any';
+                                final isMalePref = genderPref == 'male';
+                                final genderChipColor = isMalePref
+                                    ? Colors.blue
+                                    : Colors.pink;
+                                Widget textPill(Widget child) => hasCover
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: hasCover
-                                              ? Colors.transparent
-                                              : Colors.white.withOpacity(0.7),
+                                          color: Colors.black.withOpacity(0.5),
                                           borderRadius: BorderRadius.circular(
-                                            24,
+                                            12,
                                           ),
                                           border: Border.all(
                                             color: Colors.white.withOpacity(
-                                              0.5,
+                                              0.3,
                                             ),
-                                            width: 1,
                                           ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.05,
-                                              ),
-                                              blurRadius: 10,
-                                              offset: const Offset(0, 4),
-                                            ),
-                                          ],
-                                          gradient: hasCover
-                                              ? const LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    Colors.black38,
-                                                    Colors.black87,
-                                                  ],
-                                                )
-                                              : null,
-                                          image: hasCover
-                                              ? DecorationImage(
-                                                  image: NetworkImage(coverUrl),
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : null,
                                         ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(16),
-                                          child: DefaultTextStyle(
-                                            style: TextStyle(
-                                              color: hasCover
-                                                  ? Colors.white
-                                                  : Colors.black87,
+                                        child: child,
+                                      )
+                                    : child;
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: hasCover
+                                        ? Colors.transparent
+                                        : Colors.white.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.5),
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.05),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                    gradient: hasCover
+                                        ? const LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.black38,
+                                              Colors.black87,
+                                            ],
+                                          )
+                                        : null,
+                                    image: hasCover
+                                        ? DecorationImage(
+                                            image: NetworkImage(coverUrl),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: DefaultTextStyle(
+                                      style: TextStyle(
+                                        color: hasCover
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.center,
+                                                  children: [
+                                                    if ((g['sport_name']
+                                                                ?.toString() ??
+                                                            '')
+                                                        .isNotEmpty)
+                                                      textPill(
+                                                        _buildSportChipLabel(
+                                                          g['sport_icon']
+                                                              ?.toString(),
+                                                          g['sport_name']
+                                                              .toString(),
+                                                        ),
+                                                      ),
+                                                    if ((g['sport_name']
+                                                                ?.toString() ??
+                                                            '')
+                                                        .isNotEmpty)
+                                                      const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Align(
+                                                        alignment: Alignment
+                                                            .centerLeft,
+                                                        child: textPill(
+                                                          Text(
+                                                            g['name']
+                                                                    ?.toString() ??
+                                                                '',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 16,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                ),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              if (genderPref != 'any')
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: hasCover
+                                                        ? Colors.black
+                                                              .withOpacity(0.5)
+                                                        : genderChipColor
+                                                              .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: hasCover
+                                                          ? Colors.white
+                                                                .withOpacity(
+                                                                  0.3,
+                                                                )
+                                                          : genderChipColor
+                                                                .withOpacity(
+                                                                  0.2,
+                                                                ),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    isMalePref ? 'ช.' : 'ญ.',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: hasCover
+                                                          ? Colors.white
+                                                          : isMalePref
+                                                          ? Colors.blue.shade700
+                                                          : Colors
+                                                                .pink
+                                                                .shade700,
+                                                    ),
+                                                  ),
+                                                )
+                                              else
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: hasCover
+                                                        ? Colors.black
+                                                              .withOpacity(0.5)
+                                                        : Colors.green
+                                                              .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: hasCover
+                                                          ? Colors.white
+                                                                .withOpacity(
+                                                                  0.3,
+                                                                )
+                                                          : Colors.green
+                                                                .withOpacity(
+                                                                  0.2,
+                                                                ),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    'เสรี',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: hasCover
+                                                          ? Colors.white
+                                                          : Colors
+                                                                .green
+                                                                .shade700,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          if ((g['description']?.toString() ??
+                                                  '')
+                                              .isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 6,
+                                              ),
+                                              child: textPill(
+                                                Text(
+                                                  g['description'].toString(),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
                                             ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
+                                          if ((g['province']?.toString() ?? '')
+                                              .isNotEmpty)
+                                            textPill(
+                                              Text(
+                                                'พื้นที่: ' +
+                                                    g['province'].toString() +
+                                                    (g['district'] != null &&
+                                                            g['district']
+                                                                .toString()
+                                                                .isNotEmpty
+                                                        ? ' · ' +
+                                                              g['district']
+                                                                  .toString()
+                                                        : ''),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 8),
+                                          FutureBuilder<List<dynamic>>(
+                                            future: Future.wait<dynamic>([
+                                              _repo.listUpcomingSessions(
+                                                g['id'].toString(),
+                                              ),
+                                              _repo.hasAnySessions(
+                                                g['id'].toString(),
+                                              ),
+                                              _repo
+                                                  .listPublicGroupFees(
+                                                    g['id'].toString(),
+                                                  )
+                                                  .catchError(
+                                                    (_) =>
+                                                        <
+                                                          Map<String, dynamic>
+                                                        >[],
+                                                  ),
+                                              _repo
+                                                  .listPublicSessionCostItemsForGroup(
+                                                    g['id'].toString(),
+                                                  )
+                                                  .catchError(
+                                                    (_) =>
+                                                        <
+                                                          Map<String, dynamic>
+                                                        >[],
+                                                  ),
+                                              _repo
+                                                  .listPublicGroupPositions(
+                                                    g['id'].toString(),
+                                                  )
+                                                  .catchError(
+                                                    (_) =>
+                                                        <
+                                                          Map<String, dynamic>
+                                                        >[],
+                                                  ),
+                                            ]),
+                                            builder: (context, snapshot) {
+                                              final items =
+                                                  (snapshot.data?[0] as List?)
+                                                      ?.cast<
+                                                        Map<String, dynamic>
+                                                      >() ??
+                                                  const <
+                                                    Map<String, dynamic>
+                                                  >[];
+                                              final sortedItems = [...items]
+                                                ..sort((a, b) {
+                                                  final aStart =
+                                                      DateTime.tryParse(
+                                                        a['starts_at']
+                                                                ?.toString() ??
+                                                            '',
+                                                      );
+                                                  final bStart =
+                                                      DateTime.tryParse(
+                                                        b['starts_at']
+                                                                ?.toString() ??
+                                                            '',
+                                                      );
+                                                  if (aStart == null &&
+                                                      bStart == null) {
+                                                    return 0;
+                                                  }
+                                                  if (aStart == null) return 1;
+                                                  if (bStart == null) return -1;
+                                                  return aStart.compareTo(
+                                                    bStart,
+                                                  );
+                                                });
+                                              final hasAnySessions =
+                                                  snapshot.data?[1] == true;
+                                              final groupFees =
+                                                  (snapshot.data?[2] as List?)
+                                                      ?.cast<
+                                                        Map<String, dynamic>
+                                                      >() ??
+                                                  const <
+                                                    Map<String, dynamic>
+                                                  >[];
+                                              final groupPositions =
+                                                  (snapshot.data?.length ?? 0) >
+                                                      4
+                                                  ? (snapshot.data?[4] as List?)
+                                                            ?.cast<
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >
+                                                            >() ??
+                                                        []
+                                                  : <Map<String, dynamic>>[];
+                                              final costItemsBySession =
+                                                  <
+                                                    String,
+                                                    List<Map<String, dynamic>>
+                                                  >{};
+                                              for (final it
+                                                  in (snapshot.data?[3]
+                                                              as List?)
+                                                          ?.cast<
+                                                            Map<String, dynamic>
+                                                          >() ??
+                                                      const <
+                                                        Map<String, dynamic>
+                                                      >[]) {
+                                                final sid =
+                                                    it['session_id']
+                                                        ?.toString() ??
+                                                    '';
+                                                if (sid.isNotEmpty) {
+                                                  costItemsBySession
+                                                      .putIfAbsent(
+                                                        sid,
+                                                        () => [],
+                                                      )
+                                                      .add(it);
+                                                }
+                                              }
+                                              if (snapshot.connectionState !=
+                                                  ConnectionState.done) {
+                                                return const Padding(
+                                                  padding: EdgeInsets.all(8.0),
+                                                  child:
+                                                      LinearProgressIndicator(
+                                                        minHeight: 2,
+                                                      ),
+                                                );
+                                              }
+                                              if (snapshot.hasError) {
+                                                return Text(
+                                                  'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
+                                                  style: const TextStyle(
+                                                    color: Colors.red,
+                                                  ),
+                                                );
+                                              }
+                                              final gid =
+                                                  g['id']?.toString() ?? '';
+                                              if (items.isEmpty) {
+                                                return Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
-                                                    Expanded(
-                                                      child: Row(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .center,
-                                                        children: [
-                                                          if ((g['sport_name']
-                                                                      ?.toString() ??
-                                                                  '')
-                                                              .isNotEmpty)
-                                                            textPill(
-                                                              _buildSportChipLabel(
-                                                                g['sport_icon']
-                                                                    ?.toString(),
-                                                                g['sport_name']
-                                                                    .toString(),
-                                                              ),
-                                                            ),
-                                                          if ((g['sport_name']
-                                                                      ?.toString() ??
-                                                                  '')
-                                                              .isNotEmpty)
-                                                            const SizedBox(
-                                                              width: 6,
-                                                            ),
-                                                          Expanded(
-                                                            child: Align(
-                                                              alignment: Alignment
-                                                                  .centerLeft,
-                                                              child: textPill(
-                                                                Text(
-                                                                  g['name']
-                                                                          ?.toString() ??
-                                                                      '',
-                                                                  style: const TextStyle(
-                                                                    fontSize:
-                                                                        16,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
-                                                                  ),
-                                                                  maxLines: 1,
-                                                                  overflow:
-                                                                      TextOverflow
-                                                                          .ellipsis,
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    if (genderPref != 'any')
-                                                      Container(
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 12,
-                                                              vertical: 6,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: hasCover
-                                                              ? Colors.black
-                                                                    .withOpacity(
-                                                                      0.5,
-                                                                    )
-                                                              : genderChipColor
-                                                                    .withOpacity(
-                                                                      0.1,
-                                                                    ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                12,
-                                                              ),
-                                                          border: Border.all(
-                                                            color: hasCover
-                                                                ? Colors.white
-                                                                      .withOpacity(
-                                                                        0.3,
-                                                                      )
-                                                                : genderChipColor
-                                                                      .withOpacity(
-                                                                        0.2,
-                                                                      ),
-                                                          ),
-                                                        ),
-                                                        child: Text(
-                                                          isMalePref
-                                                              ? 'ช.'
-                                                              : 'ญ.',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: hasCover
-                                                                ? Colors.white
-                                                                : isMalePref
-                                                                ? Colors
-                                                                      .blue
-                                                                      .shade700
-                                                                : Colors
-                                                                      .pink
-                                                                      .shade700,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    else
-                                                      Container(
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 12,
-                                                              vertical: 6,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: hasCover
-                                                              ? Colors.black
-                                                                    .withOpacity(
-                                                                      0.5,
-                                                                    )
-                                                              : Colors.green
-                                                                    .withOpacity(
-                                                                      0.1,
-                                                                    ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                12,
-                                                              ),
-                                                          border: Border.all(
-                                                            color: hasCover
-                                                                ? Colors.white
-                                                                      .withOpacity(
-                                                                        0.3,
-                                                                      )
-                                                                : Colors.green
-                                                                      .withOpacity(
-                                                                        0.2,
-                                                                      ),
-                                                          ),
-                                                        ),
-                                                        child: Text(
-                                                          'เสรี',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: hasCover
-                                                                ? Colors.white
-                                                                : Colors
-                                                                      .green
-                                                                      .shade700,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                                if ((g['description']
-                                                            ?.toString() ??
-                                                        '')
-                                                    .isNotEmpty)
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          top: 6,
-                                                        ),
-                                                    child: textPill(
+                                                    textPill(
                                                       Text(
-                                                        g['description']
-                                                            .toString(),
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
+                                                        hasAnySessions
+                                                            ? 'รอบนัดล่าสุดสิ้นสุดแล้ว'
+                                                            : 'ยังไม่มีรอบนัด',
                                                       ),
                                                     ),
-                                                  ),
-                                                if ((g['province']
-                                                            ?.toString() ??
-                                                        '')
-                                                    .isNotEmpty)
-                                                  textPill(
-                                                    Text(
-                                                      'พื้นที่: ' +
-                                                          g['province']
-                                                              .toString() +
-                                                          (g['district'] !=
-                                                                      null &&
-                                                                  g['district']
-                                                                      .toString()
-                                                                      .isNotEmpty
-                                                              ? ' · ' +
-                                                                    g['district']
-                                                                        .toString()
-                                                              : ''),
-                                                    ),
-                                                  ),
-                                                const SizedBox(height: 8),
-                                                FutureBuilder<List<dynamic>>(
-                                                  future: Future.wait<dynamic>([
-                                                    _repo.listUpcomingSessions(
-                                                      g['id'].toString(),
-                                                    ),
-                                                    _repo.hasAnySessions(
-                                                      g['id'].toString(),
-                                                    ),
-                                                    _repo
-                                                        .listPublicGroupFees(
-                                                          g['id'].toString(),
-                                                        )
-                                                        .catchError(
-                                                          (_) =>
-                                                              <
-                                                                Map<
-                                                                  String,
-                                                                  dynamic
-                                                                >
-                                                              >[],
-                                                        ),
-                                                    _repo
-                                                        .listPublicSessionCostItemsForGroup(
-                                                          g['id'].toString(),
-                                                        )
-                                                        .catchError(
-                                                          (_) =>
-                                                              <
-                                                                Map<
-                                                                  String,
-                                                                  dynamic
-                                                                >
-                                                              >[],
-                                                        ),
-                                                    _repo
-                                                        .listPublicGroupPositions(
-                                                          g['id'].toString(),
-                                                        )
-                                                        .catchError(
-                                                          (_) =>
-                                                              <
-                                                                Map<
-                                                                  String,
-                                                                  dynamic
-                                                                >
-                                                              >[],
-                                                        ),
-                                                  ]),
-                                                  builder: (context, snapshot) {
-                                                    final items =
-                                                        (snapshot.data?[0]
-                                                                as List?)
-                                                            ?.cast<
-                                                              Map<
-                                                                String,
-                                                                dynamic
-                                                              >
-                                                            >() ??
-                                                        const <
-                                                          Map<String, dynamic>
-                                                        >[];
-                                                    final hasAnySessions =
-                                                        snapshot.data?[1] ==
-                                                        true;
-                                                    final groupFees =
-                                                        (snapshot.data?[2]
-                                                                as List?)
-                                                            ?.cast<
-                                                              Map<
-                                                                String,
-                                                                dynamic
-                                                              >
-                                                            >() ??
-                                                        const <
-                                                          Map<String, dynamic>
-                                                        >[];
-                                                    final groupPositions =
-                                                        (snapshot
-                                                                    .data
-                                                                    ?.length ??
-                                                                0) >
-                                                            4
-                                                        ? (snapshot.data?[4]
-                                                                      as List?)
-                                                                  ?.cast<
-                                                                    Map<
-                                                                      String,
-                                                                      dynamic
-                                                                    >
-                                                                  >() ??
-                                                              []
-                                                        : <
-                                                            Map<String, dynamic>
-                                                          >[];
-                                                    final costItemsBySession =
-                                                        <
-                                                          String,
-                                                          List<
-                                                            Map<String, dynamic>
-                                                          >
-                                                        >{};
-                                                    for (final it
-                                                        in (snapshot.data?[3]
-                                                                    as List?)
-                                                                ?.cast<
-                                                                  Map<
-                                                                    String,
-                                                                    dynamic
-                                                                  >
-                                                                >() ??
-                                                            const <
-                                                              Map<
-                                                                String,
-                                                                dynamic
-                                                              >
-                                                            >[]) {
-                                                      final sid =
-                                                          it['session_id']
-                                                              ?.toString() ??
-                                                          '';
-                                                      if (sid.isNotEmpty) {
-                                                        costItemsBySession
-                                                            .putIfAbsent(
-                                                              sid,
-                                                              () => [],
-                                                            )
-                                                            .add(it);
-                                                      }
-                                                    }
-                                                    if (snapshot
-                                                            .connectionState !=
-                                                        ConnectionState.done) {
-                                                      return const Padding(
-                                                        padding: EdgeInsets.all(
-                                                          8.0,
-                                                        ),
-                                                        child:
-                                                            LinearProgressIndicator(
-                                                              minHeight: 2,
+                                                    if (groupFees.isNotEmpty)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 4,
                                                             ),
-                                                      );
-                                                    }
-                                                    if (snapshot.hasError) {
-                                                      return Text(
-                                                        'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
-                                                        style: const TextStyle(
-                                                          color: Colors.red,
-                                                        ),
-                                                      );
-                                                    }
-                                                    final gid =
-                                                        g['id']?.toString() ??
-                                                        '';
-                                                    if (items.isEmpty) {
-                                                      return Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          textPill(
-                                                            Text(
-                                                              hasAnySessions
-                                                                  ? 'รอบนัดล่าสุดสิ้นสุดแล้ว'
-                                                                  : 'ยังไม่มีรอบนัด',
-                                                            ),
+                                                        child: textPill(
+                                                          Row(
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .card_membership_rounded,
+                                                                size: 13,
+                                                                color: hasCover
+                                                                    ? Colors
+                                                                          .white70
+                                                                    : AppColors
+                                                                          .primaryDark,
+                                                              ),
+                                                              const SizedBox(
+                                                                width: 4,
+                                                              ),
+                                                              Text(
+                                                                'ค่าก๊วน: ${_groupFeeSummary(groupFees)}',
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                  color:
+                                                                      hasCover
+                                                                      ? Colors
+                                                                            .white70
+                                                                      : Colors
+                                                                            .grey[800],
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ),
-                                                          if (groupFees
-                                                              .isNotEmpty)
-                                                            Padding(
-                                                              padding:
-                                                                  const EdgeInsets.only(
-                                                                    top: 4,
-                                                                  ),
-                                                              child: textPill(
-                                                                Row(
-                                                                  mainAxisSize:
-                                                                      MainAxisSize
-                                                                          .min,
-                                                                  children: [
-                                                                    Icon(
-                                                                      Icons
-                                                                          .card_membership_rounded,
-                                                                      size: 13,
-                                                                      color:
-                                                                          hasCover
-                                                                          ? Colors.white70
-                                                                          : AppColors.primaryDark,
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      width: 4,
-                                                                    ),
-                                                                    Text(
-                                                                      'ค่าก๊วน: ${_groupFeeSummary(groupFees)}',
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            12,
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                        color:
-                                                                            hasCover
-                                                                            ? Colors.white70
-                                                                            : Colors.grey[800],
-                                                                      ),
-                                                                    ),
-                                                                  ],
+                                                        ),
+                                                      ),
+                                                    if (groupPositions
+                                                        .isNotEmpty)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 4,
+                                                            ),
+                                                        child: textPill(
+                                                          Row(
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .sports_soccer_rounded,
+                                                                size: 13,
+                                                                color: hasCover
+                                                                    ? Colors
+                                                                          .white70
+                                                                    : AppColors
+                                                                          .primaryDark,
+                                                              ),
+                                                              const SizedBox(
+                                                                width: 4,
+                                                              ),
+                                                              Text(
+                                                                'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                  color:
+                                                                      hasCover
+                                                                      ? Colors
+                                                                            .white70
+                                                                      : Colors
+                                                                            .grey[800],
                                                                 ),
                                                               ),
-                                                            ),
-                                                          if (groupPositions
-                                                              .isNotEmpty)
-                                                            Padding(
-                                                              padding:
-                                                                  const EdgeInsets.only(
-                                                                    top: 4,
-                                                                  ),
-                                                              child: textPill(
-                                                                Row(
-                                                                  mainAxisSize:
-                                                                      MainAxisSize
-                                                                          .min,
-                                                                  children: [
-                                                                    Icon(
-                                                                      Icons
-                                                                          .sports_soccer_rounded,
-                                                                      size: 13,
-                                                                      color:
-                                                                          hasCover
-                                                                          ? Colors.white70
-                                                                          : AppColors.primaryDark,
-                                                                    ),
-                                                                    const SizedBox(
-                                                                      width: 4,
-                                                                    ),
-                                                                    Text(
-                                                                      'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            12,
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                        color:
-                                                                            hasCover
-                                                                            ? Colors.white70
-                                                                            : Colors.grey[800],
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  top: 4,
-                                                                ),
-                                                            child: SkillLevelBadge(
-                                                              targetSkillLevels:
-                                                                  (g['target_skill_levels']
-                                                                      is List)
-                                                                  ? (g['target_skill_levels']
-                                                                            as List)
-                                                                        .map(
-                                                                          (
-                                                                            e,
-                                                                          ) => e
-                                                                              .toString(),
-                                                                        )
-                                                                        .toList()
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 4,
+                                                          ),
+                                                      child: SkillLevelBadge(
+                                                        targetSkillLevels:
+                                                            (g['target_skill_levels']
+                                                                is List)
+                                                            ? (g['target_skill_levels']
+                                                                      as List)
+                                                                  .map(
+                                                                    (e) => e
+                                                                        .toString(),
+                                                                  )
+                                                                  .toList()
+                                                            : null,
+                                                        availableLevels:
+                                                            resolveSkillLevelsForSport(
+                                                              sportData:
+                                                                  g['sport']
+                                                                      is Map<
+                                                                        String,
+                                                                        dynamic
+                                                                      >
+                                                                  ? g['sport']
                                                                   : null,
-                                                              availableLevels: resolveSkillLevelsForSport(
-                                                                sportData:
-                                                                    g['sport']
-                                                                        is Map<
-                                                                          String,
-                                                                          dynamic
-                                                                        >
-                                                                    ? g['sport']
-                                                                    : null,
-                                                              ),
                                                             ),
+                                                      ),
+                                                    ),
+                                                    if (_myBlockedGroupIds
+                                                        .contains(gid))
+                                                      Align(
+                                                        alignment: Alignment
+                                                            .centerRight,
+                                                        child: TextButton.icon(
+                                                          onPressed: null,
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .hourglass_empty,
                                                           ),
-                                                          if (_myBlockedGroupIds
-                                                              .contains(gid))
-                                                            Align(
-                                                              alignment: Alignment
-                                                                  .centerRight,
-                                                              child: TextButton.icon(
-                                                                onPressed: null,
-                                                                icon: const Icon(
-                                                                  Icons
-                                                                      .hourglass_empty,
-                                                                ),
-                                                                label:
-                                                                    const Text(
-                                                                      'รอคิว',
-                                                                    ),
-                                                              ),
-                                                            ),
-                                                          if (AuthService
-                                                                      .instance
-                                                                      .currentUser
-                                                                      ?.isAdmin ==
-                                                                  true ||
-                                                              _myAdminGroups
-                                                                  .contains(
-                                                                    gid,
-                                                                  ))
-                                                            Align(
-                                                              alignment: Alignment
-                                                                  .centerRight,
-                                                              child: TextButton.icon(
-                                                                onPressed: () =>
-                                                                    _showCreateSessionSheet(
-                                                                      g['id']
-                                                                          .toString(),
-                                                                    ),
-                                                                icon: const Icon(
-                                                                  Icons
-                                                                      .add_circle_outline,
-                                                                ),
-                                                                label: const Text(
-                                                                  'เพิ่มรอบนัด',
-                                                                ),
-                                                              ),
-                                                            ),
-                                                        ],
-                                                      );
-                                                    }
-                                                    final isAdmin =
-                                                        AuthService
+                                                          label: const Text(
+                                                            'รอคิว',
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    if (AuthService
                                                                 .instance
                                                                 .currentUser
                                                                 ?.isAdmin ==
                                                             true ||
                                                         _myAdminGroups.contains(
                                                           gid,
-                                                        );
-                                                    final cardUserId =
-                                                        AuthService
-                                                            .instance
-                                                            .currentUser
-                                                            ?.id;
-                                                    final isGroupOwner =
-                                                        cardUserId != null &&
-                                                        (g['created_by']
-                                                                    ?.toString() ??
-                                                                '')
-                                                            .isNotEmpty &&
-                                                        g['created_by']
-                                                                ?.toString() ==
-                                                            cardUserId;
-                                                    final hasJoined =
-                                                        _myJoinedGroupIds
-                                                            .contains(gid);
-                                                    final hasPending =
-                                                        _myPendingGroupIds
-                                                            .contains(gid);
-                                                    final hasBlocked =
-                                                        _myBlockedGroupIds
-                                                            .contains(gid);
-                                                    final requiresOwnerApproval =
-                                                        g['requires_owner_approval'] ==
-                                                            true &&
-                                                        !isGroupOwner;
-                                                    final joinButton =
-                                                        hasBlocked
-                                                        ? TextButton.icon(
-                                                            onPressed: null,
-                                                            icon: const Icon(
-                                                              Icons
-                                                                  .hourglass_empty,
-                                                            ),
-                                                            label: const Text(
-                                                              'รอคิว',
-                                                            ),
-                                                          )
-                                                        : hasJoined
-                                                        ? TextButton.icon(
-                                                            onPressed: null,
-                                                            icon: const Icon(
-                                                              Icons
-                                                                  .check_circle_outline,
-                                                            ),
-                                                            label: const Text(
-                                                              'เข้าร่วมก๊วนแล้ว',
-                                                            ),
-                                                          )
-                                                        : hasPending &&
-                                                              !isGroupOwner
-                                                        ? TextButton.icon(
-                                                            onPressed: null,
-                                                            icon: const Icon(
-                                                              Icons
-                                                                  .hourglass_empty,
-                                                            ),
-                                                            label: const Text(
-                                                              'รออนุมัติ',
-                                                            ),
-                                                          )
-                                                        : TextButton.icon(
-                                                            onPressed: () =>
-                                                                _showSessionPickerSheet(
-                                                                  gid,
-                                                                  requiresOwnerApproval:
-                                                                      requiresOwnerApproval,
-                                                                ),
-                                                            icon: const Icon(
-                                                              Icons
-                                                                  .event_available,
-                                                            ),
-                                                            label: Text(
-                                                              isGroupOwner
-                                                                  ? 'กลับเข้าร่วมก๊วน'
-                                                                  : requiresOwnerApproval
-                                                                  ? 'ขอเข้าร่วมก๊วน'
-                                                                  : 'เข้าร่วมก๊วน',
-                                                            ),
-                                                          );
-                                                    return Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        if (groupFees
-                                                            .isNotEmpty)
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  bottom: 8,
-                                                                ),
-                                                            child: textPill(
-                                                              Row(
-                                                                mainAxisSize:
-                                                                    MainAxisSize
-                                                                        .min,
-                                                                children: [
-                                                                  Icon(
-                                                                    Icons
-                                                                        .card_membership_rounded,
-                                                                    size: 13,
-                                                                    color:
-                                                                        hasCover
-                                                                        ? Colors
-                                                                              .white70
-                                                                        : AppColors
-                                                                              .primaryDark,
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    width: 4,
-                                                                  ),
-                                                                  Text(
-                                                                    'ค่าก๊วน: ${_groupFeeSummary(groupFees)}',
-                                                                    style: TextStyle(
-                                                                      fontSize:
-                                                                          12,
-                                                                      color:
-                                                                          hasCover
-                                                                          ? Colors.white70
-                                                                          : Colors.grey[800],
-                                                                    ),
-                                                                  ),
-                                                                ],
+                                                        ))
+                                                      Align(
+                                                        alignment: Alignment
+                                                            .centerRight,
+                                                        child: TextButton.icon(
+                                                          onPressed: () =>
+                                                              _showCreateSessionSheet(
+                                                                g['id']
+                                                                    .toString(),
                                                               ),
-                                                            ),
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .add_circle_outline,
                                                           ),
-                                                        if (groupPositions
-                                                            .isNotEmpty)
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  bottom: 8,
-                                                                ),
-                                                            child: textPill(
-                                                              Row(
-                                                                mainAxisSize:
-                                                                    MainAxisSize
-                                                                        .min,
-                                                                children: [
-                                                                  Icon(
-                                                                    Icons
-                                                                        .sports_soccer_rounded,
-                                                                    size: 13,
-                                                                    color:
-                                                                        hasCover
-                                                                        ? Colors
-                                                                              .white70
-                                                                        : AppColors
-                                                                              .primaryDark,
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    width: 4,
-                                                                  ),
-                                                                  Text(
-                                                                    'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
-                                                                    style: TextStyle(
-                                                                      fontSize:
-                                                                          12,
-                                                                      color:
-                                                                          hasCover
-                                                                          ? Colors.white70
-                                                                          : Colors.grey[800],
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ),
+                                                          label: const Text(
+                                                            'เพิ่มรอบนัด',
                                                           ),
-                                                        for (final s
-                                                            in items.take(3))
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.only(
-                                                                  bottom: 8,
-                                                                ),
-                                                            child: Column(
-                                                              crossAxisAlignment:
-                                                                  CrossAxisAlignment
-                                                                      .start,
-                                                              children: [
-                                                                textPill(
-                                                                  Row(
-                                                                    children: [
-                                                                      const Text(
-                                                                        'รอบ: ',
-                                                                        style: TextStyle(
-                                                                          fontWeight:
-                                                                              FontWeight.w500,
-                                                                        ),
-                                                                      ),
-                                                                      Expanded(
-                                                                        child: Text(
-                                                                          _formatThaiSessionRange(
-                                                                            DateTime.parse(
-                                                                              s['starts_at'].toString(),
-                                                                            ).toLocal(),
-                                                                            DateTime.parse(
-                                                                              s['ends_at'].toString(),
-                                                                            ).toLocal(),
-                                                                          ),
-                                                                          maxLines:
-                                                                              1,
-                                                                          overflow:
-                                                                              TextOverflow.ellipsis,
-                                                                        ),
-                                                                      ),
-                                                                    ],
-                                                                  ),
-                                                                ),
-                                                                Padding(
-                                                                  padding:
-                                                                      const EdgeInsets.only(
-                                                                        left:
-                                                                            40,
-                                                                        top: 2,
-                                                                      ),
-                                                                  child: textPill(
-                                                                    Text(
-                                                                      _sessionCapacitySummary(
-                                                                        s,
-                                                                      ),
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            12,
-                                                                        color:
-                                                                            hasCover
-                                                                            ? Colors.white70
-                                                                            : Colors.grey,
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                                ..._sessionCostLines(
-                                                                  costItemsBySession[s['id']
-                                                                              ?.toString() ??
-                                                                          ''] ??
-                                                                      const <
-                                                                        Map<
-                                                                          String,
-                                                                          dynamic
-                                                                        >
-                                                                      >[],
-                                                                  hasCover,
-                                                                  textPill,
-                                                                ),
-                                                              ],
-                                                            ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                );
+                                              }
+                                              final isAdmin =
+                                                  AuthService
+                                                          .instance
+                                                          .currentUser
+                                                          ?.isAdmin ==
+                                                      true ||
+                                                  _myAdminGroups.contains(gid);
+                                              final cardUserId = AuthService
+                                                  .instance
+                                                  .currentUser
+                                                  ?.id;
+                                              final isGroupOwner =
+                                                  cardUserId != null &&
+                                                  (g['created_by']
+                                                              ?.toString() ??
+                                                          '')
+                                                      .isNotEmpty &&
+                                                  g['created_by']?.toString() ==
+                                                      cardUserId;
+                                              final hasJoined =
+                                                  _myJoinedGroupIds.contains(
+                                                    gid,
+                                                  );
+                                              final hasPending =
+                                                  _myPendingGroupIds.contains(
+                                                    gid,
+                                                  );
+                                              final hasBlocked =
+                                                  _myBlockedGroupIds.contains(
+                                                    gid,
+                                                  );
+                                              final requiresOwnerApproval =
+                                                  g['requires_owner_approval'] ==
+                                                      true &&
+                                                  !isGroupOwner;
+                                              final joinButton = hasBlocked
+                                                  ? TextButton.icon(
+                                                      onPressed: null,
+                                                      icon: const Icon(
+                                                        Icons.hourglass_empty,
+                                                      ),
+                                                      label: const Text(
+                                                        'รอคิว',
+                                                      ),
+                                                    )
+                                                  : hasJoined
+                                                  ? TextButton.icon(
+                                                      onPressed: null,
+                                                      icon: const Icon(
+                                                        Icons
+                                                            .check_circle_outline,
+                                                      ),
+                                                      label: const Text(
+                                                        'เข้าร่วมก๊วนแล้ว',
+                                                      ),
+                                                    )
+                                                  : hasPending && !isGroupOwner
+                                                  ? TextButton.icon(
+                                                      onPressed: null,
+                                                      icon: const Icon(
+                                                        Icons.hourglass_empty,
+                                                      ),
+                                                      label: const Text(
+                                                        'รออนุมัติ',
+                                                      ),
+                                                    )
+                                                  : TextButton.icon(
+                                                      onPressed: () =>
+                                                          _showSessionPickerSheet(
+                                                            gid,
+                                                            requiresOwnerApproval:
+                                                                requiresOwnerApproval,
                                                           ),
-                                                        if (isAdmin)
-                                                          Row(
-                                                            mainAxisAlignment:
-                                                                MainAxisAlignment
-                                                                    .end,
-                                                            children: [
-                                                              joinButton,
-                                                              TextButton.icon(
-                                                                onPressed: () =>
-                                                                    _showCreateSessionSheet(
-                                                                      g['id']
-                                                                          .toString(),
-                                                                    ),
-                                                                icon: const Icon(
-                                                                  Icons
-                                                                      .add_circle_outline,
-                                                                ),
-                                                                label: const Text(
-                                                                  'เพิ่มรอบนัด',
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          )
-                                                        else
-                                                          Align(
-                                                            alignment: Alignment
-                                                                .centerRight,
-                                                            child: joinButton,
-                                                          ),
-                                                      ],
+                                                      icon: const Icon(
+                                                        Icons.event_available,
+                                                      ),
+                                                      label: Text(
+                                                        isGroupOwner
+                                                            ? 'กลับเข้าร่วมก๊วน'
+                                                            : requiresOwnerApproval
+                                                            ? 'ขอเข้าร่วมก๊วน'
+                                                            : 'เข้าร่วมก๊วน',
+                                                      ),
                                                     );
-                                                  },
-                                                ),
-                                              ],
-                                            ),
+                                              final hasCosts =
+                                                  groupFees.isNotEmpty ||
+                                                  costItemsBySession.values.any(
+                                                    (items) => items.isNotEmpty,
+                                                  );
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  if (hasCosts)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            bottom: 8,
+                                                          ),
+                                                      child: textPill(
+                                                        Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .receipt_long_rounded,
+                                                              size: 13,
+                                                              color: hasCover
+                                                                  ? Colors
+                                                                        .white70
+                                                                  : AppColors
+                                                                        .primaryDark,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                            Text(
+                                                              'มีค่าใช้จ่าย กดเพื่อแสดงรายละเอียด',
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: hasCover
+                                                                    ? Colors
+                                                                          .white70
+                                                                    : Colors
+                                                                          .grey[800],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (groupPositions.isNotEmpty)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            bottom: 8,
+                                                          ),
+                                                      child: textPill(
+                                                        Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .sports_soccer_rounded,
+                                                              size: 13,
+                                                              color: hasCover
+                                                                  ? Colors
+                                                                        .white70
+                                                                  : AppColors
+                                                                        .primaryDark,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                            Text(
+                                                              'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: hasCover
+                                                                    ? Colors
+                                                                          .white70
+                                                                    : Colors
+                                                                          .grey[800],
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  for (final s
+                                                      in sortedItems.take(1))
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            bottom: 8,
+                                                          ),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Center(
+                                                            child: textPill(
+                                                              Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  const Text(
+                                                                    'รอบ: ',
+                                                                    style: TextStyle(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w500,
+                                                                    ),
+                                                                  ),
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      _formatThaiSessionRange(
+                                                                        DateTime.parse(
+                                                                          s['starts_at']
+                                                                              .toString(),
+                                                                        ).toLocal(),
+                                                                        DateTime.parse(
+                                                                          s['ends_at']
+                                                                              .toString(),
+                                                                        ).toLocal(),
+                                                                      ),
+                                                                      maxLines:
+                                                                          1,
+                                                                      overflow:
+                                                                          TextOverflow
+                                                                              .ellipsis,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          if (sortedItems
+                                                                  .length >
+                                                              1)
+                                                            Padding(
+                                                              padding:
+                                                                  const EdgeInsets.only(
+                                                                    top: 2,
+                                                                  ),
+                                                              child: Center(
+                                                                child: textPill(
+                                                                  const Text(
+                                                                    'กดเพื่อแสดงรอบอื่น ๆ',
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          Padding(
+                                                            padding:
+                                                                const EdgeInsets.only(
+                                                                  top: 2,
+                                                                ),
+                                                            child: Align(
+                                                              alignment: Alignment
+                                                                  .centerRight,
+                                                              child: textPill(
+                                                                Text(
+                                                                  _sessionCapacitySummary(
+                                                                    s,
+                                                                  ),
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    color:
+                                                                        hasCover
+                                                                        ? Colors
+                                                                              .white70
+                                                                        : Colors
+                                                                              .grey,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  if (isAdmin)
+                                                    Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment.end,
+                                                      children: [
+                                                        joinButton,
+                                                        TextButton.icon(
+                                                          onPressed: () =>
+                                                              _showCreateSessionSheet(
+                                                                g['id']
+                                                                    .toString(),
+                                                              ),
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .add_circle_outline,
+                                                          ),
+                                                          label: const Text(
+                                                            'เพิ่มรอบนัด',
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    )
+                                                  else
+                                                    Align(
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      child: joinButton,
+                                                    ),
+                                                ],
+                                              );
+                                            },
                                           ),
-                                        ),
-                                      );
-                                    },
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                          ],
-                          if (_isLoadingMore)
-                            const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
+                                );
+                              },
                             ),
-                          const SizedBox(height: 120),
-                        ],
+                          ),
+                    ],
+                    if (_isLoadingMore)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
                       ),
-                    ),
+                    const SizedBox(height: 120),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -3250,40 +3201,111 @@ class _SportClubPageState extends State<SportClubPage> {
   }
 
   Future<void> _toggleQuickFilter(String filter) async {
+    if (filter == 'radius') {
+      if (_locationEnabled) {
+        setState(() {
+          _locationEnabled = false;
+          _showRadiusControl = false;
+        });
+        await _persistFilterState();
+        await _reload();
+        return;
+      }
+
+      final ok = await _requestLocation();
+      if (!ok || !mounted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      setState(() {
+        _locationEnabled = true;
+        _radiusKm ??= 10;
+        _showRadiusControl = true;
+      });
+      await _persistFilterState();
+      await _reload();
+      return;
+    }
     if ((filter == 'joined' || filter == 'managed') &&
         !await _requireLoginForFilter()) {
       return;
     }
-    if (filter == 'radius') {
-      if (!_locationEnabled) {
-        final ok = await _requestLocation();
-        if (!ok || !mounted) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'ไม่สามารถเข้าถึงตำแหน่งได้ กรุณาอนุญาตสิทธิ์ตำแหน่ง',
-                ),
-              ),
-            );
-          }
-          return;
-        }
-        setState(() {
-          _locationEnabled = true;
-          _radiusKm ??= 10;
-        });
-      } else {
-        setState(() => _locationEnabled = false);
-      }
-    } else {
-      setState(() {
-        if (filter == 'open') _filterOpenOnly = !_filterOpenOnly;
-        if (filter == 'joined') _filterJoinedOnly = !_filterJoinedOnly;
-        if (filter == 'managed') _filterManagedOnly = !_filterManagedOnly;
-      });
-    }
+    setState(() {
+      if (filter == 'open') _filterOpenOnly = !_filterOpenOnly;
+      if (filter == 'joined') _filterJoinedOnly = !_filterJoinedOnly;
+      if (filter == 'managed') _filterManagedOnly = !_filterManagedOnly;
+    });
+    await _persistFilterState();
     await _reload();
+  }
+
+  Future<void> _resetRadiusFilter() async {
+    setState(() => _radiusKm = 10);
+    await _persistFilterState();
+    await _reload();
+  }
+
+  Widget _buildRadiusControl() {
+    if (!_showRadiusControl || !_locationEnabled) {
+      return const SizedBox.shrink();
+    }
+    final radius = (_radiusKm ?? 10).clamp(1, 50).toDouble();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.near_me_rounded,
+            size: 18,
+            color: AppColors.primaryDark,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Slider(
+              value: radius,
+              min: 1,
+              max: 50,
+              divisions: 49,
+              label: '${radius.round()} กม.',
+              activeColor: AppColors.primaryDark,
+              onChanged: (value) {
+                setState(() => _radiusKm = value);
+              },
+              onChangeEnd: (_) async {
+                await _persistFilterState();
+                await _reload();
+              },
+            ),
+          ),
+          SizedBox(
+            width: 48,
+            child: Text(
+              '${radius.round()} กม.',
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'รีเซ็ตรัศมีเป็น 10 กิโลเมตร',
+            visualDensity: VisualDensity.compact,
+            onPressed: _resetRadiusFilter,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildQuickFilterRow() {
@@ -3301,19 +3323,77 @@ class _SportClubPageState extends State<SportClubPage> {
           button: true,
           checked: selected,
           label: 'ตัวกรองก๊วน$text ${selected ? 'เปิดอยู่' : 'ปิดอยู่'}',
-          child: FilterChip(
-            avatar: Icon(icon, size: 18),
-            label: Text(text),
-            selected: selected,
-            onSelected: (_) => _toggleQuickFilter(key),
-            selectedColor: AppColors.primary.withValues(alpha: 0.18),
-            checkmarkColor: AppColors.primaryDark,
-            materialTapTargetSize: MaterialTapTargetSize.padded,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _toggleQuickFilter(key),
+              borderRadius: BorderRadius.circular(14),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.primary.withValues(alpha: 0.15)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.primaryDark
+                        : Colors.grey.shade300,
+                    width: selected ? 1.6 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: selected
+                          ? AppColors.primary.withValues(alpha: 0.2)
+                          : Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1.5),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 16,
+                      color: selected
+                          ? AppColors.primaryDark
+                          : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: selected
+                            ? AppColors.primaryDark
+                            : Colors.grey.shade800,
+                      ),
+                    ),
+                    if (selected) ...[
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color: AppColors.primaryDark,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       );
     }
 
+    final hasActiveFilter = _activeFilterCount > 0;
     return SizedBox(
       height: 44,
       child: SingleChildScrollView(
@@ -3322,11 +3402,65 @@ class _SportClubPageState extends State<SportClubPage> {
           children: [
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ActionChip(
-                avatar: const Icon(Icons.tune_rounded, size: 18),
-                label: Text(_filterSummary),
-                onPressed: _showAdvancedFilterSheet,
-                tooltip: 'เปิดตัวกรองทั้งหมด',
+              child: Semantics(
+                button: true,
+                label: 'เปิดตัวกรองทั้งหมด $_filterSummary',
+                child: Tooltip(
+                  message: _filterSummary,
+                  child: Badge(
+                    isLabelVisible: hasActiveFilter,
+                    offset: const Offset(-2, 2),
+                    backgroundColor: AppColors.primaryDark,
+                    label: Text(
+                      '$_activeFilterCount',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _showAdvancedFilterSheet,
+                        borderRadius: BorderRadius.circular(14),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 44,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: hasActiveFilter
+                                ? AppColors.primary.withValues(alpha: 0.15)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: hasActiveFilter
+                                  ? AppColors.primaryDark
+                                  : Colors.grey.shade300,
+                              width: hasActiveFilter ? 1.6 : 1.0,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: hasActiveFilter
+                                    ? AppColors.primary.withValues(alpha: 0.2)
+                                    : Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1.5),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.tune_rounded,
+                              size: 20,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
             chip(
@@ -3334,6 +3468,13 @@ class _SportClubPageState extends State<SportClubPage> {
               label: 'ยังเปิดรับ',
               selected: _filterOpenOnly,
               icon: Icons.lock_open_rounded,
+            ),
+            chip(
+              key: 'radius',
+              label: 'รัศมี',
+              activeLabel: 'รัศมี ${(_radiusKm ?? 10).round()} กม.',
+              selected: _locationEnabled,
+              icon: Icons.near_me_rounded,
             ),
             chip(
               key: 'joined',
@@ -3346,13 +3487,6 @@ class _SportClubPageState extends State<SportClubPage> {
               label: 'ก๊วนที่ดูแล',
               selected: _filterManagedOnly,
               icon: Icons.admin_panel_settings_rounded,
-            ),
-            chip(
-              key: 'radius',
-              label: 'รัศมี',
-              activeLabel: 'รัศมี ${(_radiusKm ?? 10).round()} กม.',
-              selected: _locationEnabled,
-              icon: Icons.near_me_rounded,
             ),
           ],
         ),
@@ -3403,7 +3537,9 @@ class _SportClubPageState extends State<SportClubPage> {
       _filterJoinedOnly = false;
       _filterManagedOnly = false;
       _locationEnabled = false;
+      _showRadiusControl = false;
     });
+    await _persistFilterState();
     await _reload();
   }
 
@@ -3418,12 +3554,13 @@ class _SportClubPageState extends State<SportClubPage> {
       child: FilterChip(
         label: _buildSportChipLabel(icon, label),
         selected: isSelected,
-        onSelected: (selected) {
+        onSelected: (selected) async {
           setState(() {
             _sportId = selected ? id : null;
             _reloadingGroups = true;
           });
-          _reload();
+          await _persistFilterState();
+          await _reload();
         },
         selectedColor: Colors.blue.shade100,
         checkmarkColor: Colors.blue,
@@ -7101,6 +7238,33 @@ class _SportClubPageState extends State<SportClubPage> {
     }).toList();
   }
 
+  /// ระยะทางจากผู้ใช้ถึงก๊วน (กม.) หรือ null เมื่อไม่มีพิกัด
+  double? _groupDistanceKm(Map<String, dynamic> group) {
+    if (_userLat == null || _userLng == null) return null;
+    final lat = group['lat'];
+    final lng = group['lng'];
+    if (lat == null || lng == null) return null;
+    return _distanceKm(
+      _userLat!,
+      _userLng!,
+      (lat as num).toDouble(),
+      (lng as num).toDouble(),
+    );
+  }
+
+  /// Phase 14.5: เรียงก๊วนตามระยะทางจากใกล้ไปไกลเมื่อเปิดตัวกรองรัศมี
+  void _sortGroupsByDistance(List<Map<String, dynamic>> groups) {
+    if (!_locationEnabled || _userLat == null || _userLng == null) return;
+    groups.sort((a, b) {
+      final distanceA = _groupDistanceKm(a);
+      final distanceB = _groupDistanceKm(b);
+      if (distanceA == null && distanceB == null) return 0;
+      if (distanceA == null) return 1;
+      if (distanceB == null) return -1;
+      return distanceA.compareTo(distanceB);
+    });
+  }
+
   Future<bool> _requestLocation() async {
     try {
       var permission = await Geolocator.checkPermission();
@@ -7118,156 +7282,6 @@ class _SportClubPageState extends State<SportClubPage> {
     } catch (_) {
       return false;
     }
-  }
-
-  Widget _buildMapView() {
-    final markers = _groups
-        .where((g) => g['lat'] != null && g['lng'] != null)
-        .where(_canViewFullGroup)
-        .map((g) {
-          final lat = (g['lat'] as num).toDouble();
-          final lng = (g['lng'] as num).toDouble();
-          return Marker(
-            point: LatLng(lat, lng),
-            width: 44,
-            height: 44,
-            alignment: Alignment.topCenter,
-            child: GestureDetector(
-              onTap: () => _showMapMarkerSheet(g),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.teal,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black26, blurRadius: 4),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  g['sport_icon']?.toString() ?? '🏅',
-                  style: _emojiTextStyle(context, fontSize: 18),
-                ),
-              ),
-            ),
-          );
-        })
-        .toList();
-
-    final center = _userLat != null && _userLng != null
-        ? LatLng(_userLat!, _userLng!)
-        : const LatLng(13.7563, 100.5018); // กรุงเทพฯ (ค่าเริ่มต้น)
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-      child: FlutterMap(
-        options: MapOptions(
-          initialCenter: center,
-          initialZoom: _userLat != null ? 12 : 6,
-        ),
-        children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.sheserved.app',
-          ),
-          if (_userLat != null && _userLng != null && _radiusKm != null)
-            CircleLayer(
-              circles: [
-                CircleMarker(
-                  point: LatLng(_userLat!, _userLng!),
-                  radius: _radiusKm! * 1000,
-                  useRadiusInMeter: true,
-                  color: Colors.teal.withValues(alpha: 0.08),
-                  borderColor: Colors.teal.withValues(alpha: 0.35),
-                  borderStrokeWidth: 1,
-                ),
-              ],
-            ),
-          MarkerLayer(markers: markers),
-          if (markers.isEmpty)
-            const Center(
-              child: Text(
-                'ไม่มีก๊วนในพื้นที่นี้',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showMapMarkerSheet(Map<String, dynamic> group) async {
-    await showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  if ((group['sport_icon']?.toString() ?? '').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        group['sport_icon'].toString(),
-                        style: _emojiTextStyle(context, fontSize: 18),
-                      ),
-                    ),
-                  Expanded(
-                    child: Text(
-                      group['name']?.toString() ?? '',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              if ((group['province']?.toString() ?? '').isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'พื้นที่: ${group['province']}${(group['district']?.toString() ?? '').isNotEmpty ? ' · ${group['district']}' : ''}',
-                  ),
-                ),
-              if (group['member_count'] != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('สมาชิกก๊วน: ${group['member_count']} คน'),
-                ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('ปิด'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _showGroupDetailSheet(group);
-                    },
-                    icon: const Icon(Icons.info_outline),
-                    label: const Text('ดูรายละเอียด'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _showAdvancedFilterSheet() async {
@@ -7490,7 +7504,9 @@ class _SportClubPageState extends State<SportClubPage> {
       _filterManagedOnly = managedOnly;
       _locationEnabled = locationEnabled && locationReady;
       _radiusKm = radiusKm;
+      _showRadiusControl = _locationEnabled;
     });
+    await _persistFilterState();
     await _reload();
   }
 }

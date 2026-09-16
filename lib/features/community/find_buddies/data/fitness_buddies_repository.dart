@@ -329,7 +329,9 @@ class FitnessBuddiesRepository {
       query = query.eq('district', district);
     if (q != null && q.isNotEmpty) query = query.ilike('name', '%$q%');
     if (skillLevel != null && skillLevel.isNotEmpty && skillLevel != 'all') {
-      query = query.or('target_skill_levels.cs.{"$skillLevel"},target_skill_levels.cs.{"all"}');
+      query = query.or(
+        'target_skill_levels.cs.{"$skillLevel"},target_skill_levels.cs.{"all"}',
+      );
     }
     // Phase 13.0: fitness_groups_public view only exposes visibility='public' groups
     if (openOnly) {
@@ -473,6 +475,22 @@ class FitnessBuddiesRepository {
         .eq('group_id', groupId)
         .limit(1);
     return (res as List).isNotEmpty;
+  }
+
+  /// Returns a set of group IDs (from [groupIds]) that have at least one
+  /// session (รวมรอบที่สิ้นสุดแล้วด้วย). Uses a single query for efficiency.
+  Future<Set<String>> filterGroupIdsWithAnySessions(
+    List<String> groupIds,
+  ) async {
+    if (groupIds.isEmpty) return {};
+    final res = await _client
+        .from('fitness_group_sessions')
+        .select('group_id')
+        .inFilter('group_id', groupIds);
+    return (res as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
   }
 
   /// Returns a set of group IDs (from [groupIds]) that have at least one
@@ -679,7 +697,8 @@ class FitnessBuddiesRepository {
         'p_session_id': sessionId,
         'p_user_id': userId,
         if (positionId != null) 'p_position_id': positionId,
-        if (declaredSkillLevel != null) 'p_declared_skill_level': declaredSkillLevel,
+        if (declaredSkillLevel != null)
+          'p_declared_skill_level': declaredSkillLevel,
       },
     );
     final bookingId = result is String
@@ -847,9 +866,11 @@ class FitnessBuddiesRepository {
           if (bRow != null) {
             final applicantId = bRow['user_id']?.toString() ?? '';
             final session = bRow['session'];
-            final groupId = (session is Map ? session['group_id'] : null)?.toString() ?? '';
+            final groupId =
+                (session is Map ? session['group_id'] : null)?.toString() ?? '';
             final group = session is Map ? session['group'] : null;
-            final groupName = (group is Map ? group['name'] : null)?.toString() ?? 'ก๊วนกีฬา';
+            final groupName =
+                (group is Map ? group['name'] : null)?.toString() ?? 'ก๊วนกีฬา';
             final sessionId = bRow['session_id']?.toString() ?? '';
             if (applicantId.isNotEmpty) {
               _emitFitnessBookingStatus(
@@ -999,7 +1020,8 @@ class FitnessBuddiesRepository {
       if (postalCode != null) 'postal_code': postalCode,
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
-      'target_skill_levels': targetSkillLevels != null && targetSkillLevels.isNotEmpty
+      'target_skill_levels':
+          targetSkillLevels != null && targetSkillLevels.isNotEmpty
           ? targetSkillLevels
           : ['all'],
       if (skillLevelNote != null) 'skill_level_note': skillLevelNote,
@@ -1157,12 +1179,9 @@ class FitnessBuddiesRepository {
   }) async {
     await _client
         .from('sports')
-        .update({
-          'skill_levels': skillLevels,
-        })
+        .update({'skill_levels': skillLevels})
         .eq('id', sportId);
   }
-
 
   Future<void> rejectSport({
     required String sportId,
@@ -1216,7 +1235,8 @@ class FitnessBuddiesRepository {
     if (postalCode != null) data['postal_code'] = postalCode;
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;
-    if (targetSkillLevels != null) data['target_skill_levels'] = targetSkillLevels;
+    if (targetSkillLevels != null)
+      data['target_skill_levels'] = targetSkillLevels;
     if (skillLevelNote != null) data['skill_level_note'] = skillLevelNote;
     if (fieldLayout != null) {
       if (fieldLayout == 'single') {
