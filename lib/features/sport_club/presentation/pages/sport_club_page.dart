@@ -22,6 +22,7 @@ import '../widgets/sport_club_utils.dart';
 import '../../domain/sport_club_filter.dart';
 import '../../application/sport_club_filter_store.dart';
 import '../../application/sport_club_group_query.dart';
+import '../../application/sport_club_card_hydrator.dart';
 import '../../application/sport_club_booking_service.dart';
 import '../../application/sport_club_intent.dart';
 
@@ -35,10 +36,12 @@ class SportClubPage extends StatefulWidget {
 class _SportClubPageState extends State<SportClubPage> {
   late final FitnessBuddiesRepository _repo;
   late final SportClubGroupQuery _groupQuery;
+  late final SportClubCardHydrator _cardHydrator;
   late final SportClubBookingService _booking;
   final _filterStore = const SportClubFilterStore();
   SupabaseClient get _client => Supabase.instance.client;
   List<Map<String, dynamic>> _groups = [];
+  Map<String, SportClubGroupCardData> _cardDataByGroupId = {};
   List<Map<String, dynamic>> _sports = [];
   SportClubFilter _filter = const SportClubFilter();
   bool _loading = true;
@@ -80,6 +83,12 @@ class _SportClubPageState extends State<SportClubPage> {
       idsWithAnySessions: _repo.filterGroupIdsWithAnySessions,
       idsWithUpcomingSessions: _repo.filterGroupIdsWithUpcomingSessions,
       pageSize: _pageSize,
+    );
+    _cardHydrator = SportClubCardHydrator(
+      upcomingSessionsForGroups: _repo.listUpcomingSessionsForGroups,
+      groupFeesForGroups: _repo.listPublicGroupFeesForGroups,
+      sessionCostItemsForGroups: _repo.listPublicSessionCostItemsForGroups,
+      groupPositionsForGroups: _repo.listPublicGroupPositionsForGroups,
     );
     _booking = SportClubBookingService(_repo.bookSession);
     _listScrollController.addListener(_onScroll);
@@ -138,8 +147,45 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
+  /// Batch-loads secondary card data (sessions, fees, cost items, positions)
+  /// for every group of a fetched page before it is committed to [_groups].
+  Future<Map<String, SportClubGroupCardData>> _hydrateCardData(
+    SportClubGroupPage page,
+  ) {
+    final groupIds = page.groups
+        .map((g) => g['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    return _cardHydrator.hydrate(
+      groupIds: groupIds,
+      groupIdsWithAnySessions: page.groupIdsWithAnySessions,
+    );
+  }
+
+  /// Re-hydrates a single group's card data (e.g. after a session was
+  /// created from that card) and merges it into the committed map.
+  Future<void> _refreshGroupCardData(String groupId) async {
+    if (groupId.isEmpty) return;
+    try {
+      final anySessionIds = await _repo.filterGroupIdsWithAnySessions([
+        groupId,
+      ]);
+      final data = await _cardHydrator.hydrate(
+        groupIds: [groupId],
+        groupIdsWithAnySessions: anySessionIds,
+      );
+      if (!mounted || !data.containsKey(groupId)) return;
+      setState(() {
+        _cardDataByGroupId = {..._cardDataByGroupId, ...data};
+      });
+    } catch (_) {
+      // Keep the previously committed card data on refresh failure.
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_loading || _reloadingGroups || _isLoadingMore || !_hasMore) return;
+    final requestId = _filterRequestId;
     setState(() => _isLoadingMore = true);
     try {
       final page = await _fetchGroupPage(
@@ -147,11 +193,17 @@ class _SportClubPageState extends State<SportClubPage> {
         adminIds: _myAdminGroups,
         joinedGroupIds: _myJoinedGroupIds,
         blockedGroupIds: _myBlockedGroupIds,
-        requestId: _filterRequestId,
+        requestId: requestId,
       );
+      final cardData = await _hydrateCardData(page);
       if (!mounted) return;
+      if (requestId != _filterRequestId) {
+        setState(() => _isLoadingMore = false);
+        return;
+      }
       setState(() {
         _groups.addAll(page.groups);
+        _cardDataByGroupId.addAll(cardData);
         sortGroupsByDistance(
           _groups,
           locationEnabled: _locationEnabled,
@@ -244,11 +296,13 @@ class _SportClubPageState extends State<SportClubPage> {
         blockedGroupIds: membership.blocked,
         requestId: requestId,
       );
+      final cardData = await _hydrateCardData(page);
 
       if (!mounted || requestId != _filterRequestId) return;
       setState(() {
         _sports = sports;
         _groups = page.groups;
+        _cardDataByGroupId = cardData;
         _loading = false;
         _currentOffset = page.nextOffset;
         _hasMore = page.hasMore;
@@ -317,10 +371,12 @@ class _SportClubPageState extends State<SportClubPage> {
         blockedGroupIds: membership.blocked,
         requestId: requestId,
       );
+      final cardData = await _hydrateCardData(page);
 
       if (!mounted || requestId != _filterRequestId) return;
       setState(() {
         _groups = page.groups;
+        _cardDataByGroupId = cardData;
         _currentOffset = page.nextOffset;
         _hasMore = page.hasMore;
         _myAdminGroups = membership.admin;
@@ -471,9 +527,10 @@ class _SportClubPageState extends State<SportClubPage> {
                             myCreatedSportIds: _myCreatedSportIds,
                             onSportSelected: (id, selected) async {
                               setState(() {
+                                final nextSportId = selected ? id : null;
                                 _filter = _filter.copyWith(
-                                  sportId: id,
-                                  clearSportId: !selected,
+                                  sportId: nextSportId,
+                                  clearSportId: nextSportId == null,
                                 );
                                 _reloadingGroups = true;
                               });
@@ -523,6 +580,9 @@ class _SportClubPageState extends State<SportClubPage> {
                         if (_canViewFullGroup(g))
                           GroupCard(
                             group: g,
+                            cardData:
+                                _cardDataByGroupId[g['id']?.toString() ?? ''] ??
+                                SportClubGroupCardData.empty,
                             repo: _repo,
                             client: _client,
                             myAdminGroups: _myAdminGroups,
@@ -531,7 +591,9 @@ class _SportClubPageState extends State<SportClubPage> {
                             myBlockedGroupIds: _myBlockedGroupIds,
                             onTap: () => _showGroupDetailSheet(g),
                             onBook: _book,
-                            onSessionCreated: () => setState(() {}),
+                            onSessionCreated: () => _refreshGroupCardData(
+                              g['id']?.toString() ?? '',
+                            ),
                           ),
                     ],
                     if (_isLoadingMore)
@@ -675,10 +737,8 @@ class _SportClubPageState extends State<SportClubPage> {
               repo: _repo,
               client: _client,
               groupId: groupId,
-              onSessionCreated: () => setState(() {}),
+              onSessionCreated: () => _refreshGroupCardData(groupId),
             );
-            if (!mounted) return;
-            await _reload();
           } else {
             try {
               await refreshFuture;

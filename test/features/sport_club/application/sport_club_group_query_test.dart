@@ -173,6 +173,46 @@ void main() {
       expect(page.groups.length, 2);
     });
 
+    test('groupIdsWithAnySessions exposes only visible group ids', () async {
+      final q = makeQuery(
+        [
+          [mkGroup('a'), mkGroup('b'), mkGroup('c'), mkGroup('d')],
+        ],
+        // 'b' has sessions but is invisible; 'c' is joined without sessions.
+        anySessions: (ids) => {'a', 'b'},
+        upcomingSessions: (ids) => <String>{},
+      );
+      final page = await q.fetch(
+        filter: const SportClubFilter(openOnly: true),
+        offset: 0,
+        adminIds: noSets,
+        joinedGroupIds: {'c'},
+        blockedGroupIds: noSets,
+      );
+      expect(page.groups.map((g) => g['id']), ['c']);
+      expect(page.groupIdsWithAnySessions, isEmpty);
+    });
+
+    test('groupIdsWithAnySessions accumulates across raw pages', () async {
+      final q = makeQuery(
+        [
+          [mkGroup('x'), mkGroup('a'), mkGroup('b')],
+          [mkGroup('c'), mkGroup('d'), mkGroup('e')],
+        ],
+        anySessions: (ids) =>
+            ids.where((id) => id != 'x' && id != 'e').toSet(),
+      );
+      final page = await q.fetch(
+        filter: const SportClubFilter(),
+        offset: 0,
+        adminIds: noSets,
+        joinedGroupIds: noSets,
+        blockedGroupIds: noSets,
+      );
+      expect(page.groups.map((g) => g['id']), ['a', 'b', 'c', 'd']);
+      expect(page.groupIdsWithAnySessions, {'a', 'b', 'c', 'd'});
+    });
+
     test('keeps fetching later pages until the visible page fills', () async {
       final offsets = <int>[];
       final q = makeQuery(

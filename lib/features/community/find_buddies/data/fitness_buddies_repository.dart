@@ -468,13 +468,23 @@ class FitnessBuddiesRepository {
     return _attachSessionBookingSummaries(List<Map<String, dynamic>>.from(res));
   }
 
-  Future<bool> hasAnySessions(String groupId) async {
+  /// Batch variant of [listUpcomingSessions]: upcoming sessions for every
+  /// group in [groupIds] in a single query (feed card hydration).
+  Future<List<Map<String, dynamic>>> listUpcomingSessionsForGroups(
+    List<String> groupIds, {
+    DateTime? from,
+    int limit = 200,
+  }) async {
+    if (groupIds.isEmpty) return <Map<String, dynamic>>[];
+    final nowIso = (from ?? DateTime.now()).toUtc().toIso8601String();
     final res = await _client
         .from('fitness_group_sessions')
-        .select('id')
-        .eq('group_id', groupId)
-        .limit(1);
-    return (res as List).isNotEmpty;
+        .select('*')
+        .inFilter('group_id', groupIds)
+        .gte('ends_at', nowIso)
+        .order('starts_at', ascending: true)
+        .limit(limit);
+    return _attachSessionBookingSummaries(List<Map<String, dynamic>>.from(res));
   }
 
   /// Returns a set of group IDs (from [groupIds]) that have at least one
@@ -1523,6 +1533,18 @@ class FitnessBuddiesRepository {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Batch variant of [listPublicGroupFees] for feed card hydration.
+  Future<List<Map<String, dynamic>>> listPublicGroupFeesForGroups(
+    List<String> groupIds,
+  ) async {
+    if (groupIds.isEmpty) return <Map<String, dynamic>>[];
+    final res = await _client
+        .from('fitness_group_fees_public')
+        .select('*')
+        .inFilter('group_id', groupIds);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   Future<String> createGroupCostStandard({
     required String groupId,
     required String actorUserId,
@@ -1696,6 +1718,20 @@ class FitnessBuddiesRepository {
         .from('fitness_session_cost_items_public')
         .select('*')
         .eq('group_id', groupId)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Batch variant of [listPublicSessionCostItemsForGroup] for feed card
+  /// hydration: one query covering every group of the visible page.
+  Future<List<Map<String, dynamic>>> listPublicSessionCostItemsForGroups(
+    List<String> groupIds,
+  ) async {
+    if (groupIds.isEmpty) return <Map<String, dynamic>>[];
+    final res = await _client
+        .from('fitness_session_cost_items_public')
+        .select('*')
+        .inFilter('group_id', groupIds)
         .order('created_at', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
@@ -2109,6 +2145,18 @@ class FitnessBuddiesRepository {
         .from('fitness_group_positions_public')
         .select('*')
         .eq('group_id', groupId);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Batch variant of [listPublicGroupPositions] for feed card hydration.
+  Future<List<Map<String, dynamic>>> listPublicGroupPositionsForGroups(
+    List<String> groupIds,
+  ) async {
+    if (groupIds.isEmpty) return <Map<String, dynamic>>[];
+    final res = await _client
+        .from('fitness_group_positions_public')
+        .select('*')
+        .inFilter('group_id', groupIds);
     return List<Map<String, dynamic>>.from(res);
   }
 

@@ -2422,4 +2422,193 @@ ALTER TABLE public.fitness_group_bookings
 - **Automated Tests**:
   - ผ่านคำสั่งทดสอบ `flutter test test/features/community/find_buddies/presentation/widgets/position_lineup_test.dart` รวม 22/22 tests
 
+---
+
+## Phase 17 — รวมการโหลดข้อมูลย่อยของการ์ดก๊วนให้เป็น Page-level Hydration ✅ implemented
+
+> บันทึกจากการตรวจสอบ flow ปัจจุบัน: หลัง `_init()`/`_reload()` โหลดรายชื่อก๊วนเสร็จ `sport_club_page.dart` ตั้งค่า `_loading=false` แล้ว render `GroupCard` ทันที แต่ `GroupCard` แต่ละใบสร้าง `FutureBuilder` และยิงข้อมูลย่อยหลายชุดเองใน `build()` ทำให้ผู้ใช้เห็นแถบโหลดภายในการ์ดไม่พร้อมกัน, เกิด N+1 requests และอาจยิงซ้ำทุกครั้งที่ parent rebuild
+>
+> Phase นี้เลือก **B เป็นแนวทางปลายทาง**, ใช้ **C เป็นการแก้ contract ที่ต้องทำร่วมกัน** และไม่เลือก A เป็นสถาปัตยกรรมถาวร โดยแบ่งงานเป็น sub-phase ที่ commit/rollback ได้ทีละช่วง เพื่อรักษา behavior เดิมของการ์ด, pagination, refresh, CTA และสิทธิ์การเข้าถึง
+
+### 17.0 Decision: ประเมินแนวทาง A/B/C
+
+| แนวทาง | มติ | เหตุผล |
+|---|---|---|
+| **A — ย้าย Future ออกจาก `build()` ไป cache ใน `StatefulWidget`** | ไม่ใช้เป็น final architecture | ลดการยิงซ้ำเมื่อ rebuild แต่ยังมีการโหลดแยกทีละการ์ด, progress ไม่พร้อมกัน และยังคง N+1 requests; ใช้ได้เฉพาะเป็น hotfix ชั่วคราวถ้า B ยังไม่พร้อม |
+| **B — Batch fetch ที่ page/application level** | เลือกเป็น final architecture | ทำให้ page รอข้อมูลของการ์ดชุดที่จะแสดงครบก่อน commit, ลด round-trip จากต่อการ์ดเป็นต่อชุดข้อมูล และตัด `FutureBuilder` ออกจากการ์ด |
+| **C — ใช้ผล `hasAnySessions` จาก query เดิม** | ต้องทำร่วมกับ B | เป็นการกำจัด query ซ้ำโดยไม่เปลี่ยน semantics; query เดิมมีผล batch อยู่แล้ว แต่ยังไม่ได้ส่ง metadata ให้การ์ด |
+
+**ข้อสรุป:** ไม่เห็นด้วยกับการทำ A+B+C เป็นสามแนวทางถาวรพร้อมกัน เพราะ A จะซ้ำซ้อนและทำให้มี data-loading path สองแบบที่ต้องดูแล ระยะสุดท้ายควรเป็น **C → B → Stateless Card** ส่วน A เก็บไว้เป็น fallback ชั่วคราวระหว่าง rollout เท่านั้น และต้องลบออกหลัง Gate 17 ผ่าน
+
+### 17.1 Baseline และ Card Data Contract (ไม่เปลี่ยน UI behavior)
+
+- บันทึก baseline ก่อนแก้:
+  - จำนวน request ต่อการ์ด/ต่อ page เมื่อมี 10 ก๊วน
+  - เวลาเริ่มแสดง skeleton, เวลาแสดงการ์ดที่มีข้อมูลครบ และจำนวนครั้งที่ query ซ้ำเมื่อ scroll/filter/refresh
+  - พฤติกรรม sorting session, ข้อความ `ยังไม่มีรอบนัด`/`รอบนัดล่าสุดสิ้นสุดแล้ว`, สรุปค่าใช้จ่าย/ตำแหน่ง และ CTA ทุกสถานะ
+- เพิ่ม application-level contract สำหรับข้อมูลที่การ์ดต้องใช้ เช่น `SportClubGroupCardData` หรือ model ที่เทียบเท่า โดยแยกตาม `groupId` และต้องรองรับอย่างน้อย:
+  - upcoming sessions ที่เรียงตาม `starts_at`
+  - `hasAnySessions` ซึ่งรวมรอบที่สิ้นสุดแล้ว
+  - group fees
+  - session cost items ที่จัดกลุ่มด้วย `session_id`
+  - group positions
+  - สถานะ error ของข้อมูลสำคัญ โดยไม่ใช้ `loading` ค้างอยู่ภายในการ์ด
+- Contract ต้องไม่เปิดข้อมูล private เพิ่ม: ใช้ public views/repository surface เดิม, รองรับ guest, และคง authorization/RLS semantics เดิม
+- ใช้ immutable result หรือ defensive copies เพื่อไม่ให้ `GroupCard` แก้ข้อมูลที่ page ใช้ร่วมกัน
+- ห้ามเปลี่ยนข้อความ CTA, เงื่อนไข owner/admin/member/pending/blocked, join flow, booking, หรือ navigation ใน sub-phase นี้
+
+**Gate 17.1:** มี contract และ test fixture ที่สร้างการ์ดได้จากข้อมูลที่โหลดเสร็จแล้ว โดยยังไม่มีการเปลี่ยน query หรือ visual behavior ของผู้ใช้
+
+### 17.2 Query Metadata: รวมแนวทาง C
+
+- ขยาย `SportClubGroupPage` ให้คืน `groupIdsWithAnySessions` สำหรับกลุ่มที่อยู่ใน visible result page
+- ใน `SportClubGroupQuery.fetch` ให้รวมผลจาก `idsWithAnySessions` ระหว่างการเติม filtered page และ map ให้เหลือเฉพาะ ID ที่มีอยู่ใน `page.groups` ก่อนส่งให้ UI
+- คงกติกาเดิม:
+  - ผู้ใช้ทั่วไปเห็นก๊วนที่มี session อย่างน้อยหนึ่งรอบ
+  - ก๊วนที่เป็น admin/manager/member/blocked ผ่าน visibility rules เดิม
+  - `openOnly` ยังคงใช้ upcoming-session set เพื่อ filter ผู้ใช้ทั่วไป
+- ลบการเรียก `repo.hasAnySessions(groupId)` ออกจาก `GroupCard` หลัง page metadata พร้อมใช้งาน
+- ห้ามใช้ `upcomingSessions.isEmpty` แทน `hasAnySessions` เพราะจะทำให้ข้อความ “ยังไม่มีรอบนัด” กับ “รอบนัดล่าสุดสิ้นสุดแล้ว” ผิดความหมาย
+- เพิ่ม unit tests สำหรับ:
+  - กลุ่มไม่มี session
+  - กลุ่มมีเฉพาะ session ที่จบแล้ว
+  - กลุ่มมี upcoming session
+  - filtered pagination ที่ต้องอ่าน raw page เพิ่มก่อนเติม visible page
+
+**Gate 17.2:** ไม่มี per-card `hasAnySessions` request และข้อความสถานะ session ของการ์ดยังคงตรงกับ behavior เดิม
+
+### 17.3 Repository Batch APIs และ Batch Hydrator
+
+เพิ่ม repository/application surface สำหรับโหลดข้อมูลของหลายก๊วนในหนึ่ง page โดยใช้ public views และ semantics เดิม:
+
+- `listUpcomingSessionsForGroups(groupIds)`
+  - query `fitness_group_sessions` ด้วย `inFilter('group_id', groupIds)`
+  - attach booking summaries ด้วยการ query booking ของ session IDs ทั้งชุดครั้งเดียว
+  - คง `ends_at >= now`, sorting และ field `confirmed_count`, `pending_count`, `reserved_count`, `available_count`
+- `listPublicGroupFeesForGroups(groupIds)` จาก `fitness_group_fees_public`
+- `listPublicSessionCostItemsForGroups(groupIds)` จาก `fitness_session_cost_items_public`
+- `listPublicGroupPositionsForGroups(groupIds)` จาก `fitness_group_positions_public`
+- รายการ group ID ว่างต้อง return empty result โดยไม่ยิง query; หาก provider มีข้อจำกัดจำนวนค่าใน `IN`, ให้แบ่งเป็น chunk โดยรวมผลกลับตาม `group_id`
+- ทำ index/grouping ใน application layer ให้ผลลัพธ์เป็น `Map<String, SportClubGroupCardData>` และไม่ผูกกับลำดับ response จาก database
+- fetch เฉพาะ `page.groups` หลัง visibility/location/pagination filter เสร็จแล้ว ห้าม hydrate กลุ่ม raw ที่ถูก filter ทิ้งระหว่าง loop
+- คง error semantics เดิม:
+  - fees, cost items และ positions เป็นข้อมูลประกอบ หาก query ใดล้มเหลวให้ fallback เป็น empty พร้อม log/telemetry ที่ไม่เปิดข้อมูลลับ
+  - session data ต้องเก็บ error state ที่แสดงได้ชัดเจน โดยไม่แสดง loading bar ค้างหรือทำให้ CTA ถูกกดซ้ำโดยไม่จำเป็น
+- ไม่มี schema migration ใน phase นี้ และห้ามเปลี่ยน public view contract ที่ผู้ใช้อื่นใช้อยู่โดยไม่ผ่าน compatibility check
+
+**Gate 17.3:** batch result จัดกลุ่มถูกต้อง, booking summary ต่อ session ไม่ปนกัน, public/guest อ่านได้เหมือนเดิม, และจำนวน network round-trip ไม่เพิ่มเมื่อเทียบกับ baseline
+
+### 17.4 Page-level Orchestration และ Atomic Commit
+
+ปรับ `_init`, `_reload` และ `_loadMore` ให้ card data ถูกโหลดเสร็จก่อนแสดงการ์ดชุดใหม่:
+
+- **Initial load / filter / pull-to-refresh:**
+  - คง `_loading`/`_reloadingGroups` เป็น true จนทั้ง group page และ card hydration สำเร็จ
+  - commit `_groups`, `groupIdsWithAnySessions` และ `_cardDataByGroupId` พร้อมกันใน `setState` เดียว
+  - ระหว่างโหลดแสดง page-level skeleton ตาม Phase 10; ห้าม render กลุ่มที่ยังไม่มี card data ครบ
+  - หาก request ล้มเหลว ให้คงข้อมูลชุดก่อนหน้าไว้แบบ atomic และแสดง retry/error state ตาม convention เดิม ไม่เขียน list ใหม่แบบครึ่งชุด
+- **Pagination:**
+  - hydrate เฉพาะกลุ่มของ page ใหม่ก่อน `addAll` ลง list
+  - ระหว่างโหลดคงการ์ดเดิมไว้และแสดงสถานะที่ footer ได้ แต่ห้ามแสดงการ์ดใหม่ที่มี progress bar ย่อย
+  - ถ้า hydration page ใหม่ล้มเหลว ให้ไม่ append กลุ่มครึ่งชุด และเปิด retry page ใหม่ได้
+- **Stale request/lifecycle:**
+  - ใช้ `_filterRequestId`, `mounted` และ stale validator เดิมทั้งก่อนและหลัง batch hydration
+  - ผลจาก filter/refresh เก่าห้ามเขียนทับผล request ใหม่ แม้ network response จะกลับมาทีหลัง
+- **Targeted refresh:**
+  - หลังสร้างรอบนัดหรือแก้ข้อมูลของก๊วน ให้ rehydrate เฉพาะ `groupId` ที่เปลี่ยนเมื่อทำได้; full `_reload` ยังคงใช้กับ filter/refresh ที่เปลี่ยน visibility
+  - callback จากการ์ดและ bottom sheet ต้องรอ/trigger refresh path ที่กำหนด ไม่อาศัย parent rebuild เพื่อยิง Future ใหม่โดยบังเอิญ
+- เก็บ `_cardDataByGroupId` ให้สอดคล้องกับ `_groups` เสมอ; ลบข้อมูลของกลุ่มที่หลุดจากผล filter หรือถูกลบออกจาก page
+
+**Gate 17.4:** initial load, filter, pull-to-refresh, load-more, add-session และ stale request ไม่แสดงการ์ดที่ยังโหลดข้อมูลย่อยไม่ครบ และไม่มีข้อมูล request เก่าเขียนทับผลใหม่
+
+### 17.5 เปลี่ยน `GroupCard` เป็น Presentation-only Widget
+
+- เปลี่ยน `GroupCard` ให้รับ `SportClubGroupCardData` จาก parent และไม่สร้าง `FutureBuilder`, `Future.wait` หรือ repository request ใน `build()`
+- การ์ดต้อง render จาก complete data contract ทันที; ถ้าข้อมูลสำคัญมี error ให้ render explicit error/empty state ตาม contract ไม่แสดง spinner ต่อการ์ด
+- ลบ `hasAnySessions` per-card call และใช้ metadata จาก Phase 17.2
+- แสดง upcoming sessions ได้สูงสุด **3 รอบ** ตามข้อกำหนดในหน้า UI และเรียงตามเวลาเดิม; ต้องไม่แสดงเพียงรอบเดียวจาก `take(1)` อีกต่อไป
+- คง action และ authorization เดิมทั้งหมด:
+  - join/session picker และ `positionId`
+  - joined/pending/blocked states
+  - admin/owner “เพิ่มรอบนัด”
+  - group detail navigation
+- `onSessionCreated` ต้องเรียก targeted refresh ของก๊วน ไม่ใช้ `setState(() {})` เพื่อบังคับให้ FutureBuilder ทุกใบยิงใหม่
+- การ scroll/rebuild ของ parent ต้องไม่ทำให้ query รายละเอียดของก๊วนที่ hydrate แล้วถูกยิงซ้ำ
+
+**Gate 17.5:** การ์ดทุกใบที่ถูกแสดงมีข้อมูลย่อยพร้อมกัน, ไม่มี `LinearProgressIndicator` ภายใน card จากการโหลดปกติ, CTA และสิทธิ์ทุกสถานะผ่าน regression tests, และแสดงรอบนัดสูงสุด 3 รอบตาม plan
+
+### 17.6 Test, Performance และ Manual QA
+
+- **Unit tests:**
+  - batch repository/hydrator grouping, empty IDs, chunking, sorting และ booking summary
+  - optional error fallback และ session error contract
+  - `SportClubGroupQuery` ส่ง `groupIdsWithAnySessions` ถูกต้องในทุก visibility/pagination case
+- **Widget tests:**
+  - `GroupCard` render จาก data fixture โดยไม่สร้าง network request
+  - 0/1/หลาย upcoming sessions, เฉพาะรอบเก่า, fees/costs/positions ว่างหรือมีข้อมูล
+  - session สูงสุด 3 รอบ, CTA ของ guest/member/pending/blocked/admin/owner
+  - explicit error state ไม่เปลี่ยนเป็น loading bar และไม่เปิด action ที่ไม่ควรเปิด
+- **Page/integration tests:**
+  - initial page commit หลัง hydration ครบเท่านั้น
+  - refresh/filter atomically replace groups + card data
+  - load-more ไม่ append partial cards และ retry ได้
+  - stale filter request ถูกทิ้ง, unmounted page ไม่เรียก `setState`
+  - สร้างรอบนัดแล้วอัปเดตเฉพาะการ์ดเป้าหมาย
+- **Performance/observability:**
+  - เปรียบเทียบ request count และเวลาโหลดกับ baseline; จำนวน request ต้องสัมพันธ์กับจำนวน batch ไม่ใช่จำนวนการ์ด
+  - ตรวจว่า scroll/rebuild ไม่ทำให้ request ซ้ำ และ log ไม่เปิด token, user ID หรือข้อมูล private
+- **Manual device QA บน network ช้า:**
+  - หน้าแรกแสดง skeleton ระดับ page จนพร้อม แล้วการ์ดที่เห็นแสดงข้อมูลครบพร้อมกัน
+  - ไม่เห็นแถบโหลดไล่ทีละการ์ดหลังภาพรวมเสร็จ
+  - scroll ไป page ถัดไปไม่ทำให้การ์ดเดิม reload
+  - filter กีฬา “ทั้งหมด”, filter อื่น, pull-to-refresh, เพิ่มรอบนัด และเปิด detail sheet ยังทำงานเหมือนเดิม
+
+**Gate 17.6:** ผ่าน analyzer, focused tests, regression tests เดิม, manual slow-network QA และ performance request-count target โดยไม่เปลี่ยน authorization/business rules
+
+### 17.7 Safe Rollout และ Rollback
+
+- Phase นี้ไม่เพิ่ม migration และไม่เปลี่ยน route/redirect/booking RPC; repository batch methods เป็น read-only และใช้ public view contract เดิม
+- ระหว่าง rollout ให้คง legacy card-loading path ไว้ชั่วคราวหลัง internal switch/feature flag หรือ adapter ที่ถอดออกได้ เพื่อเปรียบเทียบผลและ rollback โดยไม่แก้ DB
+- หาก Gate 17.3–17.5 ไม่ผ่าน ให้ rollback เฉพาะ page wiring กลับไป path เดิม; ห้ามแก้ query เพื่อปิด error หรือ bypass RLS
+- เมื่อ Gate 17.6 ผ่านแล้ว ให้ลบ legacy `FutureBuilder`/per-card query path และ A fallback ออก เพื่อไม่ให้เกิดสองแหล่งความจริงหรือ regression จากการยิง query ซ้ำ
+- หลักฐานก่อนปิด phase: diff ที่แยกชัดเจน, test result, request-count comparison, manual QA checklist และผลตรวจ `flutter analyze`
+
+### Gate 17 — สรุป Definition of Done
+
+- ไม่มีการ์ดที่แสดงแล้วต้องโหลดข้อมูลย่อยด้วย `FutureBuilder` ต่อการ์ด
+- initial/filter/refresh/load-more แสดงเฉพาะการ์ดที่มี card data contract ครบ หรือ explicit error state ที่ไม่ใช่ loading ค้าง
+- จำนวน request ไม่โตตามจำนวนการ์ดแบบ N+1 และ scroll/rebuild ไม่ยิงซ้ำโดยไม่จำเป็น
+- `hasAnySessions` ยังคงแยกจาก upcoming sessions และข้อความสถานะถูกต้อง
+- การ์ดแสดงรอบนัดถัดไปสูงสุด 3 รอบตาม Match Sport plan
+- CTA, permission, guest access, booking, position selection, pagination, filter และ backward-compatible route ทำงานเหมือนเดิม
+- focused tests และ regression tests ผ่านครบ พร้อม evidence สำหรับ rollback และ manual QA
+
+### 17.8 สรุปสถานะการพัฒนาจริง (Implementation Status — 2026-10-06)
+
+ดำเนินการตามลำดับ **C → Batch Data Contract → B → Stateless GroupCard → QA/Rollback** ครบทุก sub-phase 17.1–17.7:
+
+| Sub-phase | สิ่งที่ทำ | ไฟล์ |
+|---|---|---|
+| 17.1 Contract | `SportClubGroupCardData` (upcomingSessions เรียงแล้ว, hasAnySessions, groupFees, costItemsBySession, groupPositions, sessionError) | `lib/features/sport_club/application/sport_club_card_hydrator.dart` |
+| 17.2 Metadata | `SportClubGroupPage.groupIdsWithAnySessions` — สะสมผล batch ข้าม raw pages แล้ว intersect กับ visible ids | `application/sport_club_group_query.dart` |
+| 17.3 Batch APIs | `listUpcomingSessionsForGroups`, `listPublicGroupFeesForGroups`, `listPublicSessionCostItemsForGroups`, `listPublicGroupPositionsForGroups` — view/RLS เดิม, `inFilter('group_id', ids)`, guard empty ids | `data/fitness_buddies_repository.dart` |
+| 17.4 Orchestration | `_init`/`_reload`/`_loadMore` hydrate ก่อน commit `_groups` + `_cardDataByGroupId` แบบ atomic, stale check หลัง hydration, `_refreshGroupCardData` สำหรับ targeted refresh หลังสร้างรอบนัด (แทน `setState(() {})` ที่ทำให้ทุกการ์ด refire) | `presentation/pages/sport_club_page.dart` |
+| 17.5 Stateless card | hydrated path render จาก contract โดยไม่ยิง request ใน `build()`; แสดงรอบนัดสูงสุด 3 รอบ + hint เมื่อเกิน; legacy `FutureBuilder` คงไว้เป็น rollback adapter เมื่อ `cardData == null` | `presentation/widgets/feed/group_card.dart` |
+| 17.6 Tests | hydrator unit tests (5), query metadata tests (2), hydrated-card widget tests (5) | `test/features/sport_club/` |
+
+**ผลการตรวจสอบ:** `flutter analyze` ผ่าน (0 issues ในไฟล์ที่แก้) และ regression suite ผ่านครบ **67/67 tests** (55 เดิม + 12 ใหม่)
+
+**จำนวน request ต่อหน้า:** จาก ~60 (≈6 × 10 การ์ด, ยิงซ้ำทุก rebuild) เหลือ **4 requests ต่อ page** (+1 จาก booking summaries batch ภายใน sessions) — ไม่โตตามจำนวนการ์ด และ rebuild/scroll ไม่ยิงซ้ำเพราะ card ไม่มี async work ใน `build()` อีก
+
+**Rollback:** page ส่ง `cardData` เสมอ; หากต้อง rollback ให้ส่ง `null` (หรือ revert page wiring) แล้วการ์ดกลับไปใช้ legacy path โดยไม่แก้ DB — ลบ adapter ออกได้หลัง manual QA ผ่าน
+
+**ค้างตรวจสอบบน device จริง:** manual slow-network QA (skeleton→การ์ดพร้อมกัน, ไม่มี per-card progress, scroll ไม่ reload) และ request-count comparison บนเครือข่ายจริง — ต้องทำบน device/emulator ก่อนปิด phase สมบูรณ์
+
+### 17.9 Manual QA ผ่านแล้ว + ลบ Legacy Path (2026-10-06)
+
+- Manual device QA ผ่านครบ: การ์ดโผล่พร้อมกันครบข้อมูลไม่มี per-card progress bar, scroll ไม่ reload การ์ดเดิม, pull-to-refresh/ตัวกรอง "ทั้งหมด" แสดง skeleton แล้วการ์ดพร้อมกัน, "เพิ่มรอบนัด" อัปเดตเฉพาะการ์ดนั้น
+- ใน flow สร้างก๊วน `_reload()` ยังทำเพียงครั้งเดียวหลังสร้างก๊วนเพื่อดึงก๊วนใหม่เข้าฟีด; หลังสร้างรอบนัดใช้ `_refreshGroupCardData(groupId)` เท่านั้น จึงไม่ทำ full-feed reload รอบที่สอง
+- ตาม 17.7 หลัง Gate ผ่าน: **ลบ legacy `FutureBuilder`/per-card query path ออกแล้ว** — `GroupCard.cardData` เป็น required (page ส่ง `?? SportClubGroupCardData.empty` เป็น defensive fallback) และลบ `FitnessBuddiesRepository.hasAnySessions` ที่ไม่มี caller เหลือ
+- ยืนยันหลัง cleanup: `flutter analyze lib/features/sport_club/` 0 issues, regression suite **67/67 passed**
+
 

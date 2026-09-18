@@ -7,10 +7,16 @@ class SportClubGroupPage {
   final int nextOffset;
   final bool hasMore;
 
+  /// IDs of groups in [groups] that have at least one session of any state
+  /// (including ended). Exposed for card hydration so cards don't re-query
+  /// `hasAnySessions` per group.
+  final Set<String> groupIdsWithAnySessions;
+
   const SportClubGroupPage({
     required this.groups,
     required this.nextOffset,
     required this.hasMore,
+    this.groupIdsWithAnySessions = const {},
   });
 }
 
@@ -65,6 +71,7 @@ class SportClubGroupQuery {
     var nextOffset = offset;
     var hasMore = true;
     final visibleGroups = <Map<String, dynamic>>[];
+    final allIdsWithAnySessions = <String>{};
 
     while (visibleGroups.length < pageSize && hasMore) {
       final page = await listGroups(
@@ -99,6 +106,7 @@ class SportClubGroupQuery {
           .toList();
       // ผู้ใช้ทั่วไปเห็นทุกก๊วนที่มีรอบนัด (รวมรอบที่สิ้นสุดแล้ว)
       final groupIdsWithAnySessions = await idsWithAnySessions(groupIds);
+      allIdsWithAnySessions.addAll(groupIdsWithAnySessions);
       // เมื่อกด filter "ยังเปิดรับ" ให้แสดงเฉพาะก๊วนที่ยังมีรอบนัดไม่สิ้นสุด
       final groupIdsWithUpcomingSessions = filter.openOnly
           ? await idsWithUpcomingSessions(groupIds)
@@ -140,10 +148,15 @@ class SportClubGroupQuery {
       userLat: userLat,
       userLng: userLng,
     );
+    final visibleIds = visibleGroups
+        .map((g) => g['id']?.toString() ?? '')
+        .toSet();
     return SportClubGroupPage(
       groups: visibleGroups,
       nextOffset: nextOffset,
       hasMore: hasMore,
+      groupIdsWithAnySessions: allIdsWithAnySessions
+          .intersection(visibleIds),
     );
   }
 }

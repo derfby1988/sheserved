@@ -9,13 +9,19 @@ import 'package:sheserved/features/sport_club/presentation/widgets/feed/sport_ca
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/create_session_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_detail_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/session_picker_sheet.dart';
+import 'package:sheserved/features/sport_club/application/sport_club_card_hydrator.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 
 /// A group card on the sport-club feed: cover, status badges, gender /
 /// skill tags, fee + position summaries, next session, and Join /
 /// create-session actions.
+///
+/// Renders synchronously from [cardData], which the page hydrates before
+/// committing the group list — the card never issues repository calls in
+/// [build].
 class GroupCard extends StatelessWidget {
   final Map<String, dynamic> group;
+  final SportClubGroupCardData cardData;
   final FitnessBuddiesRepository repo;
   final SupabaseClient client;
   final Set<String> myAdminGroups;
@@ -29,6 +35,7 @@ class GroupCard extends StatelessWidget {
   const GroupCard({
     super.key,
     required this.group,
+    required this.cardData,
     required this.repo,
     required this.client,
     required this.myAdminGroups,
@@ -224,78 +231,54 @@ class GroupCard extends StatelessWidget {
                         ),
                       ),
                     const SizedBox(height: 8),
-                    FutureBuilder<List<dynamic>>(
-                      future: Future.wait<dynamic>([
-                        repo.listUpcomingSessions(group['id'].toString()),
-                        repo.hasAnySessions(group['id'].toString()),
-                        repo
-                            .listPublicGroupFees(group['id'].toString())
-                            .catchError((_) => <Map<String, dynamic>>[]),
-                        repo
-                            .listPublicSessionCostItemsForGroup(
-                              group['id'].toString(),
-                            )
-                            .catchError((_) => <Map<String, dynamic>>[]),
-                        repo
-                            .listPublicGroupPositions(group['id'].toString())
-                            .catchError((_) => <Map<String, dynamic>>[]),
-                      ]),
-                      builder: (context, snapshot) {
-                        final items =
-                            (snapshot.data?[0] as List?)
-                                ?.cast<Map<String, dynamic>>() ??
-                            const <Map<String, dynamic>>[];
-                        final sortedItems = [...items]
-                          ..sort((a, b) {
-                            final aStart = DateTime.tryParse(
-                              a['starts_at']?.toString() ?? '',
-                            );
-                            final bStart = DateTime.tryParse(
-                              b['starts_at']?.toString() ?? '',
-                            );
-                            if (aStart == null && bStart == null) {
-                              return 0;
-                            }
-                            if (aStart == null) return 1;
-                            if (bStart == null) return -1;
-                            return aStart.compareTo(bStart);
-                          });
-                        final hasAnySessions = snapshot.data?[1] == true;
-                        final groupFees =
-                            (snapshot.data?[2] as List?)
-                                ?.cast<Map<String, dynamic>>() ??
-                            const <Map<String, dynamic>>[];
-                        final groupPositions = (snapshot.data?.length ?? 0) > 4
-                            ? (snapshot.data?[4] as List?)
-                                      ?.cast<Map<String, dynamic>>() ??
-                                  []
-                            : <Map<String, dynamic>>[];
-                        final costItemsBySession =
-                            <String, List<Map<String, dynamic>>>{};
-                        for (final it
-                            in (snapshot.data?[3] as List?)
-                                    ?.cast<Map<String, dynamic>>() ??
-                                const <Map<String, dynamic>>[]) {
-                          final sid = it['session_id']?.toString() ?? '';
-                          if (sid.isNotEmpty) {
-                            costItemsBySession
-                                .putIfAbsent(sid, () => [])
-                                .add(it);
-                          }
-                        }
-                        if (snapshot.connectionState != ConnectionState.done) {
-                          return const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: LinearProgressIndicator(minHeight: 2),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return Text(
-                            'โหลดรอบนัดไม่สำเร็จ: ${snapshot.error}',
-                            style: const TextStyle(color: Colors.red),
-                          );
-                        }
-                        final gid = group['id']?.toString() ?? '';
+                    _renderDetail(
+                      context,
+                      hasCover: hasCover,
+                      textPill: textPill,
+                      items: cardData.upcomingSessions,
+                      hasAnySessions: cardData.hasAnySessions,
+                      groupFees: cardData.groupFees,
+                      costItemsBySession: cardData.costItemsBySession,
+                      groupPositions: cardData.groupPositions,
+                      error: cardData.sessionError,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _renderDetail(
+    BuildContext context, {
+    required bool hasCover,
+    required Widget Function(Widget child) textPill,
+    required List<Map<String, dynamic>> items,
+    required bool hasAnySessions,
+    required List<Map<String, dynamic>> groupFees,
+    required Map<String, List<Map<String, dynamic>>> costItemsBySession,
+    required List<Map<String, dynamic>> groupPositions,
+    required Object? error,
+  }) {
+    if (error != null) {
+      return Text(
+        'โหลดรอบนัดไม่สำเร็จ: $error',
+        style: const TextStyle(color: Colors.red),
+      );
+    }
+    final sortedItems = [...items]
+      ..sort((a, b) {
+        final aStart = DateTime.tryParse(a['starts_at']?.toString() ?? '');
+        final bStart = DateTime.tryParse(b['starts_at']?.toString() ?? '');
+        if (aStart == null && bStart == null) return 0;
+        if (aStart == null) return 1;
+        if (bStart == null) return -1;
+        return aStart.compareTo(bStart);
+      });
+    final gid = group['id']?.toString() ?? '';
                         if (items.isEmpty) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,7 +515,7 @@ class GroupCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            for (final s in sortedItems.take(1))
+                            for (final s in sortedItems.take(3))
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Column(
@@ -567,15 +550,6 @@ class GroupCard extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                    if (sortedItems.length > 1)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Center(
-                                          child: textPill(
-                                            const Text('กดเพื่อแสดงรอบอื่น ๆ'),
-                                          ),
-                                        ),
-                                      ),
                                     Padding(
                                       padding: const EdgeInsets.only(top: 2),
                                       child: Align(
@@ -594,6 +568,15 @@ class GroupCard extends StatelessWidget {
                                       ),
                                     ),
                                   ],
+                                ),
+                              ),
+                            if (sortedItems.length > 3)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Center(
+                                  child: textPill(
+                                    const Text('กดเพื่อแสดงรอบอื่น ๆ'),
+                                  ),
                                 ),
                               ),
                             if (isAdmin)
@@ -621,15 +604,5 @@ class GroupCard extends StatelessWidget {
                               ),
                           ],
                         );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 }
