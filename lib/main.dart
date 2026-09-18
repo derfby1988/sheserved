@@ -24,7 +24,7 @@ import 'features/consultation/presentation/pages/health_program_request_dashboar
 import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
-import 'features/community/find_buddies/presentation/pages/sport_club_page.dart';
+import 'package:sheserved/features/sport_club/presentation/pages/sport_club_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
@@ -121,7 +121,6 @@ import 'features/erp/presentation/pages/payroll_page.dart';
 import 'features/erp/presentation/pages/hr_settings_page.dart';
 import 'features/erp/presentation/pages/employee_role_assignment_page.dart';
 import 'features/erp/presentation/pages/my_permissions_page.dart';
-import 'features/community/find_buddies/presentation/pages/sport_club_page.dart';
 import 'features/community/find_buddies/presentation/pages/booking_detail_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_group_page.dart';
 import 'features/community/find_buddies/presentation/pages/create_session_page.dart';
