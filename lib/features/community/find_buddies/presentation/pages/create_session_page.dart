@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/sport_club_error_mapper.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 
@@ -55,6 +56,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
       lastDate: today.add(const Duration(days: 365)),
     );
     if (date == null) return;
+    if (!mounted) return;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -109,6 +111,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
       lastDate: baseDate.add(const Duration(days: 365)),
     );
     if (date == null) return;
+    if (!mounted) return;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(base.add(const Duration(hours: 1))),
@@ -179,9 +182,10 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(
+      showFloatingManagementError(
         context,
-      ).showSnackBar(SnackBar(content: Text('เพิ่มรอบนัดไม่สำเร็จ: $e')));
+        'เพิ่มรอบนัดไม่สำเร็จ: ${mapManagementError(e, sessionContext: true)}',
+      );
     }
   }
 

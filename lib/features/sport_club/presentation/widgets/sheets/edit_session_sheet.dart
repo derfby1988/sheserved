@@ -320,10 +320,9 @@ class EditSessionSheet {
                         onPressed: () async {
                           if (editEnd.isBefore(editStart) ||
                               editEnd.isAtSameMomentAs(editStart)) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text('เวลาสิ้นสุดต้องมาหลังเวลาเริ่ม'),
-                              ),
+                            showFloatingManagementError(
+                              ctx,
+                              'เวลาสิ้นสุดต้องมาหลังเวลาเริ่ม',
                             );
                             return;
                           }
@@ -382,13 +381,10 @@ class EditSessionSheet {
                             Navigator.pop(ctx);
                             onSessionUpdated?.call();
                           } catch (e) {
-                            if (!pageContext.mounted) return;
-                            ScaffoldMessenger.of(pageContext).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'อัปเดตไม่สำเร็จ: ${mapManagementError(e)}',
-                                ),
-                              ),
+                            if (!ctx.mounted) return;
+                            showFloatingManagementError(
+                              ctx,
+                              'อัปเดตไม่สำเร็จ: ${mapManagementError(e, sessionContext: true)}',
                             );
                           }
                         },

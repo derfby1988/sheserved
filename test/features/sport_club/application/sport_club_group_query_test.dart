@@ -2,8 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/application/sport_club_group_query.dart';
 import 'package:sheserved/features/sport_club/domain/sport_club_filter.dart';
 
-Map<String, dynamic> mkGroup(String id, {double? lat, double? lng}) =>
-    {'id': id, ?'lat': lat, ?'lng': lng};
+Map<String, dynamic> mkGroup(String id, {double? lat, double? lng}) {
+  final group = <String, dynamic>{'id': id};
+  if (lat != null) {
+    group['lat'] = lat;
+  }
+  if (lng != null) {
+    group['lng'] = lng;
+  }
+  return group;
+}
 
 /// Builds a query whose listGroups serves [pages] by offset (each page is a
 /// fixed-size chunk) and whose session-id lookups return the given sets.

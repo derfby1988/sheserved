@@ -144,6 +144,7 @@
 - **ข้อควรระวังจาก Approval Filtering Regression:** ห้ามใช้ `fitness_group_members.is_active=true` เพียงอย่างเดียวเพื่อแสดงผลว่าเข้าร่วมแล้ว เพราะ RPC สร้างแถวผู้ขอตั้งแต่สถานะ `pending`; UI/query ต้องตรวจ owner participation, `role='admin'` หรือ booking `status='confirmed'` ร่วมด้วย
 - **Owner auto-booking:** trigger/RPC สร้าง booking `confirmed` ของ owner ในทุก upcoming session เมื่อเปิด auto-join; ต้อง reject การเปิดแบบทั้งชุดถ้ามี session เต็มหรือ session ของก๊วนทับเวลา
 - **ป้องกันจองซ้อนเวลา (overlap):** สร้าง Postgres function `check_booking_overlap(p_user_id, p_starts_at, p_ends_at)` ตรวจ `fitness_group_bookings JOIN fitness_group_sessions` ที่ status ไม่ใช่ `cancelled`/`rejected` และช่วงเวลาทับซ้อน — เรียกจากภายใน `book_fitness_session()` ก่อน insert เพื่อความ atomic
+- **ป้องกันรอบนัดซ้อนเวลาในก๊วน:** trigger `trg_guard_fitness_session_owner_overlap` ตรวจทุก `INSERT` และ `UPDATE` ของ `group_id/starts_at/ends_at` สำหรับ session ที่ยังไม่จบ โดยไม่จำกัด `owner_auto_join`; ใช้ `pg_advisory_xact_lock` ต่อก๊วนเพื่อป้องกัน concurrent writes และคืน `GROUP_SESSION_OVERLAP` ให้ Create/Edit Session แสดงข้อความแก้ไขได้
 - Booking mutation (จอง/ยกเลิก/อนุมัติ) เรียกผ่าน Supabase RPC จาก Flutter แทนการทำ SELECT แล้ว INSERT แยกฝั่ง client; session capacity/owner auto-booking ใช้ database trigger/guard และ Repository manager check เพื่อปิดช่องว่าง race condition
 - **Cost standard/item integrity:** ตอนเลือก standard ต้องตรวจว่าอยู่ใน `group_id` เดียวกันและยัง active ก่อนสร้าง snapshot; update/disable standard ห้าม cascade ไปแก้ `fitness_group_session_cost_items` เดิม; ลบ session ให้ลบ line items ผ่าน `ON DELETE CASCADE` และห้ามให้ cost item orphan
 - **Payment gate integrity (future payment phase):** สร้าง obligation แบบ idempotent ต่อ user + source item + booking/join intent; ตรวจ payment timing จาก snapshot, ห้าม approve/auto-confirm ก่อน gate ที่บังคับผ่าน และ `at_venue` ต้องไม่ถูกตีความเป็น unpaid online ที่บล็อก booking
@@ -2298,7 +2299,7 @@ GROUP BY 1, 2;
 - `createSession/updateSession(..., ownerPositionId, costItems)` — ส่ง/แก้ `owner_position_id` และ cost items ใน transaction ที่สอดคล้องกับ owner booking
 - `bookSession(sessionId, userId, {positionId})` — ส่งต่อไป RPC; owner manual/rejoin ต้องส่ง position ที่เลือกไว้ด้วย
 - `setBookingPosition(bookingId, userId, positionId)` — เรียก RPC และส่ง event/refresh เมื่อเปลี่ยนสำเร็จ
-- error mapping: `POSITION_REQUIRED` → "ก๊วนนี้ต้องเลือกตำแหน่งก่อนเข้าร่วม", `POSITION_FULL` → "ตำแหน่งนี้เต็มแล้ว", `POSITION_INVALID` → "ตำแหน่งไม่ถูกต้องหรือถูกปิดแล้ว", `POSITION_LAYOUT_NOT_READY` → "กีฬานี้ยังไม่ได้ตั้งค่ารูปแบบสนาม"
+- error mapping: `POSITION_REQUIRED` → "ก๊วนนี้ต้องเลือกตำแหน่งก่อนเข้าร่วม", `POSITION_FULL` → "ตำแหน่งนี้เต็มแล้ว", `POSITION_INVALID` → "ตำแหน่งไม่ถูกต้องหรือถูกปิดแล้ว", `POSITION_LAYOUT_NOT_READY` → "กีฬานี้ยังไม่ได้ตั้งค่ารูปแบบสนาม", `GROUP_SESSION_OVERLAP` → "รอบนัดนี้มีเวลาทับซ้อนกับรอบอื่นในก๊วน กรุณาเลือกเวลาใหม่"
 
 ### 15.8 Edge Cases และ Invariants
 
@@ -2610,5 +2611,15 @@ ALTER TABLE public.fitness_group_bookings
 - ใน flow สร้างก๊วน `_reload()` ยังทำเพียงครั้งเดียวหลังสร้างก๊วนเพื่อดึงก๊วนใหม่เข้าฟีด; หลังสร้างรอบนัดใช้ `_refreshGroupCardData(groupId)` เท่านั้น จึงไม่ทำ full-feed reload รอบที่สอง
 - ตาม 17.7 หลัง Gate ผ่าน: **ลบ legacy `FutureBuilder`/per-card query path ออกแล้ว** — `GroupCard.cardData` เป็น required (page ส่ง `?? SportClubGroupCardData.empty` เป็น defensive fallback) และลบ `FitnessBuddiesRepository.hasAnySessions` ที่ไม่มี caller เหลือ
 - ยืนยันหลัง cleanup: `flutter analyze lib/features/sport_club/` 0 issues, regression suite **67/67 passed**
+
+### 17.10 Session Overlap Guard (2026-10-06)
+
+- เพิ่ม migration `20260915222000_prevent_overlapping_group_sessions.sql` เพื่อขยาย trigger เดิมให้ตรวจทุก `INSERT` และ `UPDATE OF group_id, starts_at, ends_at` ไม่จำกัด `owner_auto_join` อีกต่อไป
+- ตรวจเฉพาะ session ที่ยังไม่จบ (`ends_at >= now()`); ไม่แก้หรือล้มเหลวจากข้อมูลซ้อนทับย้อนหลังที่มีอยู่เดิม
+- ใช้ `pg_advisory_xact_lock` ต่อ `group_id` ก่อนตรวจ จึงไม่เปิดช่องให้ concurrent create สองรายการผ่าน overlap check พร้อมกัน
+- คืน error code `GROUP_SESSION_OVERLAP`; Create/Edit Session bottom sheet และ legacy Create Session page แสดง error ผ่าน root `OverlayEntry` สีแดงที่ลอยเหนือ modal bottom sheet, fade in/out และถอดออกเองภายใน 4 วินาที โดยยังรองรับ `OWNER_AUTO_JOIN_OVERLAP` จาก deployment เก่าด้วย
+- การบังคับจริงอยู่ที่ DB trigger จึงครอบคลุม repository, bottom sheet, legacy page, admin tooling และ direct SQL entry point ที่ทำ INSERT/UPDATE ผ่านตารางเดียวกัน
+- UI ไม่ทำ preflight SELECT แยก เพราะ DB guard เป็น source of truth แบบ atomic และป้องกัน TOCTOU/race ได้ดีกว่า
+- Regression suite หลังเพิ่ม mapper/overlay widget test: **71/71 passed**; SQL lint ต้องรันหลังเปิด local Supabase/Postgres เนื่องจากเครื่องขณะนี้ไม่มี database ที่ `127.0.0.1:54322`
 
 

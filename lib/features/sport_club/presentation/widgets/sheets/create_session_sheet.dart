@@ -42,7 +42,6 @@ class CreateSessionSheet {
     final noteCtrl = TextEditingController();
     int capacity = 5;
     final costItems = <Map<String, dynamic>>[];
-    String? errorText;
     bool submitting = false;
     bool waitingForRefresh = refreshFuture != null;
     var refreshListenerAttached = false;
@@ -186,7 +185,6 @@ class CreateSessionSheet {
 
             Future<void> submit() async {
               if (waitingForRefresh) return;
-              setModalState(() => errorText = null);
               var startsAt = dateTimeAt(selectedDate, startTime);
               var endsAt = endDateTimeAt(selectedDate, startTime, endTime);
               final earliest = roundUpToNearest(
@@ -211,17 +209,18 @@ class CreateSessionSheet {
                 setModalState(() => endTime = TimeOfDay.fromDateTime(endsAt));
               }
               if (capacity < 1 || capacity > 30) {
-                setModalState(
-                  () => errorText = 'จำนวนผู้เข้าร่วมต้องอยู่ระหว่าง 1–30 คน',
+                showFloatingManagementError(
+                  ctx,
+                  'จำนวนผู้เข้าร่วมต้องอยู่ระหว่าง 1–30 คน',
                 );
                 return;
               }
               if (ownerAutoJoin &&
                   groupPositions.isNotEmpty &&
                   selectedOwnerPositionId == null) {
-                setModalState(
-                  () => errorText =
-                      'กรุณาเลือกตำแหน่งของเจ้าของก๊วนสำหรับรอบนัดนี้',
+                showFloatingManagementError(
+                  ctx,
+                  'กรุณาเลือกตำแหน่งของเจ้าของก๊วนสำหรับรอบนัดนี้',
                 );
                 return;
               }
@@ -250,10 +249,9 @@ class CreateSessionSheet {
                 onSessionCreated?.call();
               } catch (e) {
                 setModalState(() => submitting = false);
-                ScaffoldMessenger.of(pageContext).showSnackBar(
-                  SnackBar(
-                    content: Text('บันทึกไม่สำเร็จ: ${mapManagementError(e)}'),
-                  ),
+                showFloatingManagementError(
+                  ctx,
+                  'บันทึกไม่สำเร็จ: ${mapManagementError(e, sessionContext: true)}',
                 );
               }
             }
@@ -447,13 +445,6 @@ class CreateSessionSheet {
                       ),
                       maxLines: 2,
                     ),
-                    if (errorText != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        errorText!,
-                        style: const TextStyle(color: Colors.redAccent),
-                      ),
-                    ],
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
