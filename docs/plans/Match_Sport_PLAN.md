@@ -2795,5 +2795,125 @@ ALTER TABLE public.fitness_group_bookings
 - [ ] ไม่มีคำขอรอบในอดีตที่สามารถกดอนุมัติย้อนหลังได้
 - [ ] ผ่าน Automated Tests ทั้งหมด และไม่มีข้อผิดพลาดจาก `flutter analyze`
 
+---
+
+## Phase 20 — ระบบการแชร์ก๊วนและรอบนัดด้วย Deep Link และ Invite Poster Card (Group & Session Invite via Deep Link & QR Code) ⏳ รอ implement
+
+> สรุป: พัฒนาระบบแชร์ก๊วนกีฬาและรอบกิจกรรมจาก `GroupDetailSheet` เพื่อเชิญชวนผู้เล่นภายนอกหรือเพื่อนร่วมก๊วนเข้าร่วมเป็นสมาชิกหรือเข้าร่วมรอบนัดได้อย่างสะดวกรวดเร็ว ผ่าน Direct Deep Link (`https://sheserved.com/sport-club/group/{groupId}?session_id={sessionId}` และ `sheserved://sport-club/group/{groupId}`) ร่วมกับ Invite Poster Card สวยงามระดับ Premium ที่แสดง QR Code, โลโก้ก๊วน, ชื่อก๊วน, ประเภทกีฬา และรายละเอียดรอบนัด โดยสามารถบันทึกลง Photo Gallery ของเครื่องได้ โดยผู้ได้รับลิงก์จะสามารถเข้าดูหน้ารายละเอียดก๊วนได้ทันที (Guest Mode Navigation) และระบบยังคงบังคับใช้การตรวจสอบคุณสมบัติ (Qualification Guards) อย่างเข้มงวดเมื่อผู้ใช้กดเข้าร่วมก๊วนหรือจองรอบนัด
+
+### 20.1 การจัดลำดับความสำคัญของงาน (Prioritization Matrix)
+
+แบ่งออกเป็น 3 ลำดับความสำคัญตามระดับผลกระทบต่อสถาปัตยกรรมระบบ ประสบการณ์ผู้ใช้ และความสวยงาม:
+
+#### 🔴 ลำดับที่ 1 (P1 - Critical): Deep Link Architecture & Guest Navigation Flow
+1. **การกำหนด Deep Link Specification & Route Parsing**:
+   - รองรับการสร้างและ parse URL ทั้งระดับก๊วน (`/sport-club/group/{groupId}`) และระดับรอบนัดเฉพาะ (`/sport-club/group/{groupId}?session_id={sessionId}`)
+   - ปรับแต่ง App Router (`onGenerateRoute` / Deep Link Handler) ให้รองรับการแกะ `groupId` และ `sessionId` จาก Custom Scheme (`sheserved://`) และ App Links / Universal Links (`https://sheserved.com/`)
+2. **Guest Navigation Mode (ดูรายละเอียดก๊วนได้ทันทีแม้ยังไม่ Login)**:
+   - เมื่อผู้ใช้คลิกลิงก์หรือสแกน QR Code เข้ามาในแอป ให้ระบบนำทางไปเปิดหน้ารายละเอียดก๊วน (`GroupDetailSheet`) ได้ทันทีใน Guest Mode
+   - หากมี `session_id` แนบมาด้วย ให้ระบบทำการ Scroll หรือ Highlight การ์ดรอบกิจกรรมนั้นให้อัตโนมัติ
+3. **การวางตำแหน่งปุ่มและ Interaction ใน Guest Mode (Action Buttons & Gestures)**:
+   - **ปุ่ม "ขอเข้าร่วมก๊วน" (Group Level Join Action)**:
+     - วางตำแหน่งเดียวกับปุ่ม "ออกจากก๊วน" ใน `_buildGroupActionButtons` ด้านล่างสุดของ Sheet (โดยใช้สถานะ `!isMember` เป็นตัวกำหนด)
+     - แสดงเป็นปุ่มเด่น `ElevatedButton` สีเขียวมิ้นต์หลักของแอป (`AppColors.primary`) เต็มความกว้าง พร้อมข้อความ *"ขอเข้าร่วมก๊วน"* (ก๊วนปิด) หรือ *"เข้าร่วมก๊วนทันที"* (ก๊วนเปิด)
+   - **ปุ่ม "จองรอบ / ขอเข้าร่วมรอบ" (Session Level Booking Action — Swipe Only)**:
+     - ใช้เฉพาะ **รูปแบบการปัดซ้าย (Swipe / Slidable Action)** เช่นเดียวกับสมาชิกก๊วนทั่วไป โดยไม่ต้องเพิ่มปุ่มกดซ้ำซ้อนภายในการ์ดรอบ เนื่องจากใน Sheet มีแถบข้อความคำอธิบายเรื่องการปัดซ้าย (`ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบ`) กำกับไว้อย่างชัดเจนอยู่แล้ว
+     - เปิดสิทธิ์ให้ Guest สามารถปัดซ้ายการ์ดรอบกิจกรรมเพื่อแสดงปุ่ม Action สีเขียว Teal *"เลือกเพิ่มรอบ / ขอจองรอบ"* (`Icons.event_available`)
+4. **Authentication Guard & Deferred Deep Link Intent**:
+   - หากผู้ใช้ใน Guest Mode กดปุ่ม "ขอเข้าร่วมก๊วน" (จากปุ่มด้านล่าง) หรือกดปุ่มจากการปัดซ้ายรอบนัด (Swipe Booking Action) ขณะที่ยังไม่ได้เข้าสู่ระบบ (`currentUserId == null`) ระบบจะบันทึก Intent พร้อม `groupId` และ `sessionId` ไว้ใน `SportClubDeepLinkService`
+   - นำทางผู้ใช้ไปหน้า Login/Register อย่างนุ่มนวล และเมื่อเข้าสู่ระบบสำเร็จ จะดึง Intent กลับมาเปิดหน้ารายละเอียดก๊วนพร้อมทำรายการต่อเนื่องได้ทันทีแบบ Seamless
+
+#### 🟡 ลำดับที่ 2 (P2 - High): Qualification Guard Enforcement & UI Share Action in GroupDetailSheet
+1. **คงความเข้มงวดของการตรวจสอบคุณสมบัติ (Qualification Guards)**:
+   - ผู้ใช้ที่เข้าผ่านลิงก์เชิญหรือ QR Code ทั้งการกดขอเข้าร่วมก๊วนหรือปัดซ้ายจองรอบ ยังคงต้องผ่านเงื่อนไขคุณสมบัติทั้งหมดของก๊วนและรอบนัด เช่น เพศ (Gender Eligibility), อายุ, ระดับฝีมือ (Skill Level), เพดานสมาชิกคงเหลือ (Max Capacity Limit), สถานะการถูกบล็อก (Blocklist Guard) และการอนุมัติโดยผู้จัดการก๊วน (Manager Approval)
+   - หากคุณสมบัติไม่ผ่าน ระบบจะแสดง Alert Dialog ภาษาไทยชี้แจงเหตุผลอย่างสุภาพ (เช่น *"ก๊วนนี้รับเฉพาะสมาชิกเพศหญิง"* หรือ *"ระดับฝีมือของคุณไม่ตรงกับเงื่อนไขที่รอบนี้ระบุ"*)
+2. **ปุ่มแชร์ใน `GroupDetailSheet` (Share Button UI Integration)**:
+   - เพิ่มปุ่ม Share Icon บน Header / Action Toolbar ของ `GroupDetailSheet` ให้สมาชิกทุกคนในก๊วนกดแชร์ลิงก์/QR Code เชิญก๊วนได้
+   - เพิ่มปุ่ม Share ในแต่ละ Session Card เพื่อสร้างลิงก์/QR Code เชิญเข้ารอบนัดเฉพาะนั้นๆ
+3. **ระบบบันทึกและแสดงสรุปยอดการเข้าชมผ่านการแชร์ (Share & Referral Analytics)**:
+   - **การนับยอดเข้าชม (Traffic Tracking & Logging)**:
+     - เมื่อผู้ใช้เปิดเข้าหน้ารายละเอียดก๊วนผ่าน Deep Link หรือการสแกน QR Code (มี flag `src=share` หรือ `src=qr`) ระบบจะเรียก RPC บันทึกยอดเข้าชม `record_fitness_group_share_visit` พร้อม Rate-limit ป้องกันการนับเบิ้ล
+     - เพิ่มคอลัมน์เก็บสถิติสะสมบนตาราง `fitness_groups`: `share_visit_count` (จำนวนครั้งที่เข้าชม), `share_join_count` (จำนวนคนที่กดขอเข้าร่วม/จองรอบจากการแชร์) และ `last_shared_visit_at`
+   - **การแสดงผลสรุปยอดสำหรับผู้บริหารก๊วน (Manager-Only Stat Card)**:
+     - สงวนสิทธิ์การมองเห็นเฉพาะ **เจ้าของก๊วน (`isGroupOwner`)**, **ผู้ดูแลก๊วน (`isGroupAdmin`)**, และ **แอดมิน Sheserved (`isSheservedAdmin`)** ผ่านตัวแปร `isAdmin`
+     - สมาชิกทั่วไปและ Guest จะไม่สามารถมองเห็นข้อมูลสถิตินี้ได้ เพื่อความเป็นส่วนตัวและความปลอดภัยของข้อมูลก๊วน
+     - แสดงเป็นการ์ดสรุปสถิติ *"สถิติการแชร์เชิญชวน (Share Analytics)"* ใน `GroupDetailSheet`:
+       - 👁️ ยอดเข้าชมผ่านลิงก์/QR (Total Visits)
+       - 👥 ผู้ส่งคำขอเข้าร่วมผ่านการแชร์ (Joined via Share)
+       - 📈 Conversion Rate (%)
+       - ⏱️ เวลาที่มีการเข้าชมล่าสุด
+
+#### 🟢 ลำดับที่ 3 (P3 - Medium): Premium Invite Poster Card Generator & QR Code Saving
+1. **Invite Poster Card Component (`GroupInvitePosterSheet` — Modern VIP Sport Pass)**:
+   - ออกแบบ UI Bottom Sheet สรุปการ์ดเชิญชวนสไตล์ **VIP Sport Pass / Match Ticket** ทันสมัยระดับพรีเมียม (Midnight Slate `#090D16` ผสม Gradient Mesh สีมรกต `AppColors.primary` และประกายทอง `accentGold`)
+   - **Ticket Notch & Dashed Cutout**: มีรอยบากเว้าโค้งซ้าย-ขวา พร้อมเส้นประ (Dashed Line) คั่นระหว่างส่วนข้อมูลก๊วนและส่วน QR Code ให้ความรู้สึกเหมือนบัตร Match Ticket จริง
+   - **Header Branding**: ริบบิ้นด้านบนแสดง `SHESERVED SPORT PASS` พร้อม Badge แสดงสถานะประเภทก๊วน (`ก๊วนเปิด (เข้าทันที)` หรือ `ก๊วนปิด (รออนุมัติ)`)
+   - **Hero Group Identity**: วงกลมโลโก้ก๊วนลอยเด่น (Floating Avatar) พร้อมไอคอนกีฬาตรงประเภท, ชื่อก๊วนคมชัด และ Meta Chips (ประเภทกีฬา, เงื่อนไขเพศ/ระดับมือ)
+   - **Match Details Card (สำหรับรอบนัดเฉพาะ)**: กล่องตารางเวลา วัน เวลา สถานที่ (`formatThaiSessionRange`)
+   - **QR Code Framing**: กรอบสีขาวขอบมน 20px พร้อมไอคอนสแกนเพื่อเปิดในแอป Sheserved
+2. **บันทึกลง Photo Gallery & Action Deck**:
+   - ใช้ `RepaintBoundary` ร่วมกับ Render Object ในการ Capture รูปภาพ Poster Card คมชัดระดับ 3x Pixel Ratio ออกมาเป็น PNG Data คุณภาพสูง
+   - **Action Deck**:
+     - ปุ่ม Outlined แก้ว **"คัดลอกลิงก์"** (`Icons.link_rounded`)
+     - ปุ่ม Gradient เขียวมิ้นต์เด่นชัด **"บันทึกโปสเตอร์"** (`Icons.file_download_outlined`) พร้อม Loading Indicator และ SnackBar แจ้งเตือนภาษาไทย
+
+---
+
+### 20.2 การประเมินผลกระทบหลังทำ (Impact Assessment & Risks)
+
+| มิติผลกระทบ | ผลกระทบที่อาจเกิดขึ้น (Risks) | ระดับความเสี่ยง | แผนป้องกัน / รับมือที่สมบูรณ์ที่สุด (Comprehensive Mitigation Strategy) |
+|---|---|:---:|---|
+| **Deep Link Routing & Cold Start** | การเปิดลิงก์ขณะแอปปิดสนิท (Cold Start) อาจทำให้แอปแครชหรือหน้าขาว เพราะ Supabase Client หรือ Navigator ยัง Initialize ไม่เสร็จ | **สูง** | สร้าง `DeepLinkLaunchGate` จัดคิวรอจนกระทั่ง App Initialization และ Framework First Frame พร้อมสมบูรณ์ จากนั้นจึง Dispatch การนำทางไปยัง `GroupDetailSheet` อย่างปลอดภัย |
+| **Stale / Deleted / Invalid Links** | ลิงก์ที่แชร์ค้างไว้นาน แต่ก๊วนถูกยุบไปแล้ว, รอบนัดถูกยกเลิก, หรือผู้รับลิงก์อยู่ใน Blocklist ของก๊วนนั้น | **สูง** | ออกแบบ **Safe Route Fallback with Toast**: หาก Query ไม่พบก๊วน (404) หรือติด RLS Blocked ให้ Fallback ไปยังหน้า Feed หลักของ Sport Club อย่างนุ่มนวล พร้อมแสดง Toast ภาษาไทย *"ไม่พบก๊วนกีฬา หรือก๊วนนี้ปิดให้บริการแล้ว"* โดยไม่ค้างหน้าจอเปล่า |
+| **Share Analytics Bot Abuse & Inflation** | การบันทึกสถิติ `record_fitness_group_share_visit` อาจถูกสแปมรีเฟรชหน้าซ้ำๆ หรือมี Web Crawler/Bot ทำให้ยอดวิวพุ่งเกินจริง หลอกตาผู้จัดการก๊วน | **ปานกลาง** | ใช้ **Two-Tier Debounce & Rate-Limit**: <br>1. *Client-side*: บันทึก Timestamp การเข้าชมก๊วนลง `SharedPreferences` หากเปิดซ้ำใน 15 นาที จะไม่ส่งคำขอนับซ้ำ <br>2. *Database-side*: ใน RPC ตรวจสอบ IP/Visitor ID ซ้ำในกรอบเวลา 15 นาที หากซ้ำจะไม่เพิ่ม `share_visit_count` |
+| **Storage & Gallery Permissions (iOS & Android 13+)** | Android 13+ (Scoped Storage) และ iOS มีข้อจำกัดสิทธิ์คลังภาพที่เข้มงวด หากผู้ใช้กดปฏิเสธสิทธิ์ (Denied) การเซฟภาพจะโยน Unhandled Exception | **ปานกลาง** | ใช้ **3-Tier Graceful Fallback**: <br>1. ขอสิทธิ์ผ่าน `gal` หรือ `permission_handler` <br>2. หาก Denied ให้สลับไปเปิด **Native Share Sheet (OS Share)** ทันที เพื่อให้ผู้ใช้ส่งภาพต่อทาง LINE หรือเซฟภาพผ่าน OS Share Dialog ได้โดยไม่ต้องขอสิทธิ์แอป <br>3. คัดลอกลิงก์เป็นข้อความลง Clipboard อัตโนมัติเป็นตัวสำรอง |
+| **Unauthenticated Flow Context Loss** | ผู้เล่นที่ยังไม่ได้ล็อกอินโดนเด้งไปหน้า Login/Register แล้ว Context ของ `groupId` และ `sessionId` หลุดหาย | **ปานกลาง** | ใช้ `SportClubDeepLinkService.storePendingDeepLink()` จัดเก็บ Deep Link Intent ไว้ในหน่วยความจำและ Storage ชั่วคราว เมื่อ Auth สำเร็จจะดึง Intent มาเปิดหน้ารายละเอียดก๊วนต่อทันที |
+| **Incomplete Profile Onboarding** | ผู้ใช้ใหม่สมัครผ่านลิงก์แชร์ แต่ยังไม่ได้ระบุข้อมูลสำคัญ (เช่น เพศ, อายุ) ทำให้ติดเงื่อนไข Qualification Guard ของก๊วนโดยไม่รู้ตัว | **ปานกลาง** | **Just-In-Time Profile Prompt**: เมื่อล็อกอินสำเร็จและดีดกลับมาที่ก๊วน หากพบว่าโปรไฟล์ยังขาดข้อมูลสำคัญ ให้แสดง Bottom Sheet กรอกข้อมูลสั้นๆ ทันที ก่อนส่งคำขอเข้าร่วมก๊วน |
+| **Social In-App Browsers (LINE / FB)** | ลิงก์ที่เปิดใน In-App Browser ของ LINE หรือ Facebook มักบล็อก Custom Scheme (`sheserved://`) หรือไม่ยอมเปิด Deep Link เข้าแอป | **ปานกลาง** | ใช้ **Universal Web URL (`https://sheserved.com/...`)** เป็นลิงก์ตั้งต้น พร้อมหน้า Web Landing Page ที่มี Open Graph Meta Tag สวยงาม และปุ่ม "เปิดในแอป Sheserved" ผ่าน Android Intent / iOS Universal Link |
+| **Concurrency & Seat Depletion during View** | ตอนที่ผู้ใช้เปิดดูจาก QR Code ยังเห็นรอบมีที่ว่าง แต่ระหว่างเปิดอ่านมีผู้ใช้อื่นจองที่นั่งสุดท้ายไปแล้ว | **ต่ำ** | **Live Seat Check on Swipe**: เมื่อผู้ใช้ปัดซ้ายกดปุ่มจองรอบ ให้ตรวจสอบความพร้อมของรอบนัด (Live Seat Availability Check) ทันที หากเต็มแล้วให้แจ้งเตือน *"ขออภัย รอบนัดนี้เพิ่งมีผู้จองเต็มแล้ว"* และรีเฟรชข้อมูลล่าสุดให้อัตโนมัติ |
+
+---
+
+### 20.3 ข้อเสนอแนะวิธีแก้ปัญหาที่ดีที่สุด (Best Recommended Solutions)
+
+1. **สถาปัตยกรรม Deep Link แบบ Layered Route & Intent Handling**:
+   - URL Format: `https://sheserved.com/sport-club/group/{groupId}?session_id={sessionId}&src=share` และ `sheserved://sport-club/group/{groupId}`
+   - มี Service กลาง `SportClubDeepLinkService` คอย parse query parameters, ตรวจสอบสถานะ Login, จัดการ Cold-Start Queue และดักจับ 404 Fallback อย่างเป็นระบบ
+2. **การทำ Invite Poster Card ด้วย Canvas RepaintBoundary ร่วมกับ 3-Tier Fallback**:
+   - ครอบ Widget Poster Card ด้วย `RepaintBoundary(key: _posterKey)`
+   - เมื่อผู้ใช้กด "บันทึกโปสเตอร์" ให้แปลง RenderRepaintBoundary เป็น PNG byte data ความละเอียดสูง (3x Pixel Ratio)
+   - หากเจอปัญหาสิทธิ์คลังภาพ (Permission Denied) ให้ระบบสลับไปเรียก **Native Share Dialog** อัตโนมัติ เพื่อให้ผู้ใช้สามารถส่งรูปหรือเลือกบันทึกรูปผ่านเครื่องมือของระบบปฏิบัติการได้โดยไม่มีข้อผิดพลาด
+3. **ระบบสถิติการแชร์แบบ Fraud-Resistant (Debounced Share Analytics)**:
+   - บันทึกการเข้าชมผ่าน RPC `record_fitness_group_share_visit` โดยมีระบบป้องกันการปั๊มยอดวิว (Debounce 15 นาที ต่อ 1 Session/Device) เพื่อให้ตัวเลขที่แสดงแก่ผู้จัดการก๊วนสะท้อนความสนใจของผู้เล่นจริงอย่างแม่นยำ
+4. **Frictionless Guest-to-Member Conversion พร้อม Just-In-Time Profile Validation**:
+   - อนุญาตให้ Guest ดูข้อมูลก๊วน รายชื่อสมาชิก กฎก๊วน และรอบกิจกรรมได้ทั้งหมด เพื่อสร้างแรงจูงใจในการเข้าร่วม
+   - ชะลอการบังคับ Login ไปจนถึงวินาทีที่ผู้ใช้กด "ขอเข้าร่วมก๊วน" หรือ "ปัดซ้ายจองรอบ" (Just-In-Time Authentication)
+   - หากผู้ใช้เป็นสมาชิกใหม่ที่เพิ่งลงทะเบียนและข้อมูลยังไม่ครบถ้วน มีระบบ Prompt ให้กรอกข้อมูลจำเป็นทันทีเพื่อให้ผ่านเกณฑ์ Qualification Guards อย่างราบรื่น
+
+---
+
+### 20.4 แผนการทดสอบและเกณฑ์การตรวจรับ (Gate 20)
+
+#### Test Cases ที่ต้องมี
+1. **Deep Link Parsing Tests**:
+   - Parse `https://sheserved.com/sport-club/group/g123` → ได้ `groupId = 'g123'`, `sessionId = null`
+   - Parse `https://sheserved.com/sport-club/group/g123?session_id=s456` → ได้ `groupId = 'g123'`, `sessionId = 's456'`
+2. **Guest Navigation & Auth Redirection Tests**:
+   - ผู้ใช้ไม่ได้ Login เข้าผ่าน Deep Link → เปิด `GroupDetailSheet` ใน Guest Mode ได้สำเร็จ
+   - กด "เข้าร่วมก๊วน" ใน Guest Mode → นำทางไปหน้า Login เมื่อสำเร็จกลับมาที่หน้าเดิมอัตโนมัติ
+3. **Qualification Guard Verification**:
+   - ผู้ใช้คุณสมบัติไม่ผ่าน (เช่น เพศไม่ตรง) เข้าผ่านลิงก์เชิญ → ปุ่มกดเข้าร่วมต้องถูกบล็อกพร้อมแสดง Error Dialog เหตุผลถูกต้อง
+4. **QR Code & Share Poster Tests**:
+   - กดปุ่มแชร์ → แสดง Poster Card ที่มี QR Code ตรงกับ URL เชิญ
+   - กดคัดลอกลิงก์ → มี SnackBar แสดงข้อความคัดลอกสำเร็จ
+
+#### Definition of Done (Gate 20)
+- [ ] สมาชิกก๊วนสามารถกดปุ่มแชร์ใน `GroupDetailSheet` (ทั้งระดับก๊วนและรอบนัด) ได้
+- [ ] ระบบสร้าง Deep Link และ Poster Card QR Code ได้ถูกต้อง
+- [ ] สามารถบันทึก Poster Card QR Code ลง Photo Gallery ได้
+- [ ] เมื่อเปิด Deep Link แอปนำทางไปที่ก๊วนและรอบนัดเป้าหมายได้อย่างถูกต้องแม้ใน Guest Mode
+- [ ] การเข้าร่วมยังคงผ่าน Qualification Guards ทั้งหมด 100%
+
+
 
 

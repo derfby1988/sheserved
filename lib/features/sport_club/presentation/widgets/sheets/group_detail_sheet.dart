@@ -19,6 +19,7 @@ import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/sport
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/session_picker_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_session_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_group_sheet.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_invite_poster_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 
 /// Signature for booking a session (optionally at a field position).
@@ -669,25 +670,56 @@ class GroupDetailSheet {
                                         ],
                                       ),
                                     ),
-                                    IconButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      icon: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.05,
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          onPressed: () =>
+                                              GroupInvitePosterSheet.show(
+                                            ctx,
+                                            groupData: group,
                                           ),
-                                          shape: BoxShape.circle,
+                                          icon: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.05,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.share_rounded,
+                                              size: 18,
+                                              color: Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          splashRadius: 20,
+                                          tooltip: 'เชิญเข้าร่วมก๊วน',
                                         ),
-                                        child: const Icon(
-                                          Icons.close_rounded,
-                                          size: 18,
-                                          color: Color(0xFF64748B),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          onPressed: () => Navigator.pop(ctx),
+                                          icon: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.05,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.close_rounded,
+                                              size: 18,
+                                              color: Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          splashRadius: 20,
                                         ),
-                                      ),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      splashRadius: 20,
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -1395,6 +1427,20 @@ class GroupDetailSheet {
                                                           Colors.grey.shade600,
                                                     ),
                                                   ),
+                                                ),
+                                                trailing: IconButton(
+                                                  onPressed: () =>
+                                                      GroupInvitePosterSheet.show(
+                                                    ctx,
+                                                    groupData: group,
+                                                    sessionData: s,
+                                                  ),
+                                                  icon: const Icon(
+                                                    Icons.share_outlined,
+                                                    size: 20,
+                                                    color: Color(0xFF64748B),
+                                                  ),
+                                                  tooltip: 'เชิญเข้าร่วมรอบนี้',
                                                 ),
                                                 children: sessionChildren,
                                               ),
