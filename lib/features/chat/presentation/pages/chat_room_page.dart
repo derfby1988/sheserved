@@ -28,6 +28,8 @@ class ChatRoomPage extends StatefulWidget {
   final String? titleOverride;
   final String? subtitleOverride;
   final String? mentionTargetName;
+  final String? replyTargetUserId;
+  final String? replyTargetName;
   const ChatRoomPage({
     super.key,
     required this.roomId,
@@ -35,6 +37,8 @@ class ChatRoomPage extends StatefulWidget {
     this.titleOverride,
     this.subtitleOverride,
     this.mentionTargetName,
+    this.replyTargetUserId,
+    this.replyTargetName,
   });
 
   @override
@@ -56,6 +60,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
   List<ChatMessage> _messages = [];
   ChatMessage? _replyingTo;
+  String? _replyingToUserId;
+  String? _replyingToUserName;
   bool _isLoading = true;
   List<ChatParticipant> _otherParticipants = [];
   bool _isOtherTyping = false;
@@ -83,6 +89,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   bool get _isGroupChat => widget.roomId.startsWith('group_');
+
+  String? get _activeReplySenderId =>
+      _replyingTo?.senderId ?? _replyingToUserId;
+
+  String? get _activeReplyContent => _replyingTo?.content;
 
   String? _senderDisplayName(ChatMessage message) {
     String firstName = '';
@@ -114,6 +125,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   @override
   void initState() {
     super.initState();
+    _replyingToUserId = widget.replyTargetUserId;
+    _replyingToUserName = widget.replyTargetName ?? widget.mentionTargetName;
     _loadInitialData();
     _loadLatestHealthPermission();
     _subscribeHealthPermissionUpdates();
@@ -552,8 +565,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           attachmentType: 'image/jpeg',
           status: MessageStatus.sent,
           replyToId: _replyingTo?.id,
-          replyToContent: _replyingTo?.content,
-          replyToSenderId: _replyingTo?.senderId,
+          replyToContent: _activeReplyContent,
+          replyToSenderId: _activeReplySenderId,
         );
 
         final success = await _chatRepository.sendMessage(
@@ -565,7 +578,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             context,
           ).showSnackBar(const SnackBar(content: Text('ส่งรูปภาพไม่สำเร็จ')));
         } else if (success && mounted) {
-          setState(() => _replyingTo = null);
+          setState(() {
+            _replyingTo = null;
+            _replyingToUserId = null;
+            _replyingToUserName = null;
+          });
         }
       } else if (mounted) {
         ScaffoldMessenger.of(
@@ -653,15 +670,21 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             attachmentType: 'audio/m4a',
             status: MessageStatus.sent,
             replyToId: _replyingTo?.id,
-            replyToContent: _replyingTo?.content,
-            replyToSenderId: _replyingTo?.senderId,
+            replyToContent: _activeReplyContent,
+            replyToSenderId: _activeReplySenderId,
           );
 
           final success = await _chatRepository.sendMessage(
             newMessage,
             callerId: _currentUser?.id ?? '',
           );
-          if (success && mounted) setState(() => _replyingTo = null);
+          if (success && mounted) {
+            setState(() {
+              _replyingTo = null;
+              _replyingToUserId = null;
+              _replyingToUserName = null;
+            });
+          }
         }
       }
     } catch (e) {
@@ -837,7 +860,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   void _startReply(ChatMessage message) {
-    setState(() => _replyingTo = message);
+    setState(() {
+      _replyingTo = message;
+      _replyingToUserId = null;
+      _replyingToUserName = null;
+    });
   }
 
   Future<void> _showMessageActions(ChatMessage message) async {
@@ -896,7 +923,13 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   void _cancelReply() {
-    if (mounted) setState(() => _replyingTo = null);
+    if (mounted) {
+      setState(() {
+        _replyingTo = null;
+        _replyingToUserId = null;
+        _replyingToUserName = null;
+      });
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -904,13 +937,21 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     if (_msgController.text.trim().isEmpty || user == null) return;
 
     final rawContent = _msgController.text.trim();
-    final mentionTargetName = widget.mentionTargetName?.trim();
-    final content = mentionTargetName != null && mentionTargetName.isNotEmpty
-        ? '@$mentionTargetName\n$rawContent'
+    final reply = _replyingTo;
+    final replyTargetUserId = _replyingToUserId;
+    final replyTargetName = _replyingToUserName?.trim();
+    final content =
+        reply == null && replyTargetName != null && replyTargetName.isNotEmpty
+        ? '@$replyTargetName\n$rawContent'
         : rawContent;
     _msgController.clear();
-    final reply = _replyingTo;
-    if (mounted) setState(() => _replyingTo = null);
+    if (mounted) {
+      setState(() {
+        _replyingTo = null;
+        _replyingToUserId = null;
+        _replyingToUserName = null;
+      });
+    }
 
     final newMessage = ChatMessage(
       id: const Uuid().v4(),
@@ -921,7 +962,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       status: MessageStatus.sent,
       replyToId: reply?.id,
       replyToContent: reply?.content,
-      replyToSenderId: reply?.senderId,
+      replyToSenderId: reply?.senderId ?? replyTargetUserId,
     );
 
     final success = await _chatRepository.sendMessage(
@@ -929,7 +970,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       callerId: user.id,
     );
     if (!success && mounted) {
-      setState(() => _replyingTo = reply);
+      setState(() {
+        _replyingTo = reply;
+        _replyingToUserId = replyTargetUserId;
+        _replyingToUserName = replyTargetName;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('ส่งข้อความไม่สำเร็จ')));
@@ -1266,7 +1311,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_replyingTo != null) _buildReplyComposerPreview(),
+            if (_replyingTo != null || _replyingToUserId != null)
+              _buildReplyComposerPreview(),
             Row(
               children: [
                 IconButton(
@@ -1352,11 +1398,15 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   }
 
   Widget _buildReplyComposerPreview() {
-    final message = _replyingTo!;
-    final senderName = message.senderId == _currentUser?.id
-        ? 'คุณ'
-        : (_senderDisplayName(message) ?? 'ผู้ส่งข้อความ');
-    final preview = message.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final message = _replyingTo;
+    final senderName = message != null
+        ? message.senderId == _currentUser?.id
+              ? 'คุณ'
+              : (_senderDisplayName(message) ?? 'ผู้ส่งข้อความ')
+        : (_replyingToUserName ?? 'สมาชิกก๊วน');
+    final preview = message == null
+        ? 'ตอบกลับสมาชิกก๊วน'
+        : message.content.replaceAll(RegExp(r'\s+'), ' ').trim();
 
     return Container(
       width: double.infinity,
@@ -1480,6 +1530,7 @@ class _MessageBubble extends StatelessWidget {
         ? 'คุณ'
         : sender.firstName;
     final content = (message.replyToContent ?? '').trim();
+    final isMemberReply = message.replyToId == null;
 
     return Container(
       width: double.infinity,
@@ -1510,7 +1561,9 @@ class _MessageBubble extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            content.isEmpty ? '[ข้อความ]' : content,
+            content.isEmpty
+                ? (isMemberReply ? 'สมาชิกก๊วน' : '[ข้อความ]')
+                : content,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -1588,7 +1641,8 @@ class _MessageBubble extends StatelessWidget {
                         ? CrossAxisAlignment.end
                         : CrossAxisAlignment.start,
                     children: [
-                      if (message.replyToId != null)
+                      if (message.replyToId != null ||
+                          message.replyToSenderId != null)
                         _buildReplyReference(context),
                       if (message.type == 'image' &&
                           message.attachmentUrl != null)

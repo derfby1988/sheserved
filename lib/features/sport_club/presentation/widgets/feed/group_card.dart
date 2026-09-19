@@ -515,7 +515,7 @@ class GroupCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            for (final s in sortedItems.take(3))
+                            for (final s in sortedItems.take(1))
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Column(
@@ -570,7 +570,7 @@ class GroupCard extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                            if (sortedItems.length > 3)
+                            if (sortedItems.length > 1)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Center(

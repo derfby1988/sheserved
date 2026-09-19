@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -408,6 +409,12 @@ class _SportClubPageState extends State<SportClubPage> {
         positionId: positionId,
       );
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+          'SportClub booking failed: '
+          'type=${e.runtimeType}, code=${bookingErrorCode(e)}',
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

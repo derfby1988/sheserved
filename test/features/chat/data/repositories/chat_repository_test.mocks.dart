@@ -783,6 +783,20 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get incidentProfessionQuotaFilledStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#incidentProfessionQuotaFilledStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get rescueCancelledStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#rescueCancelledStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   _i3.Stream<Map<String, dynamic>> get viewerCountStream => (super.noSuchMethod(
         Invocation.getter(#viewerCountStream),
         returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
@@ -859,11 +873,35 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
       ) as _i3.Stream<Map<String, dynamic>>);
 
   @override
+  _i3.Stream<Map<String, dynamic>> get applicationNotificationStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#applicationNotificationStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   void publishFitnessBookingAlert(Map<String, dynamic>? alert) =>
       super.noSuchMethod(
         Invocation.method(
           #publishFitnessBookingAlert,
           [alert],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void sendApplicationReviewNotification({
+    required String? applicationId,
+    required String? status,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #sendApplicationReviewNotification,
+          [],
+          {
+            #applicationId: applicationId,
+            #status: status,
+          },
         ),
         returnValueForMissingStub: null,
       );
@@ -1194,6 +1232,9 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
     required String? content,
     String? profileImageUrl,
     String? professionName,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToUserName,
   }) =>
       super.noSuchMethod(
         Invocation.method(
@@ -1207,6 +1248,9 @@ class MockWebSocketService extends _i1.Mock implements _i6.WebSocketService {
             #content: content,
             #profileImageUrl: profileImageUrl,
             #professionName: professionName,
+            #replyToId: replyToId,
+            #replyToContent: replyToContent,
+            #replyToUserName: replyToUserName,
           },
         ),
         returnValueForMissingStub: null,

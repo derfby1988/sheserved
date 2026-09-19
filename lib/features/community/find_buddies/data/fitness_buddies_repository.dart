@@ -706,9 +706,8 @@ class FitnessBuddiesRepository {
       params: {
         'p_session_id': sessionId,
         'p_user_id': userId,
-        if (positionId != null) 'p_position_id': positionId,
-        if (declaredSkillLevel != null)
-          'p_declared_skill_level': declaredSkillLevel,
+        'p_position_id': positionId,
+        'p_declared_skill_level': declaredSkillLevel,
       },
     );
     final bookingId = result is String
@@ -757,7 +756,7 @@ class FitnessBuddiesRepository {
       } catch (_) {}
       return bookingId;
     }
-    throw Exception('ไม่สามารถจองรอบได้');
+    throw StateError('BOOKING_RESPONSE_INVALID');
   }
 
   Future<Map<String, dynamic>?> getBookingDetail(
@@ -2089,9 +2088,13 @@ class FitnessBuddiesRepository {
         g['my_role'] = m['role']?.toString();
         g['my_joined_at'] = m['joined_at']?.toString();
         g['my_is_active'] = m['is_active'] == true;
+        g['can_chat'] = g['my_is_active'] == true;
       } else if (isOwner) {
         g['my_role'] = 'admin';
         g['my_is_active'] = ownerAutoJoinMap[gid] ?? true;
+        g['can_chat'] = false;
+      } else {
+        g['can_chat'] = false;
       }
       final sport = g['sport'];
       if (sport is Map) {

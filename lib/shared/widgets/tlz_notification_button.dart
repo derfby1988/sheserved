@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../features/chat/presentation/chat_unread_provider.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
 import '../../services/websocket_service.dart';
 import 'tlz_notification_panel.dart';
@@ -33,15 +34,21 @@ class TlzNotificationButton extends ConsumerStatefulWidget {
 }
 
 class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _wiggle;
   late final Animation<double> _rotate;
   late final Animation<double> _scale;
   StreamSubscription<Map<String, dynamic>>? _subscription;
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
+  static const _refreshInterval = Duration(seconds: 30);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleUnreadRefresh();
+    _startUnreadRefreshTimer();
     _wiggle = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -76,8 +83,72 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
     });
   }
 
+  void _scheduleUnreadRefresh() {
+    if (widget.badgeCount != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshUnreadCounts());
+    });
+  }
+
+  void _startUnreadRefreshTimer() {
+    if (widget.badgeCount != null) return;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
+      if (mounted) _scheduleUnreadRefresh();
+    });
+  }
+
+  void _stopUnreadRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
+  Future<void> _refreshUnreadCounts() async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      await Future.wait([
+        ref.read(chatUnreadProvider.notifier).refresh(),
+        ref
+            .read(notificationProvider.notifier)
+            .refreshUnreadCount(category: widget.category),
+      ]);
+    } catch (_) {
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant TlzNotificationButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.badgeCount != widget.badgeCount) {
+      if (widget.badgeCount == null) {
+        _startUnreadRefreshTimer();
+        _scheduleUnreadRefresh();
+      } else {
+        _stopUnreadRefreshTimer();
+      }
+    }
+    if (oldWidget.category != widget.category) {
+      _scheduleUnreadRefresh();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startUnreadRefreshTimer();
+      _scheduleUnreadRefresh();
+    } else {
+      _stopUnreadRefreshTimer();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopUnreadRefreshTimer();
     _subscription?.cancel();
     _wiggle.dispose();
     super.dispose();
@@ -85,6 +156,7 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
 
   @override
   Widget build(BuildContext context) {
+    final chatUnreadCount = ref.watch(chatUnreadProvider);
     final notificationState = ref.watch(notificationProvider);
     final categoryCount = widget.category == null
         ? null
@@ -95,8 +167,11 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
                 loading: () => 0,
                 error: (_, _) => 0,
               );
+    final notificationCount = categoryCount ?? notificationState.unreadCount;
+    final includesChat = widget.category == null || widget.category == 'chat';
     final count =
-        widget.badgeCount ?? categoryCount ?? notificationState.unreadCount;
+        widget.badgeCount ??
+        notificationCount + (includesChat ? chatUnreadCount : 0);
     return Stack(
       clipBehavior: Clip.none,
       children: [

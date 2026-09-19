@@ -86,7 +86,7 @@ class TlzNotificationPanel extends ConsumerStatefulWidget {
 class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   static const _filters = <({String label, String? value})>[
     (label: 'ทั้งหมด', value: null),
-    (label: 'แชท', value: 'chat'),
+    (label: 'ก๊วนกีฬา', value: 'chat'),
     (label: 'คำปรึกษา', value: 'consultation'),
     (label: 'ERP', value: 'procurement'),
     (label: 'อนุมัติอาชีพ', value: 'admin'),

@@ -54,11 +54,29 @@ String mapBookingError(Object e) {
   if (raw.contains('OVERLAP_BOOKING')) {
     return 'คุณมีรอบนัดซ้อนทับในช่วงเวลานี้ กรุณาเลือกเวลาอื่น';
   }
+  if (raw.contains('ALREADY_JOINED')) {
+    return 'คุณเข้าร่วมรอบนัดนี้แล้ว';
+  }
+  if (raw.contains('ALREADY_REQUESTED')) {
+    return 'คุณส่งคำขอเข้าร่วมรอบนัดนี้แล้ว กรุณารอการอนุมัติ';
+  }
+  if (raw.contains('SESSION_ENDED')) {
+    return 'รอบนัดนี้สิ้นสุดแล้ว กรุณาเลือกรอบนัดอื่น';
+  }
   if (raw.contains('SESSION_NOT_FOUND')) {
     return 'ไม่พบรอบนัดนี้ กรุณารีเฟรชและลองใหม่';
   }
   if (raw.contains('BOOKING_NOT_FOUND')) {
     return 'ไม่พบรอบจองนี้';
+  }
+  if (raw.contains('BOOKING_RESPONSE_INVALID')) {
+    return 'ระบบจองตอบกลับไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+  }
+  if (raw.contains('PGRST202')) {
+    return 'ระบบเข้าร่วมก๊วนยังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง';
+  }
+  if (raw.contains('PGRST203')) {
+    return 'ระบบจองกำลังอัปเดต กรุณาลองใหม่ภายหลัง';
   }
   if (raw.contains('NOT_GROUP_ADMIN')) {
     return 'คุณไม่มีสิทธิ์ดำเนินการรายการนี้';
@@ -70,6 +88,43 @@ String mapBookingError(Object e) {
     return 'คุณถูกบล็อกจากก๊วนนี้ ไม่สามารถจองรอบได้';
   }
   return 'จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+}
+
+/// Returns a non-sensitive code for booking diagnostics.
+///
+/// The returned value is safe to include in debug logs because it excludes
+/// exception messages, request payloads, and user data.
+String bookingErrorCode(Object error) {
+  final raw = error.toString();
+  const knownCodes = [
+    'POSITION_REQUIRED',
+    'POSITION_FULL',
+    'POSITION_INVALID',
+    'GROUP_FULL',
+    'SESSION_FULL',
+    'OVERLAP_BOOKING',
+    'ALREADY_JOINED',
+    'ALREADY_REQUESTED',
+    'SESSION_ENDED',
+    'SESSION_NOT_FOUND',
+    'BOOKING_NOT_FOUND',
+    'BOOKING_RESPONSE_INVALID',
+    'NOT_GROUP_ADMIN',
+    'UNAUTHORIZED',
+    'USER_BLOCKED',
+    'PGRST202',
+    'PGRST203',
+  ];
+  for (final code in knownCodes) {
+    if (raw.contains(code)) return code;
+  }
+
+  final codeMatch = RegExp(r'code:\s*([A-Za-z0-9_]+)').firstMatch(raw);
+  final code = codeMatch?.group(1);
+  if (code != null && code.toLowerCase() != 'null') {
+    return code.toUpperCase();
+  }
+  return 'UNKNOWN';
 }
 
 String sessionCapacitySummary(

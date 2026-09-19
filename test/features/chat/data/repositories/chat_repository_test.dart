@@ -7,7 +7,13 @@ import 'package:sheserved/features/chat/data/models/chat_models.dart';
 import 'package:sheserved/features/chat/data/repositories/chat_repository.dart';
 import 'package:sheserved/services/websocket_service.dart';
 
-@GenerateMocks([SupabaseClient, Box, WebSocketService, PostgrestQueryBuilder, PostgrestFilterBuilder])
+@GenerateMocks([
+  SupabaseClient,
+  Box,
+  WebSocketService,
+  PostgrestQueryBuilder,
+  PostgrestFilterBuilder,
+])
 import 'chat_repository_test.mocks.dart';
 
 void main() {
@@ -36,7 +42,11 @@ void main() {
 
   group('ChatRepository', () {
     test('getParticipantInfo returns cached data if available', () async {
-      final participant = ChatParticipant(id: '1', firstName: 'Test', lastName: 'User');
+      final participant = ChatParticipant(
+        id: '1',
+        firstName: 'Test',
+        lastName: 'User',
+      );
       when(mockParticipantBox.containsKey('1')).thenReturn(true);
       when(mockParticipantBox.get('1')).thenReturn(participant);
 
@@ -44,6 +54,23 @@ void main() {
 
       expect(result, equals(participant));
       verify(mockParticipantBox.get('1')).called(1);
+    });
+
+    test('serializes a member-level reply without a source message id', () {
+      final message = ChatMessage(
+        id: 'message-1',
+        roomId: 'group-room',
+        senderId: 'sender-1',
+        content: '@Member M.\nสวัสดี',
+        createdAt: DateTime.utc(2026, 9, 16),
+        replyToSenderId: 'member-1',
+      );
+
+      final json = message.toJson();
+
+      expect(json['reply_to_id'], isNull);
+      expect(json['reply_to_content'], isNull);
+      expect(json['reply_to_sender_id'], 'member-1');
     });
 
     // More tests could be added here for Supabase interactions

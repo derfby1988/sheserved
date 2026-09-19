@@ -97,7 +97,9 @@ void main() {
       expect(find.byType(LinearProgressIndicator), findsNothing);
     });
 
-    testWidgets('shows at most 3 sessions plus "more" hint', (tester) async {
+    testWidgets('shows first session plus "more" hint when several exist', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         buildCard(
           cardData: SportClubGroupCardData(
@@ -112,9 +114,25 @@ void main() {
         ),
       );
       await tester.pump();
-      // 3 session blocks each render one centered "รอบ: <range>" pill.
-      expect(find.textContaining('รอบ: '), findsNWidgets(3));
+      // Only the first session block renders one centered "รอบ: <range>" pill.
+      expect(find.textContaining('รอบ: '), findsNWidgets(1));
       expect(find.text('กดเพื่อแสดงรอบอื่น ๆ'), findsOneWidget);
+    });
+
+    testWidgets('hides "more" hint when only one session exists', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildCard(
+          cardData: SportClubGroupCardData(
+            upcomingSessions: [mkSession('s1', '2026-01-01T10:00:00Z')],
+            hasAnySessions: true,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.textContaining('รอบ: '), findsNWidgets(1));
+      expect(find.text('กดเพื่อแสดงรอบอื่น ๆ'), findsNothing);
     });
 
     testWidgets('renders explicit error text when sessionError is set', (

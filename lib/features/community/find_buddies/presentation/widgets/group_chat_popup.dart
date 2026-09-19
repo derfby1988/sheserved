@@ -7,6 +7,8 @@ Future<void> showGroupChatPopup(
   required String groupName,
   int? memberCount,
   String? mentionTargetName,
+  String? replyTargetUserId,
+  String? replyTargetName,
 }) {
   return showDialog(
     context: context,
@@ -40,6 +42,8 @@ Future<void> showGroupChatPopup(
                       ? 'สมาชิก $memberCount คน'
                       : null,
                   mentionTargetName: mentionTargetName,
+                  replyTargetUserId: replyTargetUserId,
+                  replyTargetName: replyTargetName,
                 ),
               ),
             ),

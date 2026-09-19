@@ -49,9 +49,23 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
     }
   }
 
-  static const _thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  static const _thaiMonths = [
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
+  ];
 
-  String _formatThaiTime(DateTime d) => '${d.hour.toString().padLeft(2, '0')}.${d.minute.toString().padLeft(2, '0')}';
+  String _formatThaiTime(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}.${d.minute.toString().padLeft(2, '0')}';
 
   String _formatThaiBuddhistDateTime(DateTime d) {
     final beShort = ((d.year + 543) % 100).toString();
@@ -104,13 +118,18 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   // ── My Groups ──
-                  const Text('ก๊วนที่ฉันสร้าง/เข้าร่วม', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'ก๊วนที่ฉันสร้าง/เข้าร่วม',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   if (_myGroups.isEmpty)
                     const Card(
                       child: Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('ยังไม่มีก๊วน — ไปหาก๊วนที่หน้า "หาเพื่อนออกกำลังกาย"'),
+                        child: Text(
+                          'ยังไม่มีก๊วน — ไปหาก๊วนที่หน้า "หาเพื่อนออกกำลังกาย"',
+                        ),
                       ),
                     )
                   else
@@ -119,7 +138,10 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
                   const SizedBox(height: 24),
 
                   // ── My Bookings ──
-                  const Text('ประวัติการจอง', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'ประวัติการจอง',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   if (_myBookings.isEmpty)
                     const Card(
@@ -139,6 +161,7 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
   Widget _buildGroupCard(Map<String, dynamic> group) {
     final role = group['my_role']?.toString() ?? '';
     final isAdmin = role == 'owner';
+    final canChat = group['can_chat'] == true;
     final sport = (group['sport'] as Map?) ?? {};
     final sportName = sport['name_th']?.toString() ?? '';
     final sportIcon = sport['icon']?.toString() ?? '';
@@ -148,29 +171,41 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: AppColors.primary.withOpacity(0.1),
-          child: Text(sportIcon.isNotEmpty ? sportIcon : '🏃', style: const TextStyle(fontSize: 20)),
+          child: Text(
+            sportIcon.isNotEmpty ? sportIcon : '🏃',
+            style: const TextStyle(fontSize: 20),
+          ),
         ),
         title: Text(group['name']?.toString() ?? 'ไม่ระบุชื่อ'),
-        subtitle: Text(sportName.isNotEmpty ? '$sportName${isAdmin ? ' · เจ้าของก๊วน' : ' · สมาชิก'}' : (isAdmin ? 'เจ้าของก๊วน' : 'สมาชิก')),
+        subtitle: Text(
+          sportName.isNotEmpty
+              ? '$sportName${isAdmin ? ' · เจ้าของก๊วน' : ' · สมาชิก'}'
+              : (isAdmin ? 'เจ้าของก๊วน' : 'สมาชิก'),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.chat_bubble_outline),
-              tooltip: 'แชทก๊วน',
-              onPressed: () {
-                final gid = group['id']?.toString() ?? '';
-                final gname = group['name']?.toString() ?? 'ก๊วน';
-                if (gid.isNotEmpty) {
-                  showGroupChatPopup(context, groupId: gid, groupName: gname);
-                }
-              },
-            ),
+            if (canChat)
+              IconButton(
+                icon: const Icon(Icons.chat_bubble_outline),
+                tooltip: 'แชทก๊วน',
+                onPressed: () {
+                  final gid = group['id']?.toString() ?? '';
+                  final gname = group['name']?.toString() ?? 'ก๊วน';
+                  if (gid.isNotEmpty) {
+                    showGroupChatPopup(context, groupId: gid, groupName: gname);
+                  }
+                },
+              ),
             const Icon(Icons.chevron_right),
           ],
         ),
         onTap: () {
-          Navigator.pushNamed(context, '/community/sport-club', arguments: {'groupId': group['id']?.toString()});
+          Navigator.pushNamed(
+            context,
+            '/community/sport-club',
+            arguments: {'groupId': group['id']?.toString()},
+          );
         },
       ),
     );
@@ -184,7 +219,9 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
     final sportName = sport['name_th']?.toString() ?? '';
     final status = booking['status']?.toString();
     final startsAtStr = session['starts_at']?.toString();
-    final startsAt = startsAtStr != null ? DateTime.tryParse(startsAtStr)?.toLocal() : null;
+    final startsAt = startsAtStr != null
+        ? DateTime.tryParse(startsAtStr)?.toLocal()
+        : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -192,16 +229,22 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
         leading: CircleAvatar(
           backgroundColor: _bookingStatusColor(status),
           child: Icon(
-            status == 'confirmed' ? Icons.check : status == 'pending' ? Icons.hourglass_empty : Icons.close,
+            status == 'confirmed'
+                ? Icons.check
+                : status == 'pending'
+                ? Icons.hourglass_empty
+                : Icons.close,
             color: Colors.white,
             size: 20,
           ),
         ),
         title: Text(groupName),
-        subtitle: Text([
-          if (sportName.isNotEmpty) sportName,
-          if (startsAt != null) _formatThaiBuddhistDateTime(startsAt),
-        ].join(' · ')),
+        subtitle: Text(
+          [
+            if (sportName.isNotEmpty) sportName,
+            if (startsAt != null) _formatThaiBuddhistDateTime(startsAt),
+          ].join(' · '),
+        ),
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -210,11 +253,19 @@ class _MyGroupsPageState extends State<MyGroupsPage> {
           ),
           child: Text(
             _bookingStatusLabel(status),
-            style: TextStyle(fontSize: 12, color: _bookingStatusColor(status), fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 12,
+              color: _bookingStatusColor(status),
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         onTap: () {
-          Navigator.pushNamed(context, '/community/sport-club', arguments: {'groupId': group['id']?.toString()});
+          Navigator.pushNamed(
+            context,
+            '/community/sport-club',
+            arguments: {'groupId': group['id']?.toString()},
+          );
         },
       ),
     );

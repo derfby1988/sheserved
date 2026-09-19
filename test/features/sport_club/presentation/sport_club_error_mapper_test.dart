@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/sport_club_error_mapper.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 
 void main() {
   group('mapManagementError session overlap', () {
@@ -33,6 +34,58 @@ void main() {
         );
       },
     );
+  });
+
+  group('mapBookingError', () {
+    test('maps duplicate confirmed booking', () {
+      expect(
+        mapBookingError(StateError('ALREADY_JOINED')),
+        'คุณเข้าร่วมรอบนัดนี้แล้ว',
+      );
+    });
+
+    test('maps duplicate pending booking', () {
+      expect(
+        mapBookingError(StateError('ALREADY_REQUESTED')),
+        'คุณส่งคำขอเข้าร่วมรอบนัดนี้แล้ว กรุณารอการอนุมัติ',
+      );
+    });
+
+    test('maps an ended session', () {
+      expect(
+        mapBookingError(StateError('SESSION_ENDED')),
+        'รอบนัดนี้สิ้นสุดแล้ว กรุณาเลือกรอบนัดอื่น',
+      );
+    });
+
+    test('maps an invalid booking response', () {
+      expect(
+        mapBookingError(StateError('BOOKING_RESPONSE_INVALID')),
+        'ระบบจองตอบกลับไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง',
+      );
+    });
+
+    test('maps an ambiguous RPC configuration error', () {
+      expect(
+        mapBookingError(StateError('PGRST203')),
+        'ระบบจองกำลังอัปเดต กรุณาลองใหม่ภายหลัง',
+      );
+    });
+
+    test('extracts a safe PostgREST code for diagnostics', () {
+      expect(
+        bookingErrorCode(
+          StateError(
+            'PostgrestException(message: function not found, code: PGRST202, details: private details)',
+          ),
+        ),
+        'PGRST202',
+      );
+    });
+
+    test('does not expose unknown exception text in the diagnostic code', () {
+      expect(bookingErrorCode(StateError('private payload')), 'UNKNOWN');
+    });
   });
 
   testWidgets('shows above a modal bottom sheet and fades out', (tester) async {

@@ -25,7 +25,7 @@
 - การจัดวางปุ่ม: ลดจำนวนปุ่มหลักเพื่อรักษาพื้นที่ชื่อหน้า โดยเก็บ action ที่ใช้รองลงมาไว้ใน `PopupMenuButton` (`more_vert`)
 - หน้า "รายการก๊วน"
   - แถบ "หมวดหมู่กีฬา" (แนวนอนแบบ Chip) + ปุ่ม "+" ทรงกลม นำทางไปยังหน้าเสนอกีฬาใหม่ (`/community/sport-club/sport/propose`) สำหรับผู้ใช้งานทุกคน — ปุ่มอยู่นอก scroll area ติดขวาไม่เลื่อนตาม chip
-  - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **สรุปค่าก๊วนมาตรฐานและค่าใช้จ่ายของรอบนัดถัดไปพร้อมจำนวนที่ว่าง**, รอบนัดถัดไปสูงสุด 3 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับผู้จัดการก๊วน)
+  - รายการก๊วน (การ์ด): รูปสนาม/ปก (thumbnail), ชื่อก๊วน, กีฬา (emoji + ชื่อ), badge เพศที่เชิญชวน (ช./ญ./เสรี), คำอธิบาย 2 บรรทัด, พื้นที่ (จังหวัด/อำเภอ), **สรุปค่าก๊วนมาตรฐานและค่าใช้จ่ายของรอบนัดถัดไปพร้อมจำนวนที่ว่าง**, รอบนัดถัดไป 1 รอบ + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีมากกว่า 1 รอบ, ปุ่ม CTA (เข้าร่วมก๊วน / เข้าร่วมแล้ว / รอคิวสำหรับผู้ถูกบล็อก / เพิ่มรอบนัดสำหรับผู้จัดการก๊วน)
   - ค้นหาและตัวกรอง: รวมใน dialog เดียวเปิดจากปุ่ม search ใน top bar — มีช่องค้นหาก๊วน/สถานที่, จังหวัด, อำเภอ, และ checkbox "เฉพาะก๊วนที่เข้าร่วมได้ทันที" (กรองเอาก๊วนส่วนตัวที่ต้องรออนุมัติออก; ก๊วนส่วนตัวยังแสดงในรายการเปิดรับตามปกติ)
   - ปุ่ม toggle แผนที่ (เปิด/ปิด มุมมองแผนที่)
 - หน้า “แผนที่”
@@ -135,7 +135,7 @@
 
 ### Data Integrity Guards (ป้องกัน Race Condition ระดับ DB)
 - **ป้องกันจองซ้ำ:** `UNIQUE(session_id, user_id)` บน `fitness_group_bookings` (เพิ่มใน schema แล้ว)
-- **ป้องกันเกิน capacity รายรอบ:** ปรับ Postgres function `book_fitness_session(p_session_id, p_user_id)` ให้ทำงานใน transaction เดียว:
+- **ป้องกันเกิน capacity รายรอบ:** ใช้ canonical Postgres function `book_fitness_session(p_session_id, p_user_id, p_position_id, p_declared_skill_level)` ให้ทำงานใน transaction เดียว; migration `20260916100000_remove_ambiguous_fitness_booking_rpc_overloads.sql` ลบ legacy overloads เพื่อไม่ให้ PostgREST เกิด `PGRST203`:
   1. `SELECT ... FOR UPDATE` ล็อกแถว `fitness_group_sessions` ของรอบนั้น
   2. ใช้ `fitness_group_sessions.capacity` และนับผู้จองแบบ distinct ที่มีสถานะ `confirmed` เฉพาะรอบนั้น; `pending` ไม่กินที่นั่ง
   3. ถ้าเป็น booking ที่จะเปลี่ยนเป็น `confirmed` แล้วเกิน capacity → return error `SESSION_FULL`
@@ -547,7 +547,7 @@ Scaffold
 - หลัง apply migration ให้ `NOTIFY pgrst, 'reload schema'` เพื่อ PostgREST โหลด schema cache ใหม่
 
 ## การเปลี่ยนแปลง UI/Flow ล่าสุด (2026-08-23)
-- การ์ดรายการก๊วน: แสดงสมาชิกก๊วนแบบข้อมูลประกอบ และสรุป **จำนวนว่างของแต่ละรอบนัด** (`confirmed / session.capacity`, `pending`, `available`); รูปสนาม/ปก, กีฬา, badge เพศ, คำอธิบาย, พื้นที่, รอบนัดถัดไปสูงสุด 3 รอบ
+- การ์ดรายการก๊วน: แสดงสมาชิกก๊วนแบบข้อมูลประกอบ และสรุป **จำนวนว่างของรอบนัดถัดไป** (`confirmed / session.capacity`, `pending`, `available`); รูปสนาม/ปก, กีฬา, badge เพศ, คำอธิบาย, พื้นที่, รอบนัดถัดไป 1 รอบ + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีมากกว่า 1 รอบ
 - CTA ในการ์ด:
   - ผู้ใช้ทั่วไป: ปุ่ม "เข้าร่วมก๊วน" (เปิดรายการรอบนัดให้เลือก) หรือ "เข้าร่วมก๊วนแล้ว"
   - ผู้ร้องขอที่ถูกบล็อก: แสดงสถานะ **"รอคิว"** แบบ disabled เพื่อใช้ถ้อยคำสุภาพและป้องกันการส่งคำขอซ้ำ (สถานะภายในยังเป็น `blocked`)
@@ -660,34 +660,35 @@ Scaffold
   - `bool isPopup = false` — ซ่อนปุ่มวิดีโอคอล, เปลี่ยนไอคอน back เป็น `Icons.close`, ลด `toolbarHeight`
   - `String? titleOverride` — ชื่อก๊วน
   - `String? subtitleOverride` — เช่น `"สมาชิก 12 คน"`
-  - `String? mentionTargetName` — ชื่อสมาชิกที่เลือกจาก swipe action เพื่อกล่าวถึงในข้อความใหม่; ถ้าเปิดจากรายชื่อตนเองให้เป็น `null`
+  - `String? mentionTargetName` — ชื่อสมาชิกที่เลือกจาก swipe action เพื่อแสดง mention ในข้อความใหม่; ถ้าเปิดจากรายชื่อตนเองให้เป็น `null`
+  - `String? replyTargetUserId` / `String? replyTargetName` — สมาชิกเป้าหมายของการตอบกลับเมื่อเปิดจาก swipe; เก็บ `reply_to_sender_id` โดยไม่สร้าง `reply_to_id` ปลอมที่ไม่มีข้อความต้นทาง
 - `Scaffold(resizeToAvoidBottomInset: !widget.isPopup)` — popup ไม่ย่อซ้ำกับการจัดตำแหน่งเหนือ keyboard ส่วนหน้าเต็มยัง resize ตามปกติ
 
 **7.2 ✅ สร้าง helper `showGroupChatPopup()`** (ไฟล์ `lib/features/community/find_buddies/presentation/widgets/group_chat_popup.dart`)
-- signature: `Future<void> showGroupChatPopup(BuildContext context, {required String groupId, required String groupName, int? memberCount, String? mentionTargetName})`
+- signature: `Future<void> showGroupChatPopup(BuildContext context, {required String groupId, required String groupName, int? memberCount, String? mentionTargetName, String? replyTargetUserId, String? replyTargetName})`
 - ใช้ `showDialog(barrierDismissible: true, barrierColor: Colors.black54)`
 - คำนวณขนาด responsive จาก `MediaQuery.sizeOf(context)`:
   - `width  = min(size.width * 0.92, 560)`
   - `height = size.height * (size.width < 600 ? 0.58 : 0.55)`
 - เลื่อนหนีคีย์บอร์ด: อ่าน `MediaQuery.viewInsetsOf(context).bottom` แล้วใช้ `AnimatedPadding(padding: EdgeInsets.only(bottom: bottomInset))` จัด popup ในพื้นที่เหนือ keyboard
-- `ChatRoomPage` ห่อด้วย `ClipRRect(borderRadius: 20)` + `Material(elevation)` และรับ `mentionTargetName` เพื่อแสดงสมาชิกเป้าหมายในข้อความใหม่
+- `ChatRoomPage` ห่อด้วย `ClipRRect(borderRadius: 20)` + `Material(elevation)` และรับ `mentionTargetName`/reply target เพื่อแสดงและบันทึกสมาชิกเป้าหมายในข้อความใหม่
 - ชื่อ header แสดงรูปแบบ `ก๊วน <ชื่อก๊วน>`
 
 **7.3 ✅ แก้จุดเรียกใน `sport_club_page.dart`**
 - แชทก๊วนเปิดผ่าน `showGroupChatPopup(...)` จาก swipe action ของรายชื่อสมาชิก (และปุ่มแชทใน `my_groups_page.dart`)
 - **ไม่เรียก `Navigator.pop(ctx)` ก่อนเปิด popup** — popup ลอยเหนือ Bottom Sheet รายละเอียดก๊วน ปิดแล้วกลับมาที่ sheet เดิมทันที
-- เมื่อเปิดจากสมาชิกคนอื่น ส่ง `mentionTargetName` เข้า popup; เมื่อเปิดจากแถวตนเองไม่ส่งชื่อเป้าหมาย
+- เมื่อเปิดจากสมาชิกคนอื่น ส่ง `mentionTargetName` พร้อม `replyTargetUserId`/`replyTargetName` เข้า popup; composer ถือเป็นการตอบกลับสมาชิกคนนั้นและไม่สร้าง `reply_to_id` ปลอม; เมื่อเปิดจากแถวตนเองไม่ส่ง target
 - `memberCount` ดึงจาก field ที่ `listGroups()` ใส่มาให้ในแต่ละ group map อยู่แล้ว
 
 **7.4 ✅ เพิ่มปุ่มแชทใน `my_groups_page.dart`** (2026-08-23)
 - `_buildGroupCard()` เปลี่ยน `trailing` จาก `Icon(Icons.chevron_right)` เดี่ยว → `Row(mainAxisSize: min)` ที่มี `IconButton(Icons.chat_bubble_outline)` + `chevron_right`
-- ทุกก๊วนในหน้านี้ผู้ใช้เป็นสมาชิกอยู่แล้ว จึงแสดงปุ่มแชทได้ทุกใบ
+- แสดงปุ่มแชทเฉพาะก๊วนที่ผู้ใช้เป็น active chat participant (`can_chat=true`); owner ที่ opt-out และไม่มี confirmed booking จะไม่เห็นปุ่ม
 - `listMyGroups()` ไม่มี member count → ส่ง `memberCount: null` → header แสดงแค่ชื่อก๊วน (เพิ่ม count ใน query ภายหลังถ้าต้องการ)
 
 ### รายละเอียด UI ข้อความแชทก๊วน (Implementation)
 - Header ของ popup แสดง `ก๊วน <ชื่อก๊วน>` และจำนวนสมาชิก active
 - แสดงชื่อผู้ส่งในรูปแบบ `ชื่อ + อักษรแรกของนามสกุล` เหนือข้อความและอยู่นอก bubble
-- เมื่อเปิดแชทจากสมาชิกเป้าหมาย ข้อความใหม่จะบันทึก mention ในรูปแบบ `@ชื่อ น.\nข้อความ` และแสดง `@ชื่อ น.` อยู่นอก bubble ในแถวเดียวกับ bubble; ฝั่งข้อความของเราอยู่ด้านซ้าย/ขวาตาม layout ที่กำหนด
+- เมื่อเปิดแชทจากสมาชิกเป้าหมาย composer จะอยู่ในโหมด **ตอบกลับสมาชิก**; ข้อความใหม่บันทึก `reply_to_sender_id` ของสมาชิกเป้าหมายและ mention ในรูปแบบ `@ชื่อ น.\nข้อความ` พร้อมแสดงทั้ง reply reference และ `@ชื่อ น.` นอก bubble; ไม่กำหนด `reply_to_id` จนกว่าจะตอบกลับข้อความใดข้อความหนึ่งโดยตรง
 - เปิดแชทจากแถวของตนเองหรือจากหน้า `my_groups_page.dart` โดยไม่มีเป้าหมาย จะไม่เพิ่ม mention
 - เวลาและสถานะอ่าน (`✓`/`✓✓`) แสดงอยู่นอก bubble ใต้ข้อความ
 - ข้อความ `อ่านโดย` เปลี่ยนเป็น `<รายชื่อผู้อ่าน> อ่าน` สีเทา
@@ -778,9 +779,9 @@ Scaffold
 **8.4 ✅ Swipe actions บนรายชื่อสมาชิก** (ทุกคนปัดแถวตัวเองได้, ผู้จัดการก๊วนปัดแถวคนอื่นได้)
 - ห่อ `ListTile` สมาชิกด้วย `Slidable` (`endActionPane`, `motion: ScrollMotion`)
 - **แถวตัวเอง** (ทุกคน ไม่ว่าจะเป็น admin หรือสมาชิกทั่วไป):
-  - ปุ่ม: **แชทก๊วน** (ฟ้า, `Icons.chat_bubble_outline` → `showGroupChatPopup(...)`)
+  - ปุ่ม: **แชทก๊วน** (ฟ้า, `Icons.chat_bubble_outline` → `showGroupChatPopup(...)`); ไม่ตั้ง reply target เพราะเป็นการเปิดห้องของตนเอง
 - **แถวสมาชิกคนอื่น** (เฉพาะผู้จัดการก๊วน, `memberUserId != currentUserId` และ member ไม่ใช่ admin):
-  - ปุ่ม: **แชทก๊วน** (ฟ้า) + **บล็อก** (เทา, `Icons.block` → `_blockUserDialog`) / **ถอดออกจากก๊วน** (แดง, `Icons.person_remove` → confirm dialog → `leaveGroup(groupId, memberUserId)`); actor ของ action มาจาก `AuthService`
+  - ปุ่ม: **แชทก๊วน** (ฟ้า) + **บล็อก** (เทา, `Icons.block` → `_blockUserDialog`) / **ถอดออกจากก๊วน** (แดง, `Icons.person_remove` → confirm dialog → `leaveGroup(groupId, memberUserId)`); actor ของ action มาจาก `AuthService`; เปิดแชทแล้วถือเป็นการตอบกลับสมาชิกคนนั้น
   - ห้ามถอดแอดมินคนอื่น (`role != 'admin'`)
 - **สมาชิกทั่วไปปัดแถวคนอื่น**: ไม่มี action (`Slidable` ไม่แสดง action pane หรือ `enabled: false`)
 - ลบ `IconButton` block ใน `trailing` ที่เพิ่มไว้ชั่วคราว (แทนด้วย swipe)
@@ -824,7 +825,7 @@ Scaffold
 - **วิธีป้องกันที่ implement แล้ว:** ให้สถานะ effective member ใน App Layer อ้างอิง `role='admin'` หรือมี booking `status='confirmed'`; ใช้ filter เดียวกันใน `listGroupMembers()`, `listMyJoinedGroupIds()`, `listMyGroups()`, `isGroupMember()` และ member count
 - **กฎ UI:** pending-only ต้องอยู่ใน section “คำขอรออนุมัติ” และ CTA เป็น “รออนุมัติ”; หลัง `approve_fitness_session_booking()` เปลี่ยนเป็น `confirmed` จึงย้ายไป “เข้าร่วมแล้ว” และเปิดสิทธิ์แชท
 - **Regression checklist:** ทดสอบอย่างน้อย 3 สถานะ — (1) ก่อนจอง, (2) หลังส่งคำขอ pending, (3) หลัง admin approve — ตรวจ CTA, รายชื่อสมาชิก, member count, หน้า “ก๊วนของฉัน” และสิทธิ์แชทให้ตรงกัน
-- **DB follow-up:** trigger `sync_fitness_chat_participants()` ยังใช้ `is_active=true`; ต้องปรับให้รวมเฉพาะ admin/confirmed และเพิ่มการ sync เมื่อ booking status เปลี่ยน เพื่อให้ DB participant list สอดคล้องกับ App Layer
+- **DB follow-up:** ✅ migration `20260916090000_sync_fitness_chat_participants_on_booking.sql` ปรับ participant query ให้เป็น admin/confirmed ตาม effective membership, กรอง blocklist/owner opt-out, backfill ข้อมูลเดิม และเพิ่ม trigger sync เมื่อ booking `INSERT/UPDATE status/DELETE` เพื่อให้ DB participant list สอดคล้องกับ App Layer
 
 ### ความเสี่ยง / จุดที่ต้องระวัง
 - **Discoverability:** มี hint text เล็กๆ ใต้หัวข้อรอบนัด/สมาชิก เช่น "ปัด...ไปทางซ้ายเพื่อจัดการ" (แสดงเฉพาะ admin) แต่ยังต้องทดสอบว่าผู้ใช้ค้นพบ gesture ได้จริง
@@ -2527,7 +2528,7 @@ ALTER TABLE public.fitness_group_bookings
 - เปลี่ยน `GroupCard` ให้รับ `SportClubGroupCardData` จาก parent และไม่สร้าง `FutureBuilder`, `Future.wait` หรือ repository request ใน `build()`
 - การ์ดต้อง render จาก complete data contract ทันที; ถ้าข้อมูลสำคัญมี error ให้ render explicit error/empty state ตาม contract ไม่แสดง spinner ต่อการ์ด
 - ลบ `hasAnySessions` per-card call และใช้ metadata จาก Phase 17.2
-- แสดง upcoming sessions ได้สูงสุด **3 รอบ** ตามข้อกำหนดในหน้า UI และเรียงตามเวลาเดิม; ต้องไม่แสดงเพียงรอบเดียวจาก `take(1)` อีกต่อไป
+- แสดงเฉพาะรอบนัดถัดไป **1 รอบแรก** (เรียงตามเวลาเดิม) + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีมากกว่า 1 รอบ; ข้อมูลทุกรอบยัง hydrate เข้า contract เพื่อให้ detail sheet แสดงครบ
 - คง action และ authorization เดิมทั้งหมด:
   - join/session picker และ `positionId`
   - joined/pending/blocked states
@@ -2536,7 +2537,7 @@ ALTER TABLE public.fitness_group_bookings
 - `onSessionCreated` ต้องเรียก targeted refresh ของก๊วน ไม่ใช้ `setState(() {})` เพื่อบังคับให้ FutureBuilder ทุกใบยิงใหม่
 - การ scroll/rebuild ของ parent ต้องไม่ทำให้ query รายละเอียดของก๊วนที่ hydrate แล้วถูกยิงซ้ำ
 
-**Gate 17.5:** การ์ดทุกใบที่ถูกแสดงมีข้อมูลย่อยพร้อมกัน, ไม่มี `LinearProgressIndicator` ภายใน card จากการโหลดปกติ, CTA และสิทธิ์ทุกสถานะผ่าน regression tests, และแสดงรอบนัดสูงสุด 3 รอบตาม plan
+**Gate 17.5:** การ์ดทุกใบที่ถูกแสดงมีข้อมูลย่อยพร้อมกัน, ไม่มี `LinearProgressIndicator` ภายใน card จากการโหลดปกติ, CTA และสิทธิ์ทุกสถานะผ่าน regression tests, และแสดงรอบนัดถัดไป 1 รอบ + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีหลายรอบตาม plan
 
 ### 17.6 Test, Performance และ Manual QA
 
@@ -2547,7 +2548,7 @@ ALTER TABLE public.fitness_group_bookings
 - **Widget tests:**
   - `GroupCard` render จาก data fixture โดยไม่สร้าง network request
   - 0/1/หลาย upcoming sessions, เฉพาะรอบเก่า, fees/costs/positions ว่างหรือมีข้อมูล
-  - session สูงสุด 3 รอบ, CTA ของ guest/member/pending/blocked/admin/owner
+  - session 1 รอบแรก + hint เมื่อมีหลายรอบ, CTA ของ guest/member/pending/blocked/admin/owner
   - explicit error state ไม่เปลี่ยนเป็น loading bar และไม่เปิด action ที่ไม่ควรเปิด
 - **Page/integration tests:**
   - initial page commit หลัง hydration ครบเท่านั้น
@@ -2580,7 +2581,7 @@ ALTER TABLE public.fitness_group_bookings
 - initial/filter/refresh/load-more แสดงเฉพาะการ์ดที่มี card data contract ครบ หรือ explicit error state ที่ไม่ใช่ loading ค้าง
 - จำนวน request ไม่โตตามจำนวนการ์ดแบบ N+1 และ scroll/rebuild ไม่ยิงซ้ำโดยไม่จำเป็น
 - `hasAnySessions` ยังคงแยกจาก upcoming sessions และข้อความสถานะถูกต้อง
-- การ์ดแสดงรอบนัดถัดไปสูงสุด 3 รอบตาม Match Sport plan
+- การ์ดแสดงรอบนัดถัดไป 1 รอบ + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีหลายรอบตาม Match Sport plan
 - CTA, permission, guest access, booking, position selection, pagination, filter และ backward-compatible route ทำงานเหมือนเดิม
 - focused tests และ regression tests ผ่านครบ พร้อม evidence สำหรับ rollback และ manual QA
 
@@ -2594,7 +2595,7 @@ ALTER TABLE public.fitness_group_bookings
 | 17.2 Metadata | `SportClubGroupPage.groupIdsWithAnySessions` — สะสมผล batch ข้าม raw pages แล้ว intersect กับ visible ids | `application/sport_club_group_query.dart` |
 | 17.3 Batch APIs | `listUpcomingSessionsForGroups`, `listPublicGroupFeesForGroups`, `listPublicSessionCostItemsForGroups`, `listPublicGroupPositionsForGroups` — view/RLS เดิม, `inFilter('group_id', ids)`, guard empty ids | `data/fitness_buddies_repository.dart` |
 | 17.4 Orchestration | `_init`/`_reload`/`_loadMore` hydrate ก่อน commit `_groups` + `_cardDataByGroupId` แบบ atomic, stale check หลัง hydration, `_refreshGroupCardData` สำหรับ targeted refresh หลังสร้างรอบนัด (แทน `setState(() {})` ที่ทำให้ทุกการ์ด refire) | `presentation/pages/sport_club_page.dart` |
-| 17.5 Stateless card | hydrated path render จาก contract โดยไม่ยิง request ใน `build()`; แสดงรอบนัดสูงสุด 3 รอบ + hint เมื่อเกิน; legacy `FutureBuilder` คงไว้เป็น rollback adapter เมื่อ `cardData == null` | `presentation/widgets/feed/group_card.dart` |
+| 17.5 Stateless card | hydrated path render จาก contract โดยไม่ยิง request ใน `build()`; แสดงรอบนัดถัดไป 1 รอบแรก + hint "กดเพื่อแสดงรอบอื่น ๆ" เมื่อมีหลายรอบ; legacy `FutureBuilder` คงไว้เป็น rollback adapter เมื่อ `cardData == null` | `presentation/widgets/feed/group_card.dart` |
 | 17.6 Tests | hydrator unit tests (5), query metadata tests (2), hydrated-card widget tests (5) | `test/features/sport_club/` |
 
 **ผลการตรวจสอบ:** `flutter analyze` ผ่าน (0 issues ในไฟล์ที่แก้) และ regression suite ผ่านครบ **67/67 tests** (55 เดิม + 12 ใหม่)
@@ -2621,5 +2622,38 @@ ALTER TABLE public.fitness_group_bookings
 - การบังคับจริงอยู่ที่ DB trigger จึงครอบคลุม repository, bottom sheet, legacy page, admin tooling และ direct SQL entry point ที่ทำ INSERT/UPDATE ผ่านตารางเดียวกัน
 - UI ไม่ทำ preflight SELECT แยก เพราะ DB guard เป็น source of truth แบบ atomic และป้องกัน TOCTOU/race ได้ดีกว่า
 - Regression suite หลังเพิ่ม mapper/overlay widget test: **71/71 passed**; SQL lint ต้องรันหลังเปิด local Supabase/Postgres เนื่องจากเครื่องขณะนี้ไม่มี database ที่ `127.0.0.1:54322`
+
+## Phase 18 — Notification Badge บนหน้า Sport Club ✅ implement แล้ว (2026-09-19)
+
+### อาการที่พบ
+
+- badge กระดิ่งบนหน้า Sport Club ไม่แสดงจำนวน unread ถูกต้อง — ผู้ใช้ต้องกดเข้าไปดูเองหรือกลับไปหน้า Home ถึงเห็นตัวเลขล่าสุด
+- badge ไม่รีเฟรชระหว่างค้างอยู่ที่หน้า Sport Club แม้มีข้อความ/แจ้งเตือนใหม่เข้ามา
+
+### สาเหตุ (2 ชั้น)
+
+1. **ไม่รวม unread ของแชท** — หน้า Home คำนวณ badge เองเป็น `chatUnreadCount + notificationUnreadCount` แล้วส่งเข้า `TlzAppTopBar` ผ่าน `notificationCount`; แต่ Sport Club ใช้ `TlzAppTopBar` โดยไม่ส่ง `notificationCount` เลย ทำให้ `TlzNotificationButton` fallback อ่านเฉพาะ `notificationProvider` (ERP) ไม่รวม unread ของแชทก๊วน
+2. **ไม่มีกลไก refresh ของตัวเอง** — `TlzNotificationButton` เดิมแค่ `watch` state; ตัวเลขใหม่จะมาก็ต่อเมื่อมีคนเรียก `refreshUnreadCount()` หรือได้ push ผ่าน WebSocket (`applicationNotificationStream`) ซึ่งหน้า Home ทำเอง (initState + timer 90s + resume) แต่ Sport Club ไม่มีอะไรเลย เมื่อ WebSocket server (`192.168.1.111:8080`) timeout จึงไม่มี push และไม่มี polling — badge ค้างค่าเดิมตลอด
+
+### วิธีแก้ไข — ทำให้ `TlzNotificationButton` ดูแลตัวเอง
+
+- `watch` ทั้ง `chatUnreadProvider` และ `notificationProvider` แล้วรวมเป็น badge เดียวแบบ Home เมื่อ `badgeCount == null` (รวม chat เฉพาะ `category == null` หรือ `category == 'chat'`)
+- `_scheduleUnreadRefresh()` เรียก `refreshUnreadCount()` ของทั้งสอง provider หลัง first frame (`addPostFrameCallback`) — ป้องกัน error "Tried to modify a provider while the widget tree was building" เมื่อ notifier อัปเดต state synchronously ระหว่าง `initState`
+- refresh ใหม่เมื่อแอปกลับมา `AppLifecycleState.resumed` และเมื่อ `category` เปลี่ยน
+- **polling fallback ทุก 30 วินาที** (`Timer.periodic`) สำหรับกรณี WebSocket push ใช้ไม่ได้ — เริ่มเฉพาะเมื่อ `badgeCount == null` (หน้าที่ส่ง count เอง เช่น Home ไม่ยิงซ้ำ), หยุดทันทีเมื่อเข้า background (`paused`/`inactive`/`detached`) และเริ่มใหม่ + refresh ทันทีตอน resume
+- `_isRefreshing` กัน request ซ้อนเมื่อ timer/lifecycle/manual trigger ชนกัน
+- refresh เฉพาะ unread providers เท่านั้น — **ไม่** เรียก `_init()`/`_reload()`/`setState` ของ `SportClubPage` จึงไม่ reload การ์ดก๊วน, ไม่เปลี่ยน scroll position และไม่แตะ filter state
+
+### ข้อควรระวังเพื่อไม่ให้เกิดซ้ำ
+
+- หน้าใหม่ที่ใช้ `TlzAppTopBar` โดยไม่ส่ง `notificationCount` จะได้ self-managed badge อัตโนมัติ — ห้ามส่ง `badgeCount`/`notificationCount` เว้นแต่ตั้งใจจะคำนวณและ refresh เอง (ปุ่มจะไม่ poll เมื่อ parent ส่งค่ามา)
+- WebSocket push เป็น optimization สำหรับอัปเดตเร็วกว่า 30s เท่านั้น ไม่ใช่ source of truth — ห้ามออกแบบ badge ที่พึ่ง push event อย่างเดียว
+- provider refresh ที่แก้ state synchronously ต้องถูก schedule หลัง frame เสมอ ไม่เรียกตรงใน `initState`/`build`
+
+### Test และ Verification
+
+- `test/features/sport_club/presentation/notification_button_test.dart`: fake notification unread = 4 + fake chat unread = 2 → badge = 6; refresh ตอน init, ไม่ refresh ขณะ paused, refresh ตอน resumed, polling ครบทุก 30s, request-overlap guard, ไม่ trigger page/card reload
+- Sport Club regression suite: **58 tests ผ่าน**, `flutter analyze` 0 issues ในไฟล์ที่แก้, `git diff --check` ผ่าน
+- Manual QA บน device (2026-09-19): badge อัปเดตถูกต้องหลัง hot restart; WebSocket timeout ไม่กระทบความถูกต้องเพราะ polling ทำงานแทน
 
 
