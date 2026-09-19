@@ -692,6 +692,16 @@ Scaffold
 - ถ้าเปิด panel จากหน้าอื่น: ใช้ route intent `/community/sport-club` (`intent: open_chat`, `groupId`, `chatRoomId`) แล้วทำ flow เดียวกันในหน้า Sport Club
 - ห้องแชท 1:1/consultation ที่ไม่ใช่ `fitness_group` ยังคงเปิดเต็มหน้าตามเดิม
 
+**7.6 ✅ Realtime แจ้งเตือนการตอบกลับสมาชิกในห้องก๊วน (2026-09-19)**
+- ใช้ **Supabase Realtime** ซึ่งรวมอยู่ใน Supabase ที่โปรเจกต์ใช้อยู่แล้ว จึงไม่มีค่าใช้จ่ายเพิ่มและไม่ต้องพึ่ง `websocket-server`
+- `TlzNotificationToast` subscribe `chat_messages` เฉพาะ event `INSERT` ด้วย filter `reply_to_sender_id = <current user>` จึงรับเฉพาะข้อความที่ตอบกลับผู้ใช้คนนั้น ไม่รวมแชท 1:1 หรือข้อความทั่วไปในห้อง
+- เมื่อได้ event จะตรวจ `chat_rooms` ว่าเป็น `fitness_group` (หรือ legacy `group_<groupId>`) ก่อนแสดง toast; ถ้าไม่ใช่จะไม่แจ้งเตือน
+- ข้อความที่ผู้ใช้ส่งเองจะถูกข้าม และกันการแสดงซ้ำด้วย message id
+- ยังไม่บันทึกลง `app_notifications` จึงไม่เพิ่ม unread badge หรือรายการใน Notification Panel ตามข้อกำหนด realtime-only
+- `TlzNotificationToast` แสดงบน Stack กลางของแอป จึงทำงานได้ทั้ง Home และ Sport Club; การกด toast ส่ง `intent: open_chat`, `groupId`, `chatRoomId` ผ่าน global navigator ไปยัง flow เดิมที่เปิด `GroupDetailSheet` ก่อน `showGroupChatPopup()`
+- subscribe ใหม่ทุกครั้งที่ผู้ใช้ล็อกอิน/สลับบัญชีผ่าน `AuthService` listener เพราะตอนสร้าง widget ผู้ใช้อาจยังไม่ล็อกอิน
+- ต้องเปิด publication ของ `chat_messages` ใน `supabase_realtime` และต้องมีสิทธิ์ SELECT ตาม RLS จึงจะได้รับ event
+
 ### รายละเอียด UI ข้อความแชทก๊วน (Implementation)
 - Header ของ popup แสดง `ก๊วน <ชื่อก๊วน>` และจำนวนสมาชิก active
 - แสดงชื่อผู้ส่งในรูปแบบ `ชื่อ + อักษรแรกของนามสกุล` เหนือข้อความและอยู่นอก bubble

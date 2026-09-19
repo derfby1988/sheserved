@@ -3,14 +3,60 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../features/erp/data/models/app_notification.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
+import '../../services/auth_service.dart';
+import '../../services/navigation_service.dart';
 import '../../services/websocket_service.dart';
 import 'swipe_to_dismiss_card.dart';
 
-/// การ์ดจางๆ ที่แสดงใต้ Top Bar เมื่อมี notification ใหม่เข้ามาทาง WebSocket
+Map<String, dynamic>? groupChatNotificationRouteArguments(
+  AppNotification notification,
+) {
+  if (notification.eventType != 'fitness_group.chat_reply') return null;
+
+  final payload = notification.payload;
+  final groupId =
+      payload['groupId']?.toString() ?? payload['group_id']?.toString() ?? '';
+  final roomId =
+      payload['chatRoomId']?.toString() ??
+      payload['chat_room_id']?.toString() ??
+      payload['roomId']?.toString() ??
+      payload['room_id']?.toString() ??
+      '';
+  if (groupId.isEmpty || roomId.isEmpty) return null;
+
+  return {'intent': 'open_chat', 'groupId': groupId, 'chatRoomId': roomId};
+}
+
+/// ตัด prefix mention `@ชื่อ น.\n` ออกเพื่อแสดงเฉพาะเนื้อความจริง
+String groupChatReplyDisplayBody(String? content) {
+  final raw = (content ?? '').trim();
+  if (!raw.startsWith('@')) return raw;
+  final separatorIndex = raw.indexOf('\n');
+  if (separatorIndex <= 1) return raw;
+  return raw.substring(separatorIndex + 1).trim();
+}
+
+/// ตรวจว่า room นี้เป็นห้องก๊วนกีฬาหรือไม่ แล้วคืน groupId ที่ต้องใช้เปิดแชท
+String? fitnessGroupIdFromRoom(Map<String, dynamic> room) {
+  final roomId = room['id']?.toString() ?? '';
+  final roomType = room['room_type']?.toString() ?? '';
+  final roomRefId = room['room_ref_id']?.toString() ?? '';
+  if (roomType == 'fitness_group' && roomRefId.isNotEmpty) return roomRefId;
+  if (roomId.startsWith('group_')) {
+    final groupId = roomId.substring('group_'.length);
+    return groupId.isEmpty ? null : groupId;
+  }
+  return null;
+}
+
+/// การ์ดจางๆ ที่แสดงใต้ Top Bar เมื่อมี notification ใหม่เข้ามา
+/// รับได้ 2 ทาง: WebSocket (application-notification) และ Supabase Realtime
+/// (ข้อความที่มี `reply_to_sender_id` ตรงกับผู้ใช้ปัจจุบันในห้องก๊วน)
 /// เป็น child ตรงของ Stack ใน MaterialApp.builder → return Positioned ได้
 /// แอนิเมชัน: fade + slide ลงมา → ค้างสักครู่ → fade + slide กลับขึ้น → หายไป
 class TlzNotificationToast extends ConsumerStatefulWidget {
@@ -26,9 +72,15 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
-  StreamSubscription<Map<String, dynamic>>? _subscription;
+  StreamSubscription<Map<String, dynamic>>? _applicationSubscription;
+  StreamSubscription<AuthState>? _supabaseAuthSubscription;
+  RealtimeChannel? _chatReplyChannel;
   Timer? _hideTimer;
   AppNotification? _current;
+  String? _subscribedUserId;
+  final Set<String> _seenReplyMessageIds = {};
+  final Map<String, Map<String, dynamic>> _roomCache = {};
+  final Map<String, String> _userNameCache = {};
 
   static const _showDuration = Duration(milliseconds: 480);
   static const _hideDuration = Duration(milliseconds: 560);
@@ -51,9 +103,155 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
-    _subscription = WebSocketService().applicationNotificationStream.listen(
-      _onNotification,
-    );
+    _applicationSubscription = WebSocketService().applicationNotificationStream
+        .listen(_onNotification);
+
+    // Supabase Realtime เป็นช่องทางฟรีที่ใช้ในแอปอยู่แล้ว จึงไม่ต้องพึ่ง
+    // websocket-server สำหรับแจ้งเตือนการตอบกลับในห้องก๊วน
+    AuthService.instance.addListener(_handleAuthChanged);
+    try {
+      _supabaseAuthSubscription = Supabase
+          .instance
+          .client
+          .auth
+          .onAuthStateChange
+          .listen((_) => _handleAuthChanged());
+    } catch (e) {
+      debugPrint('[TlzNotificationToast] supabase auth listen error: $e');
+    }
+    _subscribeChatReplies();
+  }
+
+  void _handleAuthChanged() {
+    if (!mounted) return;
+    _subscribeChatReplies();
+  }
+
+  /// รองรับทั้ง backend auth (AuthService) และ Supabase session โดยตรง
+  String? _resolveChatReplyUserId() {
+    final authUserId = AuthService.instance.currentUser?.id;
+    if (authUserId != null && authUserId.isNotEmpty) return authUserId;
+    try {
+      return Supabase.instance.client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _subscribeChatReplies() {
+    final userId = _resolveChatReplyUserId();
+    if (userId == _subscribedUserId) return;
+
+    _chatReplyChannel?.unsubscribe();
+    _chatReplyChannel = null;
+    _subscribedUserId = userId;
+    _seenReplyMessageIds.clear();
+    if (userId == null) return;
+
+    try {
+      _chatReplyChannel = Supabase.instance.client
+          .channel('chat_reply_toast_$userId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'chat_messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'reply_to_sender_id',
+              value: userId,
+            ),
+            callback: _onChatReplyInsert,
+          )
+          .subscribe();
+      debugPrint('[TlzNotificationToast] subscribed chat replies for $userId');
+    } catch (e) {
+      debugPrint('[TlzNotificationToast] chat reply subscribe error: $e');
+    }
+  }
+
+  Future<void> _onChatReplyInsert(PostgresChangePayload payload) async {
+    final record = payload.newRecord;
+    final senderId = record['sender_id']?.toString() ?? '';
+    final myUserId = _subscribedUserId;
+    if (!mounted || myUserId == null || senderId.isEmpty) return;
+    if (senderId == myUserId) return;
+
+    final messageId = record['id']?.toString() ?? '';
+    if (messageId.isEmpty || !_seenReplyMessageIds.add(messageId)) return;
+
+    final roomId = record['room_id']?.toString() ?? '';
+    if (roomId.isEmpty) return;
+
+    try {
+      final room = await _roomInfo(roomId);
+      if (room == null) return;
+      final groupId = fitnessGroupIdFromRoom(room);
+      if (groupId == null) return;
+
+      final senderName = await _userDisplayName(senderId);
+      final groupName = room['title']?.toString().trim();
+      final notification = AppNotification(
+        id: 'fitness_group_chat_reply_$messageId',
+        professionId: '',
+        recipientId: myUserId,
+        category: 'chat',
+        eventType: 'fitness_group.chat_reply',
+        title:
+            '$senderName ตอบกลับคุณใน ${groupName?.isNotEmpty == true ? groupName : 'ก๊วนกีฬา'}',
+        body: groupChatReplyDisplayBody(record['content']?.toString()),
+        payload: {
+          'route': '/community/sport-club',
+          'intent': 'open_chat',
+          'groupId': groupId,
+          'chatRoomId': roomId,
+          'messageId': messageId,
+          'senderId': senderId,
+        },
+        createdAt:
+            DateTime.tryParse(record['created_at']?.toString() ?? '') ??
+            DateTime.now(),
+      );
+      if (!mounted) return;
+      _showNotification(notification);
+    } catch (e) {
+      debugPrint('[TlzNotificationToast] chat reply lookup error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> _roomInfo(String roomId) async {
+    final cached = _roomCache[roomId];
+    if (cached != null) return cached;
+    final response = await Supabase.instance.client
+        .from('chat_rooms')
+        .select('id, title, room_type, room_ref_id')
+        .eq('id', roomId)
+        .maybeSingle();
+    if (response == null) return null;
+    final room = Map<String, dynamic>.from(response);
+    _roomCache[roomId] = room;
+    return room;
+  }
+
+  Future<String> _userDisplayName(String userId) async {
+    final cached = _userNameCache[userId];
+    if (cached != null) return cached;
+    try {
+      final response = await Supabase.instance.client
+          .from('users')
+          .select('first_name, last_name')
+          .eq('id', userId)
+          .maybeSingle();
+      final name = [response?['first_name'], response?['last_name']]
+          .map((value) => value?.toString().trim())
+          .whereType<String>()
+          .where((value) => value.isNotEmpty)
+          .join(' ');
+      final resolved = name.isEmpty ? 'สมาชิกก๊วน' : name;
+      _userNameCache[userId] = resolved;
+      return resolved;
+    } catch (_) {
+      return 'สมาชิกก๊วน';
+    }
   }
 
   void _onNotification(Map<String, dynamic> data) {
@@ -69,6 +267,11 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       return;
     }
 
+    _showNotification(notification);
+  }
+
+  void _showNotification(AppNotification notification) {
+    if (!mounted) return;
     _hideTimer?.cancel();
     _controller.stop();
 
@@ -100,6 +303,20 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     });
   }
 
+  void _openCurrentNotification() {
+    final notification = _current;
+    if (notification == null) return;
+
+    final arguments = groupChatNotificationRouteArguments(notification);
+    if (arguments == null) return;
+
+    _hideCurrent();
+    NavigationService.navigatorKey.currentState?.pushNamed(
+      '/community/sport-club',
+      arguments: arguments,
+    );
+  }
+
   /// ปัดซ้ายเพื่อยกเลิกรายการแจ้งเตือนนั้น
   /// ปิดการ์ดทันที แล้วแจ้ง provider เพื่อ mark dismissed (non-blocking)
   void _dismissCurrent() {
@@ -107,7 +324,10 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     _hideTimer?.cancel();
     _controller.stop();
     setState(() => _current = null);
-    if (notification == null) return;
+    if (notification == null ||
+        notification.eventType == 'fitness_group.chat_reply') {
+      return;
+    }
     ref
         .read(notificationProvider.notifier)
         .dismissNotification(notification.id, category: notification.category);
@@ -117,7 +337,10 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
   void dispose() {
     _hideTimer?.cancel();
     _controller.dispose();
-    _subscription?.cancel();
+    _applicationSubscription?.cancel();
+    _supabaseAuthSubscription?.cancel();
+    _chatReplyChannel?.unsubscribe();
+    AuthService.instance.removeListener(_handleAuthChanged);
     super.dispose();
   }
 
@@ -132,6 +355,9 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       child: SwipeToDismissCard(
         key: ValueKey('tlz_notification_toast_${_current!.id}'),
         backgroundRadius: 20,
+        onTap: groupChatNotificationRouteArguments(_current!) == null
+            ? null
+            : _openCurrentNotification,
         onDismissed: _dismissCurrent,
         child: SlideTransition(
           position: _slide,

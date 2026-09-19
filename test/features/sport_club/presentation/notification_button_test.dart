@@ -5,11 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:sheserved/features/chat/data/models/chat_models.dart';
 import 'package:sheserved/features/chat/data/repositories/chat_repository.dart';
+import 'package:sheserved/features/erp/data/models/app_notification.dart';
 import 'package:sheserved/features/chat/presentation/chat_unread_provider.dart';
 import 'package:sheserved/features/erp/data/repositories/notification_repository.dart';
 import 'package:sheserved/features/erp/presentation/providers/notification_provider.dart';
 import 'package:sheserved/shared/widgets/tlz_notification_button.dart';
 import 'package:sheserved/shared/widgets/tlz_notification_panel.dart';
+import 'package:sheserved/shared/widgets/tlz_notification_toast.dart';
 import '../../chat/data/repositories/chat_repository_test.mocks.dart';
 
 class _FakeNotificationRepository extends NotificationRepository {
@@ -54,6 +56,64 @@ class _FakeChatUnreadNotifier extends ChatUnreadNotifier {
 }
 
 void main() {
+  test('builds the Sport Club route for a group reply toast', () {
+    final notification = AppNotification(
+      id: 'notification-1',
+      professionId: '',
+      recipientId: 'member-1',
+      category: 'chat',
+      eventType: 'fitness_group.chat_reply',
+      title: 'ตอบกลับคุณในก๊วน',
+      createdAt: DateTime.utc(2026, 9, 19),
+      payload: const {'groupId': 'group-1', 'chatRoomId': 'room-1'},
+    );
+
+    expect(groupChatNotificationRouteArguments(notification), {
+      'intent': 'open_chat',
+      'groupId': 'group-1',
+      'chatRoomId': 'room-1',
+    });
+  });
+
+  test('strips the mention prefix from a group reply body', () {
+    expect(groupChatReplyDisplayBody('@สมชาย ส.\nเจอกันนะ'), 'เจอกันนะ');
+    expect(groupChatReplyDisplayBody('ข้อความธรรมดา'), 'ข้อความธรรมดา');
+    expect(groupChatReplyDisplayBody(null), '');
+  });
+
+  test('resolves a group id from realtime room metadata', () {
+    expect(
+      fitnessGroupIdFromRoom({
+        'id': 'room-uuid',
+        'room_type': 'fitness_group',
+        'room_ref_id': 'group-1',
+      }),
+      'group-1',
+    );
+    expect(
+      fitnessGroupIdFromRoom({'id': 'group_group-2', 'room_type': 'direct'}),
+      'group-2',
+    );
+    expect(
+      fitnessGroupIdFromRoom({'id': 'direct-room', 'room_type': 'direct'}),
+      isNull,
+    );
+  });
+
+  test('does not route non-group notifications to Sport Club', () {
+    final notification = AppNotification(
+      id: 'notification-2',
+      professionId: '',
+      recipientId: 'member-1',
+      category: 'system',
+      eventType: 'system.notice',
+      title: 'แจ้งเตือน',
+      createdAt: DateTime.utc(2026, 9, 19),
+    );
+
+    expect(groupChatNotificationRouteArguments(notification), isNull);
+  });
+
   test('resolves legacy fitness group room metadata', () {
     final target = fitnessGroupChatTarget({
       'roomId': 'legacy-room-id',

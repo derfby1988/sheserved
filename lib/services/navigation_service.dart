@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 class NavigationService {
   NavigationService._();
 
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
   /// Open drawer menu
   static void openDrawer(BuildContext context) {
     try {

@@ -22,6 +22,8 @@ class SwipeToDismissCard extends StatefulWidget {
   /// เรียกเมื่อปัดซ้ายสำเร็จ — ผู้ใช้จัดการ action ของ feature นั้นเอง
   final VoidCallback onDismissed;
 
+  final VoidCallback? onTap;
+
   /// ระยะปัดขั้นต่ำ (px) ที่ถือว่า dismiss — ค่าเริ่มต้น -80
   final double dismissThreshold;
 
@@ -38,6 +40,7 @@ class SwipeToDismissCard extends StatefulWidget {
     super.key,
     required this.child,
     required this.onDismissed,
+    this.onTap,
     this.dismissThreshold = -80,
     this.dismissVelocity = -500,
     this.backgroundRadius = 18,
@@ -72,6 +75,7 @@ class _SwipeToDismissCardState extends State<SwipeToDismissCard> {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
       child: Stack(

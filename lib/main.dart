@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/guards/auth_guard_widget.dart';
 import 'core/observers/route_logger_observer.dart';
 import 'core/pages/not_found_page.dart';
+import 'services/navigation_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/iphone_16_pro_wrapper.dart';
 import 'core/layout/main_app_layout.dart';
@@ -210,6 +211,7 @@ class SheservedApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sheserved',
+      navigatorKey: NavigationService.navigatorKey,
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: false,
       scrollBehavior: AppScrollBehavior(),
