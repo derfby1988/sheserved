@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -68,6 +69,8 @@ class GroupDetailSheet {
     required SessionBookCallback onBook,
     required Future<void> Function() onFeedRefresh,
     required Future<void> Function() onPageRefresh,
+    bool openChatOnShow = false,
+    String? chatRoomId,
   }) {
     return GroupDetailSheet._(
       pageContext: pageContext,
@@ -80,7 +83,7 @@ class GroupDetailSheet {
       onBook: onBook,
       onFeedRefresh: onFeedRefresh,
       onPageRefresh: onPageRefresh,
-    )._show(group);
+    )._show(group, openChatOnShow: openChatOnShow, chatRoomId: chatRoomId);
   }
 
   static Widget _frostedCard({
@@ -204,7 +207,11 @@ class GroupDetailSheet {
     );
   }
 
-  Future<void> _show(Map<String, dynamic> group) async {
+  Future<void> _show(
+    Map<String, dynamic> group, {
+    bool openChatOnShow = false,
+    String? chatRoomId,
+  }) async {
     final groupId = group['id'].toString();
     final currentUser = AuthService.instance.currentUser;
     final currentUserId = currentUser?.id;
@@ -238,6 +245,7 @@ class GroupDetailSheet {
         currentUserId != null && myJoinedGroupIds.contains(groupId);
     final canSelectSession = isCurrentUserMember || isGroupOwner;
     final canViewBlockedUsers = isAdmin;
+    var initialChatOpened = false;
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
@@ -329,6 +337,21 @@ class GroupDetailSheet {
                             (snapshot.data?[1] as List?)
                                 ?.cast<Map<String, dynamic>>() ??
                             [];
+                        if (openChatOnShow && !initialChatOpened) {
+                          initialChatOpened = true;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!pageContext.mounted) return;
+                            unawaited(
+                              showGroupChatPopup(
+                                pageContext,
+                                groupId: groupId,
+                                groupName: group['name']?.toString() ?? 'ก๊วน',
+                                roomId: chatRoomId,
+                                memberCount: members.length,
+                              ),
+                            );
+                          });
+                        }
                         final managerPendingBookings =
                             (snapshot.data?.length ?? 0) > 2
                             ? (snapshot.data![2] as List?)

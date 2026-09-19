@@ -7,15 +7,17 @@ typedef SportClubIntentResolution = ({
   bool recognized,
   String? kind,
   String? groupId,
+  String? chatRoomId,
   Map<String, dynamic>? group,
   bool requiresOwnerApproval,
 });
 
 /// Pure resolution of `/community/sport-club` route arguments.
 ///
-/// Recognized intents: `join_group` (open the session picker) and
-/// `review_pending` (open the group detail sheet). UI concerns — reading
-/// `ModalRoute`, posting frame callbacks, opening sheets — stay in the page.
+/// Recognized intents: `join_group` (open the session picker),
+/// `review_pending` (open the group detail sheet), and `open_chat` (open the
+/// group detail sheet with its chat popup). UI concerns — reading `ModalRoute`,
+/// posting frame callbacks, opening sheets — stay in the page.
 SportClubIntentResolution resolveSportClubIntent(
   Object? args,
   List<Map<String, dynamic>> groups,
@@ -25,22 +27,27 @@ SportClubIntentResolution resolveSportClubIntent(
     recognized: false,
     kind: null,
     groupId: null,
+    chatRoomId: null,
     group: null,
     requiresOwnerApproval: false,
   );
   if (args is! Map) return none;
   final kind = args['intent']?.toString();
   final groupId = args['groupId']?.toString();
+  final chatRoomId = args['chatRoomId']?.toString();
   if (groupId == null ||
       groupId.isEmpty ||
-      (kind != 'join_group' && kind != 'review_pending')) {
+      (kind != 'join_group' &&
+          kind != 'review_pending' &&
+          kind != 'open_chat')) {
     return none;
   }
   final group = groups.cast<Map<String, dynamic>?>().firstWhere(
-        (g) => g?['id']?.toString() == groupId,
-        orElse: () => null,
-      );
-  final isGroupOwner = group != null &&
+    (g) => g?['id']?.toString() == groupId,
+    orElse: () => null,
+  );
+  final isGroupOwner =
+      group != null &&
       userId != null &&
       (group['created_by']?.toString() ?? '').isNotEmpty &&
       group['created_by']?.toString() == userId;
@@ -48,8 +55,11 @@ SportClubIntentResolution resolveSportClubIntent(
     recognized: true,
     kind: kind,
     groupId: groupId,
+    chatRoomId: chatRoomId,
     group: group,
     requiresOwnerApproval:
-        group != null && group['requires_owner_approval'] == true && !isGroupOwner,
+        group != null &&
+        group['requires_owner_approval'] == true &&
+        !isGroupOwner,
   );
 }

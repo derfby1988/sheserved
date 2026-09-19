@@ -11,6 +11,7 @@ class TlzAppTopBar extends StatelessWidget {
   final VoidCallback? onMenuPressed;
   final VoidCallback? onQRTap;
   final VoidCallback? onNotificationTap;
+  final Future<void> Function(String roomId, String groupId)? onChatRoomTap;
   final VoidCallback? onCartTap;
   final String? searchHintText;
   final int? notificationCount;
@@ -52,6 +53,7 @@ class TlzAppTopBar extends StatelessWidget {
     this.onMenuPressed,
     this.onQRTap,
     this.onNotificationTap,
+    this.onChatRoomTap,
     this.onCartTap,
     this.searchHintText,
     this.notificationCount,
@@ -75,6 +77,7 @@ class TlzAppTopBar extends StatelessWidget {
     VoidCallback? onMenuPressed,
     VoidCallback? onQRTap,
     VoidCallback? onNotificationTap,
+    Future<void> Function(String roomId, String groupId)? onChatRoomTap,
     VoidCallback? onCartTap,
     String? searchHintText,
     int? notificationCount,
@@ -95,6 +98,7 @@ class TlzAppTopBar extends StatelessWidget {
       onMenuPressed: onMenuPressed,
       onQRTap: onQRTap,
       onNotificationTap: onNotificationTap,
+      onChatRoomTap: onChatRoomTap,
       onCartTap: onCartTap,
       searchHintText: searchHintText,
       notificationCount: notificationCount,
@@ -119,6 +123,7 @@ class TlzAppTopBar extends StatelessWidget {
     VoidCallback? onMenuPressed,
     VoidCallback? onQRTap,
     VoidCallback? onNotificationTap,
+    Future<void> Function(String roomId, String groupId)? onChatRoomTap,
     VoidCallback? onCartTap,
     String? searchHintText,
     int? notificationCount,
@@ -139,6 +144,7 @@ class TlzAppTopBar extends StatelessWidget {
       onMenuPressed: onMenuPressed,
       onQRTap: onQRTap,
       onNotificationTap: onNotificationTap,
+      onChatRoomTap: onChatRoomTap,
       onCartTap: onCartTap,
       searchHintText: searchHintText,
       notificationCount: notificationCount,
@@ -191,6 +197,7 @@ class TlzAppTopBar extends StatelessWidget {
         TlzNotificationButton(
           badgeCount: notificationCount,
           onPressed: onNotificationTap,
+          onChatRoomTap: onChatRoomTap,
           category: notificationCategory,
         ),
 

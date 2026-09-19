@@ -5,6 +5,7 @@ Future<void> showGroupChatPopup(
   BuildContext context, {
   required String groupId,
   required String groupName,
+  String? roomId,
   int? memberCount,
   String? mentionTargetName,
   String? replyTargetUserId,
@@ -35,7 +36,7 @@ Future<void> showGroupChatPopup(
                 elevation: 8,
                 borderRadius: BorderRadius.circular(20),
                 child: ChatRoomPage(
-                  roomId: 'group_$groupId',
+                  roomId: roomId ?? 'group_$groupId',
                   isPopup: true,
                   titleOverride: groupName,
                   subtitleOverride: memberCount != null

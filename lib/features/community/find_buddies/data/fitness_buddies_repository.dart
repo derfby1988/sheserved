@@ -309,6 +309,31 @@ class FitnessBuddiesRepository {
         .toSet();
   }
 
+  /// Fetches one group for a deep-link/chat intent when it is not present in
+  /// the currently filtered or paginated feed.
+  Future<Map<String, dynamic>?> getGroupById(String groupId) async {
+    if (groupId.isEmpty) return null;
+    final row = await _client
+        .from('fitness_groups')
+        .select('*')
+        .eq('id', groupId)
+        .maybeSingle();
+    if (row == null) return null;
+
+    final group = Map<String, dynamic>.from(row);
+    final sportId = group['sport_id']?.toString();
+    if (sportId != null && sportId.isNotEmpty) {
+      final sport = await _client
+          .from('sports')
+          .select('name_th, icon')
+          .eq('id', sportId)
+          .maybeSingle();
+      group['sport_name'] = sport?['name_th']?.toString();
+      group['sport_icon'] = sport?['icon']?.toString();
+    }
+    return group;
+  }
+
   Future<List<Map<String, dynamic>>> listGroups({
     String? sportId,
     String? q,

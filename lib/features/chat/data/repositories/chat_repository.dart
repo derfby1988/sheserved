@@ -13,12 +13,12 @@ class ChatRepository {
   final WebSocketService? _webSocketService;
 
   ChatRepository(
-    this._supabase, 
-    this._roomBox, 
-    this._messageBox, 
-    this._participantBox,
-    [this._webSocketService]
-  );
+    this._supabase,
+    this._roomBox,
+    this._messageBox,
+    this._participantBox, [
+    this._webSocketService,
+  ]);
 
   // =====================================================
   // BOLA: Participant verification helper
@@ -53,12 +53,14 @@ class ChatRepository {
     try {
       final response = await _supabase
           .from('users')
-          .select('id, first_name, last_name, profile_image_url, last_seen_at, availability_status')
+          .select(
+            'id, first_name, last_name, profile_image_url, last_seen_at, availability_status',
+          )
           .eq('id', userId)
           .single();
-      
+
       final participant = ChatParticipant.fromJson(response);
-      
+
       // Save to Cache
       await _participantBox.put(userId, participant);
       return participant;
@@ -75,12 +77,12 @@ class ChatRepository {
   /// Fetch all chat rooms for the current user
   Future<List<ChatRoom>> getChatRooms(String userId) async {
     debugPrint('ChatRepository: Fetching rooms for user: $userId');
-    
+
     // 1. Get Local Rooms first as fallback
-    final localRooms = _roomBox.values.where((room) => 
-      room.participantIds.contains(userId)
-    ).toList();
-    
+    final localRooms = _roomBox.values
+        .where((room) => room.participantIds.contains(userId))
+        .toList();
+
     try {
       // 2. Fetch from Supabase with timeout
       final response = await _supabase
@@ -88,16 +90,20 @@ class ChatRepository {
           .select()
           .contains('participant_ids', [userId])
           .timeout(const Duration(seconds: 10));
-      
-      final dbRooms = (response as List).map((json) => ChatRoom.fromJson(json)).toList();
-      
-      debugPrint('ChatRepository: Successfully fetched ${dbRooms.length} rooms from Supabase');
-      
+
+      final dbRooms = (response as List)
+          .map((json) => ChatRoom.fromJson(json))
+          .toList();
+
+      debugPrint(
+        'ChatRepository: Successfully fetched ${dbRooms.length} rooms from Supabase',
+      );
+
       // 3. Update Cache
       for (var room in dbRooms) {
         await _roomBox.put(room.id, room);
       }
-      
+
       return dbRooms;
     } catch (e) {
       debugPrint('ChatRepository: Error fetching rooms (returning local): $e');
@@ -143,11 +149,13 @@ class ChatRepository {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getUnreadRoomSummaries(String userId) async {
+  Future<List<Map<String, dynamic>>> getUnreadRoomSummaries(
+    String userId,
+  ) async {
     try {
       final roomResponse = await _supabase
           .from('chat_rooms')
-          .select('id, title, last_message')
+          .select('id, title, last_message, room_type, room_ref_id')
           .contains('participant_ids', [userId]);
       final roomRows = (roomResponse as List)
           .map((room) => Map<String, dynamic>.from(room))
@@ -181,6 +189,8 @@ class ChatRepository {
           final room = roomById[roomId] ?? const <String, dynamic>{};
           unreadByRoom[roomId] = {
             'roomId': roomId,
+            'roomType': room['room_type']?.toString(),
+            'roomRefId': room['room_ref_id']?.toString(),
             'title': room['title']?.toString() ?? 'ห้องสนทนา',
             'preview': message['content']?.toString() ?? '',
             'createdAt': message['created_at']?.toString(),
@@ -238,15 +248,17 @@ class ChatRepository {
           .from('chat_rooms')
           .select()
           .contains('participant_ids', participantIds);
-      
-      final rooms = (response as List).map((json) => ChatRoom.fromJson(json)).toList();
-      
+
+      final rooms = (response as List)
+          .map((json) => ChatRoom.fromJson(json))
+          .toList();
+
       // Filter for exact match of participant list length
       final existingRoom = rooms.firstWhere(
         (r) => r.participantIds.length == participantIds.length,
         orElse: () => throw 'not found',
       );
-      
+
       return existingRoom;
     } catch (e) {
       // 2. Create new room
@@ -256,7 +268,7 @@ class ChatRepository {
             .insert({'participant_ids': participantIds})
             .select()
             .single();
-        
+
         final newRoom = ChatRoom.fromJson(insertResponse);
         await _roomBox.put(newRoom.id, newRoom);
         return newRoom;
@@ -271,9 +283,14 @@ class ChatRepository {
   // MESSAGES
   // =====================================================
 
-  Future<List<ChatMessage>> getMessages(String roomId, {required String callerId}) async {
+  Future<List<ChatMessage>> getMessages(
+    String roomId, {
+    required String callerId,
+  }) async {
     await _verifyParticipant(roomId, callerId);
-    final localMessages = _messageBox.values.where((m) => m.roomId == roomId).toList();
+    final localMessages = _messageBox.values
+        .where((m) => m.roomId == roomId)
+        .toList();
     localMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     try {
@@ -282,13 +299,15 @@ class ChatRepository {
           .select()
           .eq('room_id', roomId)
           .order('created_at', ascending: true);
-      
-      final dbMessages = (response as List).map((json) => ChatMessage.fromJson(json)).toList();
-      
+
+      final dbMessages = (response as List)
+          .map((json) => ChatMessage.fromJson(json))
+          .toList();
+
       for (var message in dbMessages) {
         await _messageBox.put(message.id, message);
       }
-      
+
       return dbMessages;
     } catch (e) {
       debugPrint('ChatRepository: Error fetching messages: $e');
@@ -296,20 +315,30 @@ class ChatRepository {
     }
   }
 
-  Future<bool> sendMessage(ChatMessage message, {required String callerId}) async {
+  Future<bool> sendMessage(
+    ChatMessage message, {
+    required String callerId,
+  }) async {
     await _verifyParticipant(message.roomId, callerId);
     try {
-      final response = await _supabase.from('chat_messages').insert(message.toJson()).select().single();
+      final response = await _supabase
+          .from('chat_messages')
+          .insert(message.toJson())
+          .select()
+          .single();
       final sentMessage = ChatMessage.fromJson(response);
-      
+
       await _messageBox.put(sentMessage.id, sentMessage);
-      
+
       // Update room's last message
-      await _supabase.from('chat_rooms').update({
-        'last_message': sentMessage.content,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', message.roomId);
-      
+      await _supabase
+          .from('chat_rooms')
+          .update({
+            'last_message': sentMessage.content,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', message.roomId);
+
       return true;
     } catch (e) {
       debugPrint('ChatRepository: Error sending message: $e');
@@ -320,11 +349,12 @@ class ChatRepository {
   /// Upload a file to Supabase Storage and return a signed URL (BOLA: time-limited access)
   Future<String?> uploadFile(File file, String path) async {
     try {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
       final fullPath = '$path/$fileName';
-      
+
       await _supabase.storage.from('chat_attachments').upload(fullPath, file);
-      
+
       final signedUrl = await _supabase.storage
           .from('chat_attachments')
           .createSignedUrl(fullPath, 3600);
@@ -344,7 +374,7 @@ class ChatRepository {
       }
       // 1. Get current message to update its read_by map
       final readBy = Map<String, DateTime>.from(currentMsg?.readBy ?? {});
-      
+
       // If already read by this user, skip
       if (readBy.containsKey(userId)) return;
 
@@ -352,9 +382,12 @@ class ChatRepository {
 
       // 2. Update Supabase
       // Using jsonb_set to update just one key in the read_by map
-      await _supabase.from('chat_messages').update({
-        'read_by': readBy.map((k, v) => MapEntry(k, v.toIso8601String())),
-      }).eq('id', messageId);
+      await _supabase
+          .from('chat_messages')
+          .update({
+            'read_by': readBy.map((k, v) => MapEntry(k, v.toIso8601String())),
+          })
+          .eq('id', messageId);
 
       // 3. Update Local Cache
       if (currentMsg != null) {
@@ -369,7 +402,10 @@ class ChatRepository {
   /// Note: Supabase realtime streams cannot be scoped server-side from the client.
   /// The _verifyParticipant check runs once at subscription time. RLS must be
   /// enabled as defense-in-depth (Plan 12).
-  Stream<List<ChatMessage>> streamMessages(String roomId, {required String callerId}) {
+  Stream<List<ChatMessage>> streamMessages(
+    String roomId, {
+    required String callerId,
+  }) {
     // Fire a one-shot participant check; if unauthorized, the stream will error.
     _verifyParticipant(roomId, callerId).catchError((_) {});
     return _supabase
@@ -378,7 +414,9 @@ class ChatRepository {
         .eq('room_id', roomId)
         .order('created_at', ascending: true)
         .map((data) {
-          final messages = data.map((json) => ChatMessage.fromJson(json)).toList();
+          final messages = data
+              .map((json) => ChatMessage.fromJson(json))
+              .toList();
           for (var m in messages) {
             _messageBox.put(m.id, m);
           }
@@ -411,19 +449,21 @@ class ChatRepository {
 
   Stream<bool> streamTypingStatus(String roomId, String otherUserId) {
     if (_webSocketService == null) return const Stream.empty();
-    
+
     _webSocketService?.joinRoom(roomId);
-    
+
     return _webSocketService!.typingStream
-        .where((data) => data['roomId'] == roomId && data['userId'] == otherUserId)
+        .where(
+          (data) => data['roomId'] == roomId && data['userId'] == otherUserId,
+        )
         .map((data) => data['isTyping'] as bool);
   }
 
   Stream<bool> streamAnyTyping(String roomId, String myUserId) {
     if (_webSocketService == null) return const Stream.empty();
-    
+
     _webSocketService?.joinRoom(roomId);
-    
+
     return _webSocketService!.typingStream
         .where((data) => data['roomId'] == roomId && data['userId'] != myUserId)
         .map((data) => data['isTyping'] as bool);
@@ -434,7 +474,10 @@ class ChatRepository {
   // =====================================================
 
   /// Get all required questions for a room
-  Future<List<ChatMessage>> getRequiredQuestions(String roomId, {required String callerId}) async {
+  Future<List<ChatMessage>> getRequiredQuestions(
+    String roomId, {
+    required String callerId,
+  }) async {
     await _verifyParticipant(roomId, callerId);
     try {
       final response = await _supabase
@@ -443,8 +486,10 @@ class ChatRepository {
           .eq('room_id', roomId)
           .eq('is_required', true)
           .order('created_at', ascending: true);
-      
-      final messages = (response as List).map((json) => ChatMessage.fromJson(json)).toList();
+
+      final messages = (response as List)
+          .map((json) => ChatMessage.fromJson(json))
+          .toList();
       return messages;
     } catch (e) {
       debugPrint('ChatRepository: Error fetching required questions: $e');
@@ -453,16 +498,21 @@ class ChatRepository {
   }
 
   /// Update required status of a message (unread -> reading -> answered)
-  Future<bool> updateRequiredStatus(String messageId, RequiredStatus status, {required String callerId}) async {
+  Future<bool> updateRequiredStatus(
+    String messageId,
+    RequiredStatus status, {
+    required String callerId,
+  }) async {
     try {
       // BOLA: Verify caller is participant in the message's room
       final currentMsg = _messageBox.get(messageId);
       if (currentMsg != null) {
         await _verifyParticipant(currentMsg.roomId, callerId);
       }
-      await _supabase.from('chat_messages').update({
-        'required_status': status.name,
-      }).eq('id', messageId);
+      await _supabase
+          .from('chat_messages')
+          .update({'required_status': status.name})
+          .eq('id', messageId);
       return true;
     } catch (e) {
       debugPrint('ChatRepository: Error updating required status: $e');
@@ -471,7 +521,13 @@ class ChatRepository {
   }
 
   /// Submit answer for a required question and send as regular message
-  Future<bool> submitRequiredAnswer(String messageId, String answer, String bodyPart, {String? type = 'text', required String callerId}) async {
+  Future<bool> submitRequiredAnswer(
+    String messageId,
+    String answer,
+    String bodyPart, {
+    String? type = 'text',
+    required String callerId,
+  }) async {
     try {
       // BOLA: Verify caller is participant in the message's room
       final currentMsg = _messageBox.get(messageId);
@@ -479,11 +535,16 @@ class ChatRepository {
         await _verifyParticipant(currentMsg.roomId, callerId);
       }
       // 1. Update the required question with answer
-      final response = await _supabase.from('chat_messages').update({
-        'required_answer': answer,
-        'required_answered_at': DateTime.now().toIso8601String(),
-        'required_status': RequiredStatus.answered.name,
-      }).eq('id', messageId).select().single();
+      final response = await _supabase
+          .from('chat_messages')
+          .update({
+            'required_answer': answer,
+            'required_answered_at': DateTime.now().toIso8601String(),
+            'required_status': RequiredStatus.answered.name,
+          })
+          .eq('id', messageId)
+          .select()
+          .single();
 
       final updated = ChatMessage.fromJson(response);
       await _messageBox.put(messageId, updated);
@@ -496,7 +557,11 @@ class ChatRepository {
   }
 
   /// Edit a required question (red status) - update owner and save history
-  Future<bool> editRequiredQuestion(String messageId, String newContent, String editorId) async {
+  Future<bool> editRequiredQuestion(
+    String messageId,
+    String newContent,
+    String editorId,
+  ) async {
     try {
       // 1. Get current message
       final currentMsg = _messageBox.get(messageId);
@@ -516,10 +581,12 @@ class ChatRepository {
       });
 
       // 3. Update message content and owner
-      final response = await _supabase.from('chat_messages').update({
-        'content': newContent,
-        'required_owner_id': editorId,
-      }).eq('id', messageId).select().single();
+      final response = await _supabase
+          .from('chat_messages')
+          .update({'content': newContent, 'required_owner_id': editorId})
+          .eq('id', messageId)
+          .select()
+          .single();
 
       final updated = ChatMessage.fromJson(response);
       await _messageBox.put(messageId, updated);
@@ -532,7 +599,11 @@ class ChatRepository {
   }
 
   /// Create a new required question when editing an already-touched one
-  Future<ChatMessage?> createNewRequiredQuestion(ChatMessage original, String newContent, String editorId) async {
+  Future<ChatMessage?> createNewRequiredQuestion(
+    ChatMessage original,
+    String newContent,
+    String editorId,
+  ) async {
     try {
       // 1. Save edit history for original
       await _supabase.from('required_question_edits').insert({
@@ -556,7 +627,11 @@ class ChatRepository {
         requiredOwnerId: editorId,
       );
 
-      final response = await _supabase.from('chat_messages').insert(newMessage.toJson()).select().single();
+      final response = await _supabase
+          .from('chat_messages')
+          .insert(newMessage.toJson())
+          .select()
+          .single();
       final sentMessage = ChatMessage.fromJson(response);
       await _messageBox.put(sentMessage.id, sentMessage);
 
@@ -568,14 +643,18 @@ class ChatRepository {
   }
 
   /// Get edit history for a required question
-  Future<List<Map<String, dynamic>>> getRequiredQuestionEdits(String messageId) async {
+  Future<List<Map<String, dynamic>>> getRequiredQuestionEdits(
+    String messageId,
+  ) async {
     try {
       final response = await _supabase
           .from('required_question_edits')
-          .select('previous_content, edited_by, edited_at, users(first_name, last_name)')
+          .select(
+            'previous_content, edited_by, edited_at, users(first_name, last_name)',
+          )
           .eq('message_id', messageId)
           .order('edited_at', ascending: true);
-      
+
       return (response as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('ChatRepository: Error fetching edit history: $e');

@@ -13,8 +13,11 @@ void main() {
       expect(resolveSportClubIntent('x', groups, 'u').recognized, isFalse);
       expect(resolveSportClubIntent({}, groups, 'u').recognized, isFalse);
       expect(
-        resolveSportClubIntent({'intent': 'join_group'}, groups, 'u')
-            .recognized,
+        resolveSportClubIntent(
+          {'intent': 'join_group'},
+          groups,
+          'u',
+        ).recognized,
         isFalse,
       );
       expect(
@@ -53,6 +56,23 @@ void main() {
       expect(r.recognized, isTrue);
       expect(r.kind, 'review_pending');
       expect(r.group?['id'], 'g1');
+    });
+
+    test('recognizes open_chat and resolves the group', () {
+      final r = resolveSportClubIntent(
+        {
+          'intent': 'open_chat',
+          'groupId': 'g2',
+          'chatRoomId': 'legacy-room-id',
+        },
+        groups,
+        'u1',
+      );
+      expect(r.recognized, isTrue);
+      expect(r.kind, 'open_chat');
+      expect(r.groupId, 'g2');
+      expect(r.chatRoomId, 'legacy-room-id');
+      expect(r.group?['id'], 'g2');
     });
 
     test('recognized even when the group is absent from the feed', () {

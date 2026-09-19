@@ -12,14 +12,56 @@ import 'swipe_to_dismiss_card.dart';
 Future<void> showTlzNotificationPanel(
   BuildContext context, {
   String? category,
+  Future<void> Function(String roomId, String groupId)? onChatRoomTap,
 }) async {
-  await showModalBottomSheet<void>(
+  final target = await showModalBottomSheet<({String roomId, String groupId})>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
     builder: (_) => TlzNotificationPanel(category: category),
   );
+  if (target == null || !context.mounted) return;
+
+  if (onChatRoomTap != null) {
+    await onChatRoomTap(target.roomId, target.groupId);
+    return;
+  }
+
+  await Navigator.of(context).pushNamed(
+    '/community/sport-club',
+    arguments: {
+      'intent': 'open_chat',
+      'groupId': target.groupId,
+      'chatRoomId': target.roomId,
+    },
+  );
+}
+
+/// Resolves a notification-panel room summary to its fitness group target.
+///
+/// The `room_ref_id` path supports legacy rooms whose database ID is not
+/// `group_<groupId>`; the prefix fallback keeps newer rooms compatible.
+({String roomId, String groupId})? fitnessGroupChatTarget(
+  Map<String, dynamic> room,
+) {
+  final roomId = room['roomId']?.toString();
+  if (roomId == null || roomId.isEmpty) return null;
+
+  final roomType =
+      room['roomType']?.toString() ?? room['room_type']?.toString();
+  final roomRefId =
+      room['roomRefId']?.toString() ?? room['room_ref_id']?.toString();
+  if (roomType == 'fitness_group' &&
+      roomRefId != null &&
+      roomRefId.isNotEmpty) {
+    return (roomId: roomId, groupId: roomRefId);
+  }
+
+  const prefix = 'group_';
+  if (!roomId.startsWith(prefix)) return null;
+  final groupId = roomId.substring(prefix.length);
+  return groupId.isEmpty ? null : (roomId: roomId, groupId: groupId);
 }
 
 Future<bool> openTlzNotificationDestination(
@@ -239,6 +281,14 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   Future<void> _openChatRoom(Map<String, dynamic> room) async {
     final roomId = room['roomId']?.toString();
     if (roomId == null || roomId.isEmpty) return;
+
+    final groupTarget = fitnessGroupChatTarget(room);
+    if (groupTarget != null) {
+      await ref.read(chatUnreadProvider.notifier).markRoomAsRead(roomId);
+      if (!mounted) return;
+      Navigator.of(context).pop(groupTarget);
+      return;
+    }
 
     await Navigator.of(
       context,

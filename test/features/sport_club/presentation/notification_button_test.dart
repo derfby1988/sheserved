@@ -9,6 +9,7 @@ import 'package:sheserved/features/chat/presentation/chat_unread_provider.dart';
 import 'package:sheserved/features/erp/data/repositories/notification_repository.dart';
 import 'package:sheserved/features/erp/presentation/providers/notification_provider.dart';
 import 'package:sheserved/shared/widgets/tlz_notification_button.dart';
+import 'package:sheserved/shared/widgets/tlz_notification_panel.dart';
 import '../../chat/data/repositories/chat_repository_test.mocks.dart';
 
 class _FakeNotificationRepository extends NotificationRepository {
@@ -53,6 +54,28 @@ class _FakeChatUnreadNotifier extends ChatUnreadNotifier {
 }
 
 void main() {
+  test('resolves legacy fitness group room metadata', () {
+    final target = fitnessGroupChatTarget({
+      'roomId': 'legacy-room-id',
+      'roomType': 'fitness_group',
+      'roomRefId': 'group-id-1',
+    });
+
+    expect(target?.roomId, 'legacy-room-id');
+    expect(target?.groupId, 'group-id-1');
+  });
+
+  test('resolves new prefixed fitness group room IDs', () {
+    final target = fitnessGroupChatTarget({'roomId': 'group_group-id-2'});
+
+    expect(target?.roomId, 'group_group-id-2');
+    expect(target?.groupId, 'group-id-2');
+  });
+
+  test('does not convert direct chat rooms to group targets', () {
+    expect(fitnessGroupChatTarget({'roomId': 'direct-room-id'}), isNull);
+  });
+
   testWidgets(
     'refreshes its unread count on init and app resume without page reload',
     (tester) async {

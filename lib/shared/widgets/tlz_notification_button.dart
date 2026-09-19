@@ -15,6 +15,7 @@ import 'tlz_notification_panel.dart';
 class TlzNotificationButton extends ConsumerStatefulWidget {
   final int? badgeCount;
   final VoidCallback? onPressed;
+  final Future<void> Function(String roomId, String groupId)? onChatRoomTap;
   final Color? iconColor;
   final Color? badgeColor;
   final String? category;
@@ -23,6 +24,7 @@ class TlzNotificationButton extends ConsumerStatefulWidget {
     super.key,
     this.badgeCount,
     this.onPressed,
+    this.onChatRoomTap,
     this.iconColor,
     this.badgeColor,
     this.category,
@@ -196,7 +198,11 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
           onPressed:
               widget.onPressed ??
               () {
-                showTlzNotificationPanel(context, category: widget.category);
+                showTlzNotificationPanel(
+                  context,
+                  category: widget.category,
+                  onChatRoomTap: widget.onChatRoomTap,
+                );
               },
         ),
         if (count > 0)

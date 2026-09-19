@@ -142,9 +142,7 @@ class _SportClubPageState extends State<SportClubPage> {
       isAdmin: AuthService.instance.currentUser?.isAdmin == true,
       userLat: _userLat,
       userLng: _userLng,
-      isStale: requestId == null
-          ? null
-          : () => requestId != _filterRequestId,
+      isStale: requestId == null ? null : () => requestId != _filterRequestId,
     );
   }
 
@@ -250,13 +248,15 @@ class _SportClubPageState extends State<SportClubPage> {
       _filterStore.save(AuthService.instance.currentUser?.id, _filter);
 
   Future<
-      ({
-        Set<String> admin,
-        Set<String> joined,
-        Set<String> pending,
-        Set<String> blocked,
-        Set<String> createdSports,
-      })> _membershipSnapshot(String? userId) async {
+    ({
+      Set<String> admin,
+      Set<String> joined,
+      Set<String> pending,
+      Set<String> blocked,
+      Set<String> createdSports,
+    })
+  >
+  _membershipSnapshot(String? userId) async {
     if (userId == null || userId.isEmpty) {
       return (
         admin: <String>{},
@@ -332,9 +332,23 @@ class _SportClubPageState extends State<SportClubPage> {
     if (!resolved.recognized) return;
 
     _intentHandled = true;
-    final group = resolved.group;
     final groupId = resolved.groupId;
-    if (group == null || groupId == null) return;
+    if (groupId == null) return;
+
+    if (resolved.kind == 'open_chat') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openGroupChatForGroup(
+          groupId,
+          group: resolved.group,
+          chatRoomId: resolved.chatRoomId,
+        );
+      });
+      return;
+    }
+
+    final group = resolved.group;
+    if (group == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -492,6 +506,7 @@ class _SportClubPageState extends State<SportClubPage> {
                       maxLines: 1,
                     ),
                   ),
+                  onChatRoomTap: _openGroupChatFromNotification,
                   // Action buttons
                   actions: [
                     IconButton(
@@ -674,7 +689,47 @@ class _SportClubPageState extends State<SportClubPage> {
 
   Future<void> _clearAllFilters() => _applyFilter(_filter.clearAll());
 
-  Future<void> _showGroupDetailSheet(Map<String, dynamic> group) {
+  Future<void> _openGroupChatFromNotification(
+    String roomId,
+    String groupId,
+  ) async {
+    await _openGroupChatForGroup(groupId, chatRoomId: roomId);
+  }
+
+  Future<void> _openGroupChatForGroup(
+    String groupId, {
+    Map<String, dynamic>? group,
+    String? chatRoomId,
+  }) async {
+    Map<String, dynamic>? target = group;
+    if (target == null) {
+      for (final candidate in _groups) {
+        if (candidate['id']?.toString() == groupId) {
+          target = candidate;
+          break;
+        }
+      }
+    }
+    if (target == null) {
+      try {
+        target = await _repo.getGroupById(groupId);
+      } catch (_) {
+        target = null;
+      }
+    }
+    if (!mounted || target == null) return;
+    await _showGroupDetailSheet(
+      target,
+      openChatOnShow: true,
+      chatRoomId: chatRoomId,
+    );
+  }
+
+  Future<void> _showGroupDetailSheet(
+    Map<String, dynamic> group, {
+    bool openChatOnShow = false,
+    String? chatRoomId,
+  }) {
     return GroupDetailSheet.show(
       context,
       group: group,
@@ -687,6 +742,8 @@ class _SportClubPageState extends State<SportClubPage> {
       onBook: _book,
       onFeedRefresh: _reload,
       onPageRefresh: _init,
+      openChatOnShow: openChatOnShow,
+      chatRoomId: chatRoomId,
     );
   }
 

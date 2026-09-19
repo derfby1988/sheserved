@@ -685,6 +685,13 @@ Scaffold
 - แสดงปุ่มแชทเฉพาะก๊วนที่ผู้ใช้เป็น active chat participant (`can_chat=true`); owner ที่ opt-out และไม่มี confirmed booking จะไม่เห็นปุ่ม
 - `listMyGroups()` ไม่มี member count → ส่ง `memberCount: null` → header แสดงแค่ชื่อก๊วน (เพิ่ม count ใน query ภายหลังถ้าต้องการ)
 
+**7.5 ✅ เปิดห้องก๊วนจาก Notification Panel เป็น popup บนกลุ่มที่ถูกต้อง (2026-09-19)**
+- เมื่อกดรายการห้อง `fitness_group` ใน `TlzNotificationPanel` ให้ mark-as-read และปิด panel ก่อน ไม่เปิด `ChatRoomPage` แบบเต็มหน้าโดยตรง
+- ส่งทั้ง `roomId` จริงและ `groupId` จาก `chat_rooms.room_type/room_ref_id`; รองรับห้องเก่าที่ `id` เป็น UUID และห้องใหม่ที่ใช้ `group_<groupId>` จึงไม่เดา room ID จากชื่อก๊วนอย่างเดียว
+- ถ้าอยู่หน้า Sport Club อยู่แล้ว: ค้นหากลุ่มจาก feed หรือโหลดด้วย `getGroupById()` เมื่อกลุ่มไม่อยู่ในหน้า/ตัวกรองปัจจุบัน จากนั้นเปิด `GroupDetailSheet` ของกลุ่มนั้น แล้วเปิด `showGroupChatPopup()` บน context ของ bottom sheet หลังโหลดข้อมูลสมาชิกเสร็จ
+- ถ้าเปิด panel จากหน้าอื่น: ใช้ route intent `/community/sport-club` (`intent: open_chat`, `groupId`, `chatRoomId`) แล้วทำ flow เดียวกันในหน้า Sport Club
+- ห้องแชท 1:1/consultation ที่ไม่ใช่ `fitness_group` ยังคงเปิดเต็มหน้าตามเดิม
+
 ### รายละเอียด UI ข้อความแชทก๊วน (Implementation)
 - Header ของ popup แสดง `ก๊วน <ชื่อก๊วน>` และจำนวนสมาชิก active
 - แสดงชื่อผู้ส่งในรูปแบบ `ชื่อ + อักษรแรกของนามสกุล` เหนือข้อความและอยู่นอก bubble
@@ -712,7 +719,7 @@ Scaffold
 - พิมพ์ข้อความ → popup เลื่อนขึ้นพ้นคีย์บอร์ด ส่งได้ ข้อความขึ้นทันที
 - ปิด popup ด้วยปุ่ม X หรือแตะพื้นหลัง → กลับมาที่ bottom sheet ก๊วนเดิม
 - กดไอคอนแชทใน `my_groups_page` → popup เดียวกันเปิดได้
-- จุดเปิดแชทอื่น (`chat_list_page`, `contact_list_page`, `/chat-room`) ยังเปิดเต็มหน้าเหมือนเดิม ไม่ regression
+- จุดเปิดแชท 1:1/consultation อื่น (`chat_list_page`, `contact_list_page`, `/chat-room`) ยังเปิดเต็มหน้าเหมือนเดิม ไม่ regression; ห้อง `fitness_group` จาก Notification Panel ใช้ popup บน GroupDetailSheet ตามข้อ 7.5
 - `flutter analyze` ผ่านไม่มี error ใหม่
 
 ---
