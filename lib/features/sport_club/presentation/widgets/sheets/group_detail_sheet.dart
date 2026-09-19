@@ -29,6 +29,11 @@ typedef SessionBookCallback =
       String? positionId,
     });
 
+bool canOpenGroupChatFromMemberSwipe({
+  required bool canChat,
+  required bool isActiveMember,
+}) => canChat && isActiveMember;
+
 /// Giant bottom sheet showing a group's full detail: banner, permission
 /// level, members, pending approvals, cost standards, position lineup,
 /// and expandable session rounds.
@@ -243,6 +248,13 @@ class GroupDetailSheet {
         : Colors.grey.shade600;
     final isCurrentUserMember =
         currentUserId != null && myJoinedGroupIds.contains(groupId);
+    final memberSwipeHint = isCurrentUserMember
+        ? isAdmin
+              ? 'ปัดรายชื่อไปทางซ้ายเพื่อแชทหรือจัดการ'
+              : 'ปัดรายชื่อไปทางซ้ายเพื่อแชท'
+        : isAdmin
+        ? 'ปัดรายชื่อไปทางซ้ายเพื่อจัดการ'
+        : null;
     final canSelectSession = isCurrentUserMember || isGroupOwner;
     final canViewBlockedUsers = isAdmin;
     var initialChatOpened = false;
@@ -1588,13 +1600,13 @@ class GroupDetailSheet {
                                         ),
                                       ),
                                       children: [
-                                        if (isAdmin)
+                                        if (memberSwipeHint != null)
                                           Padding(
                                             padding: const EdgeInsets.only(
                                               top: 4,
                                             ),
                                             child: Text(
-                                              'ปัดรายชื่อไปทางซ้ายเพื่อจัดการ',
+                                              memberSwipeHint,
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: Colors.grey[500],
@@ -1662,9 +1674,14 @@ class GroupDetailSheet {
                                               final actions = <Widget>[];
                                               final canChat = myJoinedGroupIds
                                                   .contains(groupId);
-                                              if (canChat &&
-                                                  (isSelf ||
-                                                      (isAdmin && !isSelf))) {
+                                              final isActiveMember =
+                                                  m['is_active'] == true;
+                                              if (canOpenGroupChatFromMemberSwipe(
+                                                    canChat: canChat,
+                                                    isActiveMember:
+                                                        isActiveMember,
+                                                  ) &&
+                                                  memberUserId.isNotEmpty) {
                                                 actions.add(
                                                   _responsiveSlidableAction(
                                                     onPressed: (_) {
