@@ -63,6 +63,12 @@ String mapBookingError(Object e) {
   if (raw.contains('SESSION_ENDED')) {
     return 'รอบนัดนี้สิ้นสุดแล้ว กรุณาเลือกรอบนัดอื่น';
   }
+  if (raw.contains('SESSION_ALREADY_STARTED')) {
+    return 'รอบนัดนี้เริ่มไปแล้ว เกินเวลาที่เปิดให้เข้าร่วม';
+  }
+  if (raw.contains('BOOKING_PREVIOUSLY_REJECTED')) {
+    return 'คำขอเข้าร่วมรอบนี้ของคุณเคยถูกปฏิเสธแล้ว';
+  }
   if (raw.contains('SESSION_NOT_FOUND')) {
     return 'ไม่พบรอบนัดนี้ กรุณารีเฟรชและลองใหม่';
   }
@@ -106,6 +112,8 @@ String bookingErrorCode(Object error) {
     'ALREADY_JOINED',
     'ALREADY_REQUESTED',
     'SESSION_ENDED',
+    'SESSION_ALREADY_STARTED',
+    'BOOKING_PREVIOUSLY_REJECTED',
     'SESSION_NOT_FOUND',
     'BOOKING_NOT_FOUND',
     'BOOKING_RESPONSE_INVALID',

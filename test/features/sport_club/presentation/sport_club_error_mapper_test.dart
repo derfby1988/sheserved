@@ -58,6 +58,20 @@ void main() {
       );
     });
 
+    test('maps an already started session', () {
+      expect(
+        mapBookingError(StateError('SESSION_ALREADY_STARTED')),
+        'รอบนัดนี้เริ่มไปแล้ว เกินเวลาที่เปิดให้เข้าร่วม',
+      );
+    });
+
+    test('maps a previously rejected booking', () {
+      expect(
+        mapBookingError(StateError('BOOKING_PREVIOUSLY_REJECTED')),
+        'คำขอเข้าร่วมรอบนี้ของคุณเคยถูกปฏิเสธแล้ว',
+      );
+    });
+
     test('maps an invalid booking response', () {
       expect(
         mapBookingError(StateError('BOOKING_RESPONSE_INVALID')),
@@ -83,8 +97,35 @@ void main() {
       );
     });
 
+    test('extracts Phase 19 diagnostic codes', () {
+      expect(
+        bookingErrorCode(StateError('SESSION_ALREADY_STARTED')),
+        'SESSION_ALREADY_STARTED',
+      );
+      expect(
+        bookingErrorCode(StateError('BOOKING_PREVIOUSLY_REJECTED')),
+        'BOOKING_PREVIOUSLY_REJECTED',
+      );
+    });
+
     test('does not expose unknown exception text in the diagnostic code', () {
       expect(bookingErrorCode(StateError('private payload')), 'UNKNOWN');
+    });
+  });
+
+  group('mapApprovalError', () {
+    test('maps ended session on approval', () {
+      expect(
+        mapApprovalError(StateError('SESSION_ENDED')),
+        'รอบนัดนี้สิ้นสุดแล้ว ไม่สามารถอนุมัติย้อนหลังได้',
+      );
+    });
+
+    test('maps blocked user on approval', () {
+      expect(
+        mapApprovalError(StateError('USER_BLOCKED')),
+        'ผู้ใช้นี้ถูกบล็อกจากก๊วนแล้ว ไม่สามารถอนุมัติได้',
+      );
     });
   });
 

@@ -70,7 +70,7 @@ const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
 // Phase 1 — Route Security Middleware
 const { verifyToken, requireRole, requireAuth, strictRouteGuard, assertActorMatches, whenStrictRoute } = require('./middleware/auth');
 const { socketAuthMiddleware, isVerifiedSocket, checkEventIdentity, claimedActorMismatch } = require('./middleware/socket-auth');
-const { isStrictSocketEvent, strictSocketAuthEnabled } = require('./config/rollout-flags');
+const { isStrictSocketEvent, strictSocketAuthEnabled, strictRoomAuthEnabled } = require('./config/rollout-flags');
 const { authorizeRoomJoin } = require('./services/room-authorization');
 const { requestContext } = require('./middleware/request-context');
 const donationQueueService = require('./services/donation-queue');
@@ -131,6 +131,10 @@ const io = new Server(server, {
 
 // Initialize Socket Service
 socketService.init(io);
+
+// Phase 13.3 Step 7 — revocation propagation (Redis Pub/Sub → force-disconnect)
+const { initSocketRevocation } = require('./services/socket-revocation');
+initSocketRevocation(io);
 
 // ── Phase 13.3 — Socket.IO Connection-Level Auth ──
 // Signed Backend access token = the only trusted actor (signature, kid,
@@ -826,10 +830,10 @@ io.on('connection', (socket) => {
     const { roomId } = data;
     const fullRoom = `room-${roomId}`;
 
-    // Phase 13.3 Step 6 — room authorization (data model:
+    // Phase 13.3 Step 6+7 — room authorization (data model:
     // services/room-authorization.js). Under strict flags, non-public
     // rooms require verified identity + membership; compat keeps join open.
-    if (isStrictSocketEvent('join-room') || strictSocketAuthEnabled()) {
+    if (isStrictSocketEvent('join-room') || strictSocketAuthEnabled() || strictRoomAuthEnabled()) {
       try {
         const verdict = await authorizeRoomJoin({ pool }, socket, fullRoom);
         if (!verdict.allowed) {
@@ -1591,9 +1595,9 @@ io.on('connection', (socket) => {
     const { videoId, role } = data;
     const roomName = `emergency-chat-${videoId}`;
 
-    // Phase 13.3 Step 6 — membership room: under strict flags require
+    // Phase 13.3 Step 6+7 — membership room: under strict flags require
     // identity + membership (owner/active responder/admin)
-    if (isStrictSocketEvent('join-emergency-chat') || strictSocketAuthEnabled()) {
+    if (isStrictSocketEvent('join-emergency-chat') || strictSocketAuthEnabled() || strictRoomAuthEnabled()) {
       try {
         const verdict = await authorizeRoomJoin({ pool }, socket, roomName);
         if (!verdict.allowed) {

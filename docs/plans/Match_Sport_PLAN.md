@@ -2685,4 +2685,115 @@ ALTER TABLE public.fitness_group_bookings
 - Sport Club regression suite: **58 tests ผ่าน**, `flutter analyze` 0 issues ในไฟล์ที่แก้, `git diff --check` ผ่าน
 - Manual QA บน device (2026-09-19): badge อัปเดตถูกต้องหลัง hot restart; WebSocket timeout ไม่กระทบความถูกต้องเพราะ polling ทำงานแทน
 
+---
+
+## Phase 19 — ความสมบูรณ์และรัดกุมของ Flow เข้าร่วมก๊วนและการอนุมัติ (Join & Approval Flow Integrity) ⏳ รอ implement
+
+> สรุป: ปรับปรุงความถูกต้อง รัดกุม และความปลอดภัยของ Flow การเข้าร่วมก๊วน จองรอบนัด และการอนุมัติคำขอทุกระดับ อุดช่องโหว่ด้านกรอบเวลา การสแปมคำขอ สิทธิ์ผู้ดูแลก๊วน และเติมเต็มระบบประเมินระดับฝีมือ (Phase 16) ให้ใช้งานได้จริงครบวงจรตั้งแต่ UI ถึง Database
+
+### 19.1 การจัดลำดับความสำคัญของงาน (Prioritization Matrix)
+
+แบ่งออกเป็น 3 ลำดับความสำคัญตามระดับผลกระทบต่อความถูกต้องของข้อมูล (Data Integrity) และประสบการณ์ผู้ใช้:
+
+#### 🔴 ลำดับที่ 1 (P1 - Critical): ความถูกต้องและความปลอดภัยระดับฐานข้อมูล (Data Integrity & Authorization Guards)
+1. **ป้องกันการจองรอบที่เริ่มไปแล้ว (`starts_at <= now()`)**:
+   - *ปัญหาเดิม*: `book_fitness_session` ตรวจเฉพาะ `v_ends <= now()` ทำให้ผู้ใช้กดเข้าร่วมรอบที่เริ่มแข่งไปแล้วได้
+   - *สิ่งที่ต้องทำ*: เพิ่มการตรวจ `starts_at <= now()` (หรือช่วง Cutoff ล่วงหน้า) ปฏิเสธด้วย `SESSION_ALREADY_STARTED`
+2. **ป้องกันการอนุมัติคำขอย้อนหลังสำหรับรอบที่สิ้นสุดแล้ว**:
+   - *ปัญหาเดิม*: `approve_fitness_session_booking` ไม่ตรวจเวลาสิ้นสุดรอบนัด ทำให้แอดมินเผลอกดอนุมัติคำขอของรอบในอดีตได้
+   - *สิ่งที่ต้องทำ*: เพิ่ม `IF v_ends <= now() THEN RAISE EXCEPTION 'SESSION_ENDED';` ใน RPC อนุมัติ และมีกลไก Auto-Expire คำขอค้าง
+3. **ป้องกันการสแปม/Bypass คำขอที่เคยถูกปฏิเสธ (`rejected`)**:
+   - *ปัญหาเดิม*: `book_fitness_session` ดักจับเฉพาะ `confirmed` และ `pending` หากเคยถูก `rejected` จะสามารถกดส่งคำขอใหม่ได้ทันทีในก๊วนปิด หรือกลายเป็น `confirmed` ทันทีในก๊วนเปิด
+   - *สิ่งที่ต้องทำ*: ตรวจจับ `v_existing_status = 'rejected'` ปฏิเสธด้วย `BOOKING_PREVIOUSLY_REJECTED` พร้อมแจ้งเหตุผลหรือระบบ Cooldown
+4. **ยกเว้นการรออนุมัติให้ Co-Admin และ Sheserved Admin ในก๊วนปิด**:
+   - *ปัญหาเดิม*: `book_fitness_session` ยกเว้น `v_requires_approval` ให้เฉพาะเจ้าของก๊วน (`v_owner_id`) ทำให้ Co-Admin (`role='admin'`) และ Sheserved Admin ต้องรออนุมัติตัวเอง
+   - *สิ่งที่ต้องทำ*: ปรับเป็น `NOT public.is_fitness_group_manager(v_group_id, p_user_id)` เพื่อให้ผู้จัดการก๊วนทุกคนเข้าร่วมได้ทันที
+5. **ตรวจสอบ Blocklist ซ้ำในขั้นตอนการอนุมัติ**:
+   - *ปัญหาเดิม*: `approve_fitness_session_booking` ไม่ตรวจ `fitness_group_blocklist` หากผู้ใช้ถูกบล็อกระหว่าง pending อาจถูกอนุมัติกลับมาเป็นสมาชิก active
+   - *สิ่งที่ต้องทำ*: ตรวจสอบ `fitness_group_blocklist.is_active = true` ก่อนเปลี่ยนสถานะเป็น `confirmed`
+6. **ตรวจสอบสถานะบัญชีผู้ใช้ระดับแพลตฟอร์ม**:
+   - *ปัญหาเดิม*: RPC ตรวจเฉพาะบล็อกระดับก๊วน ไม่ตรวจสถานะในตาราง `users`
+   - *สิ่งที่ต้องทำ*: ตรวจสอบว่าบัญชียัง active ไม่ถูกแบนหรือระงับสิทธิ์จากระบบกลาง Sheserved
+
+#### 🟡 ลำดับที่ 2 (P2 - High): ความสมบูรณ์ของระบบระดับฝีมือและรอบนัด (Skill Level Join Flow & Session Override)
+1. **เชื่อมโยงการระบุระดับฝีมือใน UI จองรอบนัด (`session_picker_sheet.dart`)**:
+   - *ปัญหาเดิม*: `SportClubBookingService` และ Sheet จองรอบนัด ไม่ได้รับ/ส่ง `declaredSkillLevel` ทำให้ DB บันทึกเป็น `NULL` เสมอ และแอดมินไม่เห็นระดับฝีมือตอนพิจารณาอนุมัติ
+   - *สิ่งที่ต้องทำ*: ขยาย `SportClubBookCall` และ `SportClubBookingService.book` ให้รับ `declaredSkillLevel` พร้อม UI ให้ผู้ใช้เลือกประเมินตนเอง
+2. **ระบบแจ้งเตือน Soft Warning Dialog ก่อนส่งคำขอ**:
+   - *ปัญหาเดิม*: ขาดระบบแจ้งเตือนเมื่อระดับฝีมือผู้เล่นไม่ตรงกับ `target_skill_levels` ของรอบ
+   - *สิ่งที่ต้องทำ*: สร้าง Soft Warning Dialog สไตล์ Sheserved แจ้งเตือนแนะนำความเหมาะสม แต่ยังเปิดให้กดยืนยันส่งคำขอได้ (Frictionless Onboarding ตาม Phase 16)
+3. **UI กำหนดระดับทักษะเฉพาะรอบนัดใน `CreateSessionSheet` และ `EditSessionSheet`**:
+   - *ปัญหาเดิม*: DB มีคอลัมน์ `fitness_group_sessions.target_skill_levels` แต่ในฟอร์มสร้าง/แก้ไขรอบนัดไม่มีช่องให้กำหนด
+   - *สิ่งที่ต้องทำ*: เพิ่ม ChoiceChip ระดับฝีมือในฟอร์มรอบนัด โดยมีค่าเริ่มต้นสืบทอดจากก๊วน แต่สามารถ override เฉพาะรอบได้
+
+#### 🟢 ลำดับที่ 3 (P3 - Medium): ประสบการณ์ผู้ใช้และการยืนยันข้อตกลง (UX Confirmation & Agreement Guard)
+1. **หน้าจอทบทวนและกดยืนยันการจอง (Booking Confirmation Step)**:
+   - *ปัญหาเดิม*: ในก๊วนที่ไม่มีสนาม แตะการ์ดรอบปุ๊บ ส่งคำขอยิง API ทันที (Instant-Book) เสี่ยงต่อการแตะพลาด (Accidental Tap)
+   - *สิ่งที่ต้องทำ*: เพิ่ม Bottom Sheet ย่อย หรือ Dialog สรุปรายละเอียดรอบนัด (วันเวลา, สถานที่, ค่าใช้จ่ายโดยประมาณ, หมายเหตุจากผู้จัด) ให้ผู้เล่นกด "ยืนยันการจอง"
+2. **การรับทราบกฎก๊วนและข้อตกลงความปลอดภัย (Group Rules & Liability Waiver Acknowledgement)**:
+   - *สิ่งที่ต้องทำ*: แสดงกฎเฉพาะของก๊วน หรือข้อตกลงความปลอดภัย และให้ผู้เล่นกดยอมรับก่อนส่งคำขอครั้งแรก
+3. **การจำกัดเพดานคำขอที่ถือค้างไว้ (Active Pending Bookings Limit)**:
+   - *สิ่งที่ต้องทำ*: จำกัดให้ผู้ใช้ 1 บัญชีสามารถมีคำขอ `pending` ได้ไม่เกินจำนวนที่กำหนด (เช่น สูงสุด 5–10 รอบพร้อมกัน) เพื่อป้องกันการกดจองกักที่นั่งแบบสแปม
+
+---
+
+### 19.2 การประเมินผลกระทบหลังทำ (Impact Assessment & Risks)
+
+| มิติผลกระทบ | ผลกระทบที่อาจเกิดขึ้น (Risks) | ระดับความเสี่ยง | แผนป้องกัน / รับมือ (Mitigation Strategy) |
+|---|---|:---:|---|
+| **Database & RPC** | การปรับ Logic ใน `book_fitness_session` และ `approve_fitness_session_booking` อาจกระทบ Mobile Client รุ่นเก่า | **สูง** | คง RPC Signature เดิม (UUID, UUID, UUID, VARCHAR) และปรับปรุงเฉพาะ Business Logic ภายใน Transaction เดิม โดยไม่เพิ่มพารามิเตอร์บังคับใหม่ |
+| **พฤติกรรมผู้ใช้ (User Behavior)** | การบล็อก `starts_at <= now()` อาจทำให้ผู้ใช้ที่ "มาสายเล็กน้อยแต่ได้รับอนุญาตจากเจ้าของก๊วน" เข้าร่วมรอบไม่ได้ | **ปานกลาง** | กำหนด Grace Period เช่น อนุญาตให้จองได้หลังเริ่มรอบไม่เกิน 15 นาที หรือเพิ่ม Flag ให้ผู้จัดการก๊วนอนุญาตการเข้าร่วมระหว่างเล่นได้ |
+| **คำขอที่เคยถูกปฏิเสธ (Rejection Policy)** | การบล็อกคำขอที่เคยโดน Reject อาจทำให้ผู้ใช้ที่ปรับปรุงตัวหรือเคลียร์ความเข้าใจกับแอดมินแล้ว ไม่สามารถขอใหม่ได้ | **ปานกลาง** | เพิ่มระบบ Cooldown (เช่น 24 ชั่วโมง หรือจนกว่าจะมีการแก้ไขรอบ) และเปิดให้ผู้จัดการก๊วนสามารถ "ปลดสถานะปฏิเสธ" ได้ผ่านหน้ารายละเอียดก๊วน |
+| **Widget & Integration Tests** | การเปลี่ยน Callbacks ใน `SessionPickerSheet` และ `SportClubBookingService` กระทบ Unit/Widget Tests เดิม | **ปานกลาง** | ออกแบบ `declaredSkillLevel` ให้เป็น Optional parameter ที่มี Default fallback เป็น `null` หรือ `'all'` ทำให้ Test เดิม 71 ตัวยังคงรันผ่านได้ 100% |
+| **Performance Overhead** | การตรวจตาราง `users` และ `blocklist` ซ้ำใน RPC อนุมัติ | **ต่ำ** | ใช้ Index บน `(group_id, blocked_user_id)` และ Primary Key ของ `users` ซึ่งเป็น In-Memory Lookup ไม่เพิ่ม Query Latency อย่างมีนัยสำคัญ |
+
+---
+
+### 19.3 ข้อเสนอแนะวิธีแก้ปัญหาที่ดีที่สุด (Best Recommended Solutions)
+
+1. **สถาปัตยกรรม Database Guard แบบ Grace Period ผสม Cutoff Window**:
+   - ใน `book_fitness_session` ให้ใช้สูตร:
+     ```sql
+     -- ป้องกันการจองรอบที่เริ่มไปแล้วเกิน Grace Period (เช่น 15 นาที)
+     IF v_starts + INTERVAL '15 minutes' <= now() THEN
+       RAISE EXCEPTION 'SESSION_ALREADY_STARTED';
+     END IF;
+     ```
+   - วิธีนี้ช่วยแก้ปัญหาเรื่องความยืดหยุ่นในการเล่นจริง (เช่น เดินทางมาถึงสนามช้า 5 นาที แต่ยังเปิดให้เข้าร่วมได้) โดยไม่เปิดช่องให้จองรอบที่แข่งจบไปแล้ว
+2. **การจัดการคำขอที่ถูกปฏิเสธ (Two-Tier Rejection Handling)**:
+   - ปฏิเสธในก๊วนปิด: ให้บันทึกเหตุผล `cancel_reason` ชัดเจน และห้ามขอซ้ำในรอบเดิมจนกว่าจะผ่านไป 24 ชั่วโมง
+   - ป้องกันการ Bypass ในก๊วนเปิด: หากก๊วนเป็นก๊วนเปิด แต่ผู้ใช้เคยถูกผู้จัดการก๊วน Reject ในรอบนั้น ระบบต้อง **ไม่ยอมให้ Auto-Confirm** แต่ให้ดีดเข้าสู่สถานะ `pending` เพื่อให้ผู้จัดการพิจารณาซ้ำ
+3. **การออกแบบ Flow ระดับทักษะแบบ Non-blocking Self-Declaration (Phase 16 UX)**:
+   - ใน `SessionPickerSheet` เมื่อแตะเลือกรอบนัด ให้แสดง Dialog ยืนยันการจองที่มี:
+     - Badge แสดงเกณฑ์ระดับฝีมือของรอบนั้น
+     - Dropdown / Chip ให้ผู้เล่นเลือกยืนยันระดับตนเอง (ดึงค่าเริ่มต้นจากกีฬาของก๊วน)
+     - หากเลือกระดับไม่ตรง ให้แสดงกล่องข้อความเตือนสีส้ม (Soft Warning) ว่า *"ระดับของคุณอาจไม่ตรงกับระดับที่ก๊วนนี้เน้นเล่น เจ้าของก๊วนอาจใช้ข้อมูลนี้ในการพิจารณา"* แต่ปุ่ม "ส่งคำขอ" ยังคงสามารถกดได้ตามปกติ
+4. **Auto-Expiry สำหรับคำขอค้าง (Database Maintenance Function)**:
+   - สร้าง Cron Function / Trigger สรุปสถานะคำขอที่ค้างรออนุมัติให้เปลี่ยนเป็น `expired` โดยอัตโนมัติเมื่อ `ends_at <= now()` เพื่อไม่ให้รกในหน้า Pending Requests ของผู้จัดการก๊วน
+
+---
+
+### 19.4 แผนการทดสอบและเกณฑ์การตรวจรับ (Gate 19)
+
+#### Test Cases ที่ต้องมี
+1. **DB & RPC Tests**:
+   - จองรอบที่ `starts_at + 15m <= now()` → ต้องล้มเหลวด้วย `SESSION_ALREADY_STARTED`
+   - อนุมัติรอบที่ `ends_at <= now()` → ต้องล้มเหลวด้วย `SESSION_ENDED`
+   - ผู้ใช้ที่โดน Reject กดจองรอบเดิมซ้ำ → ต้องล้มเหลวด้วย `BOOKING_PREVIOUSLY_REJECTED`
+   - Co-Admin กดจองรอบในก๊วนปิด → ต้องได้สถานะ `confirmed` ทันทีโดยไม่ต้องรออนุมัติ
+   - ผู้ใช้ถูกบล็อกขณะ pending แล้วแอดมินกดอนุมัติ → RPC ต้องปฏิเสธด้วย `USER_BLOCKED`
+2. **Widget Tests**:
+   - `SessionPickerSheet`: แสดงตัวเลือกระดับฝีมือ และแสดง Soft Warning เมื่อระดับไม่ตรง
+   - `CreateSessionSheet`: เพิ่ม Chip เลือกระดับฝีมือเฉพาะรอบนัด และบันทึกลง `fitness_group_sessions.target_skill_levels` สำเร็จ
+   - `BookingConfirmationSheet`: ตรวจสอบการสรุปข้อมูลรอบนัดก่อนกดยืนยัน
+
+#### Definition of Done (Gate 19)
+- [ ] Migration ปรับปรุง RPC `book_fitness_session` และ `approve_fitness_session_booking` สมบูรณ์และ idempotent
+- [ ] Co-Admin / Sheserved Admin ได้รับสิทธิ์ Manager Bypass ในก๊วนปิด
+- [ ] ผู้ใช้ระบุ `declared_skill_level` ในขั้นตอนการจองได้ และส่งค่าไปยัง DB ถูกต้อง
+- [ ] ผู้จัดการก๊วนเห็น `declared_skill_level` ใต้ชื่อผู้ขอใน Section รออนุมัติ
+- [ ] ไม่มีคำขอรอบในอดีตที่สามารถกดอนุมัติย้อนหลังได้
+- [ ] ผ่าน Automated Tests ทั้งหมด และไม่มีข้อผิดพลาดจาก `flutter analyze`
+
+
 

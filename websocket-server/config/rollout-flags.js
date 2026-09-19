@@ -28,6 +28,12 @@
  *                        high-risk events per-wave without breaking
  *                        anonymous public viewers.
  *
+ *   STRICT_ROOM_AUTH     "true" = room membership enforcement wave
+ *                        (Phase 13.3 Step 7): join-room/join-emergency-chat/
+ *                        send-emergency-message require verified identity +
+ *                        membership, chat-history REST requires identity +
+ *                        membership.  Default false during compat.
+ *
  * Never logs flag values beyond the parsed route/event names.
  */
 
@@ -45,6 +51,8 @@ const STRICT_ROUTE_PREFIXES = _csvSet(process.env.STRICT_AUTH_ROUTES);
 const STRICT_SOCKET_EVENTS = _csvSet(process.env.STRICT_SOCKET_EVENTS);
 const STRICT_SOCKET_AUTH =
   String(process.env.STRICT_SOCKET_AUTH || '').toLowerCase() === 'true';
+const STRICT_ROOM_AUTH =
+  String(process.env.STRICT_ROOM_AUTH || '').toLowerCase() === 'true';
 
 /**
  * Is the given Express request path inside a strict-enforcement prefix?
@@ -78,6 +86,7 @@ function describe() {
     strictAuthRoutes: [...STRICT_ROUTE_PREFIXES],
     strictSocketAuth: STRICT_SOCKET_AUTH,
     strictSocketEvents: [...STRICT_SOCKET_EVENTS],
+    strictRoomAuth: STRICT_ROOM_AUTH,
   };
 }
 
@@ -85,5 +94,6 @@ module.exports = {
   isStrictRoute,
   isStrictSocketEvent,
   strictSocketAuthEnabled: () => STRICT_SOCKET_AUTH,
+  strictRoomAuthEnabled: () => STRICT_ROOM_AUTH,
   describe,
 };

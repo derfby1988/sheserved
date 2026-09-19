@@ -321,15 +321,32 @@ async function rotateRefreshToken(oldRefreshToken, meta = {}) {
 }
 
 /**
+ * Phase 13.3 Step 7 — best-effort propagation of a revocation to live
+ * sockets (Pub/Sub via services/socket-revocation.js).  Never throws:
+ * revocation is already authoritative at verifyToken/verifyJwtSubject.
+ */
+async function _publishSocketRevocation(payload) {
+  try {
+    const { publishRevocation } = require('../services/socket-revocation');
+    await publishRevocation(payload);
+  } catch (_) {
+    // propagation is best-effort — ignore
+  }
+}
+
+/**
  * Revoke a session by session ID.
  */
 async function revokeSession(sessionId, reason = 'logout') {
-  await withTransaction(SYSTEM_ACTOR, async (client) => {
-    await client.query(
-      `UPDATE public.sessions SET revoked_at = now(), revoke_reason = $1 WHERE id = $2`,
+  const userId = await withTransaction(SYSTEM_ACTOR, async (client) => {
+    const result = await client.query(
+      `UPDATE public.sessions SET revoked_at = now(), revoke_reason = $1
+       WHERE id = $2 RETURNING user_id`,
       [reason, sessionId]
     );
+    return result.rows[0]?.user_id || null;
   });
+  await _publishSocketRevocation({ userId, sessionId });
 }
 
 /**
@@ -343,6 +360,7 @@ async function revokeAllSessions(userId, reason = 'logout_all') {
       [reason, userId]
     );
   });
+  await _publishSocketRevocation({ userId, sessionId: null });
 }
 
 /**

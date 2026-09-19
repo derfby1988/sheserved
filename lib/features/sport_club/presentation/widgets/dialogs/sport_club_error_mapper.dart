@@ -180,6 +180,18 @@ String mapManagementError(Object e, {bool sessionContext = false}) {
   if (raw.contains('NOT_GROUP_ADMIN')) {
     return 'คุณไม่มีสิทธิ์จัดการก๊วนนี้';
   }
+  if (raw.contains('USER_BLOCKED')) {
+    return 'ผู้ใช้นี้ถูกบล็อกจากก๊วนนี้แล้ว';
+  }
+  if (raw.contains('BOOKING_PREVIOUSLY_REJECTED')) {
+    return 'คำขอนี้เคยถูกปฏิเสธแล้ว';
+  }
+  if (raw.contains('SESSION_ALREADY_STARTED')) {
+    return 'รอบนัดนี้เริ่มไปแล้ว เกินเวลาที่เปิดให้เข้าร่วม';
+  }
+  if (raw.contains('SESSION_ENDED')) {
+    return 'รอบนัดนี้สิ้นสุดแล้ว';
+  }
   if (raw.contains('UNAUTHORIZED')) {
     return 'กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง';
   }
@@ -189,6 +201,12 @@ String mapManagementError(Object e, {bool sessionContext = false}) {
 /// Maps booking approval error strings to user-friendly Thai messages.
 String mapApprovalError(Object e) {
   final raw = e.toString();
+  if (raw.contains('SESSION_ENDED')) {
+    return 'รอบนัดนี้สิ้นสุดแล้ว ไม่สามารถอนุมัติย้อนหลังได้';
+  }
+  if (raw.contains('USER_BLOCKED')) {
+    return 'ผู้ใช้นี้ถูกบล็อกจากก๊วนแล้ว ไม่สามารถอนุมัติได้';
+  }
   if (raw.contains('POSITION_FULL')) {
     return 'ตำแหน่งที่ผู้สมัครเลือกเต็มแล้ว ไม่สามารถอนุมัติได้\n'
         '(ระบบคงคำขอไว้เป็น "รออนุมัติ" และแจ้งผู้สมัครให้เลือกตำแหน่งใหม่แล้ว)';

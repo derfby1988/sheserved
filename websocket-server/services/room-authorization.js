@@ -22,8 +22,10 @@
  * NOT the Supabase service client.  incident_responses + videos live in
  * the local DB (dual-write copy on Supabase may lag/empty).
  *
- * Redis membership cache (60s) + revocation propagation land in Step 7;
- * this module performs the authoritative check each call for now.
+ * Step 7: membership decisions are cached in Redis for 60s
+ * (`room:member:{videoId}:{userId}` = '1'|'0').  Revocation propagation
+ * (services/socket-revocation.js) invalidates `room:member:*:{userId}`
+ * so revoked users lose access within the cache window at worst.
  */
 
 const PUBLIC_ROOM_PREFIXES = ['video-', 'room-video-'];
@@ -40,11 +42,33 @@ function classifyRoom(roomName) {
   return 'unknown';
 }
 
+const MEMBER_CACHE_TTL_SEC = 60;
+const memberCacheKey = (videoId, userId) => `room:member:${videoId}:${userId}`;
+
 /**
- * Membership check for emergency-chat-{videoId} via direct pool.
+ * Membership check for emergency-chat-{videoId} via direct pool
+ * (sheserved_app).  Positive AND negative decisions cached 60s — a
+ * responder added mid-incident gains access within ≤60s; revocation
+ * propagates instantly via services/socket-revocation.js key invalidation.
  * @returns {Promise<boolean>}
  */
 async function isEmergencyChatMember(pool, videoId, userId) {
+  let redis;
+  try {
+    ({ redis } = require('../middleware/redis-client'));
+  } catch (_) {
+    redis = null;
+  }
+
+  if (redis) {
+    try {
+      const cached = await redis.get(memberCacheKey(videoId, userId));
+      if (cached !== null) return cached === '1';
+    } catch (_) {
+      // cache read failure → authoritative check below
+    }
+  }
+
   const result = await pool.query(
     `SELECT 1 FROM (
        SELECT 1 FROM videos
@@ -56,7 +80,28 @@ async function isEmergencyChatMember(pool, videoId, userId) {
      ) m LIMIT 1`,
     [videoId, userId, ACTIVE_RESPONSE_STATUSES]
   );
-  return result.rows.length > 0;
+  const member = result.rows.length > 0;
+
+  if (redis) {
+    redis
+      .set(memberCacheKey(videoId, userId), member ? '1' : '0', 'EX', MEMBER_CACHE_TTL_SEC)
+      .catch(() => {});
+  }
+  return member;
+}
+
+/**
+ * Invalidate all cached membership decisions for a user (revocation path).
+ */
+async function invalidateMemberCacheForUser(userId) {
+  try {
+    const { redis } = require('../middleware/redis-client');
+    if (!redis) return;
+    const keys = await redis.keys(`room:member:*:${userId}`);
+    if (keys.length) await redis.del(keys);
+  } catch (err) {
+    console.warn('[RoomAuth] member cache invalidation failed:', err.message);
+  }
 }
 
 /**
@@ -113,6 +158,7 @@ module.exports = {
   classifyRoom,
   authorizeRoomJoin,
   isEmergencyChatMember,
+  invalidateMemberCacheForUser,
   PUBLIC_ROOM_PREFIXES,
   MEMBERSHIP_ROOM_PREFIX,
   PERSONAL_ROOM_PREFIX,
