@@ -9,6 +9,9 @@ class AdvancedFilterValues {
   bool openOnly;
   bool joinedOnly;
   bool managedOnly;
+  bool allLevelsOnly;
+  bool genderAnyOnly;
+  bool noFeesOnly;
   bool locationEnabled;
   double radiusKm;
   bool locationReady;
@@ -20,6 +23,9 @@ class AdvancedFilterValues {
     this.openOnly = false,
     this.joinedOnly = false,
     this.managedOnly = false,
+    this.allLevelsOnly = false,
+    this.genderAnyOnly = false,
+    this.noFeesOnly = false,
     this.locationEnabled = false,
     this.radiusKm = 10,
     this.locationReady = false,
@@ -46,6 +52,9 @@ class AdvancedFilterSheet {
     var openOnly = currentFilter.openOnly;
     var joinedOnly = currentFilter.joinedOnly;
     var managedOnly = currentFilter.managedOnly;
+    var allLevelsOnly = currentFilter.allLevelsOnly;
+    var genderAnyOnly = currentFilter.genderAnyOnly;
+    var noFeesOnly = currentFilter.noFeesOnly;
     var locationEnabled = currentFilter.locationEnabled;
     var radiusKm = currentFilter.radiusKm;
     var locationReady = currentFilter.locationReady;
@@ -114,7 +123,7 @@ class AdvancedFilterSheet {
                     children: [
                       const Expanded(
                         child: Text(
-                          'ตัวกรองก๊วน',
+                          'ตัวกรอง "เฉพาะก๊วน"',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -130,6 +139,9 @@ class AdvancedFilterSheet {
                             openOnly = false;
                             joinedOnly = false;
                             managedOnly = false;
+                            allLevelsOnly = false;
+                            genderAnyOnly = false;
+                            noFeesOnly = false;
                             locationEnabled = false;
                           });
                         },
@@ -162,7 +174,7 @@ class AdvancedFilterSheet {
                         const SizedBox(height: 8),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('เฉพาะก๊วนที่เข้าร่วมได้ทันที'),
+                          title: const Text('เป็นก๊วน "เปิด" เข้าร่วมได้ทันที'),
                           subtitle: const Text('ไม่ต้องรอเจ้าของอนุมัติ'),
                           value: openOnly,
                           onChanged: (value) =>
@@ -170,15 +182,43 @@ class AdvancedFilterSheet {
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('เฉพาะก๊วนที่เป็นสมาชิก'),
+                          title: const Text('ที่เป็นสมาชิก'),
                           value: joinedOnly,
                           onChanged: (value) => togglePersonal(value, false),
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('เฉพาะก๊วนที่ดูแล'),
+                          title: const Text('ที่ดูแล'),
                           value: managedOnly,
                           onChanged: (value) => togglePersonal(value, true),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('ทุกระดับ'),
+                          subtitle: const Text('เปิดรับผู้เล่นทุกระดับ'),
+                          value: allLevelsOnly,
+                          onChanged: (value) =>
+                              setSheetState(() => allLevelsOnly = value),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('เปิดรับทุกเพศ'),
+                          subtitle: const Text(
+                            'เฉพาะก๊วนที่ไม่จำกัดเพศผู้เล่น',
+                          ),
+                          value: genderAnyOnly,
+                          onChanged: (value) =>
+                              setSheetState(() => genderAnyOnly = value),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('ไม่ระบุค่าใช้จ่าย'),
+                          subtitle: const Text(
+                            'เฉพาะก๊วนที่ไม่มีค่าก๊วนหรือค่าใช้จ่ายเฉพาะรอบ',
+                          ),
+                          value: noFeesOnly,
+                          onChanged: (value) =>
+                              setSheetState(() => noFeesOnly = value),
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
@@ -257,6 +297,9 @@ class AdvancedFilterSheet {
       openOnly: openOnly,
       joinedOnly: joinedOnly,
       managedOnly: managedOnly,
+      allLevelsOnly: allLevelsOnly,
+      genderAnyOnly: genderAnyOnly,
+      noFeesOnly: noFeesOnly,
       locationEnabled: locationEnabled && locationReady,
       radiusKm: radiusKm,
       locationReady: locationReady,

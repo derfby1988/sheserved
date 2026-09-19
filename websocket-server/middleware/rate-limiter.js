@@ -42,10 +42,12 @@ function rateLimiter(options = {}) {
   } = options;
 
   return async function rateLimiterMiddleware(req, res, next) {
-    // ─── ระบุตัวตน: ใช้ keyResolver ถ้ามี, fallback ด้วย User ID หรือ IP ─────
+    // ─── ระบุตัวตน: ใช้ keyResolver ถ้ามี, fallback ด้วย verified userId หรือ IP ─────
+    // Phase 13.3 — ห้ามใช้ raw x-user-id header เป็น rate-limit key
+    // (client เลือก bucket ได้ → evade limit หรือ drain bucket คนอื่น)
     const identifier = keyResolver
       ? keyResolver(req)
-      : (req.headers['x-user-id'] || req.ip || req.connection.remoteAddress || 'unknown');
+      : (req.userId || normalizeClientIp(req));
 
     const redisKey = `${keyPrefix}:${identifier}`;
 
@@ -133,7 +135,8 @@ function quotaLimiter(options = {}) {
   `;
 
   return async function quotaLimiterMiddleware(req, res, next) {
-    const identifier = keyResolver ? keyResolver(req) : (req.headers['x-user-id'] || req.ip || 'unknown');
+    // Phase 13.3 — verified userId or IP only, never raw x-user-id header
+    const identifier = keyResolver ? keyResolver(req) : (req.userId || normalizeClientIp(req));
     const baseKey = `quota:${identifier}`;
     const now = Math.floor(Date.now() / 1000);
     const hourBucket = Math.floor(now / 3600);
@@ -362,7 +365,8 @@ const defaultRateLimiter = rateLimiter();
 const userLimiter = rateLimiter({
   maxRequests: 100, windowSec: 60,
   keyPrefix: 'rate:user',
-  keyResolver: (req) => req.userId || req.headers['x-user-id'] || 'anon',
+  // Phase 13.3 — verified userId (verifyToken) or IP; ไม่ใช้ raw x-user-id
+  keyResolver: (req) => req.userId || normalizeClientIp(req),
 });
 
 // ชั้น 2: จำกัดต่อ IP สำหรับ public/unauthenticated traffic
@@ -374,7 +378,8 @@ const ipLimiter = rateLimiter({
 
 // ชั้น 3: quota ตาม resource ที่มีต้นทุนสูง — upload
 const uploadQuotaLimiter = quotaLimiter({
-  keyResolver: (req) => `upload:${req.userId || req.headers['x-user-id'] || normalizeClientIp(req)}`,
+  // Phase 13.3 — verified userId (verifyToken) or IP; ไม่ใช้ raw x-user-id
+  keyResolver: (req) => `upload:${req.userId || normalizeClientIp(req)}`,
   limits: { perHour: 20, perDay: 100 },
 });
 

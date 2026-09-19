@@ -20,7 +20,8 @@ function requestContext(req, res, next) {
 
   req.log = logger.child({
     requestId: req.id,
-    userId: req.userId || req.headers['x-user-id'] || null,
+    // Phase 13.3 — verified identity only; raw x-user-id ไม่เข้า log context
+    userId: req.userId || null,
     method: req.method,
     path: req.path,
   });

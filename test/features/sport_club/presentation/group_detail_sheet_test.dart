@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/group_session_history_dialog.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_detail_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/session_picker_sheet.dart';
 
@@ -105,6 +107,58 @@ void main() {
         ]),
         'ขณะนี้รอบนัดที่ยังไม่ได้เข้าร่วมเต็มแล้ว',
       );
+    });
+  });
+
+  group('group session history', () {
+    test('classifies sessions by end time without hiding active sessions', () {
+      final now = DateTime.utc(2025, 1, 2);
+      expect(
+        isSportClubSessionEnded({'ends_at': '2025-01-01T23:59:00Z'}, now: now),
+        isTrue,
+      );
+      expect(
+        isSportClubSessionEnded({'ends_at': '2025-01-02T23:59:00Z'}, now: now),
+        isFalse,
+      );
+      expect(
+        isSportClubSessionEnded({'ends_at': 'not-a-date'}, now: now),
+        isFalse,
+      );
+    });
+
+    testWidgets('opens the ended-session history dialog', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => GroupSessionHistoryDialog.show(
+                context,
+                groupName: 'ก๊วนทดสอบ',
+                groupOwnerId: 'owner-1',
+                sessions: [
+                  {
+                    'id': 'session-1',
+                    'starts_at': '2025-01-01T10:00:00Z',
+                    'ends_at': '2025-01-01T11:00:00Z',
+                    'capacity': 5,
+                    'confirmed_count': 1,
+                  },
+                ],
+                confirmedMembersBySession: const {},
+              ),
+              child: const Text('เปิดประวัติ'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('เปิดประวัติ'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ประวัติรอบนัดของก๊วน'), findsOneWidget);
+      expect(find.text('ก๊วนทดสอบ · 1 รอบที่สิ้นสุดแล้ว'), findsOneWidget);
+      expect(find.textContaining('รอบที่ 1'), findsOneWidget);
     });
   });
 }

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
+import '../../../../core/network/authenticated_http_client.dart';
 import '../../../../services/auth_service.dart';
 import '../../models/video_models.dart';
 
@@ -373,14 +374,14 @@ class VideoRepository {
     double? longitude,
   }) async {
     // ---- Primary Path: Local API ----
+    // Phase 13.3 — Bearer via AuthenticatedHttpClient (refresh-once);
+    // x-user-id คงไว้เป็น compat fallback จนกว่า STRICT_AUTH_ROUTES ตัดสิทธิ์
     try {
-      final response = await http
-          .post(
-            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/accept'),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-id': responderId,
-            },
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'POST',
+            '/api/videos/$videoId/accept',
+            headers: {'x-user-id': responderId},
             body: jsonEncode({
               'responderId': responderId,
               'latitude': latitude,
@@ -388,6 +389,17 @@ class VideoRepository {
             }),
           )
           .timeout(const Duration(seconds: 5));
+
+      // Phase 13.3 — 401/403 = auth failure → fail closed.
+      // ห้าม fallback เงียบไป Supabase dual-write เมื่อ auth error
+      // (Match_Sport_PLAN Phase 13.3 ข้อห้าม)
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        debugPrint(
+          'VideoRepository: acceptIncident auth rejected '
+          '(${response.statusCode}) — fail closed, no Supabase fallback',
+        );
+        return null;
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -512,19 +524,27 @@ class VideoRepository {
   Future<void> addInteraction(VideoInteraction interaction) async {
     if (AppConfig.useLocalDatabase) {
       try {
-        final url = Uri.parse(
-          '${AppConfig.localApiUrl}/api/videos/${interaction.videoId}/interactions',
-        );
-        final response = await http
-            .post(
-              url,
-              headers: {'Content-Type': 'application/json'},
+        // Phase 13.3 — Bearer via client; x-user-id = compat fallback.
+        // เดิมส่ง anonymous + body user_id เท่านั้น (เชื่อฝั่ง client)
+        final response = await AuthenticatedHttpClient.instance
+            .request(
+              'POST',
+              '/api/videos/${interaction.videoId}/interactions',
+              headers: {'x-user-id': interaction.userId},
               body: jsonEncode(interaction.toJson()),
             )
             .timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           debugPrint('VideoRepository: Recorded interaction locally');
+          return;
+        }
+        // Phase 13.3 — 401/403 → fail closed, ห้าม fallback ไป Supabase
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          debugPrint(
+            'VideoRepository: addInteraction auth rejected '
+            '(${response.statusCode}) — fail closed',
+          );
           return;
         }
       } catch (e) {
@@ -605,15 +625,11 @@ class VideoRepository {
   /// Returns { liked: bool, count: int }
   Future<Map<String, dynamic>> toggleLike(String videoId, String userId) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse(
-              '${AppConfig.localApiUrl}/api/videos/$videoId/interactions',
-            ),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-id': userId, // ✅ requireAuth ต้องการ header นี้
-            },
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'POST',
+            '/api/videos/$videoId/interactions',
+            headers: {'x-user-id': userId},
             body: '{"user_id":"$userId","type":"like","value":0}',
           )
           .timeout(const Duration(seconds: 5));
@@ -724,25 +740,30 @@ class VideoRepository {
 
     markUploadStarted();
 
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse('${AppConfig.localApiUrl}/api/videos/upload'),
+    var response = await AuthenticatedHttpClient.instance.sendMultipart(
+      () async {
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse(
+            '${AuthenticatedHttpClient.instance.backendApiUrl}/api/videos/upload',
+          ),
+        );
+        // Compat window: server prefers Bearer; x-user-id keeps direct mode working
+        request.headers['x-user-id'] = userId;
+
+        request.fields['userId'] = userId;
+        request.fields['title'] =
+            'Emergency Incident ${AppConfig.thailandNow.toIso8601String()}';
+        request.fields['type'] = 'emergency';
+        if (categoryId != null) request.fields['categoryId'] = categoryId;
+        request.fields['gpsTracks'] = jsonEncode(gpsTracks);
+
+        request.files.add(
+          await http.MultipartFile.fromPath('video', videoFile.path),
+        );
+        return request;
+      },
     );
-    // The server authenticates upload routes before multipart fields are parsed.
-    request.headers['x-user-id'] = userId;
-
-    request.fields['userId'] = userId;
-    request.fields['title'] =
-        'Emergency Incident ${AppConfig.thailandNow.toIso8601String()}';
-    request.fields['type'] = 'emergency';
-    if (categoryId != null) request.fields['categoryId'] = categoryId;
-    request.fields['gpsTracks'] = jsonEncode(gpsTracks);
-
-    request.files.add(
-      await http.MultipartFile.fromPath('video', videoFile.path),
-    );
-
-    var response = await request.send();
 
     if (response.statusCode != 200) {
       throw Exception("Upload failed with status ${response.statusCode}");
@@ -784,30 +805,37 @@ class VideoRepository {
 
     markUploadStarted();
 
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse('${AppConfig.localApiUrl}/api/videos/upload-photos'),
+    var response = await AuthenticatedHttpClient.instance.sendMultipart(
+      () async {
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse(
+            '${AuthenticatedHttpClient.instance.backendApiUrl}/api/videos/upload-photos',
+          ),
+        );
+        // Compat window: server prefers Bearer; x-user-id keeps direct mode working
+        request.headers['x-user-id'] = userId;
+
+        request.fields['userId'] = userId;
+        request.fields['title'] =
+            'Emergency Incident Photos ${AppConfig.thailandNow.toIso8601String()}';
+        request.fields['type'] = isThaiMhung
+            ? 'thai_mhung_photo'
+            : 'emergency_photo';
+        // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
+        request.fields['isThaiMhung'] = isThaiMhung.toString();
+        if (categoryId != null) request.fields['categoryId'] = categoryId;
+        if (incidentId != null) request.fields['incidentId'] = incidentId;
+        request.fields['gpsTracks'] = jsonEncode(gpsTracks);
+
+        for (var file in photoFiles) {
+          request.files.add(
+            await http.MultipartFile.fromPath('photos', file.path),
+          );
+        }
+        return request;
+      },
     );
-    // The server authenticates upload routes before multipart fields are parsed.
-    request.headers['x-user-id'] = userId;
-
-    request.fields['userId'] = userId;
-    request.fields['title'] =
-        'Emergency Incident Photos ${AppConfig.thailandNow.toIso8601String()}';
-    request.fields['type'] = isThaiMhung
-        ? 'thai_mhung_photo'
-        : 'emergency_photo';
-    // ✅ ส่ง isThaiMhung flag ไปยัง backend เพื่อ enforce quota ฝั่ง server ด้วย
-    request.fields['isThaiMhung'] = isThaiMhung.toString();
-    if (categoryId != null) request.fields['categoryId'] = categoryId;
-    if (incidentId != null) request.fields['incidentId'] = incidentId;
-    request.fields['gpsTracks'] = jsonEncode(gpsTracks);
-
-    for (var file in photoFiles) {
-      request.files.add(await http.MultipartFile.fromPath('photos', file.path));
-    }
-
-    var response = await request.send();
 
     if (response.statusCode != 200) {
       throw Exception("Upload failed with status ${response.statusCode}");
@@ -978,13 +1006,11 @@ class VideoRepository {
     // ต้องสำเร็จที่ Local Postgres เท่านั้น — เพราะ responders/active-rescues
     // อ่านจาก Local DB และ Supabase copy อาจไม่มีแถวนี้ (FK violation ตอน accept)
     try {
-      final response = await http
-          .post(
-            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-id': effectiveVolunteerId,
-            },
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'POST',
+            '/api/videos/$videoId/status',
+            headers: {'x-user-id': effectiveVolunteerId},
             body: jsonEncode({
               'responseId': responseId,
               'status': status,
@@ -1088,13 +1114,11 @@ class VideoRepository {
     String? notes,
   }) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('${AppConfig.localApiUrl}/api/videos/$videoId/status'),
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-id': reporterId,
-            },
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'POST',
+            '/api/videos/$videoId/status',
+            headers: {'x-user-id': reporterId},
             body: jsonEncode({
               'status': 'cancelled',
               'notes': notes ?? 'ยกเลิกโดยผู้แจ้งเหตุ',
@@ -1134,11 +1158,11 @@ class VideoRepository {
   ) async {
     // ---- Primary Path: Local API ----
     try {
-      final response = await http
-          .get(
-            Uri.parse(
-              '${AppConfig.localApiUrl}/api/videos/volunteer/$volunteerId/active-rescues',
-            ),
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'GET',
+            '/api/videos/volunteer/$volunteerId/active-rescues',
+            headers: {'x-user-id': volunteerId},
           )
           .timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {
@@ -1174,11 +1198,11 @@ class VideoRepository {
   ) async {
     // ---- Primary Path: Local API ----
     try {
-      final response = await http
-          .get(
-            Uri.parse(
-              '${AppConfig.localApiUrl}/api/videos/reporter/$reporterId/active-missions',
-            ),
+      final response = await AuthenticatedHttpClient.instance
+          .request(
+            'GET',
+            '/api/videos/reporter/$reporterId/active-missions',
+            headers: {'x-user-id': reporterId},
           )
           .timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {

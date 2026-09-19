@@ -1,11 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/consultation_request_model.dart';
 import '../models/profession_package_rule.dart';
-import 'package:sheserved/config/app_config.dart';
+import 'package:sheserved/core/network/authenticated_http_client.dart';
 
 class ConsultationRepository {
   final SupabaseClient _client;
@@ -35,7 +34,6 @@ class ConsultationRepository {
     List<SymptomPoint> symptoms = const [],
     String? status,
   }) async {
-    final authToken = Supabase.instance.client.auth.currentSession?.accessToken;
     final data = {
       'userId': userId,
       'user_id': userId,
@@ -60,14 +58,16 @@ class ConsultationRepository {
           .toList(),
     };
 
-    final response = await http
-        .post(
-          Uri.parse('${AppConfig.localApiUrl}/api/consultations/requests'),
+    // Phase 13.3 — Bearer path via AuthenticatedHttpClient (refresh-once).
+    // x-user-id คงไว้เป็น compat fallback สำหรับ direct mode (USE_BACKEND_AUTH=false)
+    // จนกว่า STRICT_AUTH_ROUTES จะตัดสิทธิ์ — server prefer JWT เสมอ
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'POST',
+          '/api/consultations/requests',
           headers: {
-            'Content-Type': 'application/json',
             'Accept': 'application/json',
             'x-user-id': userId,
-            if (authToken != null) 'Authorization': 'Bearer $authToken',
             'x-idempotency-key':
                 'consultation-${sha256.convert(utf8.encode(jsonEncode(data))).toString()}',
           },

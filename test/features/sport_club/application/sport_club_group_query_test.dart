@@ -19,28 +19,42 @@ SportClubGroupQuery makeQuery(
   List<List<Map<String, dynamic>>> pages, {
   Set<String> Function(List<String>)? anySessions,
   Set<String> Function(List<String>)? upcomingSessions,
+  Set<String> Function(List<String>)? groupIdsWithFees,
+  Set<String> Function(List<String>)? groupIdsWithSessionCostItems,
   int pageSize = 3,
   List<int>? offsets,
+  List<bool>? allLevelsOnlyValues,
+  List<bool>? genderAnyOnlyValues,
+  List<bool>? noFeesOnlyValues,
 }) {
   return SportClubGroupQuery(
     pageSize: pageSize,
-    listGroups: ({
-      sportId,
-      q,
-      province,
-      district,
-      openOnly = false,
-      limit = 50,
-      offset = 0,
-    }) async {
-      offsets?.add(offset);
-      final index = offset ~/ pageSize;
-      return index < pages.length ? pages[index] : <Map<String, dynamic>>[];
-    },
-    idsWithAnySessions: (ids) async =>
-        anySessions?.call(ids) ?? ids.toSet(),
+    listGroups:
+        ({
+          sportId,
+          q,
+          province,
+          district,
+          allLevelsOnly = false,
+          genderAnyOnly = false,
+          noFeesOnly = false,
+          openOnly = false,
+          limit = 50,
+          offset = 0,
+        }) async {
+          offsets?.add(offset);
+          allLevelsOnlyValues?.add(allLevelsOnly);
+          genderAnyOnlyValues?.add(genderAnyOnly);
+          noFeesOnlyValues?.add(noFeesOnly);
+          final index = offset ~/ pageSize;
+          return index < pages.length ? pages[index] : <Map<String, dynamic>>[];
+        },
+    idsWithAnySessions: (ids) async => anySessions?.call(ids) ?? ids.toSet(),
     idsWithUpcomingSessions: (ids) async =>
         upcomingSessions?.call(ids) ?? ids.toSet(),
+    idsWithFees: (ids) async => groupIdsWithFees?.call(ids) ?? <String>{},
+    idsWithSessionCostItems: (ids) async =>
+        groupIdsWithSessionCostItems?.call(ids) ?? <String>{},
   );
 }
 
@@ -48,6 +62,84 @@ const noSets = <String>{};
 
 void main() {
   group('SportClubGroupQuery.fetch', () {
+    test('passes the all-levels filter to the repository', () async {
+      final allLevelsOnlyValues = <bool>[];
+      final q = makeQuery([
+        [mkGroup('a')],
+      ], allLevelsOnlyValues: allLevelsOnlyValues);
+
+      await q.fetch(
+        filter: const SportClubFilter(allLevelsOnly: true),
+        offset: 0,
+        adminIds: noSets,
+        joinedGroupIds: noSets,
+        blockedGroupIds: noSets,
+      );
+
+      expect(allLevelsOnlyValues, [true]);
+    });
+
+    test('passes the all-genders filter to the repository', () async {
+      final genderAnyOnlyValues = <bool>[];
+      final q = makeQuery([
+        [mkGroup('a')],
+      ], genderAnyOnlyValues: genderAnyOnlyValues);
+
+      await q.fetch(
+        filter: const SportClubFilter(genderAnyOnly: true),
+        offset: 0,
+        adminIds: noSets,
+        joinedGroupIds: noSets,
+        blockedGroupIds: noSets,
+      );
+
+      expect(genderAnyOnlyValues, [true]);
+    });
+
+    test(
+      'hides groups with group fees or session cost items when noFeesOnly',
+      () async {
+        final q = makeQuery(
+          [
+            [mkGroup('a'), mkGroup('b'), mkGroup('c'), mkGroup('d')],
+          ],
+          anySessions: (ids) => ids.toSet(),
+          groupIdsWithFees: (ids) => {'b'},
+          groupIdsWithSessionCostItems: (ids) => {'c'},
+        );
+
+        final page = await q.fetch(
+          filter: const SportClubFilter(noFeesOnly: true),
+          offset: 0,
+          adminIds: noSets,
+          joinedGroupIds: noSets,
+          blockedGroupIds: noSets,
+        );
+
+        expect(page.groups.map((g) => g['id']), ['a', 'd']);
+      },
+    );
+
+    test('keeps fee groups when noFeesOnly is off', () async {
+      final q = makeQuery(
+        [
+          [mkGroup('a'), mkGroup('b')],
+        ],
+        anySessions: (ids) => ids.toSet(),
+        groupIdsWithFees: (ids) => {'b'},
+      );
+
+      final page = await q.fetch(
+        filter: const SportClubFilter(),
+        offset: 0,
+        adminIds: noSets,
+        joinedGroupIds: noSets,
+        blockedGroupIds: noSets,
+      );
+
+      expect(page.groups.map((g) => g['id']), ['a', 'b']);
+    });
+
     test('empty first page yields no groups and hasMore false', () async {
       final q = makeQuery([[]]);
       final page = await q.fetch(
@@ -95,12 +187,9 @@ void main() {
     });
 
     test('groups without sessions are hidden from regular users', () async {
-      final q = makeQuery(
-        [
-          [mkGroup('a'), mkGroup('b'), mkGroup('c')],
-        ],
-        anySessions: (ids) => {'a', 'c'},
-      );
+      final q = makeQuery([
+        [mkGroup('a'), mkGroup('b'), mkGroup('c')],
+      ], anySessions: (ids) => {'a', 'c'});
       final page = await q.fetch(
         filter: const SportClubFilter(),
         offset: 0,
@@ -111,31 +200,27 @@ void main() {
       expect(page.groups.map((g) => g['id']), ['a', 'c']);
     });
 
-    test('joined/managed/blocked groups stay visible without sessions',
-        () async {
-      final q = makeQuery(
-        [
+    test(
+      'joined/managed/blocked groups stay visible without sessions',
+      () async {
+        final q = makeQuery([
           [mkGroup('a'), mkGroup('b'), mkGroup('c'), mkGroup('d')],
-        ],
-        anySessions: (ids) => <String>{},
-      );
-      final page = await q.fetch(
-        filter: const SportClubFilter(),
-        offset: 0,
-        adminIds: {'b'},
-        joinedGroupIds: {'c'},
-        blockedGroupIds: {'d'},
-      );
-      expect(page.groups.map((g) => g['id']), ['b', 'c', 'd']);
-    });
+        ], anySessions: (ids) => <String>{});
+        final page = await q.fetch(
+          filter: const SportClubFilter(),
+          offset: 0,
+          adminIds: {'b'},
+          joinedGroupIds: {'c'},
+          blockedGroupIds: {'d'},
+        );
+        expect(page.groups.map((g) => g['id']), ['b', 'c', 'd']);
+      },
+    );
 
     test('joinedOnly and managedOnly combine as OR', () async {
-      final q = makeQuery(
-        [
-          [mkGroup('a'), mkGroup('b'), mkGroup('c')],
-        ],
-        anySessions: (ids) => ids.toSet(),
-      );
+      final q = makeQuery([
+        [mkGroup('a'), mkGroup('b'), mkGroup('c')],
+      ], anySessions: (ids) => ids.toSet());
       final page = await q.fetch(
         filter: const SportClubFilter(joinedOnly: true, managedOnly: true),
         offset: 0,
@@ -147,12 +232,9 @@ void main() {
     });
 
     test('openOnly requires upcoming sessions for non-members', () async {
-      final q = makeQuery(
-        [
-          [mkGroup('a'), mkGroup('b')],
-        ],
-        upcomingSessions: (ids) => {'b'},
-      );
+      final q = makeQuery([
+        [mkGroup('a'), mkGroup('b')],
+      ], upcomingSessions: (ids) => {'b'});
       final page = await q.fetch(
         filter: const SportClubFilter(openOnly: true),
         offset: 0,
@@ -164,12 +246,9 @@ void main() {
     });
 
     test('site admin sees every group regardless of sessions', () async {
-      final q = makeQuery(
-        [
-          [mkGroup('a'), mkGroup('b')],
-        ],
-        anySessions: (ids) => <String>{},
-      );
+      final q = makeQuery([
+        [mkGroup('a'), mkGroup('b')],
+      ], anySessions: (ids) => <String>{});
       final page = await q.fetch(
         filter: const SportClubFilter(),
         offset: 0,
@@ -207,8 +286,7 @@ void main() {
           [mkGroup('x'), mkGroup('a'), mkGroup('b')],
           [mkGroup('c'), mkGroup('d'), mkGroup('e')],
         ],
-        anySessions: (ids) =>
-            ids.where((id) => id != 'x' && id != 'e').toSet(),
+        anySessions: (ids) => ids.where((id) => id != 'x' && id != 'e').toSet(),
       );
       final page = await q.fetch(
         filter: const SportClubFilter(),
@@ -245,16 +323,13 @@ void main() {
     });
 
     test('location filter drops far groups and sorts by distance', () async {
-      final q = makeQuery(
+      final q = makeQuery([
         [
-          [
-            mkGroup('far', lat: 20, lng: 20),
-            mkGroup('near', lat: 0.01, lng: 0.01),
-            mkGroup('mid', lat: 0.05, lng: 0.05),
-          ],
+          mkGroup('far', lat: 20, lng: 20),
+          mkGroup('near', lat: 0.01, lng: 0.01),
+          mkGroup('mid', lat: 0.05, lng: 0.05),
         ],
-        anySessions: (ids) => ids.toSet(),
-      );
+      ], anySessions: (ids) => ids.toSet());
       final page = await q.fetch(
         filter: const SportClubFilter(locationEnabled: true, radiusKm: 15),
         offset: 0,

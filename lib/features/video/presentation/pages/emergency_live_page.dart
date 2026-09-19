@@ -14,6 +14,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import 'widgets/yield_way_map_dialog.dart';
 import '../../../../config/sync_config.dart';
 import '../../../../config/app_config.dart';
+import '../../../../core/network/authenticated_http_client.dart';
 import '../../../../services/websocket_service.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';

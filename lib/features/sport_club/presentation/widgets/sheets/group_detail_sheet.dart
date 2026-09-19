@@ -14,6 +14,7 @@ import 'package:sheserved/features/sport_club/presentation/widgets/cost/session_
 import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/change_position_dialog.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/booking_action_dialogs.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/member_action_dialogs.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/group_session_history_dialog.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/sport_club_error_mapper.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/session_picker_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_session_sheet.dart';
@@ -298,6 +299,8 @@ class GroupDetailSheet {
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
       backgroundColor: Colors.transparent,
       elevation: 0,
       barrierColor: Colors.black.withValues(alpha: 0.45),
@@ -378,10 +381,18 @@ class GroupDetailSheet {
                             ),
                           );
                         }
-                        final sessions =
+                        final allSessions =
                             (snapshot.data?[0] as List?)
                                 ?.cast<Map<String, dynamic>>() ??
                             [];
+                        final sessions = allSessions
+                            .where(
+                              (session) => !isSportClubSessionEnded(session),
+                            )
+                            .toList();
+                        final endedSessions = allSessions
+                            .where(isSportClubSessionEnded)
+                            .toList();
                         final members =
                             (snapshot.data?[1] as List?)
                                 ?.cast<Map<String, dynamic>>() ??
@@ -745,8 +756,8 @@ class GroupDetailSheet {
                                             _detailInfoChip(
                                               switch (group['gender_preference']
                                                   ?.toString()) {
-                                                'male' => 'ชวนผู้ชาย',
-                                                'female' => 'ชวนผู้หญิง',
+                                                'male' => 'เฉพาะผู้ชาย',
+                                                'female' => 'เฉพาะผู้หญิง',
                                                 _ => 'เปิดรับทุกเพศ',
                                               },
                                               Icons.people_outline_rounded,
@@ -1060,7 +1071,7 @@ class GroupDetailSheet {
                                               ),
                                               const SizedBox(height: 6),
                                               Text(
-                                                'ยังไม่มีรอบนัด',
+                                                'ยังไม่มีรอบนัดที่กำลังจะมาถึง',
                                                 style: TextStyle(
                                                   fontSize: 13,
                                                   color: Colors.grey.shade600,
@@ -1587,6 +1598,65 @@ class GroupDetailSheet {
                                     ],
                                   ),
                                 ),
+                                if (endedSessions.isNotEmpty)
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: OutlinedButton(
+                                      onPressed: () =>
+                                          GroupSessionHistoryDialog.show(
+                                            ctx,
+                                            groupName:
+                                                group['name']?.toString() ??
+                                                'ก๊วน',
+                                            groupOwnerId: groupOwnerId,
+                                            sessions: endedSessions,
+                                            confirmedMembersBySession:
+                                                confirmedMembersBySession,
+                                          ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.primaryDark,
+                                        side: BorderSide(
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.35,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                      ),
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: const [
+                                            Icon(
+                                              Icons.history_rounded,
+                                              size: 18,
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'รอบนัดสิ้นสุดแล้ว',
+                                              maxLines: 1,
+                                              softWrap: false,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 _frostedCard(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,

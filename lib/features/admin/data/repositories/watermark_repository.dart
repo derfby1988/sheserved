@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:sheserved/config/app_config.dart';
+import 'package:sheserved/core/network/authenticated_http_client.dart';
 import 'package:sheserved/services/service_locator.dart';
 
 class WatermarkConfig {
@@ -58,8 +58,9 @@ class WatermarkConfig {
 }
 
 class WatermarkRepository {
-  final String _baseUrl = AppConfig.localApiUrl;
-
+  /// Phase 13.3 — Bearer path via AuthenticatedHttpClient (refresh-once).
+  /// _headers ยังใส่ x-user-id เป็น compat fallback สำหรับ direct mode
+  /// จนกว่า STRICT_AUTH_ROUTES จะตัดสิทธิ์ — server prefer JWT เสมอ
   Map<String, String> get _headers {
     final userId = ServiceLocator.instance.currentUser?.id;
     return {
@@ -70,7 +71,8 @@ class WatermarkRepository {
 
   Future<WatermarkConfig?> getConfig() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/admin/watermark'));
+      final response = await AuthenticatedHttpClient.instance
+          .request('GET', '/api/admin/watermark', headers: _headers);
       if (response.statusCode == 200) {
         return WatermarkConfig.fromJson(json.decode(response.body));
       }
@@ -84,8 +86,9 @@ class WatermarkRepository {
   /// ผลลัพธ์: null = สำเร็จ, String = ข้อความ Error
   Future<String?> updateConfig(WatermarkConfig config) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/api/admin/watermark'),
+      final response = await AuthenticatedHttpClient.instance.request(
+        'PUT',
+        '/api/admin/watermark',
         headers: _headers,
         body: json.encode(config.toJson()),
       );
@@ -105,16 +108,25 @@ class WatermarkRepository {
   Future<String?> uploadImage(File imageFile) async {
     try {
       final userId = ServiceLocator.instance.currentUser?.id;
-      final uri = Uri.parse('$_baseUrl/api/admin/watermark/upload');
-      final request = http.MultipartRequest('POST', uri);
-      
-      if (userId != null) {
-        request.headers['x-user-id'] = userId;
-      }
-      
-      request.files.add(await http.MultipartFile.fromPath('watermark_image', imageFile.path));
-      
-      final streamedResponse = await request.send();
+      final streamedResponse = await AuthenticatedHttpClient.instance
+          .sendMultipart(() async {
+            final request = http.MultipartRequest(
+              'POST',
+              Uri.parse(
+                '${AuthenticatedHttpClient.instance.backendApiUrl}/api/admin/watermark/upload',
+              ),
+            );
+            if (userId != null) {
+              request.headers['x-user-id'] = userId;
+            }
+            request.files.add(
+              await http.MultipartFile.fromPath(
+                'watermark_image',
+                imageFile.path,
+              ),
+            );
+            return request;
+          });
       final response = await http.Response.fromStream(streamedResponse);
       
       if (response.statusCode == 200) {

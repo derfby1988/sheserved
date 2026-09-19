@@ -320,6 +320,149 @@ async function main() {
     delete process.env.STRICT_AUTH_ROUTES;
   });
 
+  // ── 5. Socket connection authentication (step 4) ─────────────────────
+  console.log('\n5. Socket connection auth (middleware/socket-auth.js):');
+
+  const {
+    socketAuthMiddleware,
+    isVerifiedSocket,
+    checkEventIdentity,
+    claimedActorMismatch,
+  } = require('../middleware/socket-auth');
+
+  function fakeSocket({ auth = {}, headers = {} } = {}) {
+    return {
+      handshake: { auth, headers },
+      emitted: [],
+      emit(event, payload) { this.emitted.push([event, payload]); },
+    };
+  }
+  function runSocketAuth(mw, socket) {
+    return new Promise((resolve) => {
+      mw(socket, (err) => resolve({ socket, error: err || null }));
+    });
+  }
+  const mw = () =>
+    socketAuthMiddleware({ getPool: () => localPoolOk, supabaseForSync: null });
+
+  await test('valid Backend JWT socket → verified identity (source=jwt)', async () => {
+    const restore = stubGateway(gatewayOk);
+    try {
+      const token = jwtLib.signAccessToken({ userId: USER_ID, sessionId: SESSION_ID });
+      const { socket, error } = await runSocketAuth(mw(), fakeSocket({ auth: { token } }));
+      assert.strictEqual(error, null);
+      assert.strictEqual(socket.identitySource, 'jwt');
+      assert.strictEqual(socket.userId, USER_ID);
+      assert.strictEqual(isVerifiedSocket(socket), true);
+    } finally { restore(); }
+  });
+
+  await test('forged token socket → hard reject (no legacy fallback)', async () => {
+    const forged = require('jsonwebtoken').sign(
+      { sub: USER_ID, iss: 'sheserved-test', aud: 'sheserved-test-app', typ: 'access' },
+      'wrong-secret-wrong-secret-wrong-sec',
+      { algorithm: 'HS256', keyid: 'test-active' }
+    );
+    const { error } = await runSocketAuth(
+      mw(),
+      fakeSocket({ auth: { token: forged, userId: USER_ID } })
+    );
+    assert.ok(error, 'expected rejection');
+    assert.match(error.message, /invalid or expired/i);
+  });
+
+  await test('expired token socket → reject', async () => {
+    const token = require('jsonwebtoken').sign(
+      { sub: USER_ID, iss: 'sheserved-test', aud: 'sheserved-test-app', typ: 'access' },
+      process.env.JWT_ACTIVE_SECRET,
+      { algorithm: 'HS256', keyid: 'test-active', expiresIn: -5 }
+    );
+    const { error } = await runSocketAuth(mw(), fakeSocket({ auth: { token } }));
+    assert.ok(error);
+  });
+
+  await test('revoked session socket → reject', async () => {
+    const restore = stubGateway(async (userId, cb) => {
+      const client = {
+        query: async (sql) => {
+          if (sql.includes('public.users')) {
+            return { rows: [{ id: USER_ID, is_active: true, user_category_id: 'consumer' }] };
+          }
+          if (sql.includes('public.sessions')) {
+            return { rows: [{ revoked_at: new Date() }] };
+          }
+          return { rows: [] };
+        },
+      };
+      return cb(client);
+    });
+    try {
+      const token = jwtLib.signAccessToken({ userId: USER_ID, sessionId: SESSION_ID });
+      const { error } = await runSocketAuth(mw(), fakeSocket({ auth: { token } }));
+      assert.ok(error);
+      assert.match(error.message, /revoked/i);
+    } finally { restore(); }
+  });
+
+  await test('legacy auth.userId → compat identity (source=legacy)', async () => {
+    const { socket, error } = await runSocketAuth(
+      mw(),
+      fakeSocket({ auth: { userId: USER_ID } })
+    );
+    assert.strictEqual(error, null);
+    assert.strictEqual(socket.identitySource, 'legacy');
+    assert.strictEqual(socket.userId, USER_ID);
+    assert.strictEqual(isVerifiedSocket(socket), false);
+  });
+
+  await test('STRICT_SOCKET_AUTH=true → legacy handshake rejected', async () => {
+    process.env.STRICT_SOCKET_AUTH = 'true';
+    delete require.cache[require.resolve('../config/rollout-flags')];
+    delete require.cache[require.resolve('../middleware/socket-auth')];
+    const strict = require('../middleware/socket-auth').socketAuthMiddleware({
+      getPool: () => localPoolOk, supabaseForSync: null,
+    });
+    const { error } = await runSocketAuth(strict, fakeSocket({ auth: { userId: USER_ID } }));
+    assert.ok(error, 'expected rejection');
+    delete process.env.STRICT_SOCKET_AUTH;
+    delete require.cache[require.resolve('../config/rollout-flags')];
+    delete require.cache[require.resolve('../middleware/socket-auth')];
+  });
+
+  await test('anonymous socket → allowed with null identity (public allowlist)', async () => {
+    const { socket, error } = await runSocketAuth(mw(), fakeSocket());
+    assert.strictEqual(error, null);
+    assert.strictEqual(socket.identitySource, 'anonymous');
+    assert.strictEqual(socket.userId, null);
+  });
+
+  await test('checkEventIdentity: strict event requires verified socket', async () => {
+    process.env.STRICT_SOCKET_EVENTS = 'user-connected';
+    delete require.cache[require.resolve('../config/rollout-flags')];
+    delete require.cache[require.resolve('../middleware/socket-auth')];
+    const sa = require('../middleware/socket-auth');
+    const anon = { identitySource: 'anonymous', userId: null };
+    const legacy = { identitySource: 'legacy', userId: USER_ID };
+    const jwtSock = { identitySource: 'jwt', userId: USER_ID };
+    assert.strictEqual(sa.checkEventIdentity(anon, 'user-connected').code, 'VERIFIED_REQUIRED');
+    assert.strictEqual(sa.checkEventIdentity(legacy, 'user-connected').code, 'VERIFIED_REQUIRED');
+    assert.strictEqual(sa.checkEventIdentity(jwtSock, 'user-connected'), null);
+    // non-strict event: anonymous denied, legacy OK
+    assert.strictEqual(sa.checkEventIdentity(anon, 'video-interaction').code, 'AUTH_REQUIRED');
+    assert.strictEqual(sa.checkEventIdentity(legacy, 'video-interaction'), null);
+    delete process.env.STRICT_SOCKET_EVENTS;
+    delete require.cache[require.resolve('../config/rollout-flags')];
+    delete require.cache[require.resolve('../middleware/socket-auth')];
+  });
+
+  await test('claimedActorMismatch: payload ≠ socket → mismatch detected', async () => {
+    const sock = { userId: USER_ID };
+    assert.strictEqual(claimedActorMismatch(sock, OTHER_USER), true);
+    assert.strictEqual(claimedActorMismatch(sock, USER_ID), false);
+    assert.strictEqual(claimedActorMismatch(sock, null), false);
+    assert.strictEqual(claimedActorMismatch({ userId: null }, OTHER_USER), false);
+  });
+
   // ── Summary ──────────────────────────────────────────────────────────
   const passed = results.filter((r) => r.status === 'PASS').length;
   const failed = results.filter((r) => r.status === 'FAIL').length;

@@ -8,6 +8,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../shared/widgets/widgets.dart';
 import '../../../health/data/models/health_article_models.dart';
 import '../../../health/data/repositories/health_repository.dart';
+import '../../../../core/network/authenticated_http_client.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../../consultation/presentation/logic/consultation_guard.dart';
@@ -388,7 +389,10 @@ class _HomePageState extends ConsumerState<HomePage>
   void _connectWebSocket() {
     final userId = ServiceLocator.instance.currentUser?.id;
     if (userId != null) {
-      WebSocketService().connect(userId: userId);
+      WebSocketService().connect(
+        userId: userId,
+        authToken: AuthenticatedHttpClient.instance.accessToken,
+      );
     }
   }
 

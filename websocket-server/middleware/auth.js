@@ -264,7 +264,9 @@ function strictRouteGuard() {
   const { isStrictRoute } = require('../config/rollout-flags');
   const strict = requireVerifiedIdentity();
   return (req, res, next) => {
-    if (isStrictRoute(req.path)) {
+    // originalUrl คง path เต็มไว้เสมอ — req.path ถูก strip เมื่ออยู่ใน
+    // mounted router ทำให้ strict-prefix match พลาด
+    if (isStrictRoute(req.originalUrl || req.path)) {
       return strict(req, res, next);
     }
     next();
@@ -280,7 +282,7 @@ function strictRouteGuard() {
 function whenStrictRoute(...middlewares) {
   const { isStrictRoute } = require('../config/rollout-flags');
   return (req, res, next) => {
-    if (!isStrictRoute(req.path)) return next();
+    if (!isStrictRoute(req.originalUrl || req.path)) return next();
     let i = 0;
     const step = (err) => {
       if (err) return next(err);

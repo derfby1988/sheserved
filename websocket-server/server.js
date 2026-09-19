@@ -69,6 +69,9 @@ const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
 
 // Phase 1 — Route Security Middleware
 const { verifyToken, requireRole, requireAuth, strictRouteGuard, assertActorMatches, whenStrictRoute } = require('./middleware/auth');
+const { socketAuthMiddleware, isVerifiedSocket, checkEventIdentity, claimedActorMismatch } = require('./middleware/socket-auth');
+const { isStrictSocketEvent, strictSocketAuthEnabled } = require('./config/rollout-flags');
+const { authorizeRoomJoin } = require('./services/room-authorization');
 const { requestContext } = require('./middleware/request-context');
 const donationQueueService = require('./services/donation-queue');
 
@@ -79,6 +82,17 @@ const emergencyHealthReleaseChecker = require('./services/emergency-health-relea
 const emergencyHealthSessionService = require('./services/emergency-health-session-service');
 const emergencyHealthMonitorService = require('./services/emergency-health-monitor-service');
 const inventoryAlertChecker = require('./services/inventory-alert-checker');
+const { archiveChatMessages } = require('./services/chat-archive-service');
+const { notificationsRoutes, professionChangeRoute } = require('./routes/notifications');
+const { chatApiRoutes } = require('./routes/chat-api');
+const { healthRoutes } = require('./routes/health');
+const { emergencyHealthRoutes } = require('./routes/emergency-health');
+const { professionsRoutes } = require('./routes/professions');
+const { usersRoutes } = require('./routes/users');
+const { applicationsRoutes } = require('./routes/applications');
+const { locationsRoutes } = require('./routes/locations');
+const { syncRoutes } = require('./routes/sync');
+const queueRegistry = require('./queues');
 
 // Sync Service
 const { reconcileLocalToCloud } = require('./services/sync-service');
@@ -118,93 +132,17 @@ const io = new Server(server, {
 // Initialize Socket Service
 socketService.init(io);
 
-// ── Phase 1 — Socket.IO Connection-Level Auth ──
-// Verifies identity on every new WebSocket connection before any events are handled.
-// The client must provide { auth: { token: '...' } } or x-user-id header.
-io.use(async (socket, next) => {
-  try {
-    // 1. Extract identity from handshake
-    // The Flutter client sends both userId and token. Prefer the explicit
-    // compatibility identity, then decode the verified-token path below.
-    let userId = socket.handshake.auth?.userId
-      || socket.handshake.headers?.['x-user-id'];
-
-    // 2. Try the handshake JWT, then the Bearer header, for compatibility.
-    const handshakeToken = socket.handshake.auth?.token;
-    if (!userId && handshakeToken) {
-      try {
-        const parts = `${handshakeToken}`.split('.');
-        if (parts.length === 3) {
-          const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
-          const claims = JSON.parse(payload);
-          if (claims.sub) userId = claims.sub;
-        }
-      } catch (_) {
-        // malformed token
-      }
-    }
-    if (!userId && socket.handshake.headers?.authorization) {
-      const authHeader = socket.handshake.headers.authorization;
-      if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.slice(7);
-        try {
-          const parts = token.split('.');
-          if (parts.length === 3) {
-            const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
-            const claims = JSON.parse(payload);
-            if (claims.sub) userId = claims.sub;
-          }
-        } catch (_) {
-          // malformed token
-        }
-      }
-    }
-
-    // 3. Verify against Supabase (source of truth for users), falling back to
-    //    the local pool only when the Supabase client is not configured.
-    if (userId) {
-      let userRow = null;
-      if (supabaseForSync) {
-        const { data, error } = await supabaseForSync
-          .from('users')
-          .select('id, is_active, role')
-          .eq('id', userId)
-          .maybeSingle();
-        if (error) throw error;
-        userRow = data;
-      } else if (pool) {
-        const result = await pool.query(
-          'SELECT id, is_active, role FROM users WHERE id = $1',
-          [userId]
-        );
-        userRow = result.rows[0] || null;
-      }
-
-      if (!userRow) {
-        return next(new Error('Authentication failed: User not found'));
-      }
-      if (!userRow.is_active) {
-        return next(new Error('Authentication failed: User is inactive'));
-      }
-      socket.user = {
-        id: userRow.id,
-        role: userRow.role || 'consumer',
-      };
-      socket.userId = userRow.id;
-      socket.userRole = userRow.role || 'consumer';
-    } else {
-      // Anonymous connections allowed for public features (video viewing, etc.)
-      socket.user = null;
-      socket.userId = null;
-      socket.userRole = null;
-    }
-
-    next();
-  } catch (err) {
-    console.error('[SocketAuth] Connection auth error:', err.message);
-    next(new Error('Internal server error during authentication'));
-  }
-});
+// ── Phase 13.3 — Socket.IO Connection-Level Auth ──
+// Signed Backend access token = the only trusted actor (signature, kid,
+// iss, aud, exp, session revoke, active user — middleware/socket-auth.js).
+// Legacy auth.userId / x-user-id handshakes = compatibility identity
+// (not a trusted actor) until STRICT_SOCKET_AUTH cuts over.
+io.use(
+  socketAuthMiddleware({
+    getPool: () => pool,
+    supabaseForSync,
+  })
+);
 
 // Database configuration (optional - can work without database)
 let pool = null;
@@ -390,265 +328,23 @@ app.use('/api', strictRouteGuard());
 
 // Custom-auth notification and profession-change APIs.
 // Supabase is the source of truth for users/applications/notifications, so
-// these routes use the service-role client while identity comes only from
-// req.userId (verified by verifyToken). Actor IDs from the body are ignored.
-const NOTIFICATION_COLUMNS =
-  'id, profession_id, recipient_id, category, event_type, title, body, payload, is_read, read_at, dismissed_at, created_at';
+// ── Phase 13.3 P1-3: route extraction — inline handlers moved to routes/ ──
+app.use('/api/notifications', verifyToken(pool), notificationsRoutes({ supabaseForSync, socketService }));
+app.use('/api/profession-change', verifyToken(pool), professionChangeRoute({ supabaseForSync, socketService }));
+app.use('/api', chatApiRoutes({ pool }));
+app.use('/api/emergency-health', emergencyHealthRoutes({ verifyTokenMw: verifyToken(pool) }));
+app.use('/api/professions', professionsRoutes({ pool }));
+app.use('/api/users', usersRoutes({ pool, verifyTokenMw: verifyToken(pool) }));
+app.use('/api/applications', applicationsRoutes({ pool, verifyTokenMw: verifyToken(pool) }));
+app.use('/api/locations', locationsRoutes({ pool, locationsCache, verifyTokenMw: verifyToken(pool) }));
+app.use('/api', syncRoutes({ pool }));
 
-function requireNotificationStore(res) {
-  if (!supabaseForSync) {
-    res.status(503).json({ error: 'Notification store not available' });
-    return false;
-  }
-  return true;
-}
-
-app.get('/api/notifications', verifyToken(pool), async (req, res) => {
-  if (!req.userId) return res.status(401).json({ error: 'Login required' });
-  if (!requireNotificationStore(res)) return;
-
-  const category = typeof req.query.category === 'string' ? req.query.category : null;
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
-  try {
-    let query = supabaseForSync
-      .from('app_notifications')
-      .select(NOTIFICATION_COLUMNS)
-      .eq('recipient_id', req.userId)
-      .is('dismissed_at', null);
-    if (category) query = query.eq('category', category);
-    const { data, error } = await query.order('created_at', { ascending: false }).limit(limit);
-    if (error) throw error;
-    res.json(data || []);
-  } catch (error) {
-    console.error('[Notifications] List failed:', error.message);
-    res.status(500).json({ error: 'Failed to load notifications' });
-  }
-});
-
-app.get('/api/notifications/unread-count', verifyToken(pool), async (req, res) => {
-  if (!req.userId) return res.status(401).json({ error: 'Login required' });
-  if (!requireNotificationStore(res)) return;
-
-  const category = typeof req.query.category === 'string' ? req.query.category : null;
-  try {
-    let query = supabaseForSync
-      .from('app_notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('recipient_id', req.userId)
-      .eq('is_read', false)
-      .is('dismissed_at', null);
-    if (category) query = query.eq('category', category);
-    const { count, error } = await query;
-    if (error) throw error;
-    res.json({ count: count || 0 });
-  } catch (error) {
-    console.error('[Notifications] Unread count failed:', error.message);
-    res.status(500).json({ error: 'Failed to load unread count' });
-  }
-});
-
-async function updateOwnNotification(req, res, patch) {
-  if (!req.userId) return res.status(401).json({ error: 'Login required' });
-  if (!requireNotificationStore(res)) return;
-  try {
-    const { data, error } = await supabaseForSync
-      .from('app_notifications')
-      .update(patch)
-      .eq('id', req.params.id)
-      .eq('recipient_id', req.userId)
-      .select('id');
-    if (error) throw error;
-    res.json({ success: Array.isArray(data) && data.length === 1 });
-  } catch (error) {
-    console.error('[Notifications] Update failed:', error.message);
-    res.status(500).json({ error: 'Failed to update notification' });
-  }
-}
-
-app.post('/api/notifications/:id/read', verifyToken(pool), (req, res) =>
-  updateOwnNotification(req, res, { is_read: true, read_at: new Date().toISOString() }));
-
-app.post('/api/notifications/:id/dismiss', verifyToken(pool), (req, res) =>
-  updateOwnNotification(req, res, {
-    is_read: true,
-    read_at: new Date().toISOString(),
-    dismissed_at: new Date().toISOString(),
-  }));
-
-app.post('/api/profession-change', verifyToken(pool), async (req, res) => {
-  if (!req.userId) return res.status(401).json({ error: 'Login required' });
-  if (!requireNotificationStore(res)) return;
-
-  const {
-    professionId,
-    firstName,
-    lastName,
-    username,
-    phone,
-    profileImageUrl,
-    registrationData = {},
-  } = req.body || {};
-  if (!professionId || !firstName || !username) {
-    return res.status(400).json({ error: 'professionId, firstName and username are required' });
-  }
-
-  try {
-    const { data: profession, error: professionError } = await supabaseForSync
-      .from('professions')
-      .select('id, name, requires_verification, category')
-      .eq('id', professionId)
-      .eq('is_active', true)
-      .maybeSingle();
-    if (professionError) throw professionError;
-    if (!profession) return res.status(404).json({ error: 'Profession not found' });
-
-    if (!profession.requires_verification) {
-      const { error: updateError } = await supabaseForSync
-        .from('users')
-        .update({
-          profession_id: professionId,
-          role: profession.category === 'consumer' ? 'consumer' : 'provider',
-          verification_status: 'verified',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', req.userId)
-        .neq('role', 'admin');
-      if (updateError) throw updateError;
-      return res.json({ requiresVerification: false });
-    }
-
-    // The RPC enforces PENDING_EXISTS / APPROVED_EXISTS / ROLE_EXISTS atomically.
-    const { data: application, error: rpcError } = await supabaseForSync.rpc(
-      'create_registration_application',
-      {
-        p_user_id: req.userId,
-        p_profession_id: professionId,
-        p_first_name: firstName,
-        p_last_name: lastName || '',
-        p_username: username,
-        p_phone: phone || null,
-        p_profile_image_url: profileImageUrl || null,
-        p_registration_data: registrationData,
-      },
-    );
-    if (rpcError) {
-      if (rpcError.message.includes('PENDING_EXISTS')) {
-        return res.status(409).json({ error: 'คุณมีใบสมัครที่กำลังรอตรวจสอบอยู่แล้ว' });
-      }
-      if (rpcError.message.includes('APPROVED_EXISTS')) {
-        return res.status(409).json({ error: 'คุณได้รับการอนุมัติสำหรับอาชีพนี้แล้ว' });
-      }
-      if (rpcError.message.includes('ROLE_EXISTS')) {
-        return res.status(409).json({ error: 'คุณมีสิทธิ์ในองค์กรนี้อยู่แล้ว' });
-      }
-      if (rpcError.message.includes('FORBIDDEN')) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-      if (rpcError.message.includes('USER_NOT_FOUND')) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      if (rpcError.message.includes('ADMIN_CANNOT_APPLY')) {
-        return res
-          .status(403)
-          .json({ error: 'ผู้ดูแลระบบไม่สามารถสมัครเปลี่ยนอาชีพได้' });
-      }
-      throw rpcError;
-    }
-
-    // create_registration_application snapshots users.profession_id into
-    // previous_profession_id and moves the user to the pending profession in
-    // the same transaction — no separate users update needed here.
-
-    const { data: admins, error: adminError } = await supabaseForSync
-      .from('users')
-      .select('id')
-      .eq('role', 'admin')
-      .eq('is_active', true);
-    if (adminError) throw adminError;
-
-    const applicantName = `${firstName} ${lastName || ''}`.trim();
-    const title = 'มีคำขอเปลี่ยนอาชีพใหม่';
-    const body = `${applicantName} ขอสมัครเป็น ${profession.name}`;
-    const notificationPayload = {
-      applicationId: application.id,
-      userId: application.user_id,
-      professionId: application.profession_id,
-      route: '/admin/applications',
-    };
-    const recipientIds = (admins || []).map((admin) => admin.id);
-    if (recipientIds.length > 0) {
-      const { data: inserted, error: notifyError } = await supabaseForSync
-        .from('app_notifications')
-        .insert(recipientIds.map((recipientId) => ({
-          profession_id: professionId,
-          recipient_id: recipientId,
-          category: 'admin',
-          event_type: 'profession_application.created',
-          title,
-          body,
-          payload: notificationPayload,
-        })))
-        .select(NOTIFICATION_COLUMNS);
-      if (notifyError) {
-        console.error('[ProfessionChange] Admin notification failed:', notifyError.message);
-      } else {
-        for (const notification of inserted || []) {
-          socketService.broadcastApplicationNotification([notification.recipient_id], notification);
-        }
-      }
-    }
-
-    res.status(201).json({ requiresVerification: true, application });
-  } catch (error) {
-    console.error('[ProfessionChange] Failed:', error.message);
-    res.status(500).json({ error: 'Failed to submit profession change' });
-  }
-});
-
-// Phase 2: Health Check Endpoint for BullMQ Queues
-const queueRegistry = require('./queues');
-app.get('/health/queues', async (req, res) => {
-  try {
-    const snapshot = await queueRegistry.getHealthSnapshot();
-    res.status(snapshot.healthy ? 200 : 503).json(snapshot);
-  } catch (err) {
-    console.error('[Health] Queue health check failed:', err.message);
-    res.status(500).json({ error: 'Health check failed', detail: err.message });
-  }
-});
-
-// Phase 2: DLQ / Failed Job Inspection Endpoint
-app.get('/health/queues/:queueName/failed', async (req, res) => {
-  try {
-    const { queueName } = req.params;
-    const { start = 0, end = 49 } = req.query;
-    const jobs = await queueRegistry.getFailedJobs(queueName, parseInt(start, 10), parseInt(end, 10));
-    res.json({ queue: queueName, failedJobs: jobs, count: jobs.length });
-  } catch (err) {
-    console.error(`[Health] Failed to fetch DLQ for ${req.params.queueName}:`, err.message);
-    res.status(500).json({ error: 'DLQ inspection failed', detail: err.message });
-  }
-});
-
-// Phase 2: Requeue failed job endpoint
-app.post('/health/queues/:queueName/retry', async (req, res) => {
-  try {
-    const { queueName } = req.params;
-    const { jobId } = req.body || {};
-    if (!jobId) {
-      return res.status(400).json({ error: 'jobId required' });
-    }
-
-    await queueRegistry.retryJob(queueName, jobId);
-    res.json({ queue: queueName, jobId, retried: true });
-  } catch (err) {
-    console.error(`[Health] Failed to retry job ${req.params.queueName}:`, err.message);
-    res.status(500).json({ error: 'Requeue failed', detail: err.message });
-  }
-});
 
 // Store connected users
 const connectedUsers = new Map();
+
+// Health + queue-inspection routes (needs connectedUsers — defined above)
+app.use(healthRoutes({ getPool: () => pool, connectedUsers }));
 
 // ============================================================
 // ✅ [Yield Way] Helper: คัดกรองและส่งแจ้งเตือนให้ผู้ใช้บนเส้นทาง
@@ -820,33 +516,60 @@ io.on('connection', (socket) => {
   socket.on('user-connected', async (data) => {
     const { userId, isThaiMhungEnabled, isYieldWayEnabled, yieldWayRadius, latitude, longitude } = data;
 
-    // Defense-in-depth: if connection-level auth resolved a user, the event userId must match
-    if (socket.userId && socket.userId !== userId) {
-      console.warn(`[SocketAuth] user-connected mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
-      socket.emit('error', { message: 'User identity mismatch' });
+    // Phase 13.3 — verified socket → identity comes from socket.userId ONLY;
+    // a claimed payload userId that disagrees is rejected (never re-binds).
+    if (isVerifiedSocket(socket)) {
+      if (claimedActorMismatch(socket, userId)) {
+        console.warn(`[SocketAuth] user-connected mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+        socket.emit('error', { message: 'User identity mismatch' });
+        return;
+      }
+    } else {
+      // Compat window: strict flag can force verified identity for this event
+      const denial = checkEventIdentity(socket, 'user-connected');
+      if (denial) {
+        console.warn(`[SocketAuth] user-connected rejected: ${denial.code} (source=${socket.identitySource})`);
+        socket.emit('error', { message: denial.message });
+        return;
+      }
+      // Legacy behavior: connection-level identity wins when set; otherwise
+      // the claimed userId binds (compat — flagged 'legacy', not trusted).
+      if (socket.userId && socket.userId !== userId) {
+        console.warn(`[SocketAuth] user-connected mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
+        socket.emit('error', { message: 'User identity mismatch' });
+        return;
+      }
+    }
+
+    const effectiveUserId = socket.userId || userId;
+    if (!effectiveUserId) {
+      socket.emit('error', { message: 'userId is required' });
       return;
     }
 
     // ✅ [Yield Way] เก็บข้อมูลครบถ้วนสำหรับการคัดกรองใน _broadcastYieldWayAlerts
-    connectedUsers.set(userId, {
+    connectedUsers.set(effectiveUserId, {
       socketId: socket.id,
-      userId,
+      userId: effectiveUserId,
       isThaiMhungEnabled: isThaiMhungEnabled === true,
       isYieldWayEnabled: isYieldWayEnabled === true,
       yieldWayRadius: yieldWayRadius || 1000,
       userLat: latitude || null,
       userLng: longitude || null,
     });
-    socket.userId = userId;
+    // Compat: legacy/anonymous sockets still bind the claimed id so the
+    // connection-level identity stays consistent for event guards below.
+    // Verified sockets already have socket.userId set by socket-auth.
+    if (!socket.userId) socket.userId = effectiveUserId;
 
-    console.log(`User ${userId} connected (socket: ${socket.id}, thaiMhung: ${isThaiMhungEnabled}, yieldWay: ${isYieldWayEnabled})`);
+    console.log(`User ${effectiveUserId} connected (socket: ${socket.id}, thaiMhung: ${isThaiMhungEnabled}, yieldWay: ${isYieldWayEnabled}, source=${socket.identitySource})`);
 
-    // Join user's personal room
-    socket.join(`user-${userId}`);
-    console.log(`User ${userId} joined room user-${userId}`);
+    // Join user's personal room — bound to verified socket.userId when jwt
+    socket.join(`user-${effectiveUserId}`);
+    console.log(`User ${effectiveUserId} joined room user-${effectiveUserId}`);
 
     // Notify others that user is online
-    socket.broadcast.emit('user-online', { userId });
+    socket.broadcast.emit('user-online', { userId: effectiveUserId });
   });
 
   const relayFitnessBookingStatus = (data) => {
@@ -957,14 +680,21 @@ io.on('connection', (socket) => {
   // Location update event
   socket.on('location-update', async (data) => {
     if (!socketRateLimit(socket, 'location-update')) return;
-    const { userId, latitude, longitude, timestamp, accuracy, speed, heading } = data;
+    const { latitude, longitude, timestamp, accuracy, speed, heading } = data;
+    const claimedUserId = data.userId;
 
-    // Defense-in-depth: validate userId matches pre-authenticated socket user
-    if (socket.userId && socket.userId !== userId) {
-      console.warn(`[SocketAuth] location-update mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
-      socket.emit('error', { message: 'User identity mismatch' });
+    // Phase 13.3 — actor = socket.userId only; payload userId mismatch → denied
+    const denial = checkEventIdentity(socket, 'location-update');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'location-update', code: denial.code });
       return;
     }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      console.warn(`[SocketAuth] location-update mismatch: socket.userId=${socket.userId}, data.userId=${claimedUserId}`);
+      socket.emit('authz.denied', { event: 'location-update', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
 
     // ✅ [Yield Way] อัพเดตตำแหน่งใน connectedUsers เพื่อใช้คัดกรองแบบ Real-time
     if (userId && connectedUsers.has(userId)) {
@@ -986,22 +716,6 @@ io.on('connection', (socket) => {
       // Save to database if available
       if (pool) {
         try {
-          // Check if user exists (UUID-based schema v2.1)
-          const userCheck = await pool.query(
-            'SELECT id FROM users WHERE id = $1',
-            [userId]
-          );
-
-          if (userCheck.rows.length === 0) {
-            // Create user if not exists (with required fields)
-            await pool.query(
-              `INSERT INTO users (id, first_name, username, created_at) 
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (id) DO NOTHING`,
-              [userId, 'Guest', `guest_${userId.substring(0, 8)}`, new Date()]
-            );
-          }
-
           // Save location to database
           await pool.query(
             `INSERT INTO locations (user_id, latitude, longitude, accuracy, speed, heading, created_at) 
@@ -1052,8 +766,24 @@ io.on('connection', (socket) => {
   });
 
   // Subscribe to specific user's location
+  // Phase 13.3 — user-{id} carries private notifications; under strict flags
+  // only a verified socket may subscribe, and only to its own channel.
+  // (Cross-user location sharing moves to a dedicated channel in step 5.)
   socket.on('subscribe-user', (data) => {
     const { userId } = data;
+    const denial = checkEventIdentity(socket, 'subscribe-user');
+    if (denial) {
+      console.warn(`[SocketAuth] subscribe-user rejected: ${denial.code} socket=${socket.id}`);
+      socket.emit('error', { message: denial.message });
+      return;
+    }
+    // ภายใต้ strict flag: verified socket subscribe ได้เฉพาะ channel ตัวเอง
+    // (user-{id} พา private notifications — cross-user subscribe = รั่ว)
+    if (isStrictSocketEvent('subscribe-user') && `${socket.userId}` !== `${userId}`) {
+      console.warn(`[SocketAuth] subscribe-user cross-user rejected: ${socket.userId} -> ${userId}`);
+      socket.emit('error', { message: 'Cannot subscribe to another user channel' });
+      return;
+    }
     socket.join(`user-${userId}`);
     console.log(`Socket ${socket.id} subscribed to user ${userId}`);
   });
@@ -1092,9 +822,28 @@ io.on('connection', (socket) => {
   };
 
   // Join a room (for group tracking)
-  socket.on('join-room', (data) => {
+  socket.on('join-room', async (data) => {
     const { roomId } = data;
     const fullRoom = `room-${roomId}`;
+
+    // Phase 13.3 Step 6 — room authorization (data model:
+    // services/room-authorization.js). Under strict flags, non-public
+    // rooms require verified identity + membership; compat keeps join open.
+    if (isStrictSocketEvent('join-room') || strictSocketAuthEnabled()) {
+      try {
+        const verdict = await authorizeRoomJoin({ pool }, socket, fullRoom);
+        if (!verdict.allowed) {
+          console.warn(`[RoomAuth] join-room denied: ${socket.id} -> ${fullRoom} (${verdict.reason})`);
+          socket.emit('authz.denied', { event: 'join-room', room: fullRoom, reason: verdict.reason });
+          return;
+        }
+      } catch (err) {
+        console.error('[RoomAuth] authorize error:', err.message);
+        socket.emit('authz.denied', { event: 'join-room', room: fullRoom, reason: 'error' });
+        return;
+      }
+    }
+
     socket.join(fullRoom);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
@@ -1162,14 +911,22 @@ io.on('connection', (socket) => {
   socket.on('video-interaction', async (data) => {
     if (!socketRateLimit(socket, 'video-interaction')) return;
     // ✅ รองรับ requestId เพื่อแยกยอดบริจาคตามคำร้องแต่ละใบในวิดีโอเดียวกัน
-    const { videoId, userId, type, value, requestId } = data;
+    const { videoId, type, value, requestId } = data;
+    const claimedUserId = data.userId;
 
-    // Defense-in-depth: validate userId matches pre-authenticated socket user
-    if (socket.userId && socket.userId !== userId) {
-      console.warn(`[SocketAuth] video-interaction mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
-      socket.emit('error', { message: 'User identity mismatch' });
+    // Phase 13.3 — actor = socket.userId only (verified or compat-legacy);
+    // payload userId ที่ไม่ตรง → authz.denied
+    const denial = checkEventIdentity(socket, 'video-interaction');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'video-interaction', code: denial.code });
       return;
     }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      console.warn(`[SocketAuth] video-interaction mismatch: socket.userId=${socket.userId}, data.userId=${claimedUserId}`);
+      socket.emit('authz.denied', { event: 'video-interaction', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
 
     console.log(`[Video ${videoId}] Interaction from ${userId}: ${type} (${value}) requestId=${requestId}`);
 
@@ -1289,22 +1046,32 @@ io.on('connection', (socket) => {
   // Server broadcasts 'like-count-updated' to all clients in the video room
   socket.on('like-toggled', (data) => {
     if (!socketRateLimit(socket, 'like-toggled')) return;
-    const { videoId, count, liked, userId } = data;
+    const { videoId, count, liked } = data;
+    const claimedUserId = data.userId;
     if (!videoId) return;
-    console.log(`[Like] Video ${videoId}: ${liked ? '+1' : '-1'} by ${userId}, total=${count}`);
+    // Phase 13.3 — log actor from socket, never payload
+    const actorId = socket.userId || 'anonymous';
+    console.log(`[Like] Video ${videoId}: ${liked ? '+1' : '-1'} by ${actorId}, total=${count}`);
     io.to(`room-video-${videoId}`).emit('like-count-updated', { videoId, count, liked });
   });
 
   // ✅ [Yield Way] รับ Route Polyline ของจิตอาสา — บันทึกลง DB เพื่อใช้คัดกรองผู้รับแจ้งเตือน
   socket.on('volunteer-route', async (data) => {
-    const { videoId, responseId, encodedPolyline, fromLat, fromLng, toLat, toLng, userId } = data;
+    const { videoId, responseId, encodedPolyline, fromLat, fromLng, toLat, toLng } = data;
+    const claimedUserId = data.userId;
 
-    // Defense-in-depth: validate userId matches pre-authenticated socket user
-    if (socket.userId && socket.userId !== userId) {
-      console.warn(`[SocketAuth] volunteer-route mismatch: socket.userId=${socket.userId}, data.userId=${userId}`);
-      socket.emit('error', { message: 'User identity mismatch' });
+    // Phase 13.3 — actor = socket.userId only; payload mismatch → denied
+    const denial = checkEventIdentity(socket, 'volunteer-route');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'volunteer-route', code: denial.code });
       return;
     }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      console.warn(`[SocketAuth] volunteer-route mismatch: socket.userId=${socket.userId}, data.userId=${claimedUserId}`);
+      socket.emit('authz.denied', { event: 'volunteer-route', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
 
     console.log(`[Yield Way] Volunteer route received for video ${videoId}, response ${responseId}`);
 
@@ -1363,7 +1130,21 @@ io.on('connection', (socket) => {
   // ไม่ใช้ Supabase Auth / currentUser เลย
   // -------------------------------------------------------------------
   socket.on('emergency-alert', async (data) => {
-    const { userId, categoryId, videoId, type, text, isThaiMhungEnabled } = data;
+    const { categoryId, videoId, type, text, isThaiMhungEnabled } = data;
+    const claimedUserId = data.userId;
+
+    // Phase 13.3 — sender = socket.userId only; payload userId ไม่เชื่อ
+    const denial = checkEventIdentity(socket, 'emergency-alert');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'emergency-alert', code: denial.code });
+      return;
+    }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      console.warn(`[SocketAuth] emergency-alert mismatch: socket.userId=${socket.userId}, data.userId=${claimedUserId}`);
+      socket.emit('authz.denied', { event: 'emergency-alert', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
     console.log(`[Emergency] ====== ALERT RECEIVED ======`);
     console.log(`[Emergency] Sender: ${userId}`);
     console.log(`[Emergency] Category: ${categoryId}`);
@@ -1539,16 +1320,20 @@ io.on('connection', (socket) => {
     const RESCUE_STATUSES = ['accepted', 'en_route', 'arrived', 'resolved', 'cancelled'];
 
     // ✅ Authorization: ต้องมี responseId อ้างอิงได้ และตัวตนต้องตรงกัน
-    // (defense-in-depth เทียบกับ socket.userId ที่ผูกตอน connection)
+    // Phase 13.3 — actor = socket.userId only (verified or compat-legacy)
     if (!status || !RESCUE_STATUSES.includes(status)) {
       console.warn('[Rescue] Rejected: invalid status');
       return ack({ success: false, error: 'INVALID_STATUS' });
     }
-    if (socket.userId && volunteerId && socket.userId !== volunteerId) {
+    const denial = checkEventIdentity(socket, 'rescue-status-update');
+    if (denial) {
+      return ack({ success: false, error: denial.code });
+    }
+    if (claimedActorMismatch(socket, volunteerId)) {
       console.warn('[Rescue] Rejected: volunteer identity mismatch');
       return ack({ success: false, error: 'IDENTITY_MISMATCH' });
     }
-    const actorId = socket.userId || volunteerId;
+    const actorId = socket.userId;
     if (!responseId || !actorId) {
       console.warn('[Rescue] Rejected: missing responseId/actor');
       return ack({ success: false, error: 'MISSING_RESPONSE_ID' });
@@ -1614,7 +1399,7 @@ io.on('connection', (socket) => {
 
     // 4. Archive chat if resolved or cancelled to save space in main tables
     if (pool && (status === 'resolved' || status === 'cancelled')) {
-      await archiveChatMessages(videoId, status);
+      await archiveChatMessages(pool, videoId, status);
     }
 
     // 5. Acknowledge caller if callback provided
@@ -1626,7 +1411,14 @@ io.on('connection', (socket) => {
   // ส่งจาก Flutter เมื่อ approveRequest() เปลี่ยนสถานะ → ส่งต่อให้เจ้าของคำร้อง
   socket.on('donation-request-status-updated', (data) => {
     const { userId, requestId, title, status } = data;
-    console.log(`[Donation] Status updated: requestId=${requestId} status=${status} -> notify userId=${userId}`);
+    // Phase 13.3 — sender must be an identified socket (userId ใน payload
+    // คือ recipient ไม่ใช่ actor — ไม่ต้องเทียบ mismatch)
+    const denial = checkEventIdentity(socket, 'donation-request-status-updated');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'donation-request-status-updated', code: denial.code });
+      return;
+    }
+    console.log(`[Donation] Status updated: requestId=${requestId} status=${status} -> notify userId=${userId} (sender=${socket.userId})`);
     if (userId) {
       const payload = {
         userId,
@@ -1652,7 +1444,12 @@ io.on('connection', (socket) => {
   // ผู้ร้องขอปิดรับบริจาค (completed) → แจ้งผู้ดูไลฟ์ทุกคน
   socket.on('donation-closed', (data) => {
     const { videoId, requestId, title, currentAmount, reason } = data;
-    console.log(`[Donation] Requester closed request=${requestId} for video=${videoId} reason=${reason}`);
+    const denial = checkEventIdentity(socket, 'donation-closed');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'donation-closed', code: denial.code });
+      return;
+    }
+    console.log(`[Donation] Requester ${socket.userId} closed request=${requestId} for video=${videoId} reason=${reason}`);
     if (videoId) {
       io.to(`room-video-${videoId}`).emit('donation-closed', {
         videoId,
@@ -1669,7 +1466,20 @@ io.on('connection', (socket) => {
   // Responder โหวตว่าจะรับบริจาคต่อหรือไม่หลัง Mission Complete
   // event: { requestId, responderId, canContinue, note? }
   socket.on('donate-closure-vote', async (data) => {
-    const { requestId, responderId, canContinue, note } = data;
+    const { requestId, canContinue, note } = data;
+    const claimedResponderId = data.responderId;
+
+    // Phase 13.3 — voter = socket.userId only
+    const denial = checkEventIdentity(socket, 'donate-closure-vote');
+    if (denial) {
+      socket.emit('donate-closure-vote-result', { success: false, error: denial.code });
+      return;
+    }
+    if (claimedActorMismatch(socket, claimedResponderId)) {
+      socket.emit('donate-closure-vote-result', { success: false, error: 'IDENTITY_MISMATCH' });
+      return;
+    }
+    const responderId = socket.userId;
     console.log(`[Escrow] donate-closure-vote: request=${requestId} responder=${responderId} canContinue=${canContinue}`);
 
     if (!requestId || !responderId) {
@@ -1703,7 +1513,22 @@ io.on('connection', (socket) => {
   // Admin บังคับ release escrow ด้วยตนเอง
   // event: { requestId, adminUserId }
   socket.on('admin-release-escrow', async (data) => {
-    const { requestId, adminUserId } = data;
+    const { requestId } = data;
+    const claimedAdminId = data.adminUserId;
+
+    // Phase 13.3 — admin identity = socket.userId + server-side role check.
+    // role มาจาก DB ตอน handshake (ทั้ง verified และ compat-legacy) — เชื่อได้
+    const denial = checkEventIdentity(socket, 'admin-release-escrow');
+    if (denial || socket.userRole !== 'admin') {
+      console.warn(`[Escrow] admin-release-escrow rejected: role=${socket.userRole} source=${socket.identitySource}`);
+      socket.emit('admin-release-escrow-result', { success: false, error: 'FORBIDDEN' });
+      return;
+    }
+    if (claimedActorMismatch(socket, claimedAdminId)) {
+      socket.emit('admin-release-escrow-result', { success: false, error: 'IDENTITY_MISMATCH' });
+      return;
+    }
+    const adminUserId = socket.userId;
     console.log(`[Escrow] admin-release-escrow: request=${requestId} admin=${adminUserId}`);
 
     if (!requestId) {
@@ -1731,7 +1556,20 @@ io.on('connection', (socket) => {
 
   // Handle UI Preference Updates
   socket.on('save-ui-preference', async (data) => {
-    const { userId, key, value } = data;
+    const { key, value } = data;
+    const claimedUserId = data.userId;
+
+    // Phase 13.3 — actor = socket.userId only
+    const denial = checkEventIdentity(socket, 'save-ui-preference');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'save-ui-preference', code: denial.code });
+      return;
+    }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      socket.emit('authz.denied', { event: 'save-ui-preference', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
     console.log(`[UI] Save preference for ${userId}: ${key} = ${value}`);
     if (pool && userId && key) {
       try {
@@ -1749,26 +1587,60 @@ io.on('connection', (socket) => {
 
   // Handle Emergency Live Chat
   // -------------------------
-  socket.on('join-emergency-chat', (data) => {
-    const { videoId, userId, role } = data;
+  socket.on('join-emergency-chat', async (data) => {
+    const { videoId, role } = data;
     const roomName = `emergency-chat-${videoId}`;
+
+    // Phase 13.3 Step 6 — membership room: under strict flags require
+    // identity + membership (owner/active responder/admin)
+    if (isStrictSocketEvent('join-emergency-chat') || strictSocketAuthEnabled()) {
+      try {
+        const verdict = await authorizeRoomJoin({ pool }, socket, roomName);
+        if (!verdict.allowed) {
+          console.warn(`[RoomAuth] join-emergency-chat denied: ${socket.id} -> ${roomName} (${verdict.reason})`);
+          socket.emit('authz.denied', { event: 'join-emergency-chat', room: roomName, reason: verdict.reason });
+          return;
+        }
+      } catch (err) {
+        console.error('[RoomAuth] join-emergency-chat authorize error:', err.message);
+        socket.emit('authz.denied', { event: 'join-emergency-chat', room: roomName, reason: 'error' });
+        return;
+      }
+    }
+
+    // Phase 13.3 — presence identity = socket.userId (anonymous allowed to
+    // read public chat, presence shows 'anonymous' ไม่ใช่ claimed id)
+    const userId = socket.userId || 'anonymous';
     socket.join(roomName);
     console.log(`[Chat] User ${userId} (${role}) joined ${roomName}`);
-    
+
     // Optionally notify others
     socket.to(roomName).emit('emergency-chat-presence', { userId, role, status: 'joined' });
   });
 
   socket.on('leave-emergency-chat', (data) => {
-    const { videoId, userId } = data;
+    const { videoId } = data;
     const roomName = `emergency-chat-${videoId}`;
     socket.leave(roomName);
-    console.log(`[Chat] User ${userId} left ${roomName}`);
+    console.log(`[Chat] User ${socket.userId || 'anonymous'} left ${roomName}`);
   });
 
   socket.on('send-emergency-message', async (data) => {
     if (!socketRateLimit(socket, 'send-emergency-message')) return;
-    const { videoId, userId, role, userName, content, profileImageUrl, professionName, replyToId, replyToContent, replyToUserName } = data;
+    const { videoId, role, userName, content, profileImageUrl, professionName, replyToId, replyToContent, replyToUserName } = data;
+    const claimedUserId = data.userId;
+
+    // Phase 13.3 — sender = socket.userId only (persisted as sender_id)
+    const denial = checkEventIdentity(socket, 'send-emergency-message');
+    if (denial) {
+      socket.emit('authz.denied', { event: 'send-emergency-message', code: denial.code });
+      return;
+    }
+    if (claimedActorMismatch(socket, claimedUserId)) {
+      socket.emit('authz.denied', { event: 'send-emergency-message', code: 'ACTOR_MISMATCH' });
+      return;
+    }
+    const userId = socket.userId;
     console.log(`[Chat] Message in ${videoId} from ${userName} (${role}/${professionName || 'no-prof'}): ${content}`);
 
     const messagePayload = {
@@ -1835,922 +1707,19 @@ io.on('connection', (socket) => {
   // Manual Archive Trigger (optional use)
   socket.on('archive-chat', async (data) => {
     const { videoId } = data;
+    // Phase 13.3 — admin-only action (role จาก handshake/DB)
+    const denial = checkEventIdentity(socket, 'archive-chat');
+    if (denial || socket.userRole !== 'admin') {
+      socket.emit('authz.denied', { event: 'archive-chat', code: denial?.code || 'FORBIDDEN' });
+      return;
+    }
     if (pool && videoId) {
       console.log(`[Archive] Manual archiving requested for video ${videoId}`);
-      await archiveChatMessages(videoId, 'manual');
+      await archiveChatMessages(pool, videoId, 'manual');
     }
   });
 });
 
-async function archiveChatMessages(videoId, status) {
-  if (!pool) return;
-  try {
-    // Copy messages to archive
-    await pool.query(
-      `INSERT INTO chat_messages_archive (id, room_id, video_id, sender_id, content, created_at, metadata)
-       SELECT m.id, m.room_id, r.video_id, m.sender_id, m.content, m.created_at, m.metadata
-       FROM chat_messages m
-       JOIN chat_rooms r ON m.room_id = r.id
-       WHERE r.video_id = $1
-       ON CONFLICT (id) DO NOTHING`,
-      [videoId]
-    );
-    // Delete from active messages
-    await pool.query(
-      `DELETE FROM chat_messages WHERE room_id IN (SELECT id FROM chat_rooms WHERE video_id = $1)`,
-      [videoId]
-    );
-    // Mark room as archived
-    await pool.query(
-      `UPDATE chat_rooms SET last_message = $1, updated_at = NOW() WHERE video_id = $2`,
-      [`[Archived: ${status}]`, videoId]
-    );
-    console.log(`[Archive] Video ${videoId} archived successfully (${status})`);
-  } catch (err) {
-    console.error(`[Archive] Failed to archive video ${videoId}:`, err.message);
-  }
-}
-
-// ============================================================
-// Emergency Chat History API
-// GET /api/videos/:videoId/chat  — โหลดประวัติแชท (active)
-// GET /api/videos/:videoId/chat/archived — โหลดแชทที่ archive แล้ว
-// ============================================================
-
-app.get('/api/videos/:videoId/chat', async (req, res) => {
-  const { videoId } = req.params;
-  const limit = parseInt(req.query.limit) || 50;
-
-  try {
-    if (!pool) return res.status(503).json({ error: 'Database not available' });
-
-    const data = await cacheAside(`chat:active:${videoId}:${limit}`, async () => {
-      const result = await pool.query(
-        `SELECT
-           m.id,
-           m.room_id,
-           r.video_id           AS "videoId",
-           m.sender_id          AS "userId",
-           m.content,
-           m.created_at         AS "timestamp",
-           m.metadata->>'role'         AS role,
-           m.metadata->>'userName'     AS "userName",
-           m.metadata->>'profileImageUrl' AS "profileImageUrl",
-           m.metadata->>'professionName' AS "professionName",
-           m.metadata->>'replyToId'    AS "replyToId",
-           m.metadata->>'replyToContent' AS "replyToContent",
-           m.metadata->>'replyToUserName' AS "replyToUserName"
-         FROM chat_messages m
-         JOIN chat_rooms r ON m.room_id = r.id
-         WHERE r.video_id = $1
-         ORDER BY m.created_at ASC
-         LIMIT $2`,
-        [videoId, limit]
-      );
-      return result.rows;
-    }, TTL.SESSION);
-
-    res.json(data);
-  } catch (error) {
-    console.error('[Chat History] Error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/videos/:videoId/chat/archived', async (req, res) => {
-  const { videoId } = req.params;
-  const limit = parseInt(req.query.limit) || 100;
-
-  try {
-    if (!pool) return res.status(503).json({ error: 'Database not available' });
-
-    const data = await cacheAside(`chat:archived:${videoId}:${limit}`, async () => {
-      const result = await pool.query(
-        `SELECT
-           a.id,
-           a.video_id           AS "videoId",
-           a.sender_id          AS "userId",
-           a.content,
-           a.created_at         AS "timestamp",
-           a.metadata->>'role'         AS role,
-           a.metadata->>'userName'     AS "userName",
-           a.metadata->>'profileImageUrl' AS "profileImageUrl",
-           a.metadata->>'professionName' AS "professionName",
-           a.metadata->>'replyToId'    AS "replyToId",
-           a.metadata->>'replyToContent' AS "replyToContent",
-           a.metadata->>'replyToUserName' AS "replyToUserName"
-         FROM chat_messages_archive a
-         WHERE a.video_id = $1
-         ORDER BY a.created_at ASC
-         LIMIT $2`,
-        [videoId, limit]
-      );
-      return result.rows;
-    }, TTL.SESSION);
-
-    res.json(data);
-  } catch (error) {
-    console.error('[Chat Archive History] Error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/chat/archive/:videoId — Manual archive trigger via REST
-app.post('/api/chat/archive/:videoId', strictRateLimiter, duplicateCheckMiddleware('chat-archive', 10), async (req, res) => {
-  const { videoId } = req.params;
-  try {
-    if (!pool) return res.status(503).json({ error: 'Database not available' });
-    await archiveChatMessages(videoId, 'manual-api');
-    res.json({ success: true, message: `Chat archived for video ${videoId}` });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Health check endpoint
-app.get('/health', async (req, res) => {
-  // ✅ Phase 1: เพิ่ม Redis health status
-  const redisOk = await isRedisHealthy().catch(() => false);
-  res.json({
-    status: 'ok',
-    connectedUsers: connectedUsers.size,
-    database: pool ? 'connected' : 'not connected',
-    redis: redisOk ? 'connected' : 'not connected',
-    middleware: {
-      rateLimiter: 'active',
-      idempotency: 'active',
-      cacheAside: 'active',
-    },
-  });
-});
-
-
-// UI Preferences API
-app.get('/api/users/:userId/preferences/:key', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
-  const { userId, key } = req.params;
-  try {
-    if (!pool) return res.status(503).json({ error: 'Database not available' });
-    const result = await pool.query(
-      'SELECT preference_value FROM user_ui_preferences WHERE user_id = $1 AND preference_key = $2',
-      [userId, key]
-    );
-    if (result.rows.length === 0) return res.json({ value: null });
-    res.json({ value: result.rows[0].preference_value });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/users/:userId/preferences', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
-  const { userId } = req.params;
-  const { key, value } = req.body;
-  try {
-    if (!pool) return res.status(503).json({ error: 'Database not available' });
-    await pool.query(
-      `INSERT INTO user_ui_preferences (user_id, preference_key, preference_value, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (user_id, preference_key) DO UPDATE SET preference_value = $3, updated_at = NOW()`,
-      [userId, key, value]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============ EMERGENCY HEALTH API ============
-
-app.post('/api/emergency-health/sessions', strictRateLimiter, duplicateCheckMiddleware('emergency-health-session', 10), async (req, res) => {
-  try {
-    const { patientId, incidentId, videoId } = req.body || {};
-    const result = await emergencyHealthSessionService.createReleaseSession({
-      patientId,
-      incidentId,
-      videoId,
-    });
-
-    if (!result.created) {
-      return res.status(200).json(result);
-    }
-
-    return res.status(201).json(result);
-  } catch (error) {
-    console.error('[EmergencyHealth] create session error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/emergency-health/:incidentId', async (req, res) => {
-  try {
-    const { incidentId } = req.params;
-    const { responderId } = req.query;
-
-    if (!responderId) {
-      return res.status(400).json({ error: 'responderId is required' });
-    }
-
-    const data = await cacheAside(`emergency-health:${incidentId}:${responderId}`, async () => {
-      const result = await emergencyHealthSessionService.getIncidentHealthData({
-        incidentId,
-        responderId,
-      });
-      return result;
-    }, TTL.SESSION);
-
-    if (!data.allowed) {
-      return res.status(403).json(data);
-    }
-
-    return res.status(200).json(data);
-  } catch (error) {
-    console.error('[EmergencyHealth] get health data error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/emergency-health/revoke', strictRateLimiter, duplicateCheckMiddleware('emergency-health-revoke', 10), async (req, res) => {
-  try {
-    const { patientId } = req.body || {};
-
-    if (!patientId) {
-      return res.status(400).json({ error: 'patientId is required' });
-    }
-
-    const result = await emergencyHealthSessionService.revokeActiveSessions({
-      patientId,
-    });
-
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error('[EmergencyHealth] revoke sessions error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/emergency-health/settings/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const data = await cacheAside(`emergency-health:settings:${userId}`, async () => {
-      const settings = await emergencyHealthSessionService.getEmergencyHealthSettings({ userId });
-      return { settings };
-    }, TTL.SESSION);
-    return res.status(200).json(data);
-  } catch (error) {
-    console.error('[EmergencyHealth] get settings error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/emergency-health/settings', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-settings', 10), async (req, res) => {
-  try {
-    const { userId, settings } = req.body || {};
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-
-    const saved = await emergencyHealthSessionService.upsertEmergencyHealthSettings({
-      userId,
-      settings,
-    });
-
-    return res.status(200).json({ settings: saved });
-  } catch (error) {
-    console.error('[EmergencyHealth] save settings error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/emergency-health/dead-man/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const data = await cacheAside(`emergency-health:dead-man:${userId}`, async () => {
-      const checkin = await emergencyHealthSessionService.getDeadManCheckin({ userId });
-      return { checkin };
-    }, TTL.SESSION);
-    return res.status(200).json(data);
-  } catch (error) {
-    console.error('[EmergencyHealth] get dead-man check-in error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/emergency-health/dead-man', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-deadman', 10), async (req, res) => {
-  try {
-    const { userId, checkin } = req.body || {};
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-
-    const saved = await emergencyHealthSessionService.upsertDeadManCheckin({
-      userId,
-      checkin,
-    });
-
-    return res.status(200).json({ checkin: saved });
-  } catch (error) {
-    console.error('[EmergencyHealth] save dead-man check-in error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/emergency-health/dead-man/check-in', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-checkin', 5), async (req, res) => {
-  try {
-    const { userId, checkInAt } = req.body || {};
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-
-    const saved = await emergencyHealthSessionService.updateDeadManCheckInTimestamp({
-      userId,
-      checkInAt: checkInAt ? new Date(checkInAt) : undefined,
-    });
-
-    return res.status(200).json({ checkin: saved });
-  } catch (error) {
-    console.error('[EmergencyHealth] dead-man check-in error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// ============ PROFESSIONS API ============
-
-// Get all professions
-app.get('/api/professions', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const data = await cacheAside('professions:active', async () => {
-      const result = await pool.query(
-        `SELECT id, name, name_en, description, icon_name, category, 
-                is_built_in, is_active, requires_verification, display_order,
-                color_hex, created_at, updated_at
-         FROM professions 
-         WHERE is_active = true 
-         ORDER BY display_order ASC`
-      );
-      return result.rows;
-    }, TTL.DEFAULT);
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching professions:', error);
-    res.status(500).json({ error: 'Failed to fetch professions' });
-  }
-});
-
-// Get profession by ID
-app.get('/api/professions/:id', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const data = await cacheAside(`profession:${id}`, async () => {
-      const result = await pool.query(
-        `SELECT * FROM professions WHERE id = $1`,
-        [id]
-      );
-      return result.rows[0] || null;
-    }, TTL.DEFAULT);
-
-    if (data === null) {
-      return res.status(404).json({ error: 'Profession not found' });
-    }
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching profession:', error);
-    res.status(500).json({ error: 'Failed to fetch profession' });
-  }
-});
-
-// Get registration fields for a profession
-app.get('/api/professions/:id/fields', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const data = await cacheAside(`profession:fields:${id}`, async () => {
-      const result = await pool.query(
-        `SELECT id, field_id, label, hint, field_type, is_required, 
-                field_order, icon_name, dropdown_options, validation_regex,
-                validation_message, is_active
-         FROM registration_field_configs 
-         WHERE profession_id = $1 AND is_active = true
-         ORDER BY field_order ASC`,
-        [id]
-      );
-      return result.rows;
-    }, TTL.DEFAULT);
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching fields:', error);
-    res.status(500).json({ error: 'Failed to fetch fields' });
-  }
-});
-
-// ============ USERS API ============
-
-// Create user
-app.post('/api/users', strictRateLimiter, duplicateCheckMiddleware('user-create', 10), async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const {
-      professionId, firstName, lastName, username, email,
-      phone, passwordHash, socialProvider, socialId
-    } = req.body;
-
-    const result = await pool.query(
-      `INSERT INTO users (profession_id, first_name, last_name, username, email, 
-                          phone, password_hash, social_provider, social_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, profession_id, first_name, last_name, username, email,
-                 phone, profile_image_url, social_provider, social_id,
-                 is_active, is_verified, created_at, updated_at`,
-      [professionId, firstName, lastName, username, email,
-        phone, passwordHash, socialProvider, socialId]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error creating user:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(409).json({ error: 'Username already exists' });
-    } else {
-      res.status(500).json({ error: 'Failed to create user' });
-    }
-  }
-});
-
-// Get user by ID
-app.get('/api/users/:id', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const data = await cacheAside(`user:${id}`, async () => {
-      const result = await pool.query(
-        `SELECT id, profession_id, first_name, last_name, username, email, 
-                phone, profile_image_url, is_active, is_verified, created_at, updated_at
-         FROM users 
-         WHERE id = $1`,
-        [id]
-      );
-      return result.rows[0] || null;
-    }, TTL.DEFAULT);
-
-    if (data === null) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
-});
-
-// Update user
-app.put('/api/users/:id', whenStrictRoute(assertActorMatches((req) => req.params.id)), strictRateLimiter, duplicateCheckMiddleware('user-update', 10), async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const updates = req.body;
-
-    // Build dynamic update query
-    const fields = [];
-    const values = [];
-    let paramIndex = 1;
-
-    const allowedFields = ['first_name', 'last_name', 'email', 'phone', 'profile_image_url'];
-    for (const [key, value] of Object.entries(updates)) {
-      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
-      if (allowedFields.includes(snakeKey)) {
-        fields.push(`${snakeKey} = $${paramIndex}`);
-        values.push(value);
-        paramIndex++;
-      }
-    }
-
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
-    }
-
-    values.push(id);
-    const result = await pool.query(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex}
-       RETURNING id, profession_id, first_name, last_name, username, email,
-                 phone, profile_image_url, social_provider, social_id,
-                 is_active, is_verified, created_at, updated_at`,
-      values
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({ error: 'Failed to update user' });
-  }
-});
-
-// ============ REGISTRATION APPLICATIONS API ============
-
-// Submit registration application
-app.post('/api/applications', idempotencyMiddleware, strictRateLimiter, duplicateCheckMiddleware('application-submit', 10), async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const {
-      userId, professionId, firstName, lastName, username,
-      phone, profileImageUrl, registrationData
-    } = req.body;
-
-    const result = await pool.query(
-      `INSERT INTO registration_applications 
-       (user_id, profession_id, first_name, last_name, username, phone, 
-        profile_image_url, registration_data, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-       RETURNING *`,
-      [userId, professionId, firstName, lastName, username, phone,
-        profileImageUrl, JSON.stringify(registrationData || {})]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error creating application:', error);
-    res.status(500).json({ error: 'Failed to create application' });
-  }
-});
-
-// Get applications (with optional status filter)
-app.get('/api/applications', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { status } = req.query;
-    const cacheKey = `applications:list:${status || 'all'}`;
-
-    const data = await cacheAside(cacheKey, async () => {
-      let query = `
-        SELECT a.*, p.name as profession_name, p.category as profession_category
-        FROM registration_applications a
-        LEFT JOIN professions p ON a.profession_id = p.id
-      `;
-      const params = [];
-
-      if (status) {
-        query += ' WHERE a.status = $1';
-        params.push(status);
-      }
-
-      query += ' ORDER BY a.created_at DESC';
-
-      const result = await pool.query(query, params);
-      return result.rows;
-    }, TTL.DEFAULT);
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching applications:', error);
-    res.status(500).json({ error: 'Failed to fetch applications' });
-  }
-});
-
-// Get application by ID
-app.get('/api/applications/:id', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const data = await cacheAside(`application:${id}`, async () => {
-      const result = await pool.query(
-        `SELECT a.*, p.name as profession_name
-         FROM registration_applications a
-         LEFT JOIN professions p ON a.profession_id = p.id
-         WHERE a.id = $1`,
-        [id]
-      );
-      return result.rows[0] || null;
-    }, TTL.DEFAULT);
-
-    if (data === null) {
-      return res.status(404).json({ error: 'Application not found' });
-    }
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching application:', error);
-    res.status(500).json({ error: 'Failed to fetch application' });
-  }
-});
-// Approve application
-app.post('/api/applications/:id/approve', whenStrictRoute(requireRole('admin')), strictRateLimiter, duplicateCheckMiddleware('application-approve', 10), async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const { note, reviewedBy } = req.body;
-
-    // Update application status
-    const result = await pool.query(
-      `UPDATE registration_applications 
-       SET status = 'approved', review_note = $1, reviewed_by = $2, reviewed_at = NOW()
-       WHERE id = $3 AND status = 'pending'
-       RETURNING *`,
-      [note, reviewedBy, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Application not found or already processed' });
-    }
-
-    // Update user profession and verification status
-    await pool.query(
-      `UPDATE users 
-       SET profession_id = $1, 
-           verification_status = 'verified',
-           updated_at = NOW()
-       WHERE id = $2`,
-      [result.rows[0].profession_id, result.rows[0].user_id]
-    );
-
-    res.json({ message: 'Application approved', application: result.rows[0] });
-  } catch (error) {
-    console.error('Error approving application:', error);
-    res.status(500).json({ error: 'Failed to approve application' });
-  }
-});
-
-// Reject application
-app.post('/api/applications/:id/reject', whenStrictRoute(requireRole('admin')), strictRateLimiter, duplicateCheckMiddleware('application-reject', 10), async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-    const { note, reviewedBy } = req.body;
-
-    if (!note) {
-      return res.status(400).json({ error: 'Rejection note is required' });
-    }
-
-    const result = await pool.query(
-      `UPDATE registration_applications 
-       SET status = 'rejected', review_note = $1, reviewed_by = $2, reviewed_at = NOW()
-       WHERE id = $3 AND status = 'pending'
-       RETURNING *`,
-      [note, reviewedBy, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Application not found or already processed' });
-    }
-
-    // Reset user profession to consumer and update verification status
-    await pool.query(
-      `UPDATE users 
-       SET profession_id = '00000000-0000-0000-0000-000000000001',
-           verification_status = 'rejected',
-           updated_at = NOW()
-       WHERE id = $1`,
-      [result.rows[0].user_id]
-    );
-
-    res.json({ message: 'Application rejected', application: result.rows[0] });
-  } catch (error) {
-    console.error('Error rejecting application:', error);
-    res.status(500).json({ error: 'Failed to reject application' });
-  }
-});
-
-// Get user's recent locations (REST API)
-app.get('/api/locations/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
-  const { userId } = req.params;
-  const limit = parseInt(req.query.limit) || 100;
-
-  try {
-    if (pool) {
-      // Get from database
-      const result = await pool.query(
-        `SELECT * FROM locations 
-         WHERE user_id = $1 
-         ORDER BY created_at DESC 
-         LIMIT $2`,
-        [userId, limit]
-      );
-      res.json(result.rows);
-    } else {
-      // Get from in-memory cache
-      const userLocations = locationsCache.get(userId) || [];
-      const recentLocations = userLocations
-        .slice(-limit)
-        .reverse()
-        .map((loc, index) => ({
-          id: index + 1,
-          ...loc,
-        }));
-      res.json(recentLocations);
-    }
-  } catch (error) {
-    console.error('Error fetching locations:', error);
-    res.status(500).json({ error: 'Failed to fetch locations' });
-  }
-});
-
-// ============ SYNC API ============
-
-// Sync professions from Supabase
-app.post('/api/professions/sync', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { data } = req.body;
-    if (!Array.isArray(data)) {
-      return res.status(400).json({ error: 'Data must be an array' });
-    }
-
-    let synced = 0;
-    for (const item of data) {
-      await pool.query(
-        `INSERT INTO professions (id, name, name_en, description, icon_name, category,
-                                  is_built_in, is_active, is_volunteer, requires_verification, display_order,
-                                  color_hex, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-         ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           name_en = EXCLUDED.name_en,
-           description = EXCLUDED.description,
-           icon_name = EXCLUDED.icon_name,
-           category = EXCLUDED.category,
-           is_built_in = EXCLUDED.is_built_in,
-           is_active = EXCLUDED.is_active,
-           is_volunteer = EXCLUDED.is_volunteer,
-           requires_verification = EXCLUDED.requires_verification,
-           display_order = EXCLUDED.display_order,
-           color_hex = EXCLUDED.color_hex,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          item.id, item.name, item.name_en, item.description, item.icon_name,
-          item.category, item.is_built_in, item.is_active, item.is_volunteer,
-          item.requires_verification, item.display_order, item.color_hex,
-          item.created_at, item.updated_at
-        ]
-      );
-      synced++;
-    }
-
-    console.log(`✅ Synced ${synced} professions`);
-    res.json({ message: `Synced ${synced} professions` });
-  } catch (error) {
-    console.error('Error syncing professions:', error);
-    res.status(500).json({ error: 'Failed to sync professions' });
-  }
-});
-
-// Sync registration_field_configs from Supabase
-app.post('/api/registration_field_configs/sync', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { data } = req.body;
-    if (!Array.isArray(data)) {
-      return res.status(400).json({ error: 'Data must be an array' });
-    }
-
-    let synced = 0;
-    for (const item of data) {
-      await pool.query(
-        `INSERT INTO registration_field_configs 
-         (id, profession_id, field_id, label, hint, field_type, is_required, 
-          field_order, icon_name, dropdown_options, validation_regex, 
-          validation_message, is_active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-         ON CONFLICT (id) DO UPDATE SET
-           profession_id = EXCLUDED.profession_id,
-           field_id = EXCLUDED.field_id,
-           label = EXCLUDED.label,
-           hint = EXCLUDED.hint,
-           field_type = EXCLUDED.field_type,
-           is_required = EXCLUDED.is_required,
-           field_order = EXCLUDED.field_order,
-           icon_name = EXCLUDED.icon_name,
-           dropdown_options = EXCLUDED.dropdown_options,
-           validation_regex = EXCLUDED.validation_regex,
-           validation_message = EXCLUDED.validation_message,
-           is_active = EXCLUDED.is_active,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          item.id, item.profession_id, item.field_id, item.label, item.hint,
-          item.field_type, item.is_required, item.field_order, item.icon_name,
-          item.dropdown_options, item.validation_regex, item.validation_message,
-          item.is_active, item.created_at, item.updated_at
-        ]
-      );
-      synced++;
-    }
-
-    console.log(`✅ Synced ${synced} field configs`);
-    res.json({ message: `Synced ${synced} field configs` });
-  } catch (error) {
-    console.error('Error syncing field configs:', error);
-    res.status(500).json({ error: 'Failed to sync field configs' });
-  }
-});
-
-// Sync users from Supabase (non-sensitive data only)
-app.post('/api/users/sync', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({ error: 'Database not available' });
-    }
-
-    const { data } = req.body;
-    if (!Array.isArray(data)) {
-      return res.status(400).json({ error: 'Data must be an array' });
-    }
-
-    let synced = 0;
-    for (const item of data) {
-      await pool.query(
-        `INSERT INTO users (id, profession_id, first_name, last_name, username, 
-                           verification_status, is_active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (id) DO UPDATE SET
-           profession_id = EXCLUDED.profession_id,
-           first_name = EXCLUDED.first_name,
-           last_name = EXCLUDED.last_name,
-           verification_status = EXCLUDED.verification_status,
-           is_active = EXCLUDED.is_active,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          item.id, item.profession_id, item.first_name, item.last_name,
-          item.username, item.verification_status, item.is_active,
-          item.created_at, item.updated_at
-        ]
-      );
-      synced++;
-    }
-
-    console.log(`✅ Synced ${synced} users`);
-    res.json({ message: `Synced ${synced} users` });
-  } catch (error) {
-    console.error('Error syncing users:', error);
-    res.status(500).json({ error: 'Failed to sync users' });
-  }
-});
-
-// Get sync status
-app.get('/api/sync/status', async (req, res) => {
-  try {
-    const tables = ['professions', 'users', 'registration_field_configs', 'registration_applications'];
-    const counts = {};
-
-    if (pool) {
-      for (const table of tables) {
-        const result = await pool.query(`SELECT COUNT(*) FROM ${table}`);
-        counts[table] = parseInt(result.rows[0].count);
-      }
-    }
-
-    res.json({
-      status: pool ? 'connected' : 'disconnected',
-      tables: counts,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error getting sync status:', error);
-    res.status(500).json({ error: 'Failed to get sync status' });
-  }
-});
 
 // Handle server listen with automated IP detection
 const PORT = process.env.PORT || 3000;

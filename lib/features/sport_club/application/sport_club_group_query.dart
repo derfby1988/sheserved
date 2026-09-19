@@ -20,19 +20,21 @@ class SportClubGroupPage {
   });
 }
 
-typedef SportClubListGroups = Future<List<Map<String, dynamic>>> Function({
-  String? sportId,
-  String? q,
-  String? province,
-  String? district,
-  bool openOnly,
-  int limit,
-  int offset,
-});
+typedef SportClubListGroups =
+    Future<List<Map<String, dynamic>>> Function({
+      String? sportId,
+      String? q,
+      String? province,
+      String? district,
+      bool allLevelsOnly,
+      bool genderAnyOnly,
+      bool openOnly,
+      int limit,
+      int offset,
+    });
 
-typedef SportClubSessionGroupIds = Future<Set<String>> Function(
-  List<String> groupIds,
-);
+typedef SportClubSessionGroupIds =
+    Future<Set<String>> Function(List<String> groupIds);
 
 /// Feed query/pagination logic for the sport-club group list.
 ///
@@ -43,12 +45,16 @@ class SportClubGroupQuery {
   final SportClubListGroups listGroups;
   final SportClubSessionGroupIds idsWithAnySessions;
   final SportClubSessionGroupIds idsWithUpcomingSessions;
+  final SportClubSessionGroupIds idsWithFees;
+  final SportClubSessionGroupIds idsWithSessionCostItems;
   final int pageSize;
 
   const SportClubGroupQuery({
     required this.listGroups,
     required this.idsWithAnySessions,
     required this.idsWithUpcomingSessions,
+    required this.idsWithFees,
+    required this.idsWithSessionCostItems,
     this.pageSize = 10,
   });
 
@@ -78,6 +84,8 @@ class SportClubGroupQuery {
         sportId: filter.sportId,
         q: filter.q,
         openOnly: filter.openOnly,
+        allLevelsOnly: filter.allLevelsOnly,
+        genderAnyOnly: filter.genderAnyOnly,
         province: filter.province,
         district: filter.district,
         limit: pageSize,
@@ -111,6 +119,14 @@ class SportClubGroupQuery {
       final groupIdsWithUpcomingSessions = filter.openOnly
           ? await idsWithUpcomingSessions(groupIds)
           : null;
+      // เมื่อกด filter "ไม่ระบุค่าใช้จ่าย" ให้แสดงเฉพาะก๊วนที่ไม่มีค่าก๊วน
+      // หรือค่าใช้จ่ายเฉพาะรอบ
+      final groupIdsWithFees = filter.noFeesOnly
+          ? await idsWithFees(groupIds)
+          : null;
+      final groupIdsWithSessionCostItems = filter.noFeesOnly
+          ? await idsWithSessionCostItems(groupIds)
+          : null;
       if (isStale?.call() == true) {
         throw StateError('STALE_FILTER_REQUEST');
       }
@@ -128,6 +144,11 @@ class SportClubGroupQuery {
                   filter.managedOnly &&
                   (isJoined || isManaged));
           if (!matchesPersonalFilter) return false;
+          if (filter.noFeesOnly &&
+              ((groupIdsWithFees?.contains(groupId) ?? false) ||
+                  (groupIdsWithSessionCostItems?.contains(groupId) ?? false))) {
+            return false;
+          }
           if (isAdmin ||
               isManaged ||
               isJoined ||
@@ -155,8 +176,7 @@ class SportClubGroupQuery {
       groups: visibleGroups,
       nextOffset: nextOffset,
       hasMore: hasMore,
-      groupIdsWithAnySessions: allIdsWithAnySessions
-          .intersection(visibleIds),
+      groupIdsWithAnySessions: allIdsWithAnySessions.intersection(visibleIds),
     );
   }
 }

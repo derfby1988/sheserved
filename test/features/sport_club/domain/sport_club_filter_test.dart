@@ -13,6 +13,9 @@ void main() {
       expect(filter.openOnly, isFalse);
       expect(filter.joinedOnly, isFalse);
       expect(filter.managedOnly, isFalse);
+      expect(filter.allLevelsOnly, isFalse);
+      expect(filter.genderAnyOnly, isFalse);
+      expect(filter.noFeesOnly, isFalse);
       expect(filter.locationEnabled, isFalse);
       expect(filter.radiusKm, SportClubFilter.defaultRadiusKm);
       expect(filter.activeCount, 0);
@@ -28,6 +31,9 @@ void main() {
         openOnly: true,
         joinedOnly: true,
         managedOnly: true,
+        allLevelsOnly: true,
+        genderAnyOnly: true,
+        noFeesOnly: true,
         locationEnabled: true,
         radiusKm: 20,
       );
@@ -45,6 +51,9 @@ void main() {
       expect(updated.radiusKm, 15);
       expect(updated.joinedOnly, isTrue);
       expect(updated.managedOnly, isTrue);
+      expect(updated.allLevelsOnly, isTrue);
+      expect(updated.genderAnyOnly, isTrue);
+      expect(updated.noFeesOnly, isTrue);
       expect(updated.locationEnabled, isTrue);
 
       final cleared = updated.copyWith(
@@ -65,11 +74,14 @@ void main() {
         openOnly: true,
         joinedOnly: true,
         managedOnly: true,
+        allLevelsOnly: true,
+        genderAnyOnly: true,
+        noFeesOnly: true,
         locationEnabled: true,
       );
 
-      expect(filter.activeCount, 7);
-      expect(filter.summary, 'ตัวกรอง (7)');
+      expect(filter.activeCount, 10);
+      expect(filter.summary, 'ตัวกรอง (10)');
     });
 
     test('toggleQuickFilter flips only matching filter', () {
@@ -90,6 +102,9 @@ void main() {
         openOnly: true,
         joinedOnly: true,
         managedOnly: true,
+        allLevelsOnly: true,
+        genderAnyOnly: true,
+        noFeesOnly: true,
         locationEnabled: true,
         radiusKm: 50,
       );
@@ -104,6 +119,9 @@ void main() {
       expect(cleared.openOnly, isFalse);
       expect(cleared.joinedOnly, isFalse);
       expect(cleared.managedOnly, isFalse);
+      expect(cleared.allLevelsOnly, isFalse);
+      expect(cleared.genderAnyOnly, isFalse);
+      expect(cleared.noFeesOnly, isFalse);
       expect(cleared.locationEnabled, isFalse);
       expect(cleared.activeCount, 0);
     });
@@ -117,6 +135,9 @@ void main() {
         openOnly: true,
         joinedOnly: true,
         managedOnly: true,
+        allLevelsOnly: true,
+        genderAnyOnly: true,
+        noFeesOnly: true,
         locationEnabled: true,
         radiusKm: 25,
       );

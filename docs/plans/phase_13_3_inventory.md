@@ -162,3 +162,40 @@ restart เพื่อเปลี่ยนค่า (ตามข้อห้�
 - [ ] users table consistency local↔Supabase — *pending runtime check* (users อาจ drift ระหว่าง local mirror กับ Supabase source of truth; legacy path ใช้ local — จุดเสี่ยงที่ต้องยืนยันก่อน 13.5, ไม่ block 13.3 waves)
 
 **Gate → Step 2 (HTTP identity contract): พร้อมดำเนินการ**
+
+---
+
+## 6. Implementation Progress (2026-09-19, continued)
+
+### Step 2 — HTTP identity contract ✅
+- `strictRouteGuard()` + `whenStrictRoute()` + `assertActorMatches()` in `middleware/auth.js`
+- `STRICT_AUTH_ROUTES` opt-in pilot; strict routes reject legacy `x-user-id` (401) and actor mismatch (403)
+- Pilot routes: preferences, emergency-health, user update, locations, application approve/reject
+- ⚠️ Fix: `isStrictRoute` now reads `req.originalUrl` — `req.path` is stripped inside mounted routers (was silently non-strict)
+
+### Step 3 — Flutter HTTP pilot ✅
+- `AuthenticatedHttpClient`: + `PATCH`, + `sendMultipart` (rebuildable request for refresh-retry), + `backendApiUrl` getter; `configure()` now unconditional in `main.dart` (both auth modes)
+- `consultation_repository.dart` — Bearer path; **fixed live bug**: previously sent Supabase JWT as Bearer → always 401 under backend auth
+- `victim_repository.dart` — all 8 methods via client
+- `watermark_repository.dart` — 3 sites incl. multipart
+- `video_repository.dart` — 9 sites; `acceptIncident`/`addInteraction` now **fail closed on 401/403** (no silent Supabase dual-write on auth error)
+- `x-user-id` kept as compat fallback on all migrated calls (server prefers Bearer)
+
+### Step 4 — Socket connection auth ✅
+- New `middleware/socket-auth.js`: verified JWT only = trusted actor (`identitySource='jwt'`); legacy `auth.userId`/`x-user-id` = `'legacy'` compat; else `'anonymous'`
+- Fixes F-1 (role uses `user_category_id`), F-2 (signature now verified — no more payload decode), F-3 (`user-connected` binds verified `socket.userId`), F-4 (`subscribe-user` strict-gated + self-only under flag)
+- `STRICT_SOCKET_AUTH` + `STRICT_SOCKET_EVENTS` flags wired
+- Flutter: 3 `connect()` callers pass `authToken: AuthenticatedHttpClient.instance.accessToken`
+- Harness extended: 27/27 tests (incl. forged-token socket, revoked session, strict handshake reject)
+
+### Step 5 — Remaining HTTP/BOLA + event actors ✅
+- **Route extraction**: 9 new files — `routes/{notifications,chat-api,health,emergency-health,professions,users,applications,locations,sync}.js`; `services/chat-archive-service.js`; server.js 2840→1830 lines
+- **Event actors**: `socket.userId` only for `video-interaction`, `location-update` (removed auto-create-Guest-user on forged id), `volunteer-route`, `emergency-alert`, `rescue-status-update`, `save-ui-preference`, `send-emergency-message`, `join/leave-emergency-chat`, `donate-closure-vote`, `admin-release-escrow` (+server-side role check), `archive-chat` (+admin), `donation-request-status-updated`, `donation-closed`; payload `userId` mismatch → `authz.denied` event
+- **Middleware identity migration**: `rate-limiter` (verified userId or IP — raw `x-user-id` no longer keys buckets), `idempotency` (`req.userId` first), `request-context` + `error-handler` (no raw `x-user-id` in logs)
+- `emergency-health` writes now bind `req.userId` via `verifyToken` (compat: body fallback)
+- `applications` approve/reject: `reviewedBy` = bound identity; submit uses `req.userId || body.userId`
+
+### Known follow-ups (recorded, not blocking)
+- `subscribe-user` strict mode = self-only → cross-user location sharing needs dedicated `location-{id}` channel (Step 6/7 design)
+- `fitness_booking_status` recipient list comes from payload (business data, sender verified) — review in Step 7 membership model
+- Users local↔Supabase drift still open (P0 gate note)

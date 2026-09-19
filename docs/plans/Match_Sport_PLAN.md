@@ -35,6 +35,7 @@
   - Section “ค่าใช้จ่ายมาตรฐานก๊วน”: แสดงค่าก๊วน/ค่าสมาชิกที่ active แยกตามรอบเรียกเก็บ (`รายครั้ง/วัน/สัปดาห์/เดือน/ปี/ตลอดชีพ`) ต่อจากสรุปสมาชิกก๊วนรวม; ผู้จัดการก๊วนเห็น action แก้ไขผ่านหน้าจัดการก๊วน ไม่แก้จากส่วนผู้เข้าร่วม
   - ข้อมูลก๊วน: แสดงคำอธิบาย, กีฬา, จังหวัด/อำเภอ, เพศที่เปิดรับ, ระดับฝีมือที่เปิดรับ และรูปสนามจาก `venue_photo_url`
   - รายการรอบนัด: แต่ละรอบเป็นหัวข้อ expandable แสดงช่วงเวลา (`รอบที่ N · ...`), สถานที่ (`place_name`), หมายเหตุ (`note`), รายการค่าใช้จ่ายเฉพาะรอบแบบแยกรายการ (ชื่อ, หน่วยคิด, ยอด/จำนวน, ยอดประมาณการ และเงื่อนไขชำระ), `ผู้เข้าร่วม N / capacity คน · รออนุมัติ N คน · เหลือ N ที่` และรายชื่อ **ผู้เข้าร่วมรอบนี้** แยกจากรอบอื่น
+  - รอบที่ `ends_at` ผ่านเวลาปัจจุบันแล้วไม่แสดงปะปนกับรอบปัจจุบันใน Group Detail; แสดงปุ่ม **“ประวัติรอบนัดของก๊วน”** เพื่อเปิด dialog ดูรอบที่สิ้นสุดแล้ว รายละเอียดรอบ ค่าใช้จ่าย และผู้เข้าร่วม
   - ผู้จัดการก๊วนเห็นคำขอรออนุมัติอยู่ใต้รอบที่ผู้ขอเลือก โดยแต่ละรายแสดงสถานะและ **เวลาที่ส่งคำขอ** จาก `fitness_group_bookings.created_at`; ปัดซ้ายเพื่อ **อนุมัติ/ปฏิเสธ booking รอบนั้น** หรือ **บล็อกผู้ใช้ระดับก๊วน**
   - สมาชิก/ผู้ขอเข้าร่วมเห็นเฉพาะ section `คำขอของฉัน` ของตนเองใต้รอบที่ขอ และไม่เห็นชื่อหรือเวลาของผู้ขอรายอื่น
   - สรุปสมาชิกก๊วน: `สมาชิกก๊วนรวม (ไม่ซ้ำ) N คน` เป็น section แยก/ย่อด้านล่าง ใช้บอกสิทธิ์ระดับก๊วน ไม่ใช้แทนรายชื่อผู้เข้าร่วมรายรอบ
@@ -786,6 +787,7 @@ Scaffold
 - ไม่มีผู้เข้าร่วมหรือคำขอในรอบนั้น → แสดงข้อความว่างภายใน ExpansionTile
 
 **8.3 ✅ Swipe actions บนหัวข้อรอบนัด**
+- รอบที่สิ้นสุดแล้ว (`ends_at < now`) ถูกแยกออกจากรายการรอบปัจจุบัน; Group Detail แสดงปุ่ม `ประวัติรอบนัดของก๊วน` เพื่อเปิด dialog ประวัติแทนการแสดง ExpansionTile ปะปน
 - ห่อหัวข้อรอบนัดด้วย `Slidable` (`endActionPane`, `motion: ScrollMotion`)
 - สมาชิกปัจจุบันหรือ owner ที่ปิด auto-join แล้วปัดซ้ายเพื่อเปิด **เลือกเพิ่มรอบ** และเปิด session picker เดิม; ไม่มีปุ่มเลือกเพิ่มรอบหลักด้านล่าง
 - session picker ต้องไม่นำเสนอรอบที่ผู้ใช้มี booking `confirmed` หรือ `pending` ซ้ำ; แสดงสถานะ `เข้าร่วมแล้ว`/`รออนุมัติ` แบบ disabled แทนการกดซ้ำ
@@ -898,7 +900,7 @@ Scaffold
 - Migration เพิ่ม trigger/RPC สำหรับ owner booking อัตโนมัติ, ตรวจ overlap/capacity แบบ all-or-nothing และรองรับการคง/ยกเลิก owner booking เมื่อปิด auto-join
 - Create Group UI/Repository: นำช่องจำนวนสมาชิกสูงสุดออก; ค่า legacy ไม่ถูกส่งจาก flow สร้างก๊วนใหม่
 - Create/Edit Session UI/Repository: เพิ่ม field จำนวนผู้เข้าร่วมสูงสุดของรอบ และป้องกันลดต่ำกว่าจำนวน confirmed
-- Query/UI: เพิ่ม `confirmed_count`, `pending_count`, `available_count` ต่อ session; เปลี่ยน Bottom Sheet เป็น session-first แสดงผู้เข้าร่วม/คำขอใต้แต่ละรอบ และคงสมาชิกก๊วนรวมแบบ distinct เป็น section แยก; สมาชิกปัจจุบันเลือกเพิ่มรอบผ่าน swipe ที่หัวข้อ session
+- Query/UI: เพิ่ม `confirmed_count`, `pending_count`, `available_count` ต่อ session; เปลี่ยน Bottom Sheet เป็น session-first แสดงผู้เข้าร่วม/คำขอใต้แต่ละรอบ และคงสมาชิกก๊วนรวมแบบ distinct เป็น section แยก; สมาชิกปัจจุบันเลือกเพิ่มรอบผ่าน swipe ที่หัวข้อ session; session ที่สิ้นสุดแล้วแยกไปอยู่ใน dialog ประวัติ
 - UI เพิ่ม action `ถอดจากรอบนี้` สำหรับผู้จัดการก๊วนบน confirmed participant ที่ไม่ใช่ owner; action นี้ไม่กระทบ booking รอบอื่น
 - Apply สำเร็จแล้ว: migration `20260830170000_fitness_buddies_session_participant_management.sql` สำหรับ RPC ถอด confirmed booking รายรอบแบบ atomic; ห้ามรัน migration นี้ซ้ำ
 - Unblock: ไม่ตรวจ group capacity อีกต่อไป; การปลดบล็อกไม่สร้าง booking ผู้ใช้ต้องเลือกและจอง session เอง
@@ -907,6 +909,7 @@ Scaffold
 - สร้างก๊วนโดยไม่ระบุจำนวนสมาชิกสูงสุดได้ และยังสร้าง session พร้อม capacity ได้
 - มีหลาย session ที่ capacity ต่างกันได้ และแต่ละรอบแสดง confirmed/pending/available แยกกัน
 - Bottom Sheet เป็น session-first; ผู้เข้าร่วมและ pending แสดงใต้รอบที่เกี่ยวข้อง และสมาชิกก๊วนรวมไม่ซ้ำอยู่ใน section แยก
+- รอบที่สิ้นสุดแล้วไม่แสดงในรายการรอบปัจจุบัน; ต้องเปิดดูผ่านปุ่ม `ประวัติรอบนัดของก๊วน` และ dialog ต้องแสดงข้อมูลรอบกับผู้เข้าร่วมที่ยืนยันแล้ว
 - สมาชิกปัจจุบันปัดหัวข้อ session เพื่อเลือกเพิ่มรอบ; ผู้จัดการก๊วนยังเข้าถึงแก้ไข/ยกเลิกจากหัวข้อเดียวกัน
 - เมื่อผู้ใช้จองหรือส่งคำขอครบทุก session แล้ว action เลือกเพิ่มรอบต้องไม่แสดง; ถ้า session ถูกจอง/เต็มระหว่างเปิด picker ต้องแจ้งข้อความโดยไม่ปิด Group Detail Bottom Sheet
 - ผู้ใช้คนเดียวจองหลาย sessionได้ แต่ถูกนับสมาชิกก๊วนเพียง 1 คน และถูกนับที่นั่งแยกในแต่ละ session
@@ -2062,7 +2065,10 @@ WHERE m.is_active AND m.role <> 'admin' AND m.user_id <> g.created_by
 > - **ลบ Map View ออกทั้งหมด** (ตัดสินใจ 2026-09-16) — ลบ `PopupMenuButton` สามจุดพร้อม `ก๊วนของฉัน`/`แสดงแผนที่`, ลบ `_buildMapView`/`_showMapMarkerSheet`/`_showMapView` และ import `flutter_map`; เงื่อนไขเรื่อง Map View ทั้งหมดในแผนนี้ใช้ไม่ได้อีกต่อไป
 > - `_showSearchDialog()` ถูก **ลบทิ้งทันที** — ปุ่ม search บน top bar เปิด `_showAdvancedFilterSheet()` โดยตรง ไม่มีช่วง transition แบบคง dialog เดิม
 > - **เปลี่ยนกฎ visibility (2026-09-16)** — ผู้ใช้ทั่วไปเห็น **ทุกก๊วนที่มีรอบนัด** (รวมรอบที่สิ้นสุดแล้ว) ผ่าน `filterGroupIdsWithAnySessions()`; เมื่อกด `ยังเปิดรับ` จะเห็นเฉพาะก๊วนที่ยังมีรอบนัดไม่สิ้นสุด (`filterGroupIdsWithUpcomingSessions()`)
-> - **Persist filter แยกตาม user** — บันทึกใน `SharedPreferences` key `sport_club_filters_v1_<userId>` (กีฬา/ค้นหา/จังหวัด/อำเภอ/open/member/managed/radius); restore ตอน `_init()` ก่อน fetch ครั้งแรก; location ขอพิกัดใหม่เสมอและไม่ persist พิกัดลงเครื่อง; anonymous user ไม่ถูก persist
+> - **Persist filter แยกตาม user** — บันทึกใน `SharedPreferences` key `sport_club_filters_v1_<userId>` (กีฬา/ค้นหา/จังหวัด/อำเภอ/open/member/managed/ทุกระดับ/radius); restore ตอน `_init()` ก่อน fetch ครั้งแรก; location ขอพิกัดใหม่เสมอและไม่ persist พิกัดลงเครื่อง; anonymous user ไม่ถูก persist
+> - **ตัวกรอง “ทุกระดับ”** — ใน Advanced Filter จะแสดงเฉพาะก๊วนที่ `target_skill_levels` มีค่า `all` เมื่อเปิดใช้งาน; เมื่อปิดจะไม่จำกัดระดับฝีมือ
+> - **ตัวกรอง “เปิดรับทุกเพศ”** — ใน Advanced Filter จะแสดงเฉพาะก๊วนที่ `gender_preference = 'any'` เมื่อเปิดใช้งาน; เมื่อปิดจะไม่จำกัดเพศ; ป้ายเพศ (เสรี/ช./ญ.) ถูกนำออกจากการ์ดก๊วนบน feed แล้ว (ยังคงแสดงใน Group Detail)
+> - **ตัวกรอง “ไม่ระบุค่าใช้จ่าย”** — ใน Advanced Filter จะแสดงเฉพาะก๊วนที่ไม่มีค่าใช้จ่ายมาตรฐานก๊วนที่ active (`fitness_group_fees_public`) และไม่มีค่าใช้จ่ายเฉพาะรอบ (`fitness_session_cost_items_public`) เมื่อเปิดใช้งาน ตรงกับเงื่อนไข `hasCosts` ที่การ์ดใช้; เมื่อปิดจะไม่กรองเรื่องค่าใช้จ่าย
 > - **รายละเอียดใน Bottom Sheet ครบขึ้น** — แสดงคำอธิบายก๊วน, กีฬา, จังหวัด/อำเภอ, เพศที่เปิดรับ, ระดับฝีมือที่เปิดรับ และรูปสนามจาก `venue_photo_url`; แต่ละรอบนัดแสดง `place_name` และ `note` ภายใน `ExpansionTile` ก่อนรายการค่าใช้จ่ายรอบ
 > - **ลำดับ section ค่าใช้จ่ายปรับตาม UX จริง** — `ค่าใช้จ่ายมาตรฐานก๊วน` แสดงต่อจาก `สมาชิกก๊วนรวม` ใน Bottom Sheet ไม่ได้อยู่ก่อนรายการรอบนัดตามแผนเดิม
 

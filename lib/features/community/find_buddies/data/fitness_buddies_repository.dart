@@ -340,6 +340,8 @@ class FitnessBuddiesRepository {
     String? province,
     String? district,
     String? skillLevel,
+    bool allLevelsOnly = false,
+    bool genderAnyOnly = false,
     bool openOnly = false,
     int limit = 50,
     int offset = 0,
@@ -353,7 +355,14 @@ class FitnessBuddiesRepository {
     if (district != null && district.isNotEmpty)
       query = query.eq('district', district);
     if (q != null && q.isNotEmpty) query = query.ilike('name', '%$q%');
-    if (skillLevel != null && skillLevel.isNotEmpty && skillLevel != 'all') {
+    if (genderAnyOnly) {
+      query = query.eq('gender_preference', 'any');
+    }
+    if (allLevelsOnly) {
+      query = query.contains('target_skill_levels', ['all']);
+    } else if (skillLevel != null &&
+        skillLevel.isNotEmpty &&
+        skillLevel != 'all') {
       query = query.or(
         'target_skill_levels.cs.{"$skillLevel"},target_skill_levels.cs.{"all"}',
       );
@@ -520,6 +529,36 @@ class FitnessBuddiesRepository {
     if (groupIds.isEmpty) return {};
     final res = await _client
         .from('fitness_group_sessions')
+        .select('group_id')
+        .inFilter('group_id', groupIds);
+    return (res as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  /// Returns a set of group IDs (from [groupIds]) that have at least one
+  /// active standard group fee (`fitness_group_fees_public`).
+  Future<Set<String>> filterGroupIdsWithFees(List<String> groupIds) async {
+    if (groupIds.isEmpty) return {};
+    final res = await _client
+        .from('fitness_group_fees_public')
+        .select('group_id')
+        .inFilter('group_id', groupIds);
+    return (res as List)
+        .map((e) => e['group_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  /// Returns a set of group IDs (from [groupIds]) that have at least one
+  /// session cost item (`fitness_session_cost_items_public`).
+  Future<Set<String>> filterGroupIdsWithSessionCostItems(
+    List<String> groupIds,
+  ) async {
+    if (groupIds.isEmpty) return {};
+    final res = await _client
+        .from('fitness_session_cost_items_public')
         .select('group_id')
         .inFilter('group_id', groupIds);
     return (res as List)

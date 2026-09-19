@@ -6,7 +6,10 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     final userId = ServiceLocator.instance.currentUser?.id;
     if (userId != null && !ws.isConnected) {
       ws.resetConnectionAttempts();
-      await ws.connect(userId: userId);
+      await ws.connect(
+        userId: userId,
+        authToken: AuthenticatedHttpClient.instance.accessToken,
+      );
     }
   }
 

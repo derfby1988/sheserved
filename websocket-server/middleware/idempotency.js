@@ -165,8 +165,11 @@ async function clearDuplicate(userId, action) {
  */
 function duplicateCheckMiddleware(action, ttlSec = DUP_TTL_SEC) {
   return async function (req, res, next) {
+    // Phase 13.3 — prefer verified identity (req.userId from verifyToken);
+    // ไม่ใช้ raw x-user-id header (client เลือก key ได้). body id เก็บไว้
+    // เป็น compat เฉพาะเมื่อยังไม่มี verified identity
     const userId =
-      req.headers['x-user-id'] ||
+      req.userId ||
       req.body?.userId ||
       req.body?.user_id;
 

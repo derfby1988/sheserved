@@ -67,6 +67,10 @@ class AuthenticatedHttpClient {
   String? get refreshToken => _refreshToken;
   bool get isAuthenticated => _accessToken != null;
 
+  /// Base URL the client was configured with — needed by repositories that
+  /// build raw [http.MultipartRequest] URIs via [sendMultipart].
+  String? get backendApiUrl => _baseUrl;
+
   /// Make an authenticated HTTP request.
   ///
   /// Automatically adds Authorization header. On 401, attempts refresh
@@ -110,6 +114,11 @@ class AuthenticatedHttpClient {
             reqHeaders['Content-Type'] ?? 'application/json';
         response = await http.put(uri, headers: reqHeaders, body: body);
         break;
+      case 'PATCH':
+        reqHeaders['Content-Type'] =
+            reqHeaders['Content-Type'] ?? 'application/json';
+        response = await http.patch(uri, headers: reqHeaders, body: body);
+        break;
       case 'DELETE':
         response = await http.delete(uri, headers: reqHeaders, body: body);
         break;
@@ -130,6 +139,8 @@ class AuthenticatedHttpClient {
             return http.post(uri, headers: reqHeaders, body: body);
           case 'PUT':
             return http.put(uri, headers: reqHeaders, body: body);
+          case 'PATCH':
+            return http.patch(uri, headers: reqHeaders, body: body);
           case 'DELETE':
             return http.delete(uri, headers: reqHeaders, body: body);
           default:
@@ -142,6 +153,44 @@ class AuthenticatedHttpClient {
     }
 
     return response;
+  }
+
+  /// Send a multipart/form-data request with Bearer + refresh-once retry.
+  ///
+  /// [buildRequest] must return a FRESH [http.MultipartRequest] on every
+  /// call — a sent request's byte stream is consumed and cannot be replayed
+  /// for the retry attempt.  Phase 13.3 upload path (video/photo/watermark).
+  Future<http.StreamedResponse> sendMultipart(
+    Future<http.MultipartRequest> Function() buildRequest,
+  ) async {
+    if (_baseUrl == null) {
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
+    }
+
+    var request = await buildRequest();
+    _applyAuthHeaders(request.headers);
+    var response = await request.send();
+
+    if (response.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await _refreshOnce();
+      if (refreshed) {
+        request = await buildRequest();
+        _applyAuthHeaders(request.headers);
+        response = await request.send();
+      } else {
+        await clearTokens();
+      }
+    }
+    return response;
+  }
+
+  void _applyAuthHeaders(Map<String, String> headers) {
+    headers.putIfAbsent('x-app-version', () => AppConfig.appVersion);
+    if (_accessToken != null) {
+      headers['Authorization'] = 'Bearer $_accessToken';
+    }
   }
 
   /// Single-flight refresh: if multiple requests get 401 simultaneously,

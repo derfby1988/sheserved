@@ -62,7 +62,8 @@ function errorHandler(err, req, res, next) {
     requestId,
     method: req.method,
     path: req.path,
-    userId: req.userId || req.headers['x-user-id'] || null,
+    // Phase 13.3 — verified identity only; raw x-user-id ไม่เข้า error log
+    userId: req.userId || null,
     errorName: err.name || 'Error',
     errorMessage: err.message,
     stack: err.stack,

@@ -83,6 +83,8 @@ class _SportClubPageState extends State<SportClubPage> {
       listGroups: _repo.listGroups,
       idsWithAnySessions: _repo.filterGroupIdsWithAnySessions,
       idsWithUpcomingSessions: _repo.filterGroupIdsWithUpcomingSessions,
+      idsWithFees: _repo.filterGroupIdsWithFees,
+      idsWithSessionCostItems: _repo.filterGroupIdsWithSessionCostItems,
       pageSize: _pageSize,
     );
     _cardHydrator = SportClubCardHydrator(
@@ -871,6 +873,9 @@ class _SportClubPageState extends State<SportClubPage> {
         openOnly: _filterOpenOnly,
         joinedOnly: _filterJoinedOnly,
         managedOnly: _filterManagedOnly,
+        allLevelsOnly: _filter.allLevelsOnly,
+        genderAnyOnly: _filter.genderAnyOnly,
+        noFeesOnly: _filter.noFeesOnly,
         locationEnabled: _locationEnabled,
         radiusKm: _filter.radiusKm,
         locationReady: _userLat != null && _userLng != null,
@@ -889,6 +894,9 @@ class _SportClubPageState extends State<SportClubPage> {
         openOnly: appliedFilter.openOnly,
         joinedOnly: appliedFilter.joinedOnly,
         managedOnly: appliedFilter.managedOnly,
+        allLevelsOnly: appliedFilter.allLevelsOnly,
+        genderAnyOnly: appliedFilter.genderAnyOnly,
+        noFeesOnly: appliedFilter.noFeesOnly,
         locationEnabled: appliedFilter.locationEnabled,
         radiusKm: appliedFilter.radiusKm,
       ),

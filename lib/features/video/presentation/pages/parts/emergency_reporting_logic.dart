@@ -314,7 +314,12 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         _checkPrivacyPermissions();
         
         // OWNER MUST JOIN ROOM TO BE COUNTED AS VIEWER
-        if (!ws.isConnected) { await ws.connect(userId: userId); }
+        if (!ws.isConnected) {
+          await ws.connect(
+            userId: userId,
+            authToken: AuthenticatedHttpClient.instance.accessToken,
+          );
+        }
         if (ws.isConnected) _subscribeToVideoEvents(videoId);
       }
       if (_selectedEmergencyCategoryId != null) {

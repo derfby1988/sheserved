@@ -1,13 +1,12 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
-import '../../../../config/app_config.dart';
+import '../../../../core/network/authenticated_http_client.dart';
 import '../../models/triage_models.dart';
 import '../../../../services/auth_service.dart';
 
 class VictimRepository {
-  static const String _baseUrl = AppConfig.localApiUrl;
-
+  /// Phase 13.3 — Bearer path via AuthenticatedHttpClient (refresh-once).
+  /// _headers ยังใส่ x-user-id เป็น compat fallback สำหรับ direct mode
+  /// จนกว่า STRICT_AUTH_ROUTES จะตัดสิทธิ์ — server prefer JWT เสมอ
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
     final userId = AuthService.instance.currentUser?.id;
@@ -18,10 +17,9 @@ class VictimRepository {
   }
 
   Future<VictimListResponse> getVictims(String incidentId) async {
-    final url = '$_baseUrl/api/incidents/$incidentId/victims';
-    final response = await http.get(Uri.parse(url), headers: _headers).timeout(
-      const Duration(seconds: 10),
-    );
+    final response = await AuthenticatedHttpClient.instance
+        .request('GET', '/api/incidents/$incidentId/victims', headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (response.statusCode == 200) {
       return VictimListResponse.fromJson(jsonDecode(response.body));
     }
@@ -29,10 +27,13 @@ class VictimRepository {
   }
 
   Future<TriageSummary> getTriageSummary(String incidentId) async {
-    final url = '$_baseUrl/api/incidents/$incidentId/triage-summary';
-    final response = await http.get(Uri.parse(url), headers: _headers).timeout(
-      const Duration(seconds: 10),
-    );
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'GET',
+          '/api/incidents/$incidentId/triage-summary',
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 10));
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
       return TriageSummary.fromJson(json['summary'] as Map<String, dynamic>);
@@ -47,17 +48,19 @@ class VictimRepository {
     String? lastName,
     required bool consent,
   }) async {
-    final url = '$_baseUrl/api/incidents/$incidentId/victims';
-    final response = await http.post(
-      Uri.parse(url),
-      headers: _headers,
-      body: jsonEncode({
-        'prefix': prefix,
-        'firstName': firstName,
-        'lastName': lastName,
-        'consent': consent,
-      }),
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'POST',
+          '/api/incidents/$incidentId/victims',
+          headers: _headers,
+          body: jsonEncode({
+            'prefix': prefix,
+            'firstName': firstName,
+            'lastName': lastName,
+            'consent': consent,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 201) {
       final json = jsonDecode(response.body);
@@ -73,16 +76,18 @@ class VictimRepository {
     String? firstName,
     String? lastName,
   }) async {
-    final url = '$_baseUrl/api/victims/$victimId';
-    final response = await http.patch(
-      Uri.parse(url),
-      headers: _headers,
-      body: jsonEncode({
-        'prefix': prefix,
-        'firstName': firstName,
-        'lastName': lastName,
-      }),
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'PATCH',
+          '/api/victims/$victimId',
+          headers: _headers,
+          body: jsonEncode({
+            'prefix': prefix,
+            'firstName': firstName,
+            'lastName': lastName,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
@@ -97,15 +102,14 @@ class VictimRepository {
     required TriageLevel level,
     String? note,
   }) async {
-    final url = '$_baseUrl/api/victims/$victimId/triage';
-    final response = await http.patch(
-      Uri.parse(url),
-      headers: _headers,
-      body: jsonEncode({
-        'triageLevel': level.label,
-        'note': note,
-      }),
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'PATCH',
+          '/api/victims/$victimId/triage',
+          headers: _headers,
+          body: jsonEncode({'triageLevel': level.label, 'note': note}),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
@@ -119,12 +123,14 @@ class VictimRepository {
     required String victimId,
     required String reason,
   }) async {
-    final url = '$_baseUrl/api/victims/$victimId/dispute';
-    final response = await http.post(
-      Uri.parse(url),
-      headers: _headers,
-      body: jsonEncode({'reason': reason}),
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'POST',
+          '/api/victims/$victimId/dispute',
+          headers: _headers,
+          body: jsonEncode({'reason': reason}),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
       final err = jsonDecode(response.body);
@@ -136,12 +142,14 @@ class VictimRepository {
     required String victimId,
     required String reason,
   }) async {
-    final url = '$_baseUrl/api/victims/$victimId';
-    final response = await http.delete(
-      Uri.parse(url),
-      headers: _headers,
-      body: jsonEncode({'reason': reason}),
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'DELETE',
+          '/api/victims/$victimId',
+          headers: _headers,
+          body: jsonEncode({'reason': reason}),
+        )
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
       final err = jsonDecode(response.body);
@@ -150,10 +158,9 @@ class VictimRepository {
   }
 
   Future<List<TriageHistoryEntry>> getHistory(String victimId) async {
-    final url = '$_baseUrl/api/victims/$victimId/history';
-    final response = await http.get(Uri.parse(url), headers: _headers).timeout(
-      const Duration(seconds: 10),
-    );
+    final response = await AuthenticatedHttpClient.instance
+        .request('GET', '/api/victims/$victimId/history', headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
       final list = json['history'] as List<dynamic>? ?? [];
@@ -165,11 +172,13 @@ class VictimRepository {
   }
 
   Future<Map<String, dynamic>> unlockHealthData(String victimId) async {
-    final url = '$_baseUrl/api/victims/$victimId/health-data/unlock';
-    final response = await http.post(
-      Uri.parse(url),
-      headers: _headers,
-    ).timeout(const Duration(seconds: 10));
+    final response = await AuthenticatedHttpClient.instance
+        .request(
+          'POST',
+          '/api/victims/$victimId/health-data/unlock',
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 10));
 
     final json = jsonDecode(response.body);
     if (response.statusCode == 200) {

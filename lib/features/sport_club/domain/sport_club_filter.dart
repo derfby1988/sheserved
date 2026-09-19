@@ -12,6 +12,9 @@ class SportClubFilter {
     this.openOnly = false,
     this.joinedOnly = false,
     this.managedOnly = false,
+    this.allLevelsOnly = false,
+    this.genderAnyOnly = false,
+    this.noFeesOnly = false,
     this.locationEnabled = false,
     this.radiusKm = 10,
   });
@@ -25,6 +28,9 @@ class SportClubFilter {
   final bool openOnly;
   final bool joinedOnly;
   final bool managedOnly;
+  final bool allLevelsOnly;
+  final bool genderAnyOnly;
+  final bool noFeesOnly;
   final bool locationEnabled;
   final double radiusKm;
 
@@ -35,11 +41,13 @@ class SportClubFilter {
     openOnly,
     joinedOnly,
     managedOnly,
+    allLevelsOnly,
+    genderAnyOnly,
+    noFeesOnly,
     locationEnabled,
   ].where((active) => active).length;
 
-  String get summary =>
-      activeCount == 0 ? 'ตัวกรอง' : 'ตัวกรอง ($activeCount)';
+  String get summary => activeCount == 0 ? 'ตัวกรอง' : 'ตัวกรอง ($activeCount)';
 
   bool get isLocationReady => locationEnabled && radiusKm > 0;
 
@@ -56,6 +64,9 @@ class SportClubFilter {
     bool? openOnly,
     bool? joinedOnly,
     bool? managedOnly,
+    bool? allLevelsOnly,
+    bool? genderAnyOnly,
+    bool? noFeesOnly,
     bool? locationEnabled,
     double? radiusKm,
   }) {
@@ -67,6 +78,9 @@ class SportClubFilter {
       openOnly: openOnly ?? this.openOnly,
       joinedOnly: joinedOnly ?? this.joinedOnly,
       managedOnly: managedOnly ?? this.managedOnly,
+      allLevelsOnly: allLevelsOnly ?? this.allLevelsOnly,
+      genderAnyOnly: genderAnyOnly ?? this.genderAnyOnly,
+      noFeesOnly: noFeesOnly ?? this.noFeesOnly,
       locationEnabled: locationEnabled ?? this.locationEnabled,
       radiusKm: radiusKm ?? this.radiusKm,
     );
@@ -84,6 +98,9 @@ class SportClubFilter {
       openOnly: false,
       joinedOnly: false,
       managedOnly: false,
+      allLevelsOnly: false,
+      genderAnyOnly: false,
+      noFeesOnly: false,
       locationEnabled: false,
     );
   }
@@ -110,6 +127,9 @@ class SportClubFilter {
       'openOnly': openOnly,
       'joinedOnly': joinedOnly,
       'managedOnly': managedOnly,
+      'allLevelsOnly': allLevelsOnly,
+      'genderAnyOnly': genderAnyOnly,
+      'noFeesOnly': noFeesOnly,
       'locationEnabled': locationEnabled,
       'radiusKm': radiusKm,
     };
@@ -124,6 +144,9 @@ class SportClubFilter {
       openOnly: json['openOnly'] == true,
       joinedOnly: json['joinedOnly'] == true,
       managedOnly: json['managedOnly'] == true,
+      allLevelsOnly: json['allLevelsOnly'] == true,
+      genderAnyOnly: json['genderAnyOnly'] == true,
+      noFeesOnly: json['noFeesOnly'] == true,
       locationEnabled: json['locationEnabled'] == true,
       radiusKm: (json['radiusKm'] as num?)?.toDouble() ?? defaultRadiusKm,
     );
@@ -140,6 +163,9 @@ class SportClubFilter {
             other.openOnly == openOnly &&
             other.joinedOnly == joinedOnly &&
             other.managedOnly == managedOnly &&
+            other.allLevelsOnly == allLevelsOnly &&
+            other.genderAnyOnly == genderAnyOnly &&
+            other.noFeesOnly == noFeesOnly &&
             other.locationEnabled == locationEnabled &&
             other.radiusKm == radiusKm;
   }
@@ -153,6 +179,9 @@ class SportClubFilter {
     openOnly,
     joinedOnly,
     managedOnly,
+    allLevelsOnly,
+    genderAnyOnly,
+    noFeesOnly,
     locationEnabled,
     radiusKm,
   );

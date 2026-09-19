@@ -15,6 +15,9 @@ void main() {
     openOnly: true,
     joinedOnly: true,
     managedOnly: true,
+    allLevelsOnly: true,
+    genderAnyOnly: true,
+    noFeesOnly: true,
     locationEnabled: true,
     radiusKm: 25,
   );

@@ -52,6 +52,7 @@ import 'features/donation/presentation/pages/donation_dashboard_page.dart';
 import 'features/donation/presentation/pages/donation_admin_page.dart';
 import 'services/service_locator.dart';
 import 'config/app_config.dart';
+import 'core/network/authenticated_http_client.dart';
 import 'config/sync_config.dart';
 import 'services/auth_service.dart';
 import 'services/supabase_service.dart';
@@ -191,6 +192,12 @@ void main() async {
 
   // Initialize Services (Local Database + Sync)
   await ServiceLocator.instance.initialize();
+
+  // Phase 13.3 — configure backend base URL unconditionally so pilot
+  // repositories can call AuthenticatedHttpClient.request() in both modes:
+  // USE_BACKEND_AUTH=false → no Bearer (compat x-user-id path continues),
+  // true → Bearer access token attached automatically.
+  AuthenticatedHttpClient.instance.configure(baseUrl: AppConfig.backendApiUrl);
 
   // Phase 13.2 — restore backend session (secure storage → /me) ก่อนเปิด UI
   // เพื่อให้ AuthGuard เห็น currentUser ทันทีโดยไม่ต้อง login ใหม่
