@@ -68,7 +68,7 @@ const victimRetentionCountdownStarter = require('./jobs/victim-retention-countdo
 const victimRetentionAnonymizer = require('./jobs/victim-retention-anonymizer');
 
 // Phase 1 — Route Security Middleware
-const { verifyToken, requireRole, requireAuth } = require('./middleware/auth');
+const { verifyToken, requireRole, requireAuth, strictRouteGuard, assertActorMatches, whenStrictRoute } = require('./middleware/auth');
 const { requestContext } = require('./middleware/request-context');
 const donationQueueService = require('./services/donation-queue');
 
@@ -382,6 +382,11 @@ if (pool) {
   victimRetentionAnonymizer.start(pool);
 
 }
+
+// Phase 13.3 — STRICT_AUTH_ROUTES opt-in guard (rollback unit per wave).
+// Mounted unconditionally so that strict prefixes also fail closed when
+// the DB pool is absent (no verifyToken ran → req.userId == null → 401).
+app.use('/api', strictRouteGuard());
 
 // Custom-auth notification and profession-change APIs.
 // Supabase is the source of truth for users/applications/notifications, so
@@ -1981,7 +1986,7 @@ app.get('/health', async (req, res) => {
 
 
 // UI Preferences API
-app.get('/api/users/:userId/preferences/:key', async (req, res) => {
+app.get('/api/users/:userId/preferences/:key', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
   const { userId, key } = req.params;
   try {
     if (!pool) return res.status(503).json({ error: 'Database not available' });
@@ -1996,7 +2001,7 @@ app.get('/api/users/:userId/preferences/:key', async (req, res) => {
   }
 });
 
-app.post('/api/users/:userId/preferences', async (req, res) => {
+app.post('/api/users/:userId/preferences', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
   const { userId } = req.params;
   const { key, value } = req.body;
   try {
@@ -2082,7 +2087,7 @@ app.post('/api/emergency-health/revoke', strictRateLimiter, duplicateCheckMiddle
   }
 });
 
-app.get('/api/emergency-health/settings/:userId', async (req, res) => {
+app.get('/api/emergency-health/settings/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
   try {
     const { userId } = req.params;
     const data = await cacheAside(`emergency-health:settings:${userId}`, async () => {
@@ -2096,7 +2101,7 @@ app.get('/api/emergency-health/settings/:userId', async (req, res) => {
   }
 });
 
-app.post('/api/emergency-health/settings', strictRateLimiter, duplicateCheckMiddleware('emergency-health-settings', 10), async (req, res) => {
+app.post('/api/emergency-health/settings', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-settings', 10), async (req, res) => {
   try {
     const { userId, settings } = req.body || {};
     if (!userId) {
@@ -2115,7 +2120,7 @@ app.post('/api/emergency-health/settings', strictRateLimiter, duplicateCheckMidd
   }
 });
 
-app.get('/api/emergency-health/dead-man/:userId', async (req, res) => {
+app.get('/api/emergency-health/dead-man/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
   try {
     const { userId } = req.params;
     const data = await cacheAside(`emergency-health:dead-man:${userId}`, async () => {
@@ -2129,7 +2134,7 @@ app.get('/api/emergency-health/dead-man/:userId', async (req, res) => {
   }
 });
 
-app.post('/api/emergency-health/dead-man', strictRateLimiter, duplicateCheckMiddleware('emergency-health-deadman', 10), async (req, res) => {
+app.post('/api/emergency-health/dead-man', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-deadman', 10), async (req, res) => {
   try {
     const { userId, checkin } = req.body || {};
     if (!userId) {
@@ -2148,7 +2153,7 @@ app.post('/api/emergency-health/dead-man', strictRateLimiter, duplicateCheckMidd
   }
 });
 
-app.post('/api/emergency-health/dead-man/check-in', strictRateLimiter, duplicateCheckMiddleware('emergency-health-checkin', 5), async (req, res) => {
+app.post('/api/emergency-health/dead-man/check-in', whenStrictRoute(assertActorMatches((req) => req.body && req.body.userId)), strictRateLimiter, duplicateCheckMiddleware('emergency-health-checkin', 5), async (req, res) => {
   try {
     const { userId, checkInAt } = req.body || {};
     if (!userId) {
@@ -2316,7 +2321,7 @@ app.get('/api/users/:id', async (req, res) => {
 });
 
 // Update user
-app.put('/api/users/:id', strictRateLimiter, duplicateCheckMiddleware('user-update', 10), async (req, res) => {
+app.put('/api/users/:id', whenStrictRoute(assertActorMatches((req) => req.params.id)), strictRateLimiter, duplicateCheckMiddleware('user-update', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -2461,7 +2466,7 @@ app.get('/api/applications/:id', async (req, res) => {
   }
 });
 // Approve application
-app.post('/api/applications/:id/approve', strictRateLimiter, duplicateCheckMiddleware('application-approve', 10), async (req, res) => {
+app.post('/api/applications/:id/approve', whenStrictRoute(requireRole('admin')), strictRateLimiter, duplicateCheckMiddleware('application-approve', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -2501,7 +2506,7 @@ app.post('/api/applications/:id/approve', strictRateLimiter, duplicateCheckMiddl
 });
 
 // Reject application
-app.post('/api/applications/:id/reject', strictRateLimiter, duplicateCheckMiddleware('application-reject', 10), async (req, res) => {
+app.post('/api/applications/:id/reject', whenStrictRoute(requireRole('admin')), strictRateLimiter, duplicateCheckMiddleware('application-reject', 10), async (req, res) => {
   try {
     if (!pool) {
       return res.status(503).json({ error: 'Database not available' });
@@ -2544,7 +2549,7 @@ app.post('/api/applications/:id/reject', strictRateLimiter, duplicateCheckMiddle
 });
 
 // Get user's recent locations (REST API)
-app.get('/api/locations/:userId', async (req, res) => {
+app.get('/api/locations/:userId', whenStrictRoute(assertActorMatches((req) => req.params.userId)), async (req, res) => {
   const { userId } = req.params;
   const limit = parseInt(req.query.limit) || 100;
 

@@ -1,10 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/cost_editors.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/position_lineup.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/dialogs/sport_club_error_mapper.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+
+bool isSessionAvailableForBooking(
+  Map<String, dynamic> session, {
+  Set<String> excludedSessionIds = const <String>{},
+  DateTime? now,
+}) {
+  final sessionId = session['id']?.toString() ?? '';
+  if (sessionId.isEmpty || excludedSessionIds.contains(sessionId)) {
+    return false;
+  }
+  final endsAt = DateTime.tryParse(session['ends_at']?.toString() ?? '');
+  if (endsAt != null && endsAt.isBefore(now ?? DateTime.now())) return false;
+  final capacity = (session['capacity'] as num?)?.toInt() ?? 0;
+  final availableCount =
+      (session['available_count'] as num?)?.toInt() ??
+      (capacity - ((session['confirmed_count'] as num?)?.toInt() ?? 0)).clamp(
+        0,
+        capacity,
+      );
+  return capacity <= 0 || availableCount > 0;
+}
+
+String sessionPickerUnavailableMessage(
+  List<Map<String, dynamic>> sessions, {
+  Set<String> excludedSessionIds = const <String>{},
+}) {
+  if (sessions.isEmpty) return 'ยังไม่มีรอบนัดให้เข้าร่วม';
+  final hasUnbookedSession = sessions.any(
+    (session) => !excludedSessionIds.contains(session['id']?.toString()),
+  );
+  if (!hasUnbookedSession) return 'คุณเข้าร่วมทุกรอบนัดที่เปิดอยู่แล้ว';
+  final hasAvailableSession = sessions.any(
+    (session) => isSessionAvailableForBooking(
+      session,
+      excludedSessionIds: excludedSessionIds,
+    ),
+  );
+  if (!hasAvailableSession) return 'ขณะนี้รอบนัดที่ยังไม่ได้เข้าร่วมเต็มแล้ว';
+  return 'ยังไม่มีรอบนัดที่เลือกเพิ่มได้';
+}
 
 /// Bottom sheet listing upcoming sessions for a group; lets the user
 /// pick a session (and a field position when required) to book.
@@ -15,10 +57,62 @@ class SessionPickerSheet {
     required SupabaseClient client,
     required String groupId,
     required bool requiresOwnerApproval,
+    Map<String, String> existingBookingStatuses = const <String, String>{},
+    VoidCallback? onPickerWillOpen,
     required Future<void> Function(String sessionId, {String? positionId})
     onBook,
   }) async {
     final sessions = await repo.listUpcomingSessions(groupId);
+    final resolvedBookingStatuses = <String, String>{
+      ...existingBookingStatuses,
+    };
+    final currentUserId = AuthService.instance.currentUser?.id;
+    if (currentUserId != null && currentUserId.isNotEmpty) {
+      try {
+        final rows = await client
+            .from('fitness_group_bookings')
+            .select(
+              'status, session:fitness_group_sessions!inner(id, group_id)',
+            )
+            .eq('user_id', currentUserId)
+            .eq('session.group_id', groupId)
+            .inFilter('status', ['pending', 'confirmed']);
+        for (final rawRow in rows as List) {
+          final row = rawRow as Map;
+          final rawSession = row['session'];
+          final session = rawSession is List && rawSession.isNotEmpty
+              ? rawSession.first
+              : rawSession;
+          if (session is! Map) continue;
+          final sessionId = session['id']?.toString() ?? '';
+          final status = row['status']?.toString() ?? '';
+          if (sessionId.isEmpty ||
+              (status != 'pending' && status != 'confirmed')) {
+            continue;
+          }
+          if (resolvedBookingStatuses[sessionId] != 'confirmed') {
+            resolvedBookingStatuses[sessionId] = status;
+          }
+        }
+      } catch (_) {}
+    }
+    final existingSessionIds = resolvedBookingStatuses.keys.toSet();
+    if (!pageContext.mounted) return;
+    if (!sessions.any(
+      (session) => isSessionAvailableForBooking(
+        session,
+        excludedSessionIds: existingSessionIds,
+      ),
+    )) {
+      showFloatingManagementError(
+        pageContext,
+        sessionPickerUnavailableMessage(
+          sessions,
+          excludedSessionIds: existingSessionIds,
+        ),
+      );
+      return;
+    }
     final sessionIds = sessions
         .map((s) => s['id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
@@ -69,12 +163,7 @@ class SessionPickerSheet {
       }
     } catch (_) {}
     if (!pageContext.mounted) return;
-    if (sessions.isEmpty) {
-      ScaffoldMessenger.of(pageContext).showSnackBar(
-        const SnackBar(content: Text('ยังไม่มีรอบนัดให้เข้าร่วม')),
-      );
-      return;
-    }
+    onPickerWillOpen?.call();
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
@@ -145,6 +234,8 @@ class SessionPickerSheet {
                         s['ends_at'].toString(),
                       ).toLocal();
                       final note = s['note']?.toString();
+                      final sessionId = s['id']?.toString() ?? '';
+                      final bookingStatus = resolvedBookingStatuses[sessionId];
                       final capacity = (s['capacity'] as num?)?.toInt() ?? 0;
                       final confirmedCount =
                           (s['confirmed_count'] as num?)?.toInt() ?? 0;
@@ -154,6 +245,8 @@ class SessionPickerSheet {
                           (s['available_count'] as num?)?.toInt() ??
                           (capacity - confirmedCount).clamp(0, capacity);
                       final isFull = capacity > 0 && availableCount <= 0;
+                      final isAlreadyBooked = bookingStatus != null;
+                      final isDisabled = isFull || isAlreadyBooked;
                       final sessionCostItems =
                           costItemsBySession[s['id']?.toString() ?? ''] ??
                           const <Map<String, dynamic>>[];
@@ -163,7 +256,11 @@ class SessionPickerSheet {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: isFull
+                            color: isAlreadyBooked
+                                ? bookingStatus == 'pending'
+                                      ? Colors.orange.shade200
+                                      : Colors.green.shade200
+                                : isFull
                                 ? Colors.grey.shade300
                                 : AppColors.primary.withValues(alpha: 0.35),
                           ),
@@ -179,7 +276,7 @@ class SessionPickerSheet {
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
-                            onTap: isFull
+                            onTap: isDisabled
                                 ? null
                                 : () async {
                                     if (groupPositions.isNotEmpty &&
@@ -448,7 +545,7 @@ class SessionPickerSheet {
                                       Container(
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: isFull
+                                          color: isDisabled
                                               ? Colors.grey.shade200
                                               : AppColors.primary.withValues(
                                                   alpha: 0.15,
@@ -460,7 +557,7 @@ class SessionPickerSheet {
                                         child: Icon(
                                           Icons.calendar_today_rounded,
                                           size: 18,
-                                          color: isFull
+                                          color: isDisabled
                                               ? Colors.grey.shade600
                                               : AppColors.primaryDark,
                                         ),
@@ -479,7 +576,7 @@ class SessionPickerSheet {
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.bold,
-                                                color: isFull
+                                                color: isDisabled
                                                     ? Colors.grey.shade600
                                                     : Colors.black87,
                                               ),
@@ -502,26 +599,42 @@ class SessionPickerSheet {
                                           vertical: 3,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: isFull
+                                          color: isAlreadyBooked
+                                              ? bookingStatus == 'pending'
+                                                    ? Colors.orange.shade50
+                                                    : Colors.green.shade50
+                                              : isFull
                                               ? Colors.red.shade50
                                               : Colors.green.shade50,
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
                                           border: Border.all(
-                                            color: isFull
+                                            color: isAlreadyBooked
+                                                ? bookingStatus == 'pending'
+                                                      ? Colors.orange.shade200
+                                                      : Colors.green.shade200
+                                                : isFull
                                                 ? Colors.red.shade200
                                                 : Colors.green.shade200,
                                           ),
                                         ),
                                         child: Text(
-                                          isFull
+                                          bookingStatus == 'pending'
+                                              ? 'รออนุมัติ'
+                                              : bookingStatus == 'confirmed'
+                                              ? 'เข้าร่วมแล้ว'
+                                              : isFull
                                               ? 'เต็ม'
                                               : 'เหลือ $availableCount ที่',
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
-                                            color: isFull
+                                            color: isAlreadyBooked
+                                                ? bookingStatus == 'pending'
+                                                      ? Colors.orange.shade700
+                                                      : Colors.green.shade700
+                                                : isFull
                                                 ? Colors.red.shade700
                                                 : Colors.green.shade700,
                                           ),
@@ -625,7 +738,11 @@ class SessionPickerSheet {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          isFull
+                                          bookingStatus == 'pending'
+                                              ? 'ส่งคำขอแล้ว รออนุมัติ'
+                                              : bookingStatus == 'confirmed'
+                                              ? 'เข้าร่วมรอบนี้แล้ว'
+                                              : isFull
                                               ? 'รอบนี้เต็มแล้ว'
                                               : (requiresOwnerApproval
                                                     ? 'กดเพื่อส่งคำขอเข้าร่วม'
@@ -633,7 +750,7 @@ class SessionPickerSheet {
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
-                                            color: isFull
+                                            color: isDisabled
                                                 ? Colors.grey.shade500
                                                 : AppColors.primaryDark,
                                           ),
@@ -642,7 +759,7 @@ class SessionPickerSheet {
                                         Icon(
                                           Icons.arrow_forward_rounded,
                                           size: 15,
-                                          color: isFull
+                                          color: isDisabled
                                               ? Colors.grey.shade500
                                               : AppColors.primaryDark,
                                         ),

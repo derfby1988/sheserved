@@ -207,8 +207,97 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/**
+ * requireVerifiedIdentity — Phase 13.3 strict-route guard.
+ * Must run AFTER verifyToken(pool).  Rejects anything that is not a
+ * signature-verified Backend JWT identity:
+ *   - anonymous requests           → 401
+ *   - legacy x-user-id identities  → 401 (compatibility identity is NOT
+ *     a trusted actor — Match_Sport_PLAN Phase 13.3 ข้อห้าม)
+ *
+ * Wire selectively via config/rollout-flags.js STRICT_AUTH_ROUTES so each
+ * rollout wave stays reversible.  Do NOT apply app-wide during the
+ * compatibility window.
+ */
+function requireVerifiedIdentity() {
+  return (req, res, next) => {
+    if (!req.user || req.identitySource !== 'jwt') {
+      return res.status(401).json({
+        error: 'Unauthorized: verified login required',
+      });
+    }
+    next();
+  };
+}
+
+/**
+ * assertActorMatches(extractor) — actor-mismatch rejection.
+ * The verified req.userId is the ONLY trusted actor.  When a route also
+ * carries a claimed user id (param/body/query — e.g. PUT /api/users/:id),
+ * this middleware compares it against the verified identity and rejects
+ * mismatches with 403.
+ *
+ * @param {(req) => string|undefined|null} extractor returns the claimed id
+ */
+function assertActorMatches(extractor) {
+  return (req, res, next) => {
+    const claimed = extractor(req);
+    if (claimed == null || claimed === '') {
+      return next(); // nothing claimed — nothing to mismatch
+    }
+    if (!req.userId || `${claimed}` !== `${req.userId}`) {
+      console.warn(
+        `[Authz] actor mismatch: verified=${req.userId || 'none'} claimed=${claimed} path=${req.path}`
+      );
+      return res.status(403).json({ error: 'Forbidden: actor mismatch' });
+    }
+    next();
+  };
+}
+
+/**
+ * strictRouteGuard — apply requireVerifiedIdentity only to paths listed
+ * in STRICT_AUTH_ROUTES (config/rollout-flags.js).  Pass-through elsewhere.
+ * Wire once at the /api mount so every route inherits the flag.
+ */
+function strictRouteGuard() {
+  const { isStrictRoute } = require('../config/rollout-flags');
+  const strict = requireVerifiedIdentity();
+  return (req, res, next) => {
+    if (isStrictRoute(req.path)) {
+      return strict(req, res, next);
+    }
+    next();
+  };
+}
+
+/**
+ * whenStrictRoute(...middlewares) — run the given middlewares ONLY when the
+ * request path is inside a STRICT_AUTH_ROUTES prefix; pass-through otherwise.
+ * Lets per-route checks (actor match, role gate) ride the same rollback flag
+ * as strictRouteGuard instead of becoming unconditional behavior changes.
+ */
+function whenStrictRoute(...middlewares) {
+  const { isStrictRoute } = require('../config/rollout-flags');
+  return (req, res, next) => {
+    if (!isStrictRoute(req.path)) return next();
+    let i = 0;
+    const step = (err) => {
+      if (err) return next(err);
+      const mw = middlewares[i++];
+      if (!mw) return next();
+      mw(req, res, step);
+    };
+    step();
+  };
+}
+
 module.exports = {
   verifyToken,
   requireRole,
   requireAuth,
+  requireVerifiedIdentity,
+  assertActorMatches,
+  strictRouteGuard,
+  whenStrictRoute,
 };

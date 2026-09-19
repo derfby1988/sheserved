@@ -34,6 +34,43 @@ bool canOpenGroupChatFromMemberSwipe({
   required bool isActiveMember,
 }) => canChat && isActiveMember;
 
+Map<String, String> currentUserSessionBookingStatuses({
+  required String? userId,
+  required List<Map<String, dynamic>> members,
+  required List<Map<String, dynamic>> pendingBookings,
+}) {
+  final statuses = <String, String>{};
+  if (userId == null || userId.isEmpty) return statuses;
+
+  for (final member in members) {
+    if (member['user_id']?.toString() != userId) continue;
+    final confirmedSessions = (member['confirmed_sessions'] as List?) ?? [];
+    for (final rawSession in confirmedSessions) {
+      if (rawSession is! Map) continue;
+      final sessionId = rawSession['id']?.toString() ?? '';
+      if (sessionId.isNotEmpty) statuses[sessionId] = 'confirmed';
+    }
+  }
+
+  for (final booking in pendingBookings) {
+    final user = booking['user'];
+    final bookingUserId =
+        booking['user_id']?.toString() ??
+        (user is Map ? user['id']?.toString() ?? '' : '');
+    if (bookingUserId != userId) continue;
+    final rawSession = booking['session'];
+    final session = rawSession is List && rawSession.isNotEmpty
+        ? rawSession.first
+        : rawSession is Map
+        ? rawSession
+        : null;
+    final sessionId = session is Map ? session['id']?.toString() ?? '' : '';
+    if (sessionId.isNotEmpty) statuses.putIfAbsent(sessionId, () => 'pending');
+  }
+
+  return statuses;
+}
+
 /// Giant bottom sheet showing a group's full detail: banner, permission
 /// level, members, pending approvals, cost standards, position lineup,
 /// and expandable session rounds.
@@ -423,6 +460,22 @@ class GroupDetailSheet {
                                 .add(member);
                           }
                         }
+                        final mySessionBookingStatuses =
+                            currentUserSessionBookingStatuses(
+                              userId: currentUserId,
+                              members: members,
+                              pendingBookings: pendingBookings,
+                            );
+                        final canSelectAdditionalSession =
+                            canSelectSession &&
+                            sessions.any(
+                              (session) => isSessionAvailableForBooking(
+                                session,
+                                excludedSessionIds: mySessionBookingStatuses
+                                    .keys
+                                    .toSet(),
+                              ),
+                            );
                         return Scrollbar(
                           controller: detailScrollController,
                           thumbVisibility:
@@ -939,7 +992,8 @@ class GroupDetailSheet {
                                             ? '${sessions.length}'
                                             : null,
                                       ),
-                                      if ((isAdmin || canSelectSession) &&
+                                      if ((isAdmin ||
+                                              canSelectAdditionalSession) &&
                                           sessions.isNotEmpty)
                                         Container(
                                           margin: const EdgeInsets.only(
@@ -972,7 +1026,8 @@ class GroupDetailSheet {
                                               const SizedBox(width: 6),
                                               Expanded(
                                                 child: Text(
-                                                  isAdmin && canSelectSession
+                                                  isAdmin &&
+                                                          canSelectAdditionalSession
                                                       ? 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบหรือจัดการ'
                                                       : isAdmin
                                                       ? 'ปัดรอบนัดไปทางซ้ายเพื่อจัดการ'
@@ -1334,22 +1389,25 @@ class GroupDetailSheet {
                                               ),
                                             );
                                             final sessionActions = <Widget>[];
-                                            if (canSelectSession) {
+                                            if (canSelectAdditionalSession) {
                                               sessionActions.add(
                                                 _responsiveSlidableAction(
                                                   onPressed: (_) {
-                                                    Navigator.pop(ctx);
                                                     final requiresApproval =
                                                         group['requires_owner_approval'] ==
                                                             true &&
                                                         !isGroupOwner;
                                                     SessionPickerSheet.show(
-                                                      pageContext,
+                                                      this.pageContext,
                                                       repo: repo,
                                                       client: client,
                                                       groupId: groupId,
                                                       requiresOwnerApproval:
                                                           requiresApproval,
+                                                      existingBookingStatuses:
+                                                          mySessionBookingStatuses,
+                                                      onPickerWillOpen: () =>
+                                                          Navigator.pop(ctx),
                                                       onBook:
                                                           (
                                                             sessionId, {
