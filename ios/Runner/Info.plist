@@ -33,6 +33,9 @@
 			<array>
 				<string>com.googleusercontent.apps.1075504521633-qdega7q78umuo9mgmk8d17js1aj0dr1m</string>
 			</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 		</dict>
 	</array>
 	<key>GIDClientID</key>
@@ -51,6 +54,9 @@
 				<true/>
 				<key>NSIncludesSubdomains</key>
 				<false/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 			</dict>
 			<key>192.168.1.132</key>
 			<dict>
@@ -58,6 +64,9 @@
 				<true/>
 				<key>NSIncludesSubdomains</key>
 				<false/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 			</dict>
 			<key>192.168.1.129</key>
 			<dict>
@@ -65,8 +74,17 @@
 				<true/>
 				<key>NSIncludesSubdomains</key>
 				<false/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 			</dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 		</dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>แอปต้องการเข้าถึงกล้องเพื่อถ่ายรูปประกอบบทความ</string>
@@ -109,5 +127,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
+
 </dict>
 </plist>

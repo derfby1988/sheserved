@@ -1,0 +1,41 @@
+# ============================================================
+# Verify Admin Role — Sheserved App (calibrated on CPH1989, Android 11, 1080x2340)
+# ============================================================
+# ยืนยันสิทธิ Admin ผ่านหน้า Profile (แถบแรก) แทนการเลื่อน drawer
+# เพราะ drawer ต้อง scroll ลงมาสุด (scroll ผ่าน automation ไม่เสถียรบนเครื่องนี้)
+#
+# วิธีเช็ค: หน้า Profile แถว "อาชีพ" จะแสดง "Admin ของ Sheserved"
+#          ถ้าไม่ใช่ admin จะแสดงชื่ออาชีพจริง เช่น "ผู้ใช้งานทั่วไป"
+#
+# หมายเหตุ: ใช้ login_admin_CPH1989.yaml (hardcode dave) เพราะ env override
+# (-e / runFlow.env) ไม่ทำงานใน Maestro 2.6.1 บนเครื่องนี้
+#
+# Device notes:
+# - clearState: true ใช้ไม่ได้บน ColorOS/OPPO (pm clear โดนบล็อก)
+# - Profile tab คือแท็บขวาสุดของ bottom nav (~92%, 94% บนจอ 1080px)
+appId: com.sheserved.app
+tags:
+  - shared
+  - admin
+---
+
+# Step 1: Login as Admin of Sheserved
+- runFlow:
+    file: login_admin_CPH1989.yaml
+
+# Step 2: Open Profile tab (rightmost bottom nav icon)
+- tapOn:
+    point: "92%, 94%"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Step 3: Wait for the profile page's first tab to load (occupation row)
+# NOTE: the whole info row is a single a11y node, and Maestro text: is a
+# full-string regex — use .*...* to match a substring.
+- extendedWaitUntil:
+    visible: ".*อาชีพ.*"
+    timeout: 20000
+
+# Step 4: Assert the role row shows "Admin ของ Sheserved"
+- assertVisible: ".*Admin ของ Sheserved.*"
+- takeScreenshot: profile_admin_verified.png

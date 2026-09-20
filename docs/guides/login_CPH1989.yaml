@@ -1,0 +1,128 @@
+# ============================================================
+# Shared Login Subflow — Sheserved App (calibrated on CPH1989, Android 11, 1080x2340)
+# ============================================================
+# Login path: Hamburger (top-left of TopBar) -> drawer -> "ลงชื่อเข้าใช้"
+#
+# Usage in other flows:
+#   - runFlow:
+#       file: login_CPH1989.yaml
+#       env:
+#         USERNAME: "test"
+#         PASSWORD: "12345678"
+#
+# Admin of Sheserved:
+#   - runFlow:
+#       file: login_CPH1989.yaml
+#       env:
+#         USERNAME: "dave"
+#         PASSWORD: "12345678"
+#
+# Device notes:
+# - clearState: true ใช้ไม่ได้บน ColorOS/OPPO (pm clear โดนบล็อก)
+# - swipe จากขอบซ้ายจอโดน Android back gesture ดัก ไม่ถึง drawer -> ใช้ปุ่ม hamburger
+# - ถ้าล็อกอินอยู่แล้ว drawer จะแสดง "ออกจากระบบ" — กดแล้วแอปพาไปหน้า /login เอง
+appId: com.sheserved.app
+tags:
+  - shared
+env:
+  USERNAME: "test"
+  PASSWORD: "12345678"
+  ADMIN_USERNAME: "dave"
+  ADMIN_PASSWORD: "12345678"
+---
+
+# Step 1: Bring app to foreground and wait for a real screen.
+# (waitForAnimationToEnd returns instantly on the blank splash — wait for
+# an actual marker: home search bar OR the login page title.)
+- launchApp
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา ร้านยา|ยินดีต้อนรับ).*"
+    timeout: 60000
+
+# Step 2: Open drawer via hamburger button (top-left), then enter login page.
+# Skipped entirely if the login page is already showing.
+- runFlow:
+    when:
+      notVisible: "ยินดีต้อนรับ!"
+    commands:
+      - tapOn:
+          point: "12%, 10%"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - runFlow:
+          when:
+            visible: "ลงชื่อเข้าใช้"
+          commands:
+            - tapOn: "ลงชื่อเข้าใช้"
+      - runFlow:
+          when:
+            visible: "ออกจากระบบ"
+          commands:
+            - tapOn: "ออกจากระบบ"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# Step 3: Wait for login page
+- extendedWaitUntil:
+    visible: "ยินดีต้อนรับ!"
+    timeout: 20000
+
+# Step 4: Username — tap the EditText below label "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+- tapOn:
+    below:
+      text: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 5: Password — hide keyboard first so the password field isn't covered,
+# then tap the EditText below label "รหัสผ่าน" to focus it before typing.
+# (Tapping it while the keyboard is open lands on the keyboard and the text
+# gets appended to the username field instead.)
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 6: Dismiss keyboard, wait for layout to settle, then submit.
+# (Tapping while the keyboard is still closing lands on the keyboard.)
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+
+# Step 7: Wait for login success.
+# NOTE: the success toast is TlzNotificationToast (custom overlay, no a11y
+# text on Android) so we detect success by the login page disappearing.
+# If credentials are wrong the page stays and this times out -> test fails.
+- extendedWaitUntil:
+    notVisible: "ยินดีต้อนรับ!"
+    timeout: 30000
+
+# Step 8: Wait for page to settle, dismiss BackgroundPermissionDialog if present
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 9: Tap Home tab (bottom nav index 0, ~20% width on 1080px screen)
+- tapOn:
+    point: "20%, 94%"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 10: Verify home page loaded
+- extendedWaitUntil:
+    visible:
+      text: "ค้นหายา ร้านยา หมอ..."
+    timeout: 60000

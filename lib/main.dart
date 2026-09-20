@@ -130,6 +130,7 @@ import 'features/community/find_buddies/presentation/pages/manage_sports_page.da
 import 'features/community/find_buddies/presentation/pages/my_groups_page.dart';
 import 'features/community/find_buddies/presentation/pages/propose_sport_page.dart';
 import 'features/community/find_buddies/presentation/pages/review_proposed_sports_page.dart';
+import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -325,6 +326,20 @@ class SheservedApp extends StatelessWidget {
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
       },
       onGenerateRoute: (settings) {
+        // Handle Sport Club Group Deep Link
+        if (settings.name?.startsWith('/sport-club/group/') == true ||
+            settings.name?.startsWith('/community/sport-club/group/') == true) {
+          final deepLink = SportClubDeepLinkService.parseDeepLink(settings.name);
+          if (deepLink != null) {
+            // Store pending link for SportClubPage to consume on init
+            SportClubDeepLinkService.storePendingDeepLink(deepLink);
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => const SportClubPage(),
+            );
+          }
+        }
+
         // Community: Sport Club booking details (with legacy alias)
         if (settings.name == '/community/sport-club/booking' ||
             settings.name == '/community/find-buddies/booking') {

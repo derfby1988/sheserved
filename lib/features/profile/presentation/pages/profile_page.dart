@@ -1157,7 +1157,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   Widget _buildProfessionRow() {
-    final professionName = _profession?.name ?? 'ยังไม่ได้เลือกอาชีพ';
+    final professionName =
+        (_user?.isAdmin == true && _profession?.name == 'ผู้ใช้งานทั่วไป')
+        ? 'Admin ของ Sheserved'
+        : (_profession?.name ?? 'ยังไม่ได้เลือกอาชีพ');
     final status = _user?.verificationStatus;
     final isVerified = status == VerificationStatus.verified;
     final isPending = status == VerificationStatus.pending;

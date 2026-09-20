@@ -50,7 +50,15 @@ class SkillLevelSelector extends StatelessWidget {
           children: [
             const Icon(Icons.info_outline_rounded, color: AppColors.primary),
             const SizedBox(width: 8),
-            Expanded(child: Text(level.labelTh, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+            Expanded(
+              child: Text(
+                level.labelTh,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ],
         ),
         content: Column(
@@ -60,7 +68,11 @@ class SkillLevelSelector extends StatelessWidget {
             if (level.labelEn.isNotEmpty && level.labelEn != level.labelTh) ...[
               Text(
                 'English: ${level.labelEn}',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
               const SizedBox(height: 8),
             ],
@@ -95,8 +107,15 @@ class SkillLevelSelector extends StatelessWidget {
             ),
             const Spacer(),
             Text(
-              isAllSelected ? 'เปิดรับทุกระดับ' : '${selectedLevels.length} ระดับที่เลือก',
-              style: TextStyle(fontSize: 12, color: isAllSelected ? AppColors.primaryDark : Colors.grey.shade600),
+              isAllSelected
+                  ? 'เปิดรับทุกระดับ'
+                  : '${selectedLevels.length} ระดับที่เลือก',
+              style: TextStyle(
+                fontSize: 12,
+                color: isAllSelected
+                    ? AppColors.primaryDark
+                    : Colors.grey.shade600,
+              ),
             ),
           ],
         ),
@@ -122,14 +141,17 @@ class SkillLevelSelector extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(lvl.labelTh),
-                    if (lvl.description != null && lvl.description!.isNotEmpty) ...[
+                    if (lvl.description != null &&
+                        lvl.description!.isNotEmpty) ...[
                       const SizedBox(width: 4),
                       GestureDetector(
                         onTap: () => _showLevelDetailDialog(context, lvl),
                         child: Icon(
                           Icons.info_outline_rounded,
                           size: 14,
-                          color: isSelected ? AppColors.primaryDark : Colors.grey.shade500,
+                          color: isSelected
+                              ? AppColors.primaryDark
+                              : Colors.grey.shade500,
                         ),
                       ),
                     ],
@@ -147,7 +169,9 @@ class SkillLevelSelector extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                   side: BorderSide(
-                    color: isSelected ? AppColors.primaryDark : Colors.grey.shade300,
+                    color: isSelected
+                        ? AppColors.primaryDark
+                        : Colors.grey.shade300,
                   ),
                 ),
               ),
@@ -162,10 +186,16 @@ class SkillLevelSelector extends StatelessWidget {
             maxLength: 150,
             decoration: InputDecoration(
               labelText: 'คำอธิบายระดับเพิ่มเติม (ตัวเลือก)',
-              hintText: 'เช่น เน้นตีสนุก ไม่ซีเรียสผลแพ้ชนะ / ขอคนที่ตีเกมได้คล่อง',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              hintText:
+                  'เช่น เน้นตีสนุก ไม่ซีเรียสผลแพ้ชนะ / ขอคนที่ตีเกมได้คล่อง',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               counterText: '',
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
             ),
             style: const TextStyle(fontSize: 13),
           ),
@@ -181,11 +211,19 @@ class SkillLevelBadge extends StatelessWidget {
   final List<SportSkillLevel>? availableLevels;
   final bool isCompact;
 
+  /// Overrides the badge background color (e.g. to match sibling chips).
+  final Color? backgroundColor;
+
+  /// Overrides the badge border color.
+  final Color? borderColor;
+
   const SkillLevelBadge({
     super.key,
     required this.targetSkillLevels,
     this.availableLevels,
     this.isCompact = false,
+    this.backgroundColor,
+    this.borderColor,
   });
 
   @override
@@ -200,14 +238,18 @@ class SkillLevelBadge extends StatelessWidget {
         vertical: isCompact ? 2 : 4,
       ),
       decoration: BoxDecoration(
-        color: isAll
-            ? Colors.teal.shade50
-            : AppColors.primary.withValues(alpha: 0.1),
+        color:
+            backgroundColor ??
+            (isAll
+                ? Colors.teal.shade50
+                : AppColors.primary.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isAll
-              ? Colors.teal.shade200
-              : AppColors.primary.withValues(alpha: 0.35),
+          color:
+              borderColor ??
+              (isAll
+                  ? Colors.teal.shade200
+                  : AppColors.primary.withValues(alpha: 0.35)),
           width: 0.8,
         ),
       ),

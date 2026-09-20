@@ -158,7 +158,169 @@ void main() {
 
       expect(find.text('ประวัติรอบนัดของก๊วน'), findsOneWidget);
       expect(find.text('ก๊วนทดสอบ · 1 รอบที่สิ้นสุดแล้ว'), findsOneWidget);
-      expect(find.textContaining('รอบที่ 1'), findsOneWidget);
+      expect(find.textContaining('รอบ ·'), findsOneWidget);
+    });
+
+    testWidgets('shows five cards first, then loads more on scroll', (
+      tester,
+    ) async {
+      final sessions = List.generate(
+        12,
+        (i) => {
+          'id': 'session-$i',
+          'starts_at': '2025-01-01T10:00:00Z',
+          'ends_at': '2025-01-01T11:00:00Z',
+          'capacity': 5,
+          'confirmed_count': 1,
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => GroupSessionHistoryDialog.show(
+                context,
+                groupName: 'ก๊วนทดสอบ',
+                groupOwnerId: 'owner-1',
+                sessions: sessions,
+                confirmedMembersBySession: const {},
+              ),
+              child: const Text('เปิดประวัติ'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('เปิดประวัติ'));
+      await tester.pumpAndSettle();
+
+      // ListView.separated interleaves separators, so the delegate's
+      // childCount is 2 * items - 1; invert it to get the visible sessions.
+      int visibleSessions() {
+        final childCount =
+            (tester.widget<ListView>(find.byType(ListView)).childrenDelegate
+                    as SliverChildBuilderDelegate)
+                .childCount ??
+            0;
+        return (childCount + 1) ~/ 2;
+      }
+
+      // Initial page renders only the first five cards.
+      expect(visibleSessions(), 5);
+      expect(find.text('เลื่อนลงเพื่อดูรอบก่อนหน้า'), findsOneWidget);
+      expect(find.byType(Scrollbar), findsOneWidget);
+
+      // Scroll to the bottom to load the next page of five.
+      await tester.drag(find.byType(ListView), const Offset(0, -3000));
+      await tester.pumpAndSettle();
+      expect(visibleSessions(), 10);
+
+      // One more scroll reveals the remaining cards (12 total).
+      await tester.drag(find.byType(ListView), const Offset(0, -3000));
+      await tester.pumpAndSettle();
+      expect(visibleSessions(), 12);
+      expect(find.text('เลื่อนลงเพื่อดูรอบก่อนหน้า'), findsNothing);
+    });
+
+    testWidgets('sizes the dialog to its cards without a bottom close button', (
+      tester,
+    ) async {
+      final sessions = [
+        {
+          'id': 'session-1',
+          'starts_at': '2025-01-01T10:00:00Z',
+          'ends_at': '2025-01-01T11:00:00Z',
+          'capacity': 5,
+          'confirmed_count': 1,
+        },
+        {
+          'id': 'session-2',
+          'starts_at': '2025-01-02T10:00:00Z',
+          'ends_at': '2025-01-02T11:00:00Z',
+          'capacity': 5,
+          'confirmed_count': 1,
+        },
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => GroupSessionHistoryDialog.show(
+                context,
+                groupName: 'ก๊วนทดสอบ',
+                groupOwnerId: 'owner-1',
+                sessions: sessions,
+                confirmedMembersBySession: const {},
+              ),
+              child: const Text('เปิดประวัติ'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('เปิดประวัติ'));
+      await tester.pumpAndSettle();
+
+      // The bottom "ปิด" button is gone (only the header close icon remains).
+      expect(find.text('ปิด'), findsNothing);
+
+      // The dialog hugs its content instead of stretching to the max height.
+      // (The Dialog widget itself fills the screen; its Material is the box.)
+      final dialogBox = tester.getSize(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(dialogBox.height, lessThan(600 * 0.82));
+    });
+
+    testWidgets('sorts ended sessions with the most recent on top', (
+      tester,
+    ) async {
+      Map<String, dynamic> session(String id, String startsAt) => {
+        'id': id,
+        'starts_at': startsAt,
+        'ends_at': startsAt,
+        'capacity': 5,
+        'confirmed_count': 1,
+      };
+      // Deliberately out of order: oldest first.
+      final sessions = [
+        session('s1', '2025-01-01T10:00:00Z'),
+        session('s3', '2025-01-03T10:00:00Z'),
+        session('s2', '2025-01-02T10:00:00Z'),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => GroupSessionHistoryDialog.show(
+                context,
+                groupName: 'ก๊วนทดสอบ',
+                groupOwnerId: 'owner-1',
+                sessions: sessions,
+                confirmedMembersBySession: const {},
+              ),
+              child: const Text('เปิดประวัติ'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('เปิดประวัติ'));
+      await tester.pumpAndSettle();
+
+      final titles = tester
+          .widgetList<Text>(find.textContaining('รอบ ·'))
+          .map((t) => t.data ?? '')
+          .toList();
+      expect(titles, hasLength(3));
+      expect(titles[0], contains('รอบ · 3 ม.ค.'));
+      expect(titles[1], contains('รอบ · 2 ม.ค.'));
+      expect(titles[2], contains('รอบ · 1 ม.ค.'));
     });
   });
 }

@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart';
 class GroupDetailDeepLinkData {
   final String groupId;
   final String? sessionId;
+  final String? src;
 
   const GroupDetailDeepLinkData({
     required this.groupId,
     this.sessionId,
+    this.src,
   });
 
   @override
@@ -16,14 +18,15 @@ class GroupDetailDeepLinkData {
       other is GroupDetailDeepLinkData &&
           runtimeType == other.runtimeType &&
           groupId == other.groupId &&
-          sessionId == other.sessionId;
+          sessionId == other.sessionId &&
+          src == other.src;
 
   @override
-  int get hashCode => groupId.hashCode ^ sessionId.hashCode;
+  int get hashCode => groupId.hashCode ^ sessionId.hashCode ^ src.hashCode;
 
   @override
   String toString() =>
-      'GroupDetailDeepLinkData(groupId: $groupId, sessionId: $sessionId)';
+      'GroupDetailDeepLinkData(groupId: $groupId, sessionId: $sessionId, src: $src)';
 }
 
 /// Service for generating, parsing, and managing Sport Club deep links
@@ -39,7 +42,9 @@ class SportClubDeepLinkService {
     final buffer = StringBuffer('$baseWebUrl/$cleanGroupId');
     if (sessionId != null && sessionId.trim().isNotEmpty) {
       final cleanSessionId = Uri.encodeComponent(sessionId.trim());
-      buffer.write('?session_id=$cleanSessionId');
+      buffer.write('?session_id=$cleanSessionId&src=share');
+    } else {
+      buffer.write('?src=share');
     }
     return buffer.toString();
   }
@@ -72,9 +77,11 @@ class SportClubDeepLinkService {
             pathSegments.length >= 2) {
           final groupId = Uri.decodeComponent(pathSegments[1]);
           final sessionId = uri.queryParameters['session_id'];
+          final src = uri.queryParameters['src'];
           return GroupDetailDeepLinkData(
             groupId: groupId,
             sessionId: sessionId?.isNotEmpty == true ? sessionId : null,
+            src: src?.isNotEmpty == true ? src : null,
           );
         }
       }
@@ -96,9 +103,11 @@ class SportClubDeepLinkService {
         final groupId = Uri.decodeComponent(pathSegments[groupSegmentIdx + 1]);
         if (groupId.isNotEmpty) {
           final sessionId = uri.queryParameters['session_id'];
+          final src = uri.queryParameters['src'];
           return GroupDetailDeepLinkData(
             groupId: groupId,
             sessionId: sessionId?.isNotEmpty == true ? sessionId : null,
+            src: src?.isNotEmpty == true ? src : null,
           );
         }
       }

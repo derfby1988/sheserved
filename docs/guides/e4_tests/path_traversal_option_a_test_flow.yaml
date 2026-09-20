@@ -24,7 +24,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${CONSUMER_USERNAME}"
       PASSWORD: "${CONSUMER_PASSWORD}"
@@ -39,7 +39,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${PROVIDER_USERNAME}"
       PASSWORD: "${PROVIDER_PASSWORD}"
@@ -54,7 +54,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${ADMIN_USERNAME}"
       PASSWORD: "${ADMIN_PASSWORD}"
@@ -72,7 +72,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${CONSUMER_USERNAME}"
       PASSWORD: "${CONSUMER_PASSWORD}"
@@ -94,7 +94,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${CONSUMER_USERNAME}"
       PASSWORD: "${CONSUMER_PASSWORD}"
@@ -117,7 +117,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${ADMIN_USERNAME}"
       PASSWORD: "${ADMIN_PASSWORD}"
@@ -248,7 +248,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${CONSUMER_USERNAME}"
       PASSWORD: "${CONSUMER_PASSWORD}"
@@ -278,7 +278,7 @@ env:
     visible: "ค้นหายา ร้านยา หมอ..."
     timeout: 30000
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${PROVIDER_USERNAME}"
       PASSWORD: "${PROVIDER_PASSWORD}"

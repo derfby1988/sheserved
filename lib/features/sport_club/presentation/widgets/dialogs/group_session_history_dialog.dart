@@ -30,7 +30,7 @@ class GroupSessionHistoryDialog {
   }
 }
 
-class _GroupSessionHistoryDialog extends StatelessWidget {
+class _GroupSessionHistoryDialog extends StatefulWidget {
   const _GroupSessionHistoryDialog({
     required this.groupName,
     required this.groupOwnerId,
@@ -42,6 +42,61 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
   final String? groupOwnerId;
   final List<Map<String, dynamic>> sessions;
   final Map<String, List<Map<String, dynamic>>> confirmedMembersBySession;
+
+  @override
+  State<_GroupSessionHistoryDialog> createState() =>
+      _GroupSessionHistoryDialogState();
+}
+
+class _GroupSessionHistoryDialogState
+    extends State<_GroupSessionHistoryDialog> {
+  /// จำนวนรอบที่แสดงต่อหนึ่งหน้า (โหลดเพิ่มเมื่อเลื่อนถึงท้าย)
+  static const _pageSize = 5;
+
+  late final ScrollController _scrollController;
+  late final List<Map<String, dynamic>> _sessions;
+  late int _visibleCount;
+
+  @override
+  void initState() {
+    super.initState();
+    // เรียงรอบนัดจากล่าสุดไปเก่าสุด (รอบล่าสุดอยู่แถวบนสุด)
+    _sessions = List.of(widget.sessions)
+      ..sort((a, b) {
+        final aStart = DateTime.tryParse(a['starts_at']?.toString() ?? '');
+        final bStart = DateTime.tryParse(b['starts_at']?.toString() ?? '');
+        if (aStart == null && bStart == null) return 0;
+        if (aStart == null) return 1; // รอบที่ไม่มีวันเวลาอยู่ท้ายสุด
+        if (bStart == null) return -1;
+        return bStart.compareTo(aStart);
+      });
+    _visibleCount = _sessions.length < _pageSize ? _sessions.length : _pageSize;
+    _scrollController = ScrollController()..addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _visibleCount >= _sessions.length) {
+      return;
+    }
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  void _loadMore() {
+    setState(() {
+      _visibleCount = _visibleCount + _pageSize < _sessions.length
+          ? _visibleCount + _pageSize
+          : _sessions.length;
+    });
+  }
 
   String _sessionLabel(Map<String, dynamic> session) {
     final startsAt = DateTime.tryParse(session['starts_at']?.toString() ?? '');
@@ -64,7 +119,7 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
     final userData = user is Map ? user : const <String, dynamic>{};
     final image = userData['profile_image_url']?.toString() ?? '';
     final userId = userData['id']?.toString() ?? member['user_id']?.toString();
-    final role = userId == groupOwnerId
+    final role = userId == widget.groupOwnerId
         ? 'เจ้าของก๊วน'
         : member['role']?.toString() == 'admin'
         ? 'ผู้ดูแล'
@@ -82,9 +137,10 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
     );
   }
 
-  Widget _sessionCard(Map<String, dynamic> session, int index) {
+  Widget _sessionCard(Map<String, dynamic> session) {
     final sessionId = session['id']?.toString() ?? '';
-    final participants = confirmedMembersBySession[sessionId] ?? const [];
+    final participants =
+        widget.confirmedMembersBySession[sessionId] ?? const [];
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -115,7 +171,7 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
             ),
           ),
           title: Text(
-            'รอบที่ ${index + 1} · ${_sessionLabel(session)}',
+            'รอบ · ${_sessionLabel(session)}',
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -163,6 +219,21 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxHeight = MediaQuery.of(context).size.height * 0.82;
+    final hasMore = _visibleCount < _sessions.length;
+    if (hasMore) {
+      // ถ้าการ์ดที่แสดงอยู่ยังไม่ล้นพื้นที่ (เลื่อนไม่ได้) ให้โหลดหน้าถัดไป
+      // ทันที เพื่อให้ dialog กระชับและผู้ใช้เลื่อนโหลดเพิ่มได้เมื่อเนื้อหาล้น
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _visibleCount >= _sessions.length ||
+            !_scrollController.hasClients) {
+          return;
+        }
+        if (_scrollController.position.maxScrollExtent <= 0) {
+          _loadMore();
+        }
+      });
+    }
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -200,7 +271,7 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '$groupName · ${sessions.length} รอบที่สิ้นสุดแล้ว',
+                          '${widget.groupName} · ${_sessions.length} รอบที่สิ้นสุดแล้ว',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -222,22 +293,27 @@ class _GroupSessionHistoryDialog extends StatelessWidget {
               Divider(height: 1, color: Colors.grey.shade200),
               const SizedBox(height: 10),
               Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: sessions.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, index) =>
-                      _sessionCard(sessions[index], index),
+                child: Scrollbar(
+                  controller: _scrollController,
+                  thumbVisibility: _sessions.length > _pageSize,
+                  child: ListView.separated(
+                    controller: _scrollController,
+                    shrinkWrap: true,
+                    itemCount: _visibleCount,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (_, index) => _sessionCard(_sessions[index]),
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('ปิด'),
+              if (hasMore) ...[
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    'เลื่อนลงเพื่อดูรอบก่อนหน้า',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

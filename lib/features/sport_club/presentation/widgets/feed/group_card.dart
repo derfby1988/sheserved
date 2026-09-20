@@ -163,6 +163,8 @@ class GroupCard extends StatelessWidget {
                       textPill(
                         Text(
                           'พื้นที่: ${group['province']}${group['district'] != null && group['district'].toString().isNotEmpty ? ' · ${group['district']}' : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     const SizedBox(height: 8),
@@ -224,51 +226,55 @@ class GroupCard extends StatelessWidget {
           if (groupFees.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: textPill(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.card_membership_rounded,
-                      size: 13,
-                      color: hasCover ? Colors.white70 : AppColors.primaryDark,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.card_membership_rounded,
+                    size: 13,
+                    color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
                       'ค่าก๊วน: ${groupFeeSummary(groupFees)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: hasCover ? Colors.white70 : Colors.grey[800],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           if (groupPositions.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: textPill(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.sports_soccer_rounded,
-                      size: 13,
-                      color: hasCover ? Colors.white70 : AppColors.primaryDark,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sports_soccer_rounded,
+                    size: 13,
+                    color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
                       'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: hasCover ? Colors.white70 : Colors.grey[800],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           if (myBlockedGroupIds.contains(gid))
@@ -386,25 +392,27 @@ class GroupCard extends StatelessWidget {
         if (groupPositions.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: textPill(
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.sports_soccer_rounded,
-                    size: 13,
-                    color: hasCover ? Colors.white70 : AppColors.primaryDark,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.sports_soccer_rounded,
+                  size: 13,
+                  color: hasCover ? Colors.white70 : AppColors.primaryDark,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
                     'รับตำแหน่ง: ${groupPositions.take(3).map((p) => "${p['label']}×${p['slots']}").join(' · ')}${groupPositions.length > 3 ? ' ...' : ''}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
                       color: hasCover ? Colors.white70 : Colors.grey[800],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         for (final s in sortedItems.take(1))

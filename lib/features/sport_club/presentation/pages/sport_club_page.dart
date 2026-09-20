@@ -26,6 +26,7 @@ import '../../application/sport_club_group_query.dart';
 import '../../application/sport_club_card_hydrator.dart';
 import '../../application/sport_club_booking_service.dart';
 import '../../application/sport_club_intent.dart';
+import '../../services/sport_club_deep_link_service.dart';
 
 class SportClubPage extends StatefulWidget {
   const SportClubPage({super.key});
@@ -318,9 +319,35 @@ class _SportClubPageState extends State<SportClubPage> {
 
       // Phase 2.3: handle redirect+intent after login
       _handleIntent();
+      // Phase 20: handle pending deep link
+      _handlePendingDeepLink();
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _handlePendingDeepLink() async {
+    final deepLink = SportClubDeepLinkService.consumePendingDeepLink();
+    if (deepLink == null) return;
+
+    try {
+      final groupData = await _repo.getGroupById(deepLink.groupId);
+      if (groupData != null && mounted) {
+        if (deepLink.src == 'share' || deepLink.src == 'qr') {
+          // Record visit anonymously or authenticated
+          await _client
+              .rpc(
+                'record_fitness_group_share_visit',
+                params: {'p_group_id': deepLink.groupId},
+              )
+              .catchError((_) => null);
+        }
+        // Show group detail. The sheet itself handles Guest mode correctly.
+        _showGroupDetailSheet(groupData);
+      }
+    } catch (e) {
+      debugPrint('Failed to load group for deep link: $e');
     }
   }
 
@@ -536,98 +563,114 @@ class _SportClubPageState extends State<SportClubPage> {
                   topRight: Radius.circular(32),
                 ),
               ),
-              child: RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView(
-                  controller: _listScrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Row(
+              child: Column(
+                children: [
+                  // Pinned filter bar: stays visible while the feed scrolls.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: SportCategoryChips(
-                            sports: _sports,
-                            selectedSportId: _sportId,
-                            myCreatedSportIds: _myCreatedSportIds,
-                            onSportSelected: (id, selected) async {
-                              setState(() {
-                                final nextSportId = selected ? id : null;
-                                _filter = _filter.copyWith(
-                                  sportId: nextSportId,
-                                  clearSportId: nextSportId == null,
-                                );
-                                _reloadingGroups = true;
-                              });
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SportCategoryChips(
+                                sports: _sports,
+                                selectedSportId: _sportId,
+                                myCreatedSportIds: _myCreatedSportIds,
+                                onSportSelected: (id, selected) async {
+                                  setState(() {
+                                    final nextSportId = selected ? id : null;
+                                    _filter = _filter.copyWith(
+                                      sportId: nextSportId,
+                                      clearSportId: nextSportId == null,
+                                    );
+                                    _reloadingGroups = true;
+                                  });
+                                  await _persistFilterState();
+                                  await _reload();
+                                },
+                              ),
+                            ),
+                            const AddSportFab(),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        QuickFilterRow(
+                          filterOpenOnly: _filterOpenOnly,
+                          filterJoinedOnly: _filterJoinedOnly,
+                          filterManagedOnly: _filterManagedOnly,
+                          locationEnabled: _locationEnabled,
+                          radiusKm: _radiusKm,
+                          activeFilterCount: _activeFilterCount,
+                          filterSummary: _filterSummary,
+                          onToggleFilter: _toggleQuickFilter,
+                          onShowAdvancedFilter: _showAdvancedFilterSheet,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: _reload,
+                      child: ListView(
+                        controller: _listScrollController,
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          RadiusSliderControl(
+                            visible: _showRadiusControl && _locationEnabled,
+                            radiusKm: _radiusKm,
+                            onChanged: (value) => setState(
+                              () => _filter = _filter.copyWith(radiusKm: value),
+                            ),
+                            onChangeEnd: (_) async {
                               await _persistFilterState();
                               await _reload();
                             },
+                            onReset: _resetRadiusFilter,
                           ),
-                        ),
-                        const AddSportFab(),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    QuickFilterRow(
-                      filterOpenOnly: _filterOpenOnly,
-                      filterJoinedOnly: _filterJoinedOnly,
-                      filterManagedOnly: _filterManagedOnly,
-                      locationEnabled: _locationEnabled,
-                      radiusKm: _radiusKm,
-                      activeFilterCount: _activeFilterCount,
-                      filterSummary: _filterSummary,
-                      onToggleFilter: _toggleQuickFilter,
-                      onShowAdvancedFilter: _showAdvancedFilterSheet,
-                    ),
-                    RadiusSliderControl(
-                      visible: _showRadiusControl && _locationEnabled,
-                      radiusKm: _radiusKm,
-                      onChanged: (value) => setState(
-                        () => _filter = _filter.copyWith(radiusKm: value),
-                      ),
-                      onChangeEnd: (_) async {
-                        await _persistFilterState();
-                        await _reload();
-                      },
-                      onReset: _resetRadiusFilter,
-                    ),
-                    const SizedBox(height: 16),
-                    if (_loading || _reloadingGroups)
-                      for (var i = 0; i < 3; i++) const SkeletonGroupCard(),
-                    if (!_loading && !_reloadingGroups && _groups.isEmpty)
-                      EmptyFilterState(
-                        activeFilterCount: _activeFilterCount,
-                        filterSummary: _filterSummary,
-                        onClearFilters: _clearAllFilters,
-                      ),
-                    if (!_loading && !_reloadingGroups) ...[
-                      for (final g in _groups)
-                        if (_canViewFullGroup(g))
-                          GroupCard(
-                            group: g,
-                            cardData:
-                                _cardDataByGroupId[g['id']?.toString() ?? ''] ??
-                                SportClubGroupCardData.empty,
-                            repo: _repo,
-                            client: _client,
-                            myAdminGroups: _myAdminGroups,
-                            myJoinedGroupIds: _myJoinedGroupIds,
-                            myPendingGroupIds: _myPendingGroupIds,
-                            myBlockedGroupIds: _myBlockedGroupIds,
-                            onTap: () => _showGroupDetailSheet(g),
-                            onBook: _book,
-                            onSessionCreated: () => _refreshGroupCardData(
-                              g['id']?.toString() ?? '',
+                          const SizedBox(height: 16),
+                          if (_loading || _reloadingGroups)
+                            for (var i = 0; i < 3; i++)
+                              const SkeletonGroupCard(),
+                          if (!_loading && !_reloadingGroups && _groups.isEmpty)
+                            EmptyFilterState(
+                              activeFilterCount: _activeFilterCount,
+                              filterSummary: _filterSummary,
+                              onClearFilters: _clearAllFilters,
                             ),
-                          ),
-                    ],
-                    if (_isLoadingMore)
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
+                          if (!_loading && !_reloadingGroups) ...[
+                            for (final g in _groups)
+                              if (_canViewFullGroup(g))
+                                GroupCard(
+                                  group: g,
+                                  cardData:
+                                      _cardDataByGroupId[g['id']?.toString() ??
+                                          ''] ??
+                                      SportClubGroupCardData.empty,
+                                  repo: _repo,
+                                  client: _client,
+                                  myAdminGroups: _myAdminGroups,
+                                  myJoinedGroupIds: _myJoinedGroupIds,
+                                  myPendingGroupIds: _myPendingGroupIds,
+                                  myBlockedGroupIds: _myBlockedGroupIds,
+                                  onTap: () => _showGroupDetailSheet(g),
+                                  onBook: _book,
+                                  onSessionCreated: () => _refreshGroupCardData(
+                                    g['id']?.toString() ?? '',
+                                  ),
+                                ),
+                          ],
+                          if (_isLoadingMore)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          const SizedBox(height: 120),
+                        ],
                       ),
-                    const SizedBox(height: 120),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

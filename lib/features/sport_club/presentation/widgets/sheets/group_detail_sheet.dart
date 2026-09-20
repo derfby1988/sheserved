@@ -20,6 +20,7 @@ import 'package:sheserved/features/sport_club/presentation/widgets/sheets/sessio
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_session_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_group_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_invite_poster_sheet.dart';
+import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 
 /// Signature for booking a session (optionally at a field position).
@@ -287,16 +288,50 @@ class GroupDetailSheet {
         : Colors.grey.shade600;
     final isCurrentUserMember =
         currentUserId != null && myJoinedGroupIds.contains(groupId);
-    final memberSwipeHint = isCurrentUserMember
-        ? isAdmin
-              ? 'ปัดรายชื่อไปทางซ้ายเพื่อแชทหรือจัดการ'
-              : 'ปัดรายชื่อไปทางซ้ายเพื่อแชท'
-        : isAdmin
+    final memberSwipeHint = isAdmin
         ? 'ปัดรายชื่อไปทางซ้ายเพื่อจัดการ'
-        : null;
-    final canSelectSession = isCurrentUserMember || isGroupOwner;
+        : 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบ';
+    final canSelectSession = true;
     final canViewBlockedUsers = isAdmin;
     var initialChatOpened = false;
+
+    Future<List<dynamic>> loadSheetData() {
+      return Future.wait<dynamic>([
+        loadSessionsWithCostItems(repo, groupId),
+        repo.listGroupMembers(groupId),
+        if (isAdmin)
+          repo.listGroupPendingBookings(
+            groupId,
+            requesterUserId: currentUserId ?? '',
+          )
+        else
+          Future.value(<Map<String, dynamic>>[]),
+        if (!isAdmin && currentUserId != null)
+          repo.listMyPendingBookingsForGroup(groupId, currentUserId)
+        else
+          Future.value(<Map<String, dynamic>>[]),
+        if (canViewBlockedUsers)
+          repo.listBlockedUsers(groupId, requesterUserId: currentUserId ?? '')
+        else
+          Future.value(<Map<String, dynamic>>[]),
+        repo
+            .listPublicGroupFees(groupId)
+            .catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+    }
+
+    // Keep the same Future while the sheet rebuilds (including during scroll).
+    // A new Future is assigned only after an action changes the data.
+    var sheetDataFuture = loadSheetData();
+    final positionsFuture = Future.wait<dynamic>([
+      repo.listPublicGroupPositions(groupId),
+      client
+          .from('fitness_groups')
+          .select('sport:sports(field_layout, field_style)')
+          .eq('id', groupId)
+          .maybeSingle(),
+    ]);
+
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
@@ -311,6 +346,11 @@ class GroupDetailSheet {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final screenHeight = MediaQuery.of(ctx).size.height;
+          void reloadSheetState(VoidCallback callback) {
+            sheetDataFuture = loadSheetData();
+            setSheetState(callback);
+          }
+
           return ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             child: BackdropFilter(
@@ -341,34 +381,7 @@ class GroupDetailSheet {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: FutureBuilder<List<dynamic>>(
-                      future: Future.wait([
-                        loadSessionsWithCostItems(repo, groupId),
-                        repo.listGroupMembers(groupId),
-                        if (isAdmin)
-                          repo.listGroupPendingBookings(
-                            groupId,
-                            requesterUserId: currentUserId ?? '',
-                          )
-                        else
-                          Future.value(<Map<String, dynamic>>[]),
-                        if (!isAdmin && currentUserId != null)
-                          repo.listMyPendingBookingsForGroup(
-                            groupId,
-                            currentUserId,
-                          )
-                        else
-                          Future.value(<Map<String, dynamic>>[]),
-                        if (canViewBlockedUsers)
-                          repo.listBlockedUsers(
-                            groupId,
-                            requesterUserId: currentUserId ?? '',
-                          )
-                        else
-                          Future.value(<Map<String, dynamic>>[]),
-                        repo
-                            .listPublicGroupFees(groupId)
-                            .catchError((_) => <Map<String, dynamic>>[]),
-                      ]),
+                      future: sheetDataFuture,
                       builder: (pageContext, snapshot) {
                         if (snapshot.connectionState != ConnectionState.done) {
                           return const Center(
@@ -488,803 +501,1590 @@ class GroupDetailSheet {
                                     .toSet(),
                               ),
                             );
-                        return Scrollbar(
-                          controller: detailScrollController,
-                          thumbVisibility:
-                              (members.length +
-                                  pendingBookings.length +
-                                  blockedUsers.length) >
-                              10,
-                          child: SingleChildScrollView(
-                            controller: detailScrollController,
-                            child: Column(
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // ── Top drag handle ──
+                            Center(
+                              child: Container(
+                                width: 42,
+                                height: 4.5,
+                                margin: const EdgeInsets.only(
+                                  top: 2,
+                                  bottom: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade300,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                            // ── Header Row: Avatar, Title, Badges, Close ──
+                            Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                // ── Top drag handle ──
-                                Center(
-                                  child: Container(
-                                    width: 42,
-                                    height: 4.5,
-                                    margin: const EdgeInsets.only(
-                                      top: 2,
-                                      bottom: 12,
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        AppColors.primary.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        AppColors.primaryDark.withValues(
+                                          alpha: 0.25,
+                                        ),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade300,
-                                      borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      width: 1.2,
                                     ),
                                   ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    group['sport_icon']?.toString() ?? '🏅',
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
                                 ),
-                                // ── Header Row: Avatar, Title, Badges, Close ──
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            AppColors.primary.withValues(
-                                              alpha: 0.2,
-                                            ),
-                                            AppColors.primaryDark.withValues(
-                                              alpha: 0.25,
-                                            ),
-                                          ],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        group['name']?.toString() ?? 'ก๊วนกีฬา',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E293B),
+                                          letterSpacing: -0.2,
                                         ),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: AppColors.primary.withValues(
-                                            alpha: 0.35,
-                                          ),
-                                          width: 1.2,
-                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        group['sport_icon']?.toString() ?? '🏅',
-                                        style: const TextStyle(fontSize: 24),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                      const SizedBox(height: 5),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
                                         children: [
-                                          Text(
-                                            group['name']?.toString() ??
-                                                'ก๊วนกีฬา',
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w700,
-                                              color: Color(0xFF1E293B),
-                                              letterSpacing: -0.2,
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
                                             ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                            decoration: BoxDecoration(
+                                              color: permissionColor.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: permissionColor
+                                                    .withValues(alpha: 0.25),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  isAdmin
+                                                      ? Icons
+                                                            .admin_panel_settings_rounded
+                                                      : Icons
+                                                            .person_outline_rounded,
+                                                  size: 13,
+                                                  color: permissionColor,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  permissionLabel,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: permissionColor,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                          const SizedBox(height: 5),
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 4,
-                                            children: [
+                                          if (group['requires_owner_approval'] ==
+                                                  true &&
+                                              !isGroupOwner)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.withValues(
+                                                  alpha: 0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: Colors.orange
+                                                      .withValues(alpha: 0.3),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.lock_clock_rounded,
+                                                    size: 13,
+                                                    color: Colors.orange,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'ต้องรออนุมัติ',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors
+                                                          .orange
+                                                          .shade800,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      onPressed: () =>
+                                          GroupInvitePosterSheet.show(
+                                            ctx,
+                                            groupData: group,
+                                          ),
+                                      icon: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.share_rounded,
+                                          size: 18,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      splashRadius: 20,
+                                      tooltip: 'เชิญเข้าร่วมก๊วน',
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      icon: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close_rounded,
+                                          size: 18,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      splashRadius: 20,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // ── Scrollable content (header/actions pinned) ──
+                            Flexible(
+                              child: Scrollbar(
+                                controller: detailScrollController,
+                                thumbVisibility:
+                                    (members.length +
+                                        pendingBookings.length +
+                                        blockedUsers.length) >
+                                    10,
+                                child: SingleChildScrollView(
+                                  controller: detailScrollController,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // ── Overview & Meta Card ──
+                                      _frostedCard(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            if ((group['description']
+                                                        ?.toString() ??
+                                                    '')
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                              Text(
+                                                group['description']
+                                                    .toString()
+                                                    .trim(),
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  height: 1.45,
+                                                  color: Color(0xFF475569),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                            ],
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 6,
+                                              children: [
+                                                if ((group['sport_name']
+                                                            ?.toString() ??
+                                                        '')
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                  _detailInfoChip(
+                                                    '${group['sport_icon']?.toString() ?? '🏅'} ${group['sport_name']}',
+                                                    Icons.sports_rounded,
+                                                  ),
+                                                if ((group['province']
+                                                                ?.toString() ??
+                                                            '')
+                                                        .trim()
+                                                        .isNotEmpty ||
+                                                    (group['district']
+                                                                ?.toString() ??
+                                                            '')
+                                                        .trim()
+                                                        .isNotEmpty)
+                                                  _detailInfoChip(
+                                                    [
+                                                          group['province']
+                                                              ?.toString(),
+                                                          group['district']
+                                                              ?.toString(),
+                                                        ]
+                                                        .where(
+                                                          (value) =>
+                                                              value != null &&
+                                                              value
+                                                                  .trim()
+                                                                  .isNotEmpty,
+                                                        )
+                                                        .join(' · '),
+                                                    Icons.location_on_outlined,
+                                                  ),
+                                                if (group['gender_preference']
+                                                        ?.toString() !=
+                                                    null)
+                                                  _detailInfoChip(
+                                                    switch (group['gender_preference']
+                                                        ?.toString()) {
+                                                      'male' => 'เฉพาะผู้ชาย',
+                                                      'female' =>
+                                                        'เฉพาะผู้หญิง',
+                                                      _ => 'เปิดรับทุกเพศ',
+                                                    },
+                                                    Icons
+                                                        .people_outline_rounded,
+                                                  ),
+                                                if (group['target_skill_levels']
+                                                    is List)
+                                                  SkillLevelBadge(
+                                                    targetSkillLevels:
+                                                        (group['target_skill_levels']
+                                                                as List)
+                                                            .map(
+                                                              (level) => level
+                                                                  .toString(),
+                                                            )
+                                                            .toList(),
+                                                    isCompact: false,
+                                                    backgroundColor: Colors
+                                                        .white
+                                                        .withValues(alpha: 0.8),
+                                                    borderColor: Colors
+                                                        .grey
+                                                        .shade300
+                                                        .withValues(alpha: 0.8),
+                                                  ),
+                                              ],
+                                            ),
+                                            if ((group['skill_level_note']
+                                                        ?.toString() ??
+                                                    '')
+                                                .trim()
+                                                .isNotEmpty) ...[
+                                              const SizedBox(height: 8),
                                               Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2,
+                                                      horizontal: 10,
+                                                      vertical: 6,
                                                     ),
                                                 decoration: BoxDecoration(
-                                                  color: permissionColor
-                                                      .withValues(alpha: 0.1),
+                                                  color: Colors.amber.shade50
+                                                      .withValues(alpha: 0.7),
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                   border: Border.all(
-                                                    color: permissionColor
-                                                        .withValues(
-                                                          alpha: 0.25,
-                                                        ),
+                                                    color:
+                                                        Colors.amber.shade200,
                                                   ),
                                                 ),
                                                 child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
                                                   children: [
                                                     Icon(
-                                                      isAdmin
-                                                          ? Icons
-                                                                .admin_panel_settings_rounded
-                                                          : Icons
-                                                                .person_outline_rounded,
-                                                      size: 13,
-                                                      color: permissionColor,
+                                                      Icons
+                                                          .tips_and_updates_outlined,
+                                                      size: 14,
+                                                      color:
+                                                          Colors.amber.shade800,
                                                     ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      permissionLabel,
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: permissionColor,
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        group['skill_level_note']
+                                                            .toString()
+                                                            .trim(),
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors
+                                                              .amber
+                                                              .shade900,
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ),
-                                              if (group['requires_owner_approval'] ==
-                                                      true &&
-                                                  !isGroupOwner)
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 2,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.orange
-                                                        .withValues(alpha: 0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                    border: Border.all(
-                                                      color: Colors.orange
-                                                          .withValues(
-                                                            alpha: 0.3,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      const Icon(
-                                                        Icons
-                                                            .lock_clock_rounded,
-                                                        size: 13,
-                                                        color: Colors.orange,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        'ต้องรออนุมัติ',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: Colors
-                                                              .orange
-                                                              .shade800,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
                                             ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          onPressed: () =>
-                                              GroupInvitePosterSheet.show(
-                                            ctx,
-                                            groupData: group,
-                                          ),
-                                          icon: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.share_rounded,
-                                              size: 18,
-                                              color: Color(0xFF64748B),
-                                            ),
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          splashRadius: 20,
-                                          tooltip: 'เชิญเข้าร่วมก๊วน',
-                                        ),
-                                        const SizedBox(width: 8),
-                                        IconButton(
-                                          onPressed: () => Navigator.pop(ctx),
-                                          icon: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.close_rounded,
-                                              size: 18,
-                                              color: Color(0xFF64748B),
-                                            ),
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          splashRadius: 20,
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                // ── Overview & Meta Card ──
-                                _frostedCard(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if ((group['description']?.toString() ??
-                                              '')
-                                          .trim()
-                                          .isNotEmpty) ...[
-                                        Text(
-                                          group['description']
-                                              .toString()
-                                              .trim(),
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            height: 1.45,
-                                            color: Color(0xFF475569),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                      ],
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: [
-                                          if ((group['sport_name']
-                                                      ?.toString() ??
-                                                  '')
-                                              .trim()
-                                              .isNotEmpty)
-                                            _detailInfoChip(
-                                              '${group['sport_icon']?.toString() ?? '🏅'} ${group['sport_name']}',
-                                              Icons.sports_rounded,
-                                            ),
-                                          if ((group['province']?.toString() ??
-                                                      '')
-                                                  .trim()
-                                                  .isNotEmpty ||
-                                              (group['district']?.toString() ??
-                                                      '')
-                                                  .trim()
-                                                  .isNotEmpty)
-                                            _detailInfoChip(
-                                              [
-                                                    group['province']
-                                                        ?.toString(),
-                                                    group['district']
-                                                        ?.toString(),
-                                                  ]
-                                                  .where(
-                                                    (value) =>
-                                                        value != null &&
-                                                        value.trim().isNotEmpty,
-                                                  )
-                                                  .join(' · '),
-                                              Icons.location_on_outlined,
-                                            ),
-                                          if (group['gender_preference']
-                                                  ?.toString() !=
-                                              null)
-                                            _detailInfoChip(
-                                              switch (group['gender_preference']
-                                                  ?.toString()) {
-                                                'male' => 'เฉพาะผู้ชาย',
-                                                'female' => 'เฉพาะผู้หญิง',
-                                                _ => 'เปิดรับทุกเพศ',
-                                              },
-                                              Icons.people_outline_rounded,
-                                            ),
-                                          if (group['target_skill_levels']
-                                              is List)
-                                            SkillLevelBadge(
-                                              targetSkillLevels:
-                                                  (group['target_skill_levels']
-                                                          as List)
-                                                      .map(
-                                                        (level) =>
-                                                            level.toString(),
-                                                      )
-                                                      .toList(),
-                                              isCompact: false,
-                                            ),
-                                        ],
-                                      ),
-                                      if ((group['skill_level_note']
-                                                  ?.toString() ??
-                                              '')
-                                          .trim()
-                                          .isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber.shade50
-                                                .withValues(alpha: 0.7),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.amber.shade200,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.tips_and_updates_outlined,
-                                                size: 14,
-                                                color: Colors.amber.shade800,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  group['skill_level_note']
-                                                      .toString()
-                                                      .trim(),
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color:
-                                                        Colors.amber.shade900,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                      if ((group['venue_photo_url']
-                                                  ?.toString() ??
-                                              '')
-                                          .trim()
-                                          .isNotEmpty) ...[
-                                        const SizedBox(height: 12),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                          child: Stack(
-                                            children: [
-                                              Image.network(
-                                                group['venue_photo_url']
-                                                    .toString(),
-                                                width: double.infinity,
-                                                height: 140,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (_, _, _) =>
-                                                    Container(
-                                                      height: 120,
-                                                      alignment:
-                                                          Alignment.center,
-                                                      color:
-                                                          Colors.grey.shade100,
-                                                      child: const Text(
-                                                        'ไม่สามารถโหลดรูปสนามได้',
-                                                      ),
-                                                    ),
-                                              ),
-                                              Positioned(
-                                                bottom: 8,
-                                                left: 8,
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black
-                                                        .withValues(alpha: 0.6),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: const Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Icon(
-                                                        Icons.stadium_rounded,
-                                                        color: Colors.white,
-                                                        size: 14,
-                                                      ),
-                                                      SizedBox(width: 4),
-                                                      Text(
-                                                        'รูปสนาม / สถานที่',
-                                                        style: TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                FutureBuilder<List<dynamic>>(
-                                  future: Future.wait([
-                                    repo.listPublicGroupPositions(groupId),
-                                    client
-                                        .from('fitness_groups')
-                                        .select(
-                                          'sport:sports(field_layout, field_style)',
-                                        )
-                                        .eq('id', groupId)
-                                        .maybeSingle(),
-                                  ]),
-                                  builder: (pctx, psnap) {
-                                    if (psnap.hasData) {
-                                      final positions =
-                                          (psnap.data?[0] as List?)
-                                              ?.cast<Map<String, dynamic>>() ??
-                                          [];
-                                      final gRow =
-                                          psnap.data?[1]
-                                              as Map<String, dynamic>?;
-                                      final sport = gRow?['sport'];
-                                      final layout = sport is Map
-                                          ? sport['field_layout']?.toString()
-                                          : null;
-                                      final fStyle = sport is Map
-                                          ? FieldStyle.fromJson(
-                                              sport['field_style'],
-                                            )
-                                          : FieldStyle.fallback;
-                                      if (positions.isNotEmpty &&
-                                          (layout == 'single' ||
-                                              layout == 'double')) {
-                                        return _frostedCard(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              _sectionHeader(
-                                                icon:
-                                                    Icons.sports_soccer_rounded,
-                                                title:
-                                                    'ตำแหน่งผู้เล่นที่ก๊วนเปิดรับ',
-                                                trailing: isAdmin
-                                                    ? TextButton.icon(
-                                                        style: TextButton.styleFrom(
-                                                          visualDensity:
-                                                              VisualDensity
-                                                                  .compact,
-                                                          foregroundColor:
-                                                              AppColors
-                                                                  .primaryDark,
-                                                        ),
-                                                        onPressed: () {
-                                                          Navigator.pop(ctx);
-                                                          EditGroupSheet.show(
-                                                            pageContext,
-                                                            repo: repo,
-                                                            client: client,
-                                                            group: group,
-                                                            onGroupSaved:
-                                                                onPageRefresh,
-                                                          );
-                                                        },
-                                                        icon: const Icon(
-                                                          Icons.tune_rounded,
-                                                          size: 15,
-                                                        ),
-                                                        label: const Text(
-                                                          'จัดการ',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    : null,
-                                              ),
+                                            if ((group['venue_photo_url']
+                                                        ?.toString() ??
+                                                    '')
+                                                .trim()
+                                                .isNotEmpty) ...[
                                               const SizedBox(height: 12),
-                                              PositionLineupView(
-                                                layout: layout!,
-                                                fieldStyle: fStyle,
-                                                positions: positions,
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }
-                                    }
-                                    return const SizedBox.shrink();
-                                  },
-                                ),
-                                _frostedCard(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _sectionHeader(
-                                        icon: Icons.calendar_month_rounded,
-                                        title: 'รอบนัด',
-                                        badge: sessions.isNotEmpty
-                                            ? '${sessions.length}'
-                                            : null,
-                                      ),
-                                      if ((isAdmin ||
-                                              canSelectAdditionalSession) &&
-                                          sessions.isNotEmpty)
-                                        Container(
-                                          margin: const EdgeInsets.only(
-                                            top: 8,
-                                            bottom: 4,
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary.withValues(
-                                              alpha: 0.08,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: AppColors.primary
-                                                  .withValues(alpha: 0.2),
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.swipe_left_rounded,
-                                                size: 15,
-                                                color: AppColors.primaryDark,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  isAdmin &&
-                                                          canSelectAdditionalSession
-                                                      ? 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบหรือจัดการ'
-                                                      : isAdmin
-                                                      ? 'ปัดรอบนัดไปทางซ้ายเพื่อจัดการ'
-                                                      : 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบ',
-                                                  style: const TextStyle(
-                                                    fontSize: 11.5,
-                                                    color:
-                                                        AppColors.primaryDark,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      const SizedBox(height: 8),
-                                      if (sessions.isEmpty)
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 18,
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: Column(
-                                            children: [
-                                              Icon(
-                                                Icons.event_busy_rounded,
-                                                size: 32,
-                                                color: Colors.grey.shade400,
-                                              ),
-                                              const SizedBox(height: 6),
-                                              Text(
-                                                'ยังไม่มีรอบนัดที่กำลังจะมาถึง',
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      else
-                                        ListView.separated(
-                                          shrinkWrap: true,
-                                          physics:
-                                              const NeverScrollableScrollPhysics(),
-                                          itemCount: sessions.length,
-                                          separatorBuilder: (_, _) =>
-                                              const SizedBox(height: 10),
-                                          itemBuilder: (ctx, i) {
-                                            final s = sessions[i];
-                                            final sessionId =
-                                                s['id']?.toString() ?? '';
-                                            final sessionLabel =
-                                                formatThaiSessionRange(
-                                                  DateTime.parse(
-                                                    s['starts_at'].toString(),
-                                                  ).toLocal(),
-                                                  DateTime.parse(
-                                                    s['ends_at'].toString(),
-                                                  ).toLocal(),
-                                                );
-                                            final confirmedMembers =
-                                                confirmedMembersBySession[sessionId] ??
-                                                [];
-                                            final pendingForSession =
-                                                pendingBySession[sessionId] ??
-                                                [];
-                                            final sessionChildren = <Widget>[
-                                              SessionMetaView(session: s),
-                                              SessionCostItemsView(session: s),
-                                            ];
-
-                                            if (confirmedMembers.isNotEmpty) {
-                                              sessionChildren.add(
-                                                Align(
-                                                  alignment:
-                                                      Alignment.centerLeft,
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.fromLTRB(
-                                                          16,
-                                                          8,
-                                                          16,
-                                                          4,
+                                              ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                child: Stack(
+                                                  children: [
+                                                    Image.network(
+                                                      group['venue_photo_url']
+                                                          .toString(),
+                                                      width: double.infinity,
+                                                      height: 140,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, _, _) =>
+                                                          Container(
+                                                            height: 120,
+                                                            alignment: Alignment
+                                                                .center,
+                                                            color: Colors
+                                                                .grey
+                                                                .shade100,
+                                                            child: const Text(
+                                                              'ไม่สามารถโหลดรูปสนามได้',
+                                                            ),
+                                                          ),
+                                                    ),
+                                                    Positioned(
+                                                      bottom: 8,
+                                                      left: 8,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 4,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.black
+                                                              .withValues(
+                                                                alpha: 0.6,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                8,
+                                                              ),
                                                         ),
-                                                    child: Text(
-                                                      'ผู้เข้าร่วมรอบนี้ ${confirmedMembers.length} คน',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.grey[700],
-                                                        fontWeight:
-                                                            FontWeight.w600,
+                                                        child: const Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .stadium_rounded,
+                                                              color:
+                                                                  Colors.white,
+                                                              size: 14,
+                                                            ),
+                                                            SizedBox(width: 4),
+                                                            Text(
+                                                              'รูปสนาม / สถานที่',
+                                                              style: TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 11,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
+                                                  ],
                                                 ),
-                                              );
-                                              sessionChildren.addAll(
-                                                confirmedMembers.map<Widget>((
-                                                  member,
-                                                ) {
-                                                  final user =
-                                                      (member['user']
-                                                          as Map?) ??
-                                                      {};
-                                                  final firstName =
-                                                      user['first_name']
-                                                          ?.toString()
-                                                          .trim() ??
-                                                      '';
-                                                  final lastName =
-                                                      user['last_name']
-                                                          ?.toString()
-                                                          .trim() ??
-                                                      '';
-                                                  final fullName =
-                                                      '$firstName $lastName'
-                                                          .trim();
-                                                  final image =
-                                                      user['profile_image_url']
-                                                          ?.toString() ??
-                                                      '';
-                                                  final memberUserId =
-                                                      user['id']?.toString() ??
-                                                      member['user_id']
-                                                          ?.toString() ??
-                                                      '';
-                                                  final role =
-                                                      memberUserId ==
-                                                          groupOwnerId
-                                                      ? 'เจ้าของก๊วน'
-                                                      : member['role']
-                                                                ?.toString() ==
-                                                            'admin'
-                                                      ? 'ผู้ดูแล'
-                                                      : 'สมาชิก';
-                                                  final confirmedSessions =
-                                                      (member['confirmed_sessions']
-                                                              as List?)
-                                                          ?.whereType<Map>() ??
-                                                      [];
-                                                  Map<String, dynamic>?
-                                                  sessionBooking;
-                                                  for (final rawSession
-                                                      in confirmedSessions) {
-                                                    if (rawSession['id']
-                                                            ?.toString() ==
-                                                        sessionId) {
-                                                      sessionBooking =
-                                                          Map<
-                                                            String,
-                                                            dynamic
-                                                          >.from(rawSession);
-                                                      break;
-                                                    }
-                                                  }
-                                                  final bookingId =
-                                                      sessionBooking?['booking_id']
-                                                          ?.toString() ??
-                                                      '';
-                                                  final tile = ListTile(
-                                                    dense: true,
-                                                    contentPadding:
-                                                        const EdgeInsets.only(
-                                                          left: 16,
-                                                          right: 16,
-                                                        ),
-                                                    leading: CircleAvatar(
-                                                      radius: 18,
-                                                      backgroundImage:
-                                                          image.isNotEmpty
-                                                          ? NetworkImage(image)
-                                                          : null,
-                                                      child: image.isEmpty
-                                                          ? const Icon(
-                                                              Icons.person,
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      FutureBuilder<List<dynamic>>(
+                                        future: positionsFuture,
+                                        builder: (pctx, psnap) {
+                                          if (psnap.hasData) {
+                                            final positions =
+                                                (psnap.data?[0] as List?)
+                                                    ?.cast<
+                                                      Map<String, dynamic>
+                                                    >() ??
+                                                [];
+                                            final gRow =
+                                                psnap.data?[1]
+                                                    as Map<String, dynamic>?;
+                                            final sport = gRow?['sport'];
+                                            final layout = sport is Map
+                                                ? sport['field_layout']
+                                                      ?.toString()
+                                                : null;
+                                            final fStyle = sport is Map
+                                                ? FieldStyle.fromJson(
+                                                    sport['field_style'],
+                                                  )
+                                                : FieldStyle.fallback;
+                                            if (positions.isNotEmpty &&
+                                                (layout == 'single' ||
+                                                    layout == 'double')) {
+                                              return _frostedCard(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    _sectionHeader(
+                                                      icon: Icons
+                                                          .sports_soccer_rounded,
+                                                      title:
+                                                          'ตำแหน่งผู้เล่นที่ก๊วนเปิดรับ',
+                                                      trailing: isAdmin
+                                                          ? TextButton.icon(
+                                                              style: TextButton.styleFrom(
+                                                                visualDensity:
+                                                                    VisualDensity
+                                                                        .compact,
+                                                                foregroundColor:
+                                                                    AppColors
+                                                                        .primaryDark,
+                                                              ),
+                                                              onPressed: () {
+                                                                Navigator.pop(
+                                                                  ctx,
+                                                                );
+                                                                EditGroupSheet.show(
+                                                                  pageContext,
+                                                                  repo: repo,
+                                                                  client:
+                                                                      client,
+                                                                  group: group,
+                                                                  onGroupSaved:
+                                                                      onPageRefresh,
+                                                                );
+                                                              },
+                                                              icon: const Icon(
+                                                                Icons
+                                                                    .tune_rounded,
+                                                                size: 15,
+                                                              ),
+                                                              label: const Text(
+                                                                'จัดการ',
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                ),
+                                                              ),
                                                             )
                                                           : null,
                                                     ),
-                                                    title: Text(
-                                                      fullName.isNotEmpty
-                                                          ? fullName
-                                                          : 'ไม่ระบุชื่อ',
+                                                    const SizedBox(height: 12),
+                                                    PositionLineupView(
+                                                      layout: layout!,
+                                                      fieldStyle: fStyle,
+                                                      positions: positions,
                                                     ),
-                                                    subtitle: Text(
-                                                      '$role · ยืนยันแล้ว',
+                                                  ],
+                                                ),
+                                              );
+                                            }
+                                          }
+                                          return const SizedBox.shrink();
+                                        },
+                                      ),
+                                      _frostedCard(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _sectionHeader(
+                                              icon:
+                                                  Icons.calendar_month_rounded,
+                                              title: 'รอบนัด',
+                                              badge: sessions.isNotEmpty
+                                                  ? '${sessions.length}'
+                                                  : null,
+                                            ),
+                                            if ((isAdmin ||
+                                                    canSelectAdditionalSession) &&
+                                                sessions.isNotEmpty)
+                                              Container(
+                                                margin: const EdgeInsets.only(
+                                                  top: 8,
+                                                  bottom: 4,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.primary
+                                                      .withValues(alpha: 0.08),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: AppColors.primary
+                                                        .withValues(alpha: 0.2),
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.swipe_left_rounded,
+                                                      size: 15,
+                                                      color:
+                                                          AppColors.primaryDark,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        isAdmin &&
+                                                                canSelectAdditionalSession
+                                                            ? 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบหรือจัดการ'
+                                                            : isAdmin
+                                                            ? 'ปัดรอบนัดไปทางซ้ายเพื่อจัดการ'
+                                                            : 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบ',
+                                                        style: const TextStyle(
+                                                          fontSize: 11.5,
+                                                          color: AppColors
+                                                              .primaryDark,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            const SizedBox(height: 8),
+                                            if (sessions.isEmpty)
+                                              Container(
+                                                width: double.infinity,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 18,
+                                                    ),
+                                                alignment: Alignment.center,
+                                                child: Column(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.event_busy_rounded,
+                                                      size: 32,
+                                                      color:
+                                                          Colors.grey.shade400,
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    Text(
+                                                      'ยังไม่มีรอบนัดที่กำลังจะมาถึง',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              )
+                                            else
+                                              ListView.separated(
+                                                shrinkWrap: true,
+                                                physics:
+                                                    const NeverScrollableScrollPhysics(),
+                                                itemCount: sessions.length,
+                                                separatorBuilder: (_, _) =>
+                                                    const SizedBox(height: 10),
+                                                itemBuilder: (ctx, i) {
+                                                  final s = sessions[i];
+                                                  final sessionId =
+                                                      s['id']?.toString() ?? '';
+                                                  final sessionLabel =
+                                                      formatThaiSessionRange(
+                                                        DateTime.parse(
+                                                          s['starts_at']
+                                                              .toString(),
+                                                        ).toLocal(),
+                                                        DateTime.parse(
+                                                          s['ends_at']
+                                                              .toString(),
+                                                        ).toLocal(),
+                                                      );
+                                                  final confirmedMembers =
+                                                      confirmedMembersBySession[sessionId] ??
+                                                      [];
+                                                  final pendingForSession =
+                                                      pendingBySession[sessionId] ??
+                                                      [];
+                                                  final sessionChildren =
+                                                      <Widget>[
+                                                        SessionMetaView(
+                                                          session: s,
+                                                        ),
+                                                        SessionCostItemsView(
+                                                          session: s,
+                                                        ),
+                                                      ];
+
+                                                  if (confirmedMembers
+                                                      .isNotEmpty) {
+                                                    sessionChildren.add(
+                                                      Align(
+                                                        alignment: Alignment
+                                                            .centerLeft,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.fromLTRB(
+                                                                16,
+                                                                8,
+                                                                16,
+                                                                4,
+                                                              ),
+                                                          child: Text(
+                                                            'ผู้เข้าร่วมรอบนี้ ${confirmedMembers.length} คน',
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              color: Colors
+                                                                  .grey[700],
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                    sessionChildren.addAll(
+                                                      confirmedMembers.map<
+                                                        Widget
+                                                      >((member) {
+                                                        final user =
+                                                            (member['user']
+                                                                as Map?) ??
+                                                            {};
+                                                        final firstName =
+                                                            user['first_name']
+                                                                ?.toString()
+                                                                .trim() ??
+                                                            '';
+                                                        final lastName =
+                                                            user['last_name']
+                                                                ?.toString()
+                                                                .trim() ??
+                                                            '';
+                                                        final fullName =
+                                                            '$firstName $lastName'
+                                                                .trim();
+                                                        final image =
+                                                            user['profile_image_url']
+                                                                ?.toString() ??
+                                                            '';
+                                                        final memberUserId =
+                                                            user['id']
+                                                                ?.toString() ??
+                                                            member['user_id']
+                                                                ?.toString() ??
+                                                            '';
+                                                        final role =
+                                                            memberUserId ==
+                                                                groupOwnerId
+                                                            ? 'เจ้าของก๊วน'
+                                                            : member['role']
+                                                                      ?.toString() ==
+                                                                  'admin'
+                                                            ? 'ผู้ดูแล'
+                                                            : 'สมาชิก';
+                                                        final confirmedSessions =
+                                                            (member['confirmed_sessions']
+                                                                    as List?)
+                                                                ?.whereType<
+                                                                  Map
+                                                                >() ??
+                                                            [];
+                                                        Map<String, dynamic>?
+                                                        sessionBooking;
+                                                        for (final rawSession
+                                                            in confirmedSessions) {
+                                                          if (rawSession['id']
+                                                                  ?.toString() ==
+                                                              sessionId) {
+                                                            sessionBooking =
+                                                                Map<
+                                                                  String,
+                                                                  dynamic
+                                                                >.from(
+                                                                  rawSession,
+                                                                );
+                                                            break;
+                                                          }
+                                                        }
+                                                        final bookingId =
+                                                            sessionBooking?['booking_id']
+                                                                ?.toString() ??
+                                                            '';
+                                                        final tile = ListTile(
+                                                          dense: true,
+                                                          contentPadding:
+                                                              const EdgeInsets.only(
+                                                                left: 16,
+                                                                right: 16,
+                                                              ),
+                                                          leading: CircleAvatar(
+                                                            radius: 18,
+                                                            backgroundImage:
+                                                                image.isNotEmpty
+                                                                ? NetworkImage(
+                                                                    image,
+                                                                  )
+                                                                : null,
+                                                            child: image.isEmpty
+                                                                ? const Icon(
+                                                                    Icons
+                                                                        .person,
+                                                                  )
+                                                                : null,
+                                                          ),
+                                                          title: Text(
+                                                            fullName.isNotEmpty
+                                                                ? fullName
+                                                                : 'ไม่ระบุชื่อ',
+                                                          ),
+                                                          subtitle: Text(
+                                                            '$role · ยืนยันแล้ว',
+                                                          ),
+                                                        );
+                                                        if (!isAdmin ||
+                                                            memberUserId ==
+                                                                groupOwnerId ||
+                                                            bookingId.isEmpty) {
+                                                          return tile;
+                                                        }
+                                                        return Slidable(
+                                                          key: ValueKey(
+                                                            'session_member_${sessionId}_$memberUserId',
+                                                          ),
+                                                          endActionPane: ActionPane(
+                                                            motion:
+                                                                const ScrollMotion(),
+                                                            extentRatio: 0.26,
+                                                            children: [
+                                                              _responsiveSlidableAction(
+                                                                onPressed: (_) =>
+                                                                    BookingActionDialogs.removeParticipantFromSession(
+                                                                      pageContext,
+                                                                      ctx,
+                                                                      repo,
+                                                                      bookingId,
+                                                                      fullName,
+                                                                      sessionLabel,
+                                                                      reloadSheetState,
+                                                                    ),
+                                                                backgroundColor:
+                                                                    Colors.red,
+                                                                foregroundColor:
+                                                                    Colors
+                                                                        .white,
+                                                                icon: Icons
+                                                                    .person_remove,
+                                                                label:
+                                                                    'ถอดจากรอบนี้',
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          child: tile,
+                                                        );
+                                                      }),
+                                                    );
+                                                  }
+
+                                                  if (pendingForSession
+                                                      .isNotEmpty) {
+                                                    sessionChildren.add(
+                                                      Align(
+                                                        alignment: Alignment
+                                                            .centerLeft,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.fromLTRB(
+                                                                16,
+                                                                12,
+                                                                16,
+                                                                4,
+                                                              ),
+                                                          child: Text(
+                                                            isAdmin
+                                                                ? 'คำขอรออนุมัติ ${pendingForSession.length} คน'
+                                                                : 'คำขอของฉัน ${pendingForSession.length} รายการ',
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              color: Colors
+                                                                  .orange
+                                                                  .shade800,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                    sessionChildren.addAll(
+                                                      pendingForSession.map<
+                                                        Widget
+                                                      >(
+                                                        (
+                                                          booking,
+                                                        ) => _buildPendingBookingTile(
+                                                          actionContext: ctx,
+                                                          booking: booking,
+                                                          sessionId: sessionId,
+                                                          groupId: groupId,
+                                                          canManage: isAdmin,
+                                                          setSheetState:
+                                                              reloadSheetState,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+
+                                                  if (sessionChildren.isEmpty) {
+                                                    sessionChildren.add(
+                                                      const Padding(
+                                                        padding:
+                                                            EdgeInsets.fromLTRB(
+                                                              16,
+                                                              8,
+                                                              16,
+                                                              12,
+                                                            ),
+                                                        child: Text(
+                                                          'ยังไม่มีผู้เข้าร่วมรอบนี้',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+
+                                                  final sessionTile = Theme(
+                                                    data: Theme.of(ctx)
+                                                        .copyWith(
+                                                          dividerColor: Colors
+                                                              .transparent,
+                                                        ),
+                                                    child: ExpansionTile(
+                                                      tilePadding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 14,
+                                                            vertical: 4,
+                                                          ),
+                                                      initiallyExpanded:
+                                                          pendingForSession
+                                                              .isNotEmpty ||
+                                                          i == 0,
+                                                      leading: Container(
+                                                        width: 38,
+                                                        height: 38,
+                                                        decoration: BoxDecoration(
+                                                          color: AppColors
+                                                              .primary
+                                                              .withValues(
+                                                                alpha: 0.12,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                10,
+                                                              ),
+                                                        ),
+                                                        child: const Icon(
+                                                          Icons
+                                                              .event_note_rounded,
+                                                          color: AppColors
+                                                              .primaryDark,
+                                                          size: 20,
+                                                        ),
+                                                      ),
+                                                      title: Text(
+                                                        'รอบที่ ${i + 1} · $sessionLabel',
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Color(
+                                                            0xFF1E293B,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      subtitle: Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 2,
+                                                            ),
+                                                        child: Text(
+                                                          sessionCapacitySummary(
+                                                            s,
+                                                            detailed: true,
+                                                            pendingCountOverride:
+                                                                isAdmin
+                                                                ? null
+                                                                : pendingForSession
+                                                                      .length,
+                                                          ),
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors
+                                                                .grey
+                                                                .shade600,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      trailing: IconButton(
+                                                        onPressed: () =>
+                                                            GroupInvitePosterSheet.show(
+                                                              ctx,
+                                                              groupData: group,
+                                                              sessionData: s,
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons.share_outlined,
+                                                          size: 20,
+                                                          color: Color(
+                                                            0xFF64748B,
+                                                          ),
+                                                        ),
+                                                        tooltip:
+                                                            'เชิญเข้าร่วมรอบนี้',
+                                                      ),
+                                                      children: sessionChildren,
                                                     ),
                                                   );
-                                                  if (!isAdmin ||
-                                                      memberUserId ==
-                                                          groupOwnerId ||
-                                                      bookingId.isEmpty) {
-                                                    return tile;
+                                                  final sessionActions =
+                                                      <Widget>[];
+                                                  if (canSelectAdditionalSession) {
+                                                    sessionActions.add(
+                                                      _responsiveSlidableAction(
+                                                        onPressed: (_) {
+                                                          final requiresApproval =
+                                                              group['requires_owner_approval'] ==
+                                                                  true &&
+                                                              !isGroupOwner;
+                                                          SessionPickerSheet.show(
+                                                            this.pageContext,
+                                                            repo: repo,
+                                                            client: client,
+                                                            groupId: groupId,
+                                                            requiresOwnerApproval:
+                                                                requiresApproval,
+                                                            existingBookingStatuses:
+                                                                mySessionBookingStatuses,
+                                                            onPickerWillOpen:
+                                                                () =>
+                                                                    Navigator.pop(
+                                                                      ctx,
+                                                                    ),
+                                                            onBook:
+                                                                (
+                                                                  sessionId, {
+                                                                  positionId,
+                                                                }) => onBook(
+                                                                  sessionId,
+                                                                  requiresOwnerApproval:
+                                                                      requiresApproval,
+                                                                  groupId:
+                                                                      groupId,
+                                                                  positionId:
+                                                                      positionId,
+                                                                ),
+                                                          );
+                                                        },
+                                                        backgroundColor:
+                                                            Colors.teal,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        icon: Icons
+                                                            .event_available,
+                                                        label: 'เลือกเพิ่มรอบ',
+                                                      ),
+                                                    );
                                                   }
-                                                  return Slidable(
-                                                    key: ValueKey(
-                                                      'session_member_${sessionId}_$memberUserId',
+                                                  if (isAdmin) {
+                                                    sessionActions.add(
+                                                      _responsiveSlidableAction(
+                                                        onPressed: (_) {
+                                                          Navigator.pop(ctx);
+                                                          EditSessionSheet.show(
+                                                            pageContext,
+                                                            repo: repo,
+                                                            client: client,
+                                                            session: s,
+                                                            onSessionUpdated:
+                                                                onPageRefresh,
+                                                          );
+                                                        },
+                                                        backgroundColor:
+                                                            AppColors.primary,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        icon: Icons.edit,
+                                                        label: 'แก้ไข',
+                                                      ),
+                                                    );
+                                                    sessionActions.add(
+                                                      _responsiveSlidableAction(
+                                                        onPressed: (_) async {
+                                                          final confirm = await showDialog<bool>(
+                                                            context: ctx,
+                                                            builder: (ctx2) => AlertDialog(
+                                                              title: const Text(
+                                                                'ยกเลิกรอบนัด',
+                                                              ),
+                                                              content: const Text(
+                                                                'ต้องการลบรอบนัดนี้ใช่หรือไม่?',
+                                                              ),
+                                                              actions: [
+                                                                TextButton(
+                                                                  onPressed: () =>
+                                                                      Navigator.of(
+                                                                        ctx2,
+                                                                      ).pop(
+                                                                        false,
+                                                                      ),
+                                                                  child:
+                                                                      const Text(
+                                                                        'ยกเลิก',
+                                                                      ),
+                                                                ),
+                                                                TextButton(
+                                                                  onPressed: () =>
+                                                                      Navigator.of(
+                                                                        ctx2,
+                                                                      ).pop(
+                                                                        true,
+                                                                      ),
+                                                                  child:
+                                                                      const Text(
+                                                                        'ยืนยัน',
+                                                                      ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          );
+                                                          if (confirm != true)
+                                                            return;
+                                                          try {
+                                                            final actorUserId =
+                                                                currentUserId;
+                                                            if (actorUserId ==
+                                                                null)
+                                                              return;
+                                                            await repo
+                                                                .cancelSession(
+                                                                  s['id']
+                                                                      .toString(),
+                                                                  actorUserId:
+                                                                      actorUserId,
+                                                                );
+                                                            if (!pageContext
+                                                                .mounted)
+                                                              return;
+                                                            ScaffoldMessenger.of(
+                                                              pageContext,
+                                                            ).showSnackBar(
+                                                              const SnackBar(
+                                                                content: Text(
+                                                                  'ยกเลิกรอบนัดแล้ว',
+                                                                ),
+                                                              ),
+                                                            );
+                                                            reloadSheetState(
+                                                              () {},
+                                                            );
+                                                          } catch (e) {
+                                                            if (!pageContext
+                                                                .mounted)
+                                                              return;
+                                                            ScaffoldMessenger.of(
+                                                              pageContext,
+                                                            ).showSnackBar(
+                                                              SnackBar(
+                                                                content: Text(
+                                                                  'ยกเลิกไม่สำเร็จ: $e',
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }
+                                                        },
+                                                        backgroundColor:
+                                                            Colors.red,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        icon: Icons.event_busy,
+                                                        label: 'ยกเลิก',
+                                                      ),
+                                                    );
+                                                  }
+                                                  return Container(
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.85,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            16,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors
+                                                            .grey
+                                                            .shade200,
+                                                        width: 1,
+                                                      ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: Colors.black
+                                                              .withValues(
+                                                                alpha: 0.02,
+                                                              ),
+                                                          blurRadius: 6,
+                                                          offset: const Offset(
+                                                            0,
+                                                            2,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
-                                                    endActionPane: ActionPane(
-                                                      motion:
-                                                          const ScrollMotion(),
-                                                      extentRatio: 0.26,
-                                                      children: [
+                                                    child: ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            16,
+                                                          ),
+                                                      child:
+                                                          sessionActions.isEmpty
+                                                          ? sessionTile
+                                                          : Slidable(
+                                                              key: ValueKey(
+                                                                'session_$sessionId',
+                                                              ),
+                                                              endActionPane: ActionPane(
+                                                                motion:
+                                                                    const ScrollMotion(),
+                                                                extentRatio:
+                                                                    (sessionActions.length *
+                                                                            0.24)
+                                                                        .clamp(
+                                                                          0.2,
+                                                                          0.75,
+                                                                        ),
+                                                                children:
+                                                                    sessionActions,
+                                                              ),
+                                                              child:
+                                                                  sessionTile,
+                                                            ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (endedSessions.isNotEmpty)
+                                        Container(
+                                          width: double.infinity,
+                                          margin: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: OutlinedButton(
+                                            onPressed: () =>
+                                                GroupSessionHistoryDialog.show(
+                                                  ctx,
+                                                  groupName:
+                                                      group['name']
+                                                          ?.toString() ??
+                                                      'ก๊วน',
+                                                  groupOwnerId: groupOwnerId,
+                                                  sessions: endedSessions,
+                                                  confirmedMembersBySession:
+                                                      confirmedMembersBySession,
+                                                ),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  AppColors.primaryDark,
+                                              side: BorderSide(
+                                                color: AppColors.primary
+                                                    .withValues(alpha: 0.35),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 12,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                            ),
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: const [
+                                                  Icon(
+                                                    Icons.history_rounded,
+                                                    size: 18,
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Text(
+                                                    'รอบนัดสิ้นสุดแล้ว',
+                                                    maxLines: 1,
+                                                    softWrap: false,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      _frostedCard(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 6,
+                                        ),
+                                        child: Theme(
+                                          data: Theme.of(ctx).copyWith(
+                                            dividerColor: Colors.transparent,
+                                          ),
+                                          child: ExpansionTile(
+                                            initiallyExpanded: false,
+                                            tilePadding: EdgeInsets.zero,
+                                            leading: Container(
+                                              width: 36,
+                                              height: 36,
+                                              decoration: BoxDecoration(
+                                                color: const Color(
+                                                  0xFF6366F1,
+                                                ).withValues(alpha: 0.12),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: const Icon(
+                                                Icons.people_alt_rounded,
+                                                color: Color(0xFF6366F1),
+                                                size: 18,
+                                              ),
+                                            ),
+                                            title: Row(
+                                              children: [
+                                                const Text(
+                                                  'สมาชิกก๊วนรวม',
+                                                  style: TextStyle(
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Color(0xFF1E293B),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 1.5,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFF6366F1,
+                                                    ).withValues(alpha: 0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    '${members.length}',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Color(0xFF6366F1),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            subtitle: const Text(
+                                              'นับผู้ใช้ไม่ซ้ำ ไม่ใช่จำนวนที่นั่งของรอบนัด',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                            ),
+                                            children: [
+                                              if (memberSwipeHint != null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 4,
+                                                      ),
+                                                  child: Text(
+                                                    memberSwipeHint,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.grey[500],
+                                                    ),
+                                                  ),
+                                                ),
+                                              const SizedBox(height: 8),
+                                              if (members.isEmpty)
+                                                const Text('ยังไม่มีสมาชิก')
+                                              else
+                                                ListView.separated(
+                                                  shrinkWrap: true,
+                                                  physics:
+                                                      const NeverScrollableScrollPhysics(),
+                                                  itemCount: members.length,
+                                                  separatorBuilder: (_, _) =>
+                                                      const SizedBox(height: 4),
+                                                  itemBuilder: (ctx, i) {
+                                                    final m = members[i];
+                                                    final user =
+                                                        (m['user'] as Map?) ??
+                                                        {};
+                                                    final firstName =
+                                                        user['first_name']
+                                                            ?.toString()
+                                                            .trim() ??
+                                                        '';
+                                                    final lastName =
+                                                        user['last_name']
+                                                            ?.toString()
+                                                            .trim() ??
+                                                        '';
+                                                    final fullName =
+                                                        '$firstName $lastName'
+                                                            .trim();
+                                                    final image =
+                                                        user['profile_image_url']
+                                                            ?.toString() ??
+                                                        '';
+                                                    final active =
+                                                        m['is_active'] == true
+                                                        ? 'เข้าร่วมแล้ว'
+                                                        : 'หยุดพัก';
+                                                    final memberUserId =
+                                                        user['id']
+                                                            ?.toString() ??
+                                                        m['user_id']
+                                                            ?.toString() ??
+                                                        '';
+                                                    final role =
+                                                        memberUserId ==
+                                                            groupOwnerId
+                                                        ? 'เจ้าของก๊วน'
+                                                        : (m['role']
+                                                                  ?.toString() ==
+                                                              'admin')
+                                                        ? 'ผู้ดูแล'
+                                                        : 'สมาชิก';
+                                                    final isSelf =
+                                                        memberUserId ==
+                                                        currentUserId;
+                                                    final mentionTargetName =
+                                                        isSelf ||
+                                                            firstName.isEmpty
+                                                        ? null
+                                                        : lastName.isEmpty
+                                                        ? firstName
+                                                        : '$firstName ${String.fromCharCode(lastName.runes.first)}.';
+                                                    final isMemberAdmin =
+                                                        m['role']?.toString() ==
+                                                        'admin';
+                                                    // Build swipe actions
+                                                    final actions = <Widget>[];
+                                                    final canChat =
+                                                        myJoinedGroupIds
+                                                            .contains(groupId);
+                                                    final isActiveMember =
+                                                        m['is_active'] == true;
+                                                    if (canOpenGroupChatFromMemberSwipe(
+                                                          canChat: canChat,
+                                                          isActiveMember:
+                                                              isActiveMember,
+                                                        ) &&
+                                                        memberUserId
+                                                            .isNotEmpty) {
+                                                      actions.add(
+                                                        _responsiveSlidableAction(
+                                                          onPressed: (_) {
+                                                            final hasReplyTarget =
+                                                                !isSelf &&
+                                                                memberUserId
+                                                                    .isNotEmpty;
+                                                            showGroupChatPopup(
+                                                              pageContext,
+                                                              groupId: groupId,
+                                                              groupName:
+                                                                  group['name']
+                                                                      ?.toString() ??
+                                                                  'ก๊วน',
+                                                              memberCount:
+                                                                  members
+                                                                      .length,
+                                                              mentionTargetName:
+                                                                  hasReplyTarget
+                                                                  ? mentionTargetName
+                                                                  : null,
+                                                              replyTargetUserId:
+                                                                  hasReplyTarget
+                                                                  ? memberUserId
+                                                                  : null,
+                                                              replyTargetName:
+                                                                  hasReplyTarget
+                                                                  ? mentionTargetName
+                                                                  : null,
+                                                            );
+                                                          },
+                                                          backgroundColor:
+                                                              AppColors.primary,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          icon: Icons
+                                                              .chat_bubble_outline,
+                                                          label: 'แชท',
+                                                        ),
+                                                      );
+                                                    }
+                                                    if (isSelf &&
+                                                        isGroupOwner &&
+                                                        group['owner_auto_join'] !=
+                                                            false &&
+                                                        memberUserId
+                                                            .isNotEmpty) {
+                                                      actions.add(
                                                         _responsiveSlidableAction(
                                                           onPressed: (_) =>
-                                                              BookingActionDialogs.removeParticipantFromSession(
+                                                              _withdrawOwnerParticipation(
+                                                                sheetContext:
+                                                                    ctx,
+                                                                groupId:
+                                                                    groupId,
+                                                                userId:
+                                                                    memberUserId,
+                                                              ),
+                                                          backgroundColor:
+                                                              Colors.red,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          icon: Icons
+                                                              .person_remove_alt_1,
+                                                          label: 'ถอน',
+                                                        ),
+                                                      );
+                                                    }
+                                                    // Block + Remove: admin only, not self, not other admin
+                                                    if (isAdmin &&
+                                                        !isSelf &&
+                                                        !isMemberAdmin) {
+                                                      actions.add(
+                                                        _responsiveSlidableAction(
+                                                          onPressed: (_) =>
+                                                              MemberActionDialogs.blockUser(
                                                                 pageContext,
                                                                 ctx,
                                                                 repo,
-                                                                bookingId,
+                                                                groupId,
+                                                                memberUserId,
                                                                 fullName,
-                                                                sessionLabel,
-                                                                setSheetState,
+                                                                reloadSheetState,
+                                                                onFeedRefresh:
+                                                                    onFeedRefresh,
+                                                              ),
+                                                          backgroundColor:
+                                                              Colors.grey,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          icon: Icons.block,
+                                                          label: 'บล็อก',
+                                                        ),
+                                                      );
+                                                      actions.add(
+                                                        _responsiveSlidableAction(
+                                                          onPressed: (_) =>
+                                                              MemberActionDialogs.removeMember(
+                                                                pageContext,
+                                                                ctx,
+                                                                repo,
+                                                                groupId,
+                                                                memberUserId,
+                                                                fullName,
+                                                                reloadSheetState,
                                                               ),
                                                           backgroundColor:
                                                               Colors.red,
@@ -1292,1059 +2092,438 @@ class GroupDetailSheet {
                                                               Colors.white,
                                                           icon: Icons
                                                               .person_remove,
-                                                          label: 'ถอดจากรอบนี้',
+                                                          label: 'ถอดทั้งก๊วน',
+                                                        ),
+                                                      );
+                                                    }
+
+                                                    final tile = ListTile(
+                                                      contentPadding:
+                                                          EdgeInsets.zero,
+                                                      leading: CircleAvatar(
+                                                        backgroundImage:
+                                                            image.isNotEmpty
+                                                            ? NetworkImage(
+                                                                image,
+                                                              )
+                                                            : null,
+                                                        child: image.isEmpty
+                                                            ? const Icon(
+                                                                Icons.person,
+                                                              )
+                                                            : null,
+                                                      ),
+                                                      title: Text(
+                                                        fullName.isNotEmpty
+                                                            ? fullName
+                                                            : 'ไม่ระบุชื่อ',
+                                                      ),
+                                                      subtitle: Text(
+                                                        '$role · $active',
+                                                      ),
+                                                    );
+
+                                                    if (actions.isEmpty)
+                                                      return tile;
+
+                                                    return Slidable(
+                                                      key: ValueKey(
+                                                        'member_$memberUserId',
+                                                      ),
+                                                      endActionPane: ActionPane(
+                                                        motion:
+                                                            const ScrollMotion(),
+                                                        extentRatio:
+                                                            actions.length *
+                                                            0.2,
+                                                        children: actions,
+                                                      ),
+                                                      child: tile,
+                                                    );
+                                                  },
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      _frostedCard(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            _sectionHeader(
+                                              icon:
+                                                  Icons.card_membership_rounded,
+                                              title: 'ค่าใช้จ่ายมาตรฐานก๊วน',
+                                              trailing: isAdmin
+                                                  ? TextButton.icon(
+                                                      style:
+                                                          TextButton.styleFrom(
+                                                            visualDensity:
+                                                                VisualDensity
+                                                                    .compact,
+                                                            foregroundColor:
+                                                                AppColors
+                                                                    .primaryDark,
+                                                          ),
+                                                      onPressed: () {
+                                                        Navigator.pop(ctx);
+                                                        EditGroupSheet.show(
+                                                          pageContext,
+                                                          repo: repo,
+                                                          client: client,
+                                                          group: group,
+                                                          onGroupSaved:
+                                                              onPageRefresh,
+                                                        );
+                                                      },
+                                                      icon: const Icon(
+                                                        Icons.tune_rounded,
+                                                        size: 15,
+                                                      ),
+                                                      label: const Text(
+                                                        'จัดการ',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : null,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            if (groupFees.isEmpty)
+                                              Container(
+                                                width: double.infinity,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 10,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade50
+                                                      .withValues(alpha: 0.8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: Colors.grey.shade200,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons
+                                                          .info_outline_rounded,
+                                                      size: 16,
+                                                      color:
+                                                          Colors.grey.shade500,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              )
+                                            else
+                                              for (final fee in groupFees)
+                                                Container(
+                                                  margin: const EdgeInsets.only(
+                                                    bottom: 8,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 14,
+                                                        vertical: 10,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.9),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                    border: Border.all(
+                                                      color:
+                                                          Colors.grey.shade200,
+                                                    ),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                              alpha: 0.02,
+                                                            ),
+                                                        blurRadius: 4,
+                                                        offset: const Offset(
+                                                          0,
+                                                          1,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        width: 34,
+                                                        height: 34,
+                                                        decoration: BoxDecoration(
+                                                          color: AppColors
+                                                              .primary
+                                                              .withValues(
+                                                                alpha: 0.12,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                9,
+                                                              ),
+                                                        ),
+                                                        child: const Icon(
+                                                          Icons
+                                                              .card_membership_rounded,
+                                                          size: 18,
+                                                          color: AppColors
+                                                              .primaryDark,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              fee['name']
+                                                                      ?.toString() ??
+                                                                  '',
+                                                              style: const TextStyle(
+                                                                fontSize: 13.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Color(
+                                                                  0xFF1E293B,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 2,
+                                                            ),
+                                                            Row(
+                                                              children: [
+                                                                Text(
+                                                                  formatBaht(
+                                                                    fee['amount']
+                                                                        as num?,
+                                                                  ),
+                                                                  style: const TextStyle(
+                                                                    fontSize:
+                                                                        13.5,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    color: AppColors
+                                                                        .primaryDark,
+                                                                  ),
+                                                                ),
+                                                                Text(
+                                                                  ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    color: Colors
+                                                                        .grey
+                                                                        .shade600,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      paymentTimingBadge(
+                                                        fee['payment_timing']
+                                                            ?.toString(),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (canViewBlockedUsers &&
+                                          blockedUsers.isNotEmpty) ...[
+                                        _frostedCard(
+                                          backgroundColor: Colors.red.shade50
+                                              .withValues(alpha: 0.35),
+                                          border: Border.all(
+                                            color: Colors.red.shade100,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              _sectionHeader(
+                                                icon: Icons.block_rounded,
+                                                title: 'ผู้ใช้ที่ถูกบล็อก',
+                                                badge:
+                                                    '${blockedUsers.length} คน',
+                                                iconColor: Colors.red.shade700,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ListView.separated(
+                                                shrinkWrap: true,
+                                                physics:
+                                                    const NeverScrollableScrollPhysics(),
+                                                itemCount: blockedUsers.length,
+                                                separatorBuilder: (_, _) =>
+                                                    const SizedBox(height: 4),
+                                                itemBuilder: (ctx, i) {
+                                                  final blocked =
+                                                      blockedUsers[i];
+                                                  final blockedUser =
+                                                      (blocked['blocked_user']
+                                                          as Map?) ??
+                                                      {};
+                                                  final name =
+                                                      '${blockedUser['first_name'] ?? ''} ${blockedUser['last_name'] ?? ''}'
+                                                          .trim();
+                                                  final image =
+                                                      blockedUser['profile_image_url']
+                                                          ?.toString() ??
+                                                      '';
+                                                  final reason =
+                                                      blocked['reason']
+                                                          ?.toString();
+                                                  final blockedUserId =
+                                                      blocked['blocked_user_id']
+                                                          ?.toString() ??
+                                                      '';
+                                                  final tile = ListTile(
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                    leading: CircleAvatar(
+                                                      backgroundImage:
+                                                          image.isNotEmpty
+                                                          ? NetworkImage(image)
+                                                          : null,
+                                                      child: image.isEmpty
+                                                          ? const Icon(
+                                                              Icons.person_off,
+                                                            )
+                                                          : null,
+                                                    ),
+                                                    title: Text(
+                                                      name.isNotEmpty
+                                                          ? name
+                                                          : 'ไม่ระบุชื่อ',
+                                                    ),
+                                                    subtitle: Text(
+                                                      reason != null &&
+                                                              reason.isNotEmpty
+                                                          ? 'ถูกบล็อก · เหตุผล: $reason'
+                                                          : 'ถูกบล็อก',
+                                                    ),
+                                                  );
+                                                  return Slidable(
+                                                    key: ValueKey(
+                                                      'blocked_$blockedUserId',
+                                                    ),
+                                                    endActionPane: ActionPane(
+                                                      motion:
+                                                          const ScrollMotion(),
+                                                      extentRatio: 0.24,
+                                                      children: [
+                                                        _responsiveSlidableAction(
+                                                          onPressed: (_) async {
+                                                            try {
+                                                              final actorUserId =
+                                                                  currentUserId;
+                                                              if (actorUserId ==
+                                                                  null)
+                                                                return;
+                                                              await repo.unblockUser(
+                                                                groupId:
+                                                                    groupId,
+                                                                blockedUserId:
+                                                                    blockedUserId,
+                                                                actorUserId:
+                                                                    actorUserId,
+                                                              );
+                                                              if (!pageContext
+                                                                  .mounted)
+                                                                return;
+                                                              ScaffoldMessenger.of(
+                                                                pageContext,
+                                                              ).showSnackBar(
+                                                                SnackBar(
+                                                                  content: Text(
+                                                                    'ปลดบล็อก "$name" แล้ว',
+                                                                  ),
+                                                                ),
+                                                              );
+                                                              reloadSheetState(
+                                                                () {},
+                                                              );
+                                                              await onFeedRefresh();
+                                                            } catch (e) {
+                                                              if (!pageContext
+                                                                  .mounted)
+                                                                return;
+                                                              ScaffoldMessenger.of(
+                                                                pageContext,
+                                                              ).showSnackBar(
+                                                                SnackBar(
+                                                                  content: Text(
+                                                                    'ปลดบล็อกไม่สำเร็จ: $e',
+                                                                  ),
+                                                                ),
+                                                              );
+                                                            }
+                                                          },
+                                                          backgroundColor:
+                                                              Colors.green,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          icon: Icons.lock_open,
+                                                          label: 'ปลด',
                                                         ),
                                                       ],
                                                     ),
                                                     child: tile,
                                                   );
-                                                }),
-                                              );
-                                            }
-
-                                            if (pendingForSession.isNotEmpty) {
-                                              sessionChildren.add(
-                                                Align(
-                                                  alignment:
-                                                      Alignment.centerLeft,
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.fromLTRB(
-                                                          16,
-                                                          12,
-                                                          16,
-                                                          4,
-                                                        ),
-                                                    child: Text(
-                                                      isAdmin
-                                                          ? 'คำขอรออนุมัติ ${pendingForSession.length} คน'
-                                                          : 'คำขอของฉัน ${pendingForSession.length} รายการ',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors
-                                                            .orange
-                                                            .shade800,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              );
-                                              sessionChildren.addAll(
-                                                pendingForSession.map<Widget>(
-                                                  (booking) =>
-                                                      _buildPendingBookingTile(
-                                                        actionContext: ctx,
-                                                        booking: booking,
-                                                        sessionId: sessionId,
-                                                        groupId: groupId,
-                                                        canManage: isAdmin,
-                                                        setSheetState:
-                                                            setSheetState,
-                                                      ),
-                                                ),
-                                              );
-                                            }
-
-                                            if (sessionChildren.isEmpty) {
-                                              sessionChildren.add(
-                                                const Padding(
-                                                  padding: EdgeInsets.fromLTRB(
-                                                    16,
-                                                    8,
-                                                    16,
-                                                    12,
-                                                  ),
-                                                  child: Text(
-                                                    'ยังไม่มีผู้เข้าร่วมรอบนี้',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-
-                                            final sessionTile = Theme(
-                                              data: Theme.of(ctx).copyWith(
-                                                dividerColor:
-                                                    Colors.transparent,
-                                              ),
-                                              child: ExpansionTile(
-                                                tilePadding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 14,
-                                                      vertical: 4,
-                                                    ),
-                                                initiallyExpanded:
-                                                    pendingForSession
-                                                        .isNotEmpty ||
-                                                    i == 0,
-                                                leading: Container(
-                                                  width: 38,
-                                                  height: 38,
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.primary
-                                                        .withValues(
-                                                          alpha: 0.12,
-                                                        ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          10,
-                                                        ),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.event_note_rounded,
-                                                    color:
-                                                        AppColors.primaryDark,
-                                                    size: 20,
-                                                  ),
-                                                ),
-                                                title: Text(
-                                                  'รอบที่ ${i + 1} · $sessionLabel',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: Color(0xFF1E293B),
-                                                  ),
-                                                ),
-                                                subtitle: Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 2,
-                                                      ),
-                                                  child: Text(
-                                                    sessionCapacitySummary(
-                                                      s,
-                                                      detailed: true,
-                                                      pendingCountOverride:
-                                                          isAdmin
-                                                          ? null
-                                                          : pendingForSession
-                                                                .length,
-                                                    ),
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color:
-                                                          Colors.grey.shade600,
-                                                    ),
-                                                  ),
-                                                ),
-                                                trailing: IconButton(
-                                                  onPressed: () =>
-                                                      GroupInvitePosterSheet.show(
-                                                    ctx,
-                                                    groupData: group,
-                                                    sessionData: s,
-                                                  ),
-                                                  icon: const Icon(
-                                                    Icons.share_outlined,
-                                                    size: 20,
-                                                    color: Color(0xFF64748B),
-                                                  ),
-                                                  tooltip: 'เชิญเข้าร่วมรอบนี้',
-                                                ),
-                                                children: sessionChildren,
-                                              ),
-                                            );
-                                            final sessionActions = <Widget>[];
-                                            if (canSelectAdditionalSession) {
-                                              sessionActions.add(
-                                                _responsiveSlidableAction(
-                                                  onPressed: (_) {
-                                                    final requiresApproval =
-                                                        group['requires_owner_approval'] ==
-                                                            true &&
-                                                        !isGroupOwner;
-                                                    SessionPickerSheet.show(
-                                                      this.pageContext,
-                                                      repo: repo,
-                                                      client: client,
-                                                      groupId: groupId,
-                                                      requiresOwnerApproval:
-                                                          requiresApproval,
-                                                      existingBookingStatuses:
-                                                          mySessionBookingStatuses,
-                                                      onPickerWillOpen: () =>
-                                                          Navigator.pop(ctx),
-                                                      onBook:
-                                                          (
-                                                            sessionId, {
-                                                            positionId,
-                                                          }) => onBook(
-                                                            sessionId,
-                                                            requiresOwnerApproval:
-                                                                requiresApproval,
-                                                            groupId: groupId,
-                                                            positionId:
-                                                                positionId,
-                                                          ),
-                                                    );
-                                                  },
-                                                  backgroundColor: Colors.teal,
-                                                  foregroundColor: Colors.white,
-                                                  icon: Icons.event_available,
-                                                  label: 'เลือกเพิ่มรอบ',
-                                                ),
-                                              );
-                                            }
-                                            if (isAdmin) {
-                                              sessionActions.add(
-                                                _responsiveSlidableAction(
-                                                  onPressed: (_) {
-                                                    Navigator.pop(ctx);
-                                                    EditSessionSheet.show(
-                                                      pageContext,
-                                                      repo: repo,
-                                                      client: client,
-                                                      session: s,
-                                                      onSessionUpdated:
-                                                          onPageRefresh,
-                                                    );
-                                                  },
-                                                  backgroundColor:
-                                                      AppColors.primary,
-                                                  foregroundColor: Colors.white,
-                                                  icon: Icons.edit,
-                                                  label: 'แก้ไข',
-                                                ),
-                                              );
-                                              sessionActions.add(
-                                                _responsiveSlidableAction(
-                                                  onPressed: (_) async {
-                                                    final confirm =
-                                                        await showDialog<bool>(
-                                                          context: ctx,
-                                                          builder: (ctx2) => AlertDialog(
-                                                            title: const Text(
-                                                              'ยกเลิกรอบนัด',
-                                                            ),
-                                                            content: const Text(
-                                                              'ต้องการลบรอบนัดนี้ใช่หรือไม่?',
-                                                            ),
-                                                            actions: [
-                                                              TextButton(
-                                                                onPressed: () =>
-                                                                    Navigator.of(
-                                                                      ctx2,
-                                                                    ).pop(
-                                                                      false,
-                                                                    ),
-                                                                child:
-                                                                    const Text(
-                                                                      'ยกเลิก',
-                                                                    ),
-                                                              ),
-                                                              TextButton(
-                                                                onPressed: () =>
-                                                                    Navigator.of(
-                                                                      ctx2,
-                                                                    ).pop(true),
-                                                                child:
-                                                                    const Text(
-                                                                      'ยืนยัน',
-                                                                    ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        );
-                                                    if (confirm != true) return;
-                                                    try {
-                                                      final actorUserId =
-                                                          currentUserId;
-                                                      if (actorUserId == null)
-                                                        return;
-                                                      await repo.cancelSession(
-                                                        s['id'].toString(),
-                                                        actorUserId:
-                                                            actorUserId,
-                                                      );
-                                                      if (!pageContext.mounted)
-                                                        return;
-                                                      ScaffoldMessenger.of(
-                                                        pageContext,
-                                                      ).showSnackBar(
-                                                        const SnackBar(
-                                                          content: Text(
-                                                            'ยกเลิกรอบนัดแล้ว',
-                                                          ),
-                                                        ),
-                                                      );
-                                                      setSheetState(() {});
-                                                    } catch (e) {
-                                                      if (!pageContext.mounted)
-                                                        return;
-                                                      ScaffoldMessenger.of(
-                                                        pageContext,
-                                                      ).showSnackBar(
-                                                        SnackBar(
-                                                          content: Text(
-                                                            'ยกเลิกไม่สำเร็จ: $e',
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }
-                                                  },
-                                                  backgroundColor: Colors.red,
-                                                  foregroundColor: Colors.white,
-                                                  icon: Icons.event_busy,
-                                                  label: 'ยกเลิก',
-                                                ),
-                                              );
-                                            }
-                                            return Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(
-                                                  alpha: 0.85,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                                border: Border.all(
-                                                  color: Colors.grey.shade200,
-                                                  width: 1,
-                                                ),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.02,
-                                                        ),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
-                                              ),
-                                              child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                                child: sessionActions.isEmpty
-                                                    ? sessionTile
-                                                    : Slidable(
-                                                        key: ValueKey(
-                                                          'session_$sessionId',
-                                                        ),
-                                                        endActionPane: ActionPane(
-                                                          motion:
-                                                              const ScrollMotion(),
-                                                          extentRatio:
-                                                              (sessionActions
-                                                                          .length *
-                                                                      0.24)
-                                                                  .clamp(
-                                                                    0.2,
-                                                                    0.75,
-                                                                  ),
-                                                          children:
-                                                              sessionActions,
-                                                        ),
-                                                        child: sessionTile,
-                                                      ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                if (endedSessions.isNotEmpty)
-                                  Container(
-                                    width: double.infinity,
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    child: OutlinedButton(
-                                      onPressed: () =>
-                                          GroupSessionHistoryDialog.show(
-                                            ctx,
-                                            groupName:
-                                                group['name']?.toString() ??
-                                                'ก๊วน',
-                                            groupOwnerId: groupOwnerId,
-                                            sessions: endedSessions,
-                                            confirmedMembersBySession:
-                                                confirmedMembersBySession,
-                                          ),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppColors.primaryDark,
-                                        side: BorderSide(
-                                          color: AppColors.primary.withValues(
-                                            alpha: 0.35,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
-                                      ),
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: const [
-                                            Icon(
-                                              Icons.history_rounded,
-                                              size: 18,
-                                            ),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              'รอบนัดสิ้นสุดแล้ว',
-                                              maxLines: 1,
-                                              softWrap: false,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                _frostedCard(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 6,
-                                  ),
-                                  child: Theme(
-                                    data: Theme.of(ctx).copyWith(
-                                      dividerColor: Colors.transparent,
-                                    ),
-                                    child: ExpansionTile(
-                                      initiallyExpanded: false,
-                                      tilePadding: EdgeInsets.zero,
-                                      leading: Container(
-                                        width: 36,
-                                        height: 36,
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFF6366F1,
-                                          ).withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.people_alt_rounded,
-                                          color: Color(0xFF6366F1),
-                                          size: 18,
-                                        ),
-                                      ),
-                                      title: Row(
-                                        children: [
-                                          const Text(
-                                            'สมาชิกก๊วนรวม',
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w700,
-                                              color: Color(0xFF1E293B),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
-                                              vertical: 1.5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(
-                                                0xFF6366F1,
-                                              ).withValues(alpha: 0.12),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              '${members.length}',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: Color(0xFF6366F1),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      subtitle: const Text(
-                                        'นับผู้ใช้ไม่ซ้ำ ไม่ใช่จำนวนที่นั่งของรอบนัด',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Color(0xFF64748B),
-                                        ),
-                                      ),
-                                      children: [
-                                        if (memberSwipeHint != null)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 4,
-                                            ),
-                                            child: Text(
-                                              memberSwipeHint,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[500],
-                                              ),
-                                            ),
-                                          ),
-                                        const SizedBox(height: 8),
-                                        if (members.isEmpty)
-                                          const Text('ยังไม่มีสมาชิก')
-                                        else
-                                          ListView.separated(
-                                            shrinkWrap: true,
-                                            physics:
-                                                const NeverScrollableScrollPhysics(),
-                                            itemCount: members.length,
-                                            separatorBuilder: (_, _) =>
-                                                const SizedBox(height: 4),
-                                            itemBuilder: (ctx, i) {
-                                              final m = members[i];
-                                              final user =
-                                                  (m['user'] as Map?) ?? {};
-                                              final firstName =
-                                                  user['first_name']
-                                                      ?.toString()
-                                                      .trim() ??
-                                                  '';
-                                              final lastName =
-                                                  user['last_name']
-                                                      ?.toString()
-                                                      .trim() ??
-                                                  '';
-                                              final fullName =
-                                                  '$firstName $lastName'.trim();
-                                              final image =
-                                                  user['profile_image_url']
-                                                      ?.toString() ??
-                                                  '';
-                                              final active =
-                                                  m['is_active'] == true
-                                                  ? 'เข้าร่วมแล้ว'
-                                                  : 'หยุดพัก';
-                                              final memberUserId =
-                                                  user['id']?.toString() ??
-                                                  m['user_id']?.toString() ??
-                                                  '';
-                                              final role =
-                                                  memberUserId == groupOwnerId
-                                                  ? 'เจ้าของก๊วน'
-                                                  : (m['role']?.toString() ==
-                                                        'admin')
-                                                  ? 'ผู้ดูแล'
-                                                  : 'สมาชิก';
-                                              final isSelf =
-                                                  memberUserId == currentUserId;
-                                              final mentionTargetName =
-                                                  isSelf || firstName.isEmpty
-                                                  ? null
-                                                  : lastName.isEmpty
-                                                  ? firstName
-                                                  : '$firstName ${String.fromCharCode(lastName.runes.first)}.';
-                                              final isMemberAdmin =
-                                                  m['role']?.toString() ==
-                                                  'admin';
-                                              // Build swipe actions
-                                              final actions = <Widget>[];
-                                              final canChat = myJoinedGroupIds
-                                                  .contains(groupId);
-                                              final isActiveMember =
-                                                  m['is_active'] == true;
-                                              if (canOpenGroupChatFromMemberSwipe(
-                                                    canChat: canChat,
-                                                    isActiveMember:
-                                                        isActiveMember,
-                                                  ) &&
-                                                  memberUserId.isNotEmpty) {
-                                                actions.add(
-                                                  _responsiveSlidableAction(
-                                                    onPressed: (_) {
-                                                      final hasReplyTarget =
-                                                          !isSelf &&
-                                                          memberUserId
-                                                              .isNotEmpty;
-                                                      showGroupChatPopup(
-                                                        pageContext,
-                                                        groupId: groupId,
-                                                        groupName:
-                                                            group['name']
-                                                                ?.toString() ??
-                                                            'ก๊วน',
-                                                        memberCount:
-                                                            members.length,
-                                                        mentionTargetName:
-                                                            hasReplyTarget
-                                                            ? mentionTargetName
-                                                            : null,
-                                                        replyTargetUserId:
-                                                            hasReplyTarget
-                                                            ? memberUserId
-                                                            : null,
-                                                        replyTargetName:
-                                                            hasReplyTarget
-                                                            ? mentionTargetName
-                                                            : null,
-                                                      );
-                                                    },
-                                                    backgroundColor:
-                                                        AppColors.primary,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons
-                                                        .chat_bubble_outline,
-                                                    label: 'แชท',
-                                                  ),
-                                                );
-                                              }
-                                              if (isSelf &&
-                                                  isGroupOwner &&
-                                                  group['owner_auto_join'] !=
-                                                      false &&
-                                                  memberUserId.isNotEmpty) {
-                                                actions.add(
-                                                  _responsiveSlidableAction(
-                                                    onPressed: (_) =>
-                                                        _withdrawOwnerParticipation(
-                                                          sheetContext: ctx,
-                                                          groupId: groupId,
-                                                          userId: memberUserId,
-                                                        ),
-                                                    backgroundColor: Colors.red,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons
-                                                        .person_remove_alt_1,
-                                                    label: 'ถอน',
-                                                  ),
-                                                );
-                                              }
-                                              // Block + Remove: admin only, not self, not other admin
-                                              if (isAdmin &&
-                                                  !isSelf &&
-                                                  !isMemberAdmin) {
-                                                actions.add(
-                                                  _responsiveSlidableAction(
-                                                    onPressed: (_) =>
-                                                        MemberActionDialogs.blockUser(
-                                                          pageContext,
-                                                          ctx,
-                                                          repo,
-                                                          groupId,
-                                                          memberUserId,
-                                                          fullName,
-                                                          setSheetState,
-                                                          onFeedRefresh:
-                                                              onFeedRefresh,
-                                                        ),
-                                                    backgroundColor:
-                                                        Colors.grey,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons.block,
-                                                    label: 'บล็อก',
-                                                  ),
-                                                );
-                                                actions.add(
-                                                  _responsiveSlidableAction(
-                                                    onPressed: (_) =>
-                                                        MemberActionDialogs.removeMember(
-                                                          pageContext,
-                                                          ctx,
-                                                          repo,
-                                                          groupId,
-                                                          memberUserId,
-                                                          fullName,
-                                                          setSheetState,
-                                                        ),
-                                                    backgroundColor: Colors.red,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons.person_remove,
-                                                    label: 'ถอดทั้งก๊วน',
-                                                  ),
-                                                );
-                                              }
-
-                                              final tile = ListTile(
-                                                contentPadding: EdgeInsets.zero,
-                                                leading: CircleAvatar(
-                                                  backgroundImage:
-                                                      image.isNotEmpty
-                                                      ? NetworkImage(image)
-                                                      : null,
-                                                  child: image.isEmpty
-                                                      ? const Icon(Icons.person)
-                                                      : null,
-                                                ),
-                                                title: Text(
-                                                  fullName.isNotEmpty
-                                                      ? fullName
-                                                      : 'ไม่ระบุชื่อ',
-                                                ),
-                                                subtitle: Text(
-                                                  '$role · $active',
-                                                ),
-                                              );
-
-                                              if (actions.isEmpty) return tile;
-
-                                              return Slidable(
-                                                key: ValueKey(
-                                                  'member_$memberUserId',
-                                                ),
-                                                endActionPane: ActionPane(
-                                                  motion: const ScrollMotion(),
-                                                  extentRatio:
-                                                      actions.length * 0.2,
-                                                  children: actions,
-                                                ),
-                                                child: tile,
-                                              );
-                                            },
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                _frostedCard(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _sectionHeader(
-                                        icon: Icons.card_membership_rounded,
-                                        title: 'ค่าใช้จ่ายมาตรฐานก๊วน',
-                                        trailing: isAdmin
-                                            ? TextButton.icon(
-                                                style: TextButton.styleFrom(
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  foregroundColor:
-                                                      AppColors.primaryDark,
-                                                ),
-                                                onPressed: () {
-                                                  Navigator.pop(ctx);
-                                                  EditGroupSheet.show(
-                                                    pageContext,
-                                                    repo: repo,
-                                                    client: client,
-                                                    group: group,
-                                                    onGroupSaved: onPageRefresh,
-                                                  );
                                                 },
-                                                icon: const Icon(
-                                                  Icons.tune_rounded,
-                                                  size: 15,
-                                                ),
-                                                label: const Text(
-                                                  'จัดการ',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              )
-                                            : null,
-                                      ),
-                                      const SizedBox(height: 10),
-                                      if (groupFees.isEmpty)
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade50
-                                                .withValues(alpha: 0.8),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.grey.shade200,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.info_outline_rounded,
-                                                size: 16,
-                                                color: Colors.grey.shade500,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey.shade600,
-                                                ),
                                               ),
                                             ],
                                           ),
-                                        )
-                                      else
-                                        for (final fee in groupFees)
-                                          Container(
-                                            margin: const EdgeInsets.only(
-                                              bottom: 8,
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 10,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.9,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: Colors.grey.shade200,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.02),
-                                                  blurRadius: 4,
-                                                  offset: const Offset(0, 1),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 34,
-                                                  height: 34,
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.primary
-                                                        .withValues(
-                                                          alpha: 0.12,
-                                                        ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          9,
-                                                        ),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons
-                                                        .card_membership_rounded,
-                                                    size: 18,
-                                                    color:
-                                                        AppColors.primaryDark,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        fee['name']
-                                                                ?.toString() ??
-                                                            '',
-                                                        style: const TextStyle(
-                                                          fontSize: 13.5,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: Color(
-                                                            0xFF1E293B,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Row(
-                                                        children: [
-                                                          Text(
-                                                            formatBaht(
-                                                              fee['amount']
-                                                                  as num?,
-                                                            ),
-                                                            style: const TextStyle(
-                                                              fontSize: 13.5,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              color: AppColors
-                                                                  .primaryDark,
-                                                            ),
-                                                          ),
-                                                          Text(
-                                                            ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              color: Colors
-                                                                  .grey
-                                                                  .shade600,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                paymentTimingBadge(
-                                                  fee['payment_timing']
-                                                      ?.toString(),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 16),
+                                      if (isAdmin) ...[
+                                        _buildShareAnalyticsCard(group),
+                                        const SizedBox(height: 16),
+                                      ],
                                     ],
                                   ),
                                 ),
-                                if (canViewBlockedUsers &&
-                                    blockedUsers.isNotEmpty) ...[
-                                  _frostedCard(
-                                    backgroundColor: Colors.red.shade50
-                                        .withValues(alpha: 0.35),
-                                    border: Border.all(
-                                      color: Colors.red.shade100,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _sectionHeader(
-                                          icon: Icons.block_rounded,
-                                          title: 'ผู้ใช้ที่ถูกบล็อก',
-                                          badge: '${blockedUsers.length} คน',
-                                          iconColor: Colors.red.shade700,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        ListView.separated(
-                                          shrinkWrap: true,
-                                          physics:
-                                              const NeverScrollableScrollPhysics(),
-                                          itemCount: blockedUsers.length,
-                                          separatorBuilder: (_, _) =>
-                                              const SizedBox(height: 4),
-                                          itemBuilder: (ctx, i) {
-                                            final blocked = blockedUsers[i];
-                                            final blockedUser =
-                                                (blocked['blocked_user']
-                                                    as Map?) ??
-                                                {};
-                                            final name =
-                                                '${blockedUser['first_name'] ?? ''} ${blockedUser['last_name'] ?? ''}'
-                                                    .trim();
-                                            final image =
-                                                blockedUser['profile_image_url']
-                                                    ?.toString() ??
-                                                '';
-                                            final reason = blocked['reason']
-                                                ?.toString();
-                                            final blockedUserId =
-                                                blocked['blocked_user_id']
-                                                    ?.toString() ??
-                                                '';
-                                            final tile = ListTile(
-                                              contentPadding: EdgeInsets.zero,
-                                              leading: CircleAvatar(
-                                                backgroundImage:
-                                                    image.isNotEmpty
-                                                    ? NetworkImage(image)
-                                                    : null,
-                                                child: image.isEmpty
-                                                    ? const Icon(
-                                                        Icons.person_off,
-                                                      )
-                                                    : null,
-                                              ),
-                                              title: Text(
-                                                name.isNotEmpty
-                                                    ? name
-                                                    : 'ไม่ระบุชื่อ',
-                                              ),
-                                              subtitle: Text(
-                                                reason != null &&
-                                                        reason.isNotEmpty
-                                                    ? 'ถูกบล็อก · เหตุผล: $reason'
-                                                    : 'ถูกบล็อก',
-                                              ),
-                                            );
-                                            return Slidable(
-                                              key: ValueKey(
-                                                'blocked_$blockedUserId',
-                                              ),
-                                              endActionPane: ActionPane(
-                                                motion: const ScrollMotion(),
-                                                extentRatio: 0.24,
-                                                children: [
-                                                  _responsiveSlidableAction(
-                                                    onPressed: (_) async {
-                                                      try {
-                                                        final actorUserId =
-                                                            currentUserId;
-                                                        if (actorUserId == null)
-                                                          return;
-                                                        await repo.unblockUser(
-                                                          groupId: groupId,
-                                                          blockedUserId:
-                                                              blockedUserId,
-                                                          actorUserId:
-                                                              actorUserId,
-                                                        );
-                                                        if (!pageContext
-                                                            .mounted)
-                                                          return;
-                                                        ScaffoldMessenger.of(
-                                                          pageContext,
-                                                        ).showSnackBar(
-                                                          SnackBar(
-                                                            content: Text(
-                                                              'ปลดบล็อก "$name" แล้ว',
-                                                            ),
-                                                          ),
-                                                        );
-                                                        setSheetState(() {});
-                                                        await onFeedRefresh();
-                                                      } catch (e) {
-                                                        if (!pageContext
-                                                            .mounted)
-                                                          return;
-                                                        ScaffoldMessenger.of(
-                                                          pageContext,
-                                                        ).showSnackBar(
-                                                          SnackBar(
-                                                            content: Text(
-                                                              'ปลดบล็อกไม่สำเร็จ: $e',
-                                                            ),
-                                                          ),
-                                                        );
-                                                      }
-                                                    },
-                                                    backgroundColor:
-                                                        Colors.green,
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    icon: Icons.lock_open,
-                                                    label: 'ปลด',
-                                                  ),
-                                                ],
-                                              ),
-                                              child: tile,
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 16),
-                                // ── Action buttons ──
-                                _buildGroupActionButtons(
-                                  ctx: ctx,
-                                  groupId: groupId,
-                                  isAdmin: isAdmin,
-                                  isMember: myJoinedGroupIds.contains(groupId),
-                                  group: group,
-                                ),
-                                const SizedBox(height: 20),
-                              ],
+                              ),
                             ),
-                          ),
+                            // ── Action buttons (pinned) ──
+                            _buildGroupActionButtons(
+                              ctx: ctx,
+                              groupId: groupId,
+                              isAdmin: isAdmin,
+                              isMember: myJoinedGroupIds.contains(groupId),
+                              group: group,
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -2441,6 +2620,137 @@ class GroupDetailSheet {
     );
   }
 
+  void _handleJoinGroup(
+    BuildContext ctx,
+    String groupId,
+    Map<String, dynamic> group,
+  ) {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == null) {
+      // Not logged in -> save intent and redirect to login
+      SportClubDeepLinkService.storePendingDeepLink(
+        GroupDetailDeepLinkData(groupId: groupId),
+      );
+      Navigator.of(ctx).popUntil((r) => r.isFirst);
+      Navigator.of(pageContext).pushNamed('/login');
+      return;
+    }
+
+    // Logged in -> open session picker to join
+    SessionPickerSheet.show(
+      pageContext,
+      repo: repo,
+      client: client,
+      groupId: groupId,
+      requiresOwnerApproval: group['requires_owner_approval'] == true,
+      onBook: (sessionId, {positionId}) => onBook(
+        sessionId,
+        groupId: groupId,
+        positionId: positionId,
+        requiresOwnerApproval: group['requires_owner_approval'] == true,
+      ),
+    );
+  }
+
+  Widget _buildShareAnalyticsCard(Map<String, dynamic> group) {
+    final visitCount = group['share_visit_count'] ?? 0;
+    final joinCount = group['share_join_count'] ?? 0;
+    final lastVisitStr = group['last_shared_visit_at']?.toString();
+    final conversionRate = visitCount > 0
+        ? ((joinCount / visitCount) * 100).toStringAsFixed(1)
+        : '0.0';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.analytics_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'สถิติการแชร์เชิญชวน',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem(
+                'เข้าชม',
+                '$visitCount',
+                Icons.visibility_outlined,
+              ),
+              _buildStatItem(
+                'กดเข้าร่วม',
+                '$joinCount',
+                Icons.group_add_outlined,
+              ),
+              _buildStatItem(
+                'อัตราแปลง',
+                '$conversionRate%',
+                Icons.trending_up_outlined,
+              ),
+            ],
+          ),
+          if (lastVisitStr != null && lastVisitStr.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'มีผู้เข้าชมล่าสุดเมื่อ: ${formatThaiBuddhistDateTime(DateTime.parse(lastVisitStr).toLocal())}',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade600),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        ),
+      ],
+    );
+  }
+
   Widget _buildGroupActionButtons({
     required BuildContext ctx,
     required String groupId,
@@ -2458,6 +2768,31 @@ class GroupDetailSheet {
         spacing: 10,
         runSpacing: 10,
         children: [
+          // Join group (non-members or guests)
+          if (!isMember)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _handleJoinGroup(ctx, groupId, group),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  group['is_private'] == true
+                      ? 'ขอเข้าร่วมก๊วน'
+                      : 'เข้าร่วมก๊วนทันที',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
           // Edit group (admin only)
           if (isAdmin)
             OutlinedButton.icon(

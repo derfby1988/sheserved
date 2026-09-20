@@ -16,7 +16,7 @@ env:
     clearKeychain: true
 
 - runFlow:
-    file: _shared_login.yaml
+    file: ../login_CPH1989.yaml
     env:
       USERNAME: "${PROVIDER_USERNAME}"
       PASSWORD: "${PROVIDER_PASSWORD}"

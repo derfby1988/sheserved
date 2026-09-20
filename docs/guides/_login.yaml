@@ -1,0 +1,98 @@
+# ============================================================
+# Shared Login Subflow — Sheserved App
+# ============================================================
+# ใช้เป็นต้นทาง (base) ให้ไฟล์ทดสอบอื่นเรียกผ่าน runFlow
+#
+# ตัวอย่างการเรียกใช้จาก flow อื่น:
+#   - runFlow:
+#       file: _login.yaml
+#       env:
+#         USERNAME: "firm"
+#         PASSWORD: "123456"
+#
+# หมายเหตุ:
+# - บางอุปกรณ์ Maestro จับ text: ของ Flutter ไม่ได้ (content-desc
+#   ไม่ถูก map) ให้เปลี่ยน tapOn text เป็น tapOn point ตามพิกัด
+#   ที่คอมเมนต์ไว้ หรือดูตัวอย่างใน e4_tests/_login.yaml
+# - clearState: true จะล้าง session เดิมทุกครั้ง
+# ============================================================
+appId: com.sheserved.app
+name: "Shared - Login"
+tags:
+  - shared
+  - login
+env:
+  USERNAME: "firm"
+  PASSWORD: "123456"
+---
+# Step 1: เปิดแอปแบบ fresh (ล้าง state/session เดิม)
+- launchApp:
+    clearState: true
+    stopApp: true
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Step 2: ถ้าแอปไม่ได้เปิดมาที่หน้า Login ให้ไปผ่าน Profile tab
+# (Profile = ไอคอนขวาสุดของ bottom nav, fallback point "91%, 97%")
+- runFlow:
+    when:
+      notVisible: "ยินดีต้อนรับ!"
+    commands:
+      - tapOn:
+          point: "91%, 97%"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      # ปุ่ม "เข้าสู่ระบบ / สมัครสมาชิก" บนหน้า Profile
+      # (fallback point "50%, 52%")
+      - tapOn: "เข้าสู่ระบบ"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# Step 3: รอหน้า Login โหลดเสร็จ
+- extendedWaitUntil:
+    visible: "ยินดีต้อนรับ!"
+    timeout: 20000
+
+# Step 4: กรอกชื่อผู้ใช้ (แตะที่ hint text ในช่อง input)
+# fallback point: "400, 764" บนจอ 800x1340
+- tapOn: "กรอกชื่อผู้ใช้หรือเบอร์โทร"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 5: กรอกรหัสผ่าน (แตะใต้ label "รหัสผ่าน" เพื่อโฟกัสช่อง input)
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 6: ซ่อนคีย์บอร์ดแล้วกดปุ่มเข้าสู่ระบบ (key: login_submit)
+# fallback point: "400, 676" บนจอ 800x1340 เมื่อคีย์บอร์ดเปิดอยู่
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 500
+- tapOn: "เข้าสู่ระบบ"
+
+# Step 7: รอ SnackBar "เข้าสู่ระบบสำเร็จ" ยืนยันว่าล็อกอินผ่าน
+- extendedWaitUntil:
+    visible:
+      text: ".*เข้าสู่ระบบสำเร็จ.*"
+    timeout: 30000
+
+# Step 8: รอ navigate กลับหน้าหลัก แล้วปิด permission dialog ถ้ามี
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 9 (ทางเลือก): verify หน้า Home — ปรับ text ให้ตรงหน้าจอปลายทาง
+# - extendedWaitUntil:
+#     visible: "ค้นหายา ร้านยา หมอ..."
+#     timeout: 60000

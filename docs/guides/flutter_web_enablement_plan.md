@@ -2,6 +2,7 @@
 
 > **วันที่สร้าง:** 2026-09-19
 > **อัปเดต:** 2026-09-19 — ปรับให้เข้ากับ Phase 13 (Trusted Backend Identity Bridge Rollout) ใน `docs/plans/Match_Sport_PLAN.md`
+> **อัปเดต:** 2026-09-20 — เพิ่ม mobile-safety guardrails, UI layout invariants และ release gates หลัง dependency map ในส่วน 3
 > **สถานะ:** 📋 แผนเพื่อการตัดสินใจ — ยังไม่ลงมือ implement จนกว่าจะได้รับอนุมัติ
 > **ขอบเขต:** ทำให้ `flutter run -d chrome` / `flutter build web` ทำงานได้โดยไม่ขัดกับ `docs/infrastructure/`, `docs/secure/` และ Phase 13 contract
 > **กติกา rollout:** ทุก phase ต้องเป็น release ที่ deploy ได้อิสระตามกฎ Q1-B (ปล่อยค้างได้โดยระบบไม่แย่ลง), มี tests + rollback และห้ามเปลี่ยน `AuthService`/`ServiceLocator` ไปใช้ `Supabase.instance.client.auth.currentUser` (ตาม `.agent/workflows/auth_data_guidelines.md`)
@@ -16,7 +17,7 @@
 |---|--------|-------|----------|
 | P1 | `import 'dart:io'` ใน 22 ไฟล์ (reachable จาก `main.dart` ทั้งหมด) | 🔴 compile fail | `lib/features/chat/`, `lib/features/admin/`, `lib/features/health/`, `lib/shared/widgets/` |
 | P2 | `package:health` import `dart:io` ภายใน (`health-13.3.1/lib/health.dart:5`) | 🔴 compile fail | `health_connect_source.dart`, `apple_health_source.dart` |
-| P3 | Plugin native-only: `google_mlkit_face_detection`, `flutter_compass`, `health` | 🟡 runtime fail | `chat_room_page.dart`, `chart_board_page.dart`, `emergency_live_page.dart`, `rescue_page.dart` |
+| P3 | Plugin native-only: `google_mlkit_face_detection`, `flutter_compass`, `health` | � compile/runtime fail — ML Kit/health มี import chain ที่ชน `dart:io`; compass เป็น runtime-only | `chat_room_page.dart`, `chart_board_page.dart`, `emergency_live_page.dart`, `rescue_page.dart` |
 | P4 | File/path semantics บน web: `File(xfile.path)`, `FilePicker.path=null`, `getTemporaryDirectory()`, `MultipartFile.fromPath`, `VideoPlayerController.file` | 🟡 runtime fail | 15+ จุดใน chat/admin/video/donation |
 | P5 | Network: backend `http://192.168.1.111:8080` ต้อง origin อยู่ใน `ALLOWED_ORIGINS`; `flutter_polyline_points` เรียก Directions REST โดน CORS block | 🟡 runtime fail | `app_config.dart:26-32` |
 
@@ -77,6 +78,11 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 
 > **Dependency map:** W0–W2 ทำได้ทันทีไม่ต้องรอ Phase 13; W3 ใช้สิ่งที่ 13.2 ส่งมอบแล้ว (`/api/auth/*`, `AuthenticatedHttpClient`, social verify); W4 ใช้สิ่งที่ 13.0 ส่งมอบแล้ว (CORS fail-closed, Caddyfile.staging); W5 ต้องรวมสัญญา 13.3 (socket-auth, room auth) ที่กำลังจะ implement
 
+> **Guardrails ข้าม phase (mobile safety) — บังคับทุก phase ที่แตะ shared code:**
+> 1. **IO คง path-based, web ใช้ bytes — ห้ามแปลง unconditional:** `MultipartFile.fromPath`, `Image.file`/`FileImage`, `VideoPlayerController.file`, `getTemporaryDirectory()`, `FilePicker.files.single.path` ทำงานบน iOS/Android ปกติ — ห้ามแทนทับด้วย bytes/memory ทั้งแอป เพราะ (a) `fromBytes`/`Image.memory` โหลดไฟล์ทั้งก้อนเข้า RAM (วิดีโอ emergency หลักร้อย MB → memory spike บนมือถือ), (b) `fromBytes`/`uploadBinary` ต้องส่ง `filename`+`contentType` เอง ไม่งั้น mime หลุดเป็น `application/octet-stream`, (c) `FilePicker.bytes` เป็น null บน mobile ถ้าไม่ส่ง `withData: true` — ให้แยกผ่าน conditional import/`kIsWeb` เสมอ (ข้อยกเว้นที่เช็คแล้ว: `storage_client 2.5.7` อ่าน `file.readAsBytesSync()` เต็มไฟล์อยู่แล้วและเดา mime จาก path — `upload(File)` → `uploadBinary` จึงปลอดภัย แต่ต้องคง extension ใน storage path)
+> 2. **Mobile regression check ทุก phase ที่แตะ repository/shared widget:** หลังจบ W0/W1 (และ W5.1 sanitize-on-render) ต้องทดสอบบน iOS+Android จริง: upload วิดีโอ emergency, upload รูป chat + PDPA blur, avatar upload, preview รูป/วิดีโอ, FilePicker icon/model ใน admin — behavior ต้องเหมือนเดิมก่อนปล่อย
+> 3. **UI layout invariant:** แยก web/mobile ที่ leaf implementation ด้วย conditional import หรือ `kIsWeb` โดยคง mobile widget tree, constraints และ design tokens เดิม; web fallback ต้องรักษาขนาด/ตำแหน่งของ parent ด้วย `SizedBox`/`AspectRatio`/`ConstrainedBox` ที่เทียบเท่า; ห้ามถอด child จาก `Row`/`Column`/`Stack` หรือเปลี่ยน `Expanded`/`SafeArea`/`MediaQuery.viewInsets` แบบ unconditional; ต้องคง `BoxFit`, typography, line limit และ touch target เดิมบน iOS/Android
+
 ---
 
 ### Phase W0 — Compile Unblock 🟢 ฟรี, ต้นทุนต่ำสุด
@@ -92,8 +98,8 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | W0.5 | Guard หน้าที่ใช้ `dart:io` หนัก (chat_room PDPA blur, chart_board, body_region_admin) — แยก widget ที่ใช้ `File` ออกเป็น conditional import หรือ `kIsWeb` early-return placeholder | `chat_room_page.dart`, `chart_board_page.dart`, `body_region_admin_page.dart` |
 | W0.6 | Guard `health` sources — `health_provider._initSource` มี `kIsWeb` check อยู่แล้ว แต่ import chain ยังชน `dart:io` → แยก source impl เป็น conditional import (web = `NullHealthSource`) | `health_connect_source.dart`, `apple_health_source.dart`, `health_provider.dart` |
 
-**Verification:** `flutter build web` compile ผ่าน; `flutter run -d chrome` เปิด `MainAppLayout` ได้; login/home render
-**Rollback:** conditional import เป็น additive — revert ไฟล์ stub ได้โดยไม่กระทบ mobile
+**Verification:** `flutter build web` compile ผ่าน; `flutter run -d chrome` เปิด `MainAppLayout` ได้; login/home render; ผ่าน UI/mobile gate W0 ใน §4.4 (รวม no-overflow และ iOS/Android smoke)
+**Rollback:** conditional import เป็น additive — revert ไฟล์ stub ได้โดยไม่กระทบ mobile; หาก UI mobile ต่างจาก baseline ให้ revert ทั้ง phase
 **Safe stop:** ✅ หยุดค้างได้ — ระบบดีขึ้น (compile web ผ่าน) โดยไม่เปลี่ยน behavior mobile
 
 ---
@@ -104,13 +110,13 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 
 | # | งาน | หมายเหตุ |
 |---|-----|----------|
-| W1.1 | `MultipartFile.fromPath` → `MultipartFile.fromBytes` | `video_repository.dart:742,807`, `watermark_repository.dart:115`, `body_region_repository.dart` |
+| W1.1 | `MultipartFile.fromPath` → `MultipartFile.fromBytes` **เฉพาะ web path** (คง `fromPath` บน IO ตาม guardrail 1; `fromBytes` ต้องส่ง `filename`+`contentType` เอง) | `video_repository.dart:762,833`, `watermark_repository.dart:123`, `body_region_repository.dart` |
 | W1.2 | แทน `getTemporaryDirectory()/getApplicationDocumentsDirectory()` ด้วย abstraction — web: เก็บ bytes ใน memory แล้ว `uploadBinary` (มีอยู่ใน `supabase_service.dart:201`) | `chat_room_page.dart:496,627`, `profile_page.dart:3154`, `chart_board_page.dart:1533,1613`, `image_upload_field.dart:136` |
-| W1.3 | Preview รูป/วิดีโอ: `Image.file`/`FileImage`/`VideoPlayerController.file` → `Image.memory`/`MemoryImage`/`.network()` หรือ blob URL | `video_player_widget.dart:205`, `fullscreen_video_viewer.dart:225,289`, `incident_report_widget.dart:152,557` |
+| W1.3 | Preview รูป/วิดีโอ เฉพาะ web path (conditional — คง `Image.file`/`.file()` บน IO ตาม guardrail 1): `Image.file`/`FileImage`/`VideoPlayerController.file` → `Image.memory`/`MemoryImage`/`.network()` หรือ blob URL | `video_player_widget.dart:205`, `fullscreen_video_viewer.dart:225,289`, `incident_report_widget.dart:152,557` |
 | W1.4 | CSV export ใน `donation_report_panel.dart:125` — web: สร้าง download ผ่าน anchor/blob แทนเขียนลง documents dir | ใช้ conditional import (`package:web`/`dart:js_interop`) |
-| W1.5 | `FilePicker.files.single.path` = null บน web → ใช้ `.bytes` แทน | `body_region_admin_page.dart:606-608` |
+| W1.5 | `FilePicker.files.single.path` = null บน web → web ใช้ `.bytes`; IO คง `.path` หรือส่ง `withData: true` (bytes เป็น null บน mobile ถ้าไม่ส่ง — guardrail 1c) | `body_region_admin_page.dart:606-608` |
 
-**Verification:** upload รูปแชท/avatar/เอกสารจาก Chrome สำเร็จ; CSV download ทำงาน; preview รูปก่อนส่งแสดงผล
+**Verification:** upload รูปแชท/avatar/เอกสารจาก Chrome สำเร็จ; CSV download ทำงาน; preview รูปก่อนส่งแสดงผล; mobile IO path และ preview geometry ผ่าน Gate W1 ใน §4.4 บน iOS/Android
 
 ---
 
@@ -143,7 +149,7 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | W3.6 | Private Supabase reads บน web ต้องใช้ **PostgREST token** (backend mint, TTL ≤5 นาที, sign ด้วย `SUPABASE_JWT_SECRET`) เมื่อ data path migrate — ไม่ใช้ anon key กับ private data | Q7-C (`Match_Sport` line 1385, 1535); `lib/postgrest-token.js` มีแล้ว + live check ผ่าน |
 | W3.7 | `x-app-version` ถูกส่งทุก request โดย `AuthenticatedHttpClient` อยู่แล้ว — ตรวจ `AppVersionChecker`/426 handling ทำงานบน web build; `MIN_APP_VERSION_ENFORCE=false` ใน dev | 13.2 amendment (line 1801); เมื่อเปิด enforce ต้องให้ web build ส่งเวอร์ชันถูก |
 
-**Verification:** login (backend mode) + Google social บน Chrome ผ่าน; `/me` restore session ทำงาน; direct mode เห็นเฉพาะ public; ไม่มี `x-user-id`/Supabase ID ถูกส่งเพื่อยกระดับ
+**Verification:** login (backend mode) + Google social บน Chrome ผ่าน; `/me` restore session ทำงาน; direct mode เห็นเฉพาะ public; ไม่มี `x-user-id`/Supabase ID ถูกส่งเพื่อยกระดับ; mobile provider/session UI ผ่าน Gate W3 ใน §4.4
 
 ---
 
@@ -173,9 +179,85 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 
 ---
 
-## 4. Checklist ก่อน implement (รอการตัดสินใจ)
+## 4. UI Regression Strategy และ Release Gate
+
+### 4.1 Implementation contract สำหรับ UI mobile
+
+กติกานี้เป็นส่วนหนึ่งของ definition of done ทุก phase ไม่ใช่คำแนะนำหลังเกิด regression:
+
+- **Branch ที่ขอบระบบ:** ใช้ conditional import หรือ `kIsWeb` ที่ leaf implementation; ห้ามครอบ parent layout ทั้งหน้าเพื่อแก้ compile แล้วทำให้ widget tree ของ mobile เปลี่ยน
+- **Geometry ต้องคงเดิม:** web fallback/placeholder ต้องอยู่ใน constraints เดิมและรักษา `SizedBox`, `AspectRatio`, `ConstrainedBox`, `Expanded`, `SafeArea`, `MediaQuery.padding/viewInsets`, `BoxFit`, typography, line limit และลำดับปุ่มเดิม เว้นแต่มี design decision ระบุไว้ใน phase นั้น
+- **Native-only feature:** เมื่อ web ไม่รองรับ ให้แทนด้วย placeholder ที่มีขนาดเทียบเท่าและข้อความที่อ่านได้ ไม่ใช่ลบ child จน parent ยุบหรือเกิดช่องว่างที่ไม่ตั้งใจ
+- **Provider/feature list:** สร้างรายการปุ่มหรือ feature ตาม platform ที่ boundary; mobile ต้องคงรายการ/ตำแหน่งเดิม ส่วน web จึงกรอง provider ที่ backend ยังไม่รองรับตาม W3.3
+- **Content hardening:** sanitize user content โดยคง TextStyle, max lines, overflow และ constraints เดิม; ต้องทดสอบข้อความยาว ภาษาไทย/emoji และ payload ที่ถูกตัดออกแล้วไม่ทำให้ layout overflow
+- **Shared widget safety:** การเปลี่ยน shared widget ต้องมี test อย่างน้อยหนึ่งกรณีสำหรับ iOS และ Android semantics; ห้ามถือว่า `kIsWeb` guard เพียงอย่างเดียวพิสูจน์ว่า mobile UI ไม่เปลี่ยน
+
+### 4.2 Baseline และ device matrix
+
+ก่อนเริ่ม W0 ต้องเก็บ baseline ไว้ในผลทดสอบของ phase (ไม่จำเป็นต้อง commit binary screenshot หาก repo ไม่เก็บ artifact):
+
+1. ผล `flutter analyze`, `flutter test` และ `git diff --check`
+2. Screenshot/golden ของ Login, MainAppLayout/Home, bottom navigation, Chat/preview และหน้าที่ W0/W1 จะแตะ
+3. ผล no-overflow และ interaction smoke บนขนาดหน้าจอด้านล่าง
+4. Flutter/Dart version, OS, device model, orientation และสถานะ keyboard/safe-area ของการทดสอบ
+
+| กลุ่ม | ขนาด logical ที่ต้องตรวจ | ประเด็นเฉพาะ |
+|---|---:|---|
+| iOS compact | `320×568` | ข้อความยาว, bottom inset, keyboard |
+| iOS standard/notch | `393×852` | SafeArea, home indicator, overlay |
+| Android compact | `360×800` | gesture/navigation bar, bottom navigation |
+| Android large | `412×915` | การขยายของ Row/Expanded และ preview |
+| Landscape | `844×390` หรือเทียบเท่า | overflow, sheet/dialog, video/map |
+
+ใช้ iPhone 16 Simulator และ iPhone physical ตาม `docs/guides/TEST_PLAN.md`; ต้องเพิ่ม Android emulator/device ที่ระบุรุ่นและ device ID ก่อนถือว่า mobile gate ครบ — **iOS ผ่านเพียงแพลตฟอร์มเดียวไม่ถือว่าผ่าน**
+
+### 4.3 Automated และ device verification gate
+
+คำสั่งขั้นต่ำต่อ phase ที่มีการแก้ Dart/shared code:
+
+```bash
+flutter analyze
+flutter test
+flutter build web
+flutter build apk --debug
+flutter build ios --simulator --debug
+```
+
+`flutter build apk`/`flutter build ios` ให้รันใน runner หรือเครื่องที่รองรับ platform นั้น หาก environment ไม่พร้อมต้องระบุเป็น **blocked evidence** ไม่ใช่ข้าม gate เงียบ ๆ ส่วน UI/device gate ต้องตรวจเพิ่ม:
+
+- ไม่มี `RenderFlex overflow`, layout exception, missing asset หรือ `setState() after dispose`
+- screenshot เทียบ baseline ไม่มีการเปลี่ยน mobile layout โดยไม่มี decision ที่บันทึกไว้
+- primary action, bottom navigation, keyboard avoidance, SafeArea และ touch target ใช้งานได้
+- upload/preview flow ผ่านโดยคง IO path บน mobile และไม่เพิ่ม memory spike ที่ยอมรับไม่ได้
+- Maestro smoke/regression รันบน iOS และ Android ตาม flow ที่แตะต้อง; เก็บผล, screenshot, device และ commit SHA เป็น evidence
+
+### 4.4 Acceptance gate ราย phase
+
+| Phase | Gate ที่ต้องผ่านก่อน merge/deploy | หลักฐานผ่าน |
+|---|---|---|
+| **W0** | Web compile/boot ผ่าน; `dart:io`/native-only import ถูกแยก; Login/Home/MainAppLayout และ bottom navigation ไม่ overflow บน iOS/Android; health/map ยังใช้ native path บน mobile | `flutter build web`, analyzer/tests, mobile build + UI smoke, screenshot baseline diff |
+| **W1** | Web upload/preview/export ผ่าน; mobile คง `fromPath`/`File` path และ preview geometry เดิม; chat/avatar/emergency media ผ่าน | web media evidence, iOS+Android upload/preview smoke, memory/overflow check |
+| **W2** | ทุก feature decision มี owner/behavior ระบุ; web fallback ไม่ทำให้ parent ยุบ; compass/health/camera/WebRTC บน mobile ไม่ถูกซ่อนหรือเปลี่ยนโดยไม่ตั้งใจ | decision record, feature smoke, mobile screenshot/no-overflow evidence |
+| **W3** | Backend auth/social web flow ผ่าน; mobile login/session/provider UI เหมือน baseline; การกรอง provider เกิดเฉพาะ web | Chrome auth evidence, iOS+Android login/session smoke, provider layout comparison |
+| **W4** | Caddy/CORS/HTTPS/WSS ผ่าน staging; mobile app build และ core smoke ผ่านโดยไม่มี source/config regression | staging evidence, web smoke, mobile build/smoke result |
+| **W5** | sanitize/SVG/CSP/socket hardening ผ่าน; content ยาว/unsafe ไม่ทำให้ mobile chat/article overflow; CI/gitleaks/build gate ผ่าน | security evidence, mobile content regression, CI artifacts และ rollback readiness |
+
+### 4.5 Stop และ rollback criteria
+
+- ทำแต่ละ phase เป็น commit แยก; ห้าม merge phase ถัดไปเมื่อ gate ของ phase ปัจจุบันไม่ผ่าน
+- หากพบ mobile screenshot/layout/interaction regression ให้หยุด rollout, ปิด web branch/feature flag ที่เกี่ยวข้องชั่วคราว และ revert เฉพาะ commit ของ phase นั้น — ห้ามแก้ด้วยการเพิ่ม `try/catch`, ลดความเข้มของ test หรือซ่อน widget แบบไม่มี constraints
+- หลัง rollback ต้องรัน `git diff --check`, `flutter analyze`, regression tests และ mobile smoke ซ้ำ พร้อมเก็บผลเทียบ baseline
+- ความแตกต่างของ mobile UI ที่ตั้งใจให้เกิดต้องมี design decision, screenshot ใหม่, เหตุผล และผู้อนุมัติใน evidence ของ phase; มิฉะนั้นถือเป็น regression
+- เมื่อ gate ผ่านแล้วจึง deploy ได้ตาม Q1-B; ทุก artifact ต้องระบุ commit SHA, build mode, device/OS และ test command ที่ใช้
+
+---
+
+## 5. Checklist ก่อน implement (รอการตัดสินใจ)
 
 - [ ] อนุมัติ Phase W0/W1 (compile unblock + file abstraction — อิสระจาก Phase 13)
+- [ ] อนุมัติ UI layout invariant และ release gate ในส่วน 4
+- [ ] บันทึก mobile baseline (screenshot/no-overflow/analyze/test) ตาม matrix ในส่วน 4.2
+- [ ] เตรียม Android emulator/device และระบุรุ่น/device ID สำหรับ mobile gate
 - [ ] ตัดสินใจ W2: ซ่อน face blur บน web หรือ server-side blur ผ่าน FFmpeg pipeline
 - [ ] ยืนยัน W3.2: web dev ใช้ `USE_BACKEND_AUTH=false` (anonymous/public only) หรือ `true` (ต้องเปิด server เสมอ) — แนะนำ `true` สำหรับทดสอบ web จริง
 - [ ] ยืนยัน W3.3: ซ่อน Facebook/LINE/TikTok บน web (backend 501) — Apple รอ paid dev account ตาม 13.2 blocker
@@ -183,7 +265,7 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 - [ ] ตัดสินใจ W4.5: เปิด Google Maps บน web หรือไม่ (cost decision — ขัด intent ของ Delivery plan)
 - [ ] ตัดสินใจ domain เสิร์ฟ web (`admin.sheserved.com` ตาม reverse proxy plan หรือแยก)
 
-## 5. ความสอดคล้องกับเอกสารที่มีอยู่
+## 6. ความสอดคล้องกับเอกสารที่มีอยู่
 
 | เอกสาร | ผลกระทบ |
 |--------|---------|
@@ -199,4 +281,5 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | `docs/infrastructure/reverse_proxy_plan.md` | เสิร์ฟ web ผ่าน Caddy slot ที่เตรียมไว้; `Caddyfile.staging` เป็น template (zero-cost) |
 | `docs/infrastructure/architecture_analysis.md` | web client เข้าผ่าน path เดิม (Caddy → websocket-server) ไม่เปลี่ยน architecture |
 | `docs/plans/Delivery_PLAN.md` | คง maps-off บน web ตาม cost-zero intent |
+| `docs/guides/TEST_PLAN.md` | ใช้ Maestro smoke/regression, iOS simulator/physical device และต้องเพิ่ม Android device evidence ตาม UI release gate §4 |
 | `.agent/workflows/auth_data_guidelines.md` | ใช้ `ServiceLocator.instance.currentUser` เท่านั้น |

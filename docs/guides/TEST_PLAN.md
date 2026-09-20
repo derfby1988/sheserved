@@ -49,7 +49,7 @@
 
 **หมายเหตุ:** Phase 1 เป็น smoke tests ที่ต้องผ่านก่อน เพราะถ้า login หรือ navigation มีปัญหา ระบบอื่นจะทดสอบไม่ได้
 
-> **Shared Login Flow:** ทุก scenario ที่ต้อง login ใช้ `runFlow: _shared_login.yaml` ซึ่งจัดการ login + แตะแท็บหน้าหลักหลังล็อกอิน (แก้ปัญหา donation tab redirect)
+> **Shared Login Flow:** ทุก scenario ที่ต้อง login ใช้ `runFlow: login_CPH1989.yaml` ซึ่งจัดการ login + แตะแท็บหน้าหลักหลังล็อกอิน (แก้ปัญหา donation tab redirect)
 
 #### 1.1 Authentication & Registration
 | Scenario | คำอธิบาย | ไฟล์ | Tags | สถานะ |
@@ -365,6 +365,6 @@ maestro test docs/guides --include-tags=erp --udid A692F954-72BF-4D54-9557-FB61B
 
 ### ปัญหา: Login flow ส่งไปหน้า Donation Dashboard แทน Home Page
 - **สาเหตุ:** แท็บบริจาค (point 174,809) ส่ง redirect args `{'route': '/main-app', 'args': {'index': 1}}` ทำให้หลัง login แสดง Donation Dashboard (index 1) แทน Home (index 0)
-- **วิธีแก้:** สร้าง `_shared_login.yaml` ที่เพิ่มขั้นตอนแตะแท็บหน้าหลัก (point 50,809) หลัง login เพื่อสลับกลับไปหน้า Home
+- **วิธีแก้:** สร้าง `login_CPH1989.yaml` ที่เพิ่มขั้นตอนแตะแท็บหน้าหลัก (point 50,809) หลัง login เพื่อสลับกลับไปหน้า Home
 - **ไฟล์ที่แก้:** 40 scenario files ที่ใช้ login + `scenario_auth_03_login_fail.yaml` (แยกต่างหาก) + `scenario_debug_login.yaml`
 - **ทดสอบผ่าน:** `scenario_debug_login`, `scenario_auth_01_login_username`, `scenario_cons_01_dashboard`

@@ -1,0 +1,109 @@
+# ============================================================
+# Admin Login Subflow — Sheserved App (calibrated on CPH1989, Android 11, 1080x2340)
+# ============================================================
+# ล็อกอินด้วยบัญชี Admin ของ Sheserved (dave)
+# หมายเหตุ: hardcode credentials ไว้ในไฟล์ เนื่องจาก env override
+# (-e / runFlow.env) ไม่ทำงานใน Maestro 2.6.1 บนเครื่องนี้
+# — ค่า env ในไฟล์ flow จะชนะค่าที่ส่งมาจากภายนอกเสมอ
+#
+# Login path: Hamburger (top-left of TopBar) -> drawer -> "ลงชื่อเข้าใช้"
+#
+# Usage in other flows:
+#   - runFlow:
+#       file: login_admin_CPH1989.yaml
+#
+# Device notes:
+# - clearState: true ใช้ไม่ได้บน ColorOS/OPPO (pm clear โดนบล็อก)
+# - swipe จากขอบซ้ายจอโดน Android back gesture ดัก ไม่ถึง drawer -> ใช้ปุ่ม hamburger
+# - ถ้าล็อกอินอยู่แล้ว drawer จะแสดง "ออกจากระบบ" — กดแล้วแอปพาไปหน้า /login เอง
+appId: com.sheserved.app
+tags:
+  - shared
+  - admin
+---
+
+# Step 1: Bring app to foreground and wait for a real screen.
+- launchApp
+- extendedWaitUntil:
+    visible: ".*(ค้นหายา ร้านยา|ยินดีต้อนรับ).*"
+    timeout: 60000
+
+# Step 2: Open drawer via hamburger button (top-left), then enter login page.
+- runFlow:
+    when:
+      notVisible: "ยินดีต้อนรับ!"
+    commands:
+      - tapOn:
+          point: "12%, 10%"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - runFlow:
+          when:
+            visible: "ลงชื่อเข้าใช้"
+          commands:
+            - tapOn: "ลงชื่อเข้าใช้"
+      - runFlow:
+          when:
+            visible: "ออกจากระบบ"
+          commands:
+            - tapOn: "ออกจากระบบ"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+# Step 3: Wait for login page
+- extendedWaitUntil:
+    visible: "ยินดีต้อนรับ!"
+    timeout: 20000
+
+# Step 4: Username — Admin of Sheserved
+- tapOn:
+    below:
+      text: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+- inputText: "dave"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 5: Password
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "12345678"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# Step 6: Submit
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+
+# Step 7: Wait for login success (login page disappears)
+- extendedWaitUntil:
+    notVisible: "ยินดีต้อนรับ!"
+    timeout: 30000
+
+# Step 8: Dismiss background permission dialog if present
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 9: Tap Home tab
+- tapOn:
+    point: "20%, 94%"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Step 10: Verify home page loaded
+- extendedWaitUntil:
+    visible:
+      text: "ค้นหายา ร้านยา หมอ..."
+    timeout: 60000
