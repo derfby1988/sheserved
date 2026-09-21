@@ -439,22 +439,49 @@ class _AdvancedFilterSheetBodyState extends State<_AdvancedFilterSheetBody> {
                 ],
               ),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('ยกเลิก'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          shape: const StadiumBorder(),
+                          alignment: Alignment.center,
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'ยกเลิก',
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context, buildValues()),
-                    child: const Text('แสดงผลลัพธ์'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          shape: const StadiumBorder(),
+                          alignment: Alignment.center,
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: () => Navigator.pop(context, buildValues()),
+                        child: const Text(
+                          'แสดงผลลัพธ์',
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

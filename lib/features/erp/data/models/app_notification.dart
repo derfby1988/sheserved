@@ -30,7 +30,7 @@ class AppNotification {
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(
       id: json['id'] as String,
-      professionId: json['profession_id'] as String,
+      professionId: json['profession_id']?.toString() ?? '',
       recipientId: json['recipient_id'] as String,
       category: json['category'] as String? ?? 'system',
       eventType: json['event_type'] as String? ?? '',

@@ -30,6 +30,7 @@ class NeumorphicInputField extends StatefulWidget {
   final double height;
   final double borderRadius;
   final Color activeColor;
+  final int maxLines;
 
   const NeumorphicInputField({
     super.key,
@@ -46,6 +47,7 @@ class NeumorphicInputField extends StatefulWidget {
     this.height = 52.0,
     this.borderRadius = 16.0,
     this.activeColor = NeumorphicTheme.accentCyan,
+    this.maxLines = 1,
   });
 
   @override
@@ -115,56 +117,67 @@ class _NeumorphicInputFieldState extends State<NeumorphicInputField> {
                   width: 1.0,
                 ),
         ),
-        child: SizedBox(
-          height: widget.height,
-          child: Center(
-            child: TextField(
-              controller: widget.controller,
-              focusNode: _focusNode,
-              keyboardType: widget.keyboardType,
-              textInputAction: widget.textInputAction,
-              onSubmitted: widget.onSubmitted,
-              onChanged: widget.onChanged,
-              obscureText: widget.obscureText,
-              style: const TextStyle(
-                color: NeumorphicTheme.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: InputDecoration(
-                // ป้องกัน Theme จากการกลบทับเงา Inset ด้วยสีขาว
-                filled: true,
-                fillColor: Colors.transparent,
-                hintText: widget.hintText,
-                hintStyle: TextStyle(
-                  color: NeumorphicTheme.textSecondary.withValues(alpha: 0.65),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-                prefixIcon: widget.prefixIcon != null
-                    ? Icon(
-                        widget.prefixIcon,
-                        color: isFocused
-                            ? widget.activeColor
-                            : NeumorphicTheme.textSecondary,
-                        size: 22,
-                      )
-                    : null,
-                suffixIcon: widget.suffixIcon,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
-            ),
-          ),
+        child: _buildTextField(isFocused),
+      ),
+    );
+  }
+
+  /// สร้าง TextField ภายในร่อง Inset
+  /// - กรณีบรรทัดเดียว: ล็อกความสูง [height] และจัดกึ่งกลางแนวตั้ง
+  /// - กรณีหลายบรรทัด ([maxLines] > 1): ปล่อยให้กล่องขยายตามเนื้อหา
+  Widget _buildTextField(bool isFocused) {
+    final textField = TextField(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      onSubmitted: widget.onSubmitted,
+      onChanged: widget.onChanged,
+      obscureText: widget.obscureText,
+      maxLines: widget.obscureText ? 1 : widget.maxLines,
+      style: const TextStyle(
+        color: NeumorphicTheme.textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        // ป้องกัน Theme จากการกลบทับเงา Inset ด้วยสีขาว
+        filled: true,
+        fillColor: Colors.transparent,
+        hintText: widget.hintText,
+        hintStyle: TextStyle(
+          color: NeumorphicTheme.textSecondary.withValues(alpha: 0.65),
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+        ),
+        prefixIcon: widget.prefixIcon != null
+            ? Icon(
+                widget.prefixIcon,
+                color: isFocused
+                    ? widget.activeColor
+                    : NeumorphicTheme.textSecondary,
+                size: 22,
+              )
+            : null,
+        suffixIcon: widget.suffixIcon,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
         ),
       ),
+    );
+
+    if (widget.maxLines > 1) {
+      return textField;
+    }
+    return SizedBox(
+      height: widget.height,
+      child: Center(child: textField),
     );
   }
 }

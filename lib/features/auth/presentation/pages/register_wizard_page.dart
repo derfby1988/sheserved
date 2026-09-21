@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:thai_buddhist_date/thai_buddhist_date.dart';
-import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/core/constants/app_text_styles.dart';
 import 'package:sheserved/core/constants/password_policy.dart';
 import '../../../../shared/widgets/otp_verification_dialog.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../shared/widgets/image_upload_field.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
@@ -60,7 +59,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
+
+  // ช่องยืนยันจะแสดงค้างไว้เมื่อมีค่าที่ผู้ใช้กรอกแล้ว
+  bool get _showConfirmPasswordField =>
+      _obscurePassword || _confirmPasswordController.text.isNotEmpty;
 
   // Step 3 - ข้อมูลจำเพาะ (Dynamic fields from profession)
   List<RegistrationFieldConfig> _professionFields = [];
@@ -376,54 +378,46 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     super.dispose();
   }
 
-  // Dark Gold Theme Colors
-  static const Color _bgDark = Color(0xFF1A1200);
-  static const Color _goldAccent = Color(0xFFF5A623);
-  static const Color _goldBright = Color(0xFFFFBF00);
-  static const Color _cardBg = Color(0xFFFFFDF5);
+  // สีลิงก์/สำเนียงบนพื้น Neumorphic
+  static const Color _linkBlue = Color(0xFF0284C7);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       body: Stack(
         children: [
-          // ── Background Gradient: Gold (top) → Dark (bottom) ──
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFD4900A), Color(0xFF8B6000), _bgDark],
-                stops: [0.0, 0.45, 1.0],
-              ),
-            ),
-          ),
+          // ── วงกลม Neumorphic ลอยเป็นพื้นหลังตาม CSS .bg-circle ──
+          Positioned(top: -60, left: -60, child: _buildBackgroundCircle(220)),
+          Positioned(top: 30, right: -50, child: _buildBackgroundCircle(150)),
 
           // ── Main Content ──
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Top: Title on gold background ──
+                // ── Top: Step Title จัดกึ่งกลางแนวนอน ──
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(56, 16, 24, 20),
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         _getStepTitle(),
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: NeumorphicTheme.textPrimary,
                           fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _getStepSubtitle(),
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: NeumorphicTheme.textSecondary,
                           fontSize: 13,
                         ),
                       ),
@@ -431,14 +425,30 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                   ),
                 ),
 
-                // ── Bottom White Card: Form ──
+                // ── Bottom Neumorphic Sheet: Form ──
                 Expanded(
                   child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(32),
-                        topRight: Radius.circular(32),
+                    decoration: BoxDecoration(
+                      color: NeumorphicTheme.baseColor,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(36),
+                        topRight: Radius.circular(36),
+                      ),
+                      // เงามืดยกการ์ดด้านบน + ขอบสะท้อนแสงสีขาวตามแนว Neumorphic
+                      boxShadow: [
+                        BoxShadow(
+                          color: NeumorphicTheme.shadowDark.withValues(
+                            alpha: 0.55,
+                          ),
+                          offset: const Offset(0, -10),
+                          blurRadius: 30,
+                        ),
+                      ],
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          width: 1.5,
+                        ),
                       ),
                     ),
                     child: SingleChildScrollView(
@@ -458,23 +468,56 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             ),
           ),
 
-          // ── Back Button (overlaid) ──
+          // ── Back Button (Neumorphic Circle) ──
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _handleBack,
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: NeumorphicTheme.baseColor,
+                    shape: BoxShape.circle,
+                    boxShadow: NeumorphicTheme.smallShadows(
+                      distance: 4,
+                      blur: 8,
+                    ),
+                  ),
                   child: const Icon(
                     Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 22,
+                    color: NeumorphicTheme.textPrimary,
+                    size: 18,
                   ),
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// วงกลม Neumorphic ลอยเป็นพื้นหลังตาม CSS .bg-circle
+  Widget _buildBackgroundCircle(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: NeumorphicTheme.baseColor,
+        boxShadow: [
+          BoxShadow(
+            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.55),
+            offset: const Offset(15, 15),
+            blurRadius: 30,
+          ),
+          const BoxShadow(
+            color: NeumorphicTheme.shadowLight,
+            offset: Offset(-15, -15),
+            blurRadius: 30,
           ),
         ],
       ),
@@ -563,32 +606,18 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         ? Color(
             int.parse(_selectedProfession!.colorHex!.replaceFirst('#', '0xFF')),
           )
-        : _goldAccent;
+        : NeumorphicTheme.primaryBlue;
 
     return InkWell(
       onTap: _showProfessionPicker,
-      borderRadius: BorderRadius.circular(28),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: _selectedProfession != null
-                ? professionColor.withOpacity(0.5)
-                : Colors.grey[200]!,
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color:
-                  (_selectedProfession != null ? professionColor : Colors.black)
-                      .withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+      borderRadius: BorderRadius.circular(16),
+      child: NeumorphicInsetBox(
+        height: null,
+        borderRadius: 16,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        border: _selectedProfession != null
+            ? const BorderSide(color: NeumorphicTheme.accentCyan, width: 1.5)
+            : null,
         child: Row(
           children: [
             if (_selectedProfession != null) ...[
@@ -604,8 +633,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                 _selectedProfession?.name ?? 'เลือกประเภทการลงทะเบียน',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: _selectedProfession != null
-                      ? AppColors.textPrimary
-                      : Colors.grey[400],
+                      ? NeumorphicTheme.textPrimary
+                      : NeumorphicTheme.textSecondary.withValues(alpha: 0.65),
                   fontWeight: _selectedProfession != null
                       ? FontWeight.w600
                       : FontWeight.normal,
@@ -616,7 +645,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               Icons.unfold_more,
               color: _selectedProfession != null
                   ? professionColor
-                  : Colors.grey[400],
+                  : NeumorphicTheme.textSecondary,
               size: 20,
             ),
           ],
@@ -657,22 +686,30 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
           height: MediaQuery.of(context).size.height * 0.45,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
+          decoration: BoxDecoration(
+            color: NeumorphicTheme.baseColor,
+            borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(32),
               topRight: Radius.circular(32),
+            ),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.85),
+                width: 1.5,
+              ),
             ),
           ),
           child: Column(
             children: [
               const SizedBox(height: 12),
+              // แถบจับ Pill สไตล์ Neumorphic นูนเบาๆ
               Container(
-                width: 40,
-                height: 4,
+                width: 44,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+                  color: NeumorphicTheme.baseColor,
+                  borderRadius: BorderRadius.circular(3),
+                  boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
                 ),
               ),
               const SizedBox(height: 8),
@@ -727,7 +764,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                           childrenPadding: EdgeInsets.zero,
                           leading: Icon(
                             _getIconForProfession(category.iconName),
-                            color: AppColors.primary,
+                            color: NeumorphicTheme.primaryBlue,
                             size: 22,
                           ),
                           title: Text(
@@ -735,8 +772,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                             style: AppTextStyles.bodyMedium.copyWith(
                               fontWeight: FontWeight.normal,
                               color: hasSelectedInGroup
-                                  ? AppColors.primary
-                                  : AppColors.textPrimary,
+                                  ? NeumorphicTheme.primaryBlue
+                                  : NeumorphicTheme.textPrimary,
                             ),
                           ),
                           children: proList.map((p) {
@@ -767,7 +804,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   }) {
     final color = p.colorHex != null
         ? Color(int.parse(p.colorHex!.replaceFirst('#', '0xFF')))
-        : _goldAccent;
+        : NeumorphicTheme.primaryBlue;
 
     return ListTile(
       onTap: () {
@@ -782,15 +819,23 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       title: Text(
         p.name,
         style: AppTextStyles.bodyMedium.copyWith(
-          color: isSelected ? AppColors.primary : AppColors.textPrimary,
+          color: isSelected
+              ? NeumorphicTheme.primaryBlue
+              : NeumorphicTheme.textPrimary,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
       ),
       trailing: isSelected
-          ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+          ? const Icon(
+              Icons.check_circle,
+              color: NeumorphicTheme.primaryBlue,
+              size: 20,
+            )
           : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      tileColor: isSelected ? AppColors.primary.withOpacity(0.05) : null,
+      tileColor: isSelected
+          ? NeumorphicTheme.accentCyan.withValues(alpha: 0.10)
+          : null,
     );
   }
 
@@ -822,32 +867,38 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
               _obscurePassword
                   ? Icons.visibility_outlined
                   : Icons.visibility_off_outlined,
-              color: Colors.grey[400],
+              color: NeumorphicTheme.textSecondary,
               size: 20,
             ),
           ),
         ),
         const SizedBox(height: 16),
 
-        // ยืนยันรหัสผ่าน
-        _buildLabeledInputField(
-          label: 'ยืนยันรหัสผ่าน',
-          controller: _confirmPasswordController,
-          hintText: 'xxxxxxxxxx',
-          prefixIcon: Icons.lock_outline,
-          obscureText: _obscureConfirmPassword,
-          suffixIcon: IconButton(
-            onPressed: () => setState(
-              () => _obscureConfirmPassword = !_obscureConfirmPassword,
-            ),
-            icon: Icon(
-              _obscureConfirmPassword
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              color: Colors.grey[400],
-              size: 20,
-            ),
-          ),
+        // ยืนยันรหัสผ่าน — ซ่อนเมื่อเปิดดูรหัสผ่านและยังไม่มีค่าที่กรอก
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          child: _showConfirmPasswordField
+              ? _buildLabeledInputField(
+                  label: 'ยืนยันรหัสผ่าน',
+                  controller: _confirmPasswordController,
+                  hintText: 'xxxxxxxxxx',
+                  prefixIcon: Icons.lock_outline,
+                  obscureText: _obscurePassword,
+                  onChanged: (_) => setState(() {}),
+                  suffixIcon: IconButton(
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      color: NeumorphicTheme.textSecondary,
+                      size: 20,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -864,7 +915,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           'ข้อมูลจำเพาะ',
           textAlign: TextAlign.center,
           style: AppTextStyles.heading4.copyWith(
-            color: AppColors.textPrimary,
+            color: NeumorphicTheme.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -873,7 +924,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           'สำหรับ ${profession?.name ?? ""}',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textSecondary,
+            color: NeumorphicTheme.textSecondary,
           ),
         ),
         const SizedBox(height: 28),
@@ -1000,6 +1051,8 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       value: selectedDate,
       label: field.label,
       isRequired: field.isRequired,
+      accentColor: NeumorphicTheme.primaryBlue,
+      useInsetStyle: true,
       onDateSelected: (date) {
         setState(() {
           _dynamicFieldValues['${field.fieldId}_date'] = date;
@@ -1016,28 +1069,25 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     final currentAddress =
         _dynamicFieldValues['${field.fieldId}_address'] as ThaiAddress?;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.grey[200]!, width: 1.5),
-      ),
+    return NeumorphicInsetBox(
+      height: null,
+      borderRadius: 16,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.location_on_outlined,
-                color: Colors.grey[400],
+                color: NeumorphicTheme.textSecondary,
                 size: 22,
               ),
               const SizedBox(width: 12),
               Text(
                 '${field.label}${field.isRequired ? " *" : ""}',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
+                  color: NeumorphicTheme.textSecondary,
                 ),
               ),
             ],
@@ -1137,7 +1187,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           'ยืนยันข้อมูล',
           textAlign: TextAlign.center,
           style: AppTextStyles.heading4.copyWith(
-            color: AppColors.textPrimary,
+            color: NeumorphicTheme.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1146,19 +1196,16 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
           'กรุณาตรวจสอบข้อมูลก่อนยืนยันการลงทะเบียน',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textSecondary,
+            color: NeumorphicTheme.textSecondary,
           ),
         ),
         const SizedBox(height: 28),
 
-        // Summary Card
-        Container(
+        // Summary Card - ร่องจม Neumorphic
+        NeumorphicInsetBox(
+          height: null,
+          borderRadius: 16,
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1229,9 +1276,9 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                     _acceptTerms = value ?? false;
                   });
                 },
-                activeColor: _goldBright,
-                checkColor: Colors.black,
-                side: BorderSide(color: Colors.grey[400]!, width: 1.5),
+                activeColor: NeumorphicTheme.primaryBlue,
+                checkColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF94A3B8), width: 1.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -1248,22 +1295,22 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
                 child: RichText(
                   text: TextSpan(
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
+                      color: NeumorphicTheme.textSecondary,
                     ),
                     children: [
                       const TextSpan(text: 'ฉันยอมรับ '),
-                      TextSpan(
+                      const TextSpan(
                         text: 'ข้อกำหนดการใช้งาน',
                         style: TextStyle(
-                          color: _goldAccent,
+                          color: _linkBlue,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const TextSpan(text: ' และ '),
-                      TextSpan(
+                      const TextSpan(
                         text: 'นโยบายความเป็นส่วนตัว',
                         style: TextStyle(
-                          color: _goldAccent,
+                          color: _linkBlue,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1306,7 +1353,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     );
   }
 
-  /// Build labeled input field - matches reference design (label above, flat white bg)
+  /// Build labeled input field - Neumorphic Inset (ร่องลึก) พร้อมป้ายกำกับ
   Widget _buildLabeledInputField({
     required String label,
     required TextEditingController controller,
@@ -1323,51 +1370,28 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
       children: [
         Text(
           label,
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+          style: const TextStyle(
+            color: NeumorphicTheme.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 6),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.grey[200]!, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            obscureText: obscureText,
-            maxLines: maxLines,
-            onChanged: onChanged,
-            style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 15),
-            decoration: InputDecoration(
-              hintText: hintText,
-              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-              prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
-              suffixIcon: suffixIcon,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-            ),
-          ),
+        const SizedBox(height: 8),
+        _buildInputField(
+          controller: controller,
+          hintText: hintText,
+          prefixIcon: prefixIcon,
+          keyboardType: keyboardType,
+          obscureText: obscureText,
+          suffixIcon: suffixIcon,
+          maxLines: maxLines,
+          onChanged: onChanged,
         ),
       ],
     );
   }
 
-  /// Build input field (legacy - used by dynamic fields)
+  /// Build input field - ช่องกรอก Neumorphic Inset ส่วนกลาง
   Widget _buildInputField({
     required TextEditingController controller,
     required String hintText,
@@ -1378,38 +1402,15 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
     int maxLines = 1,
     ValueChanged<String>? onChanged,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.grey[200]!, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        obscureText: obscureText,
-        maxLines: maxLines,
-        onChanged: onChanged,
-        style: const TextStyle(color: Color(0xFF1A1A1A), fontSize: 15),
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-          prefixIcon: Icon(prefixIcon, color: Colors.grey[400], size: 20),
-          suffixIcon: suffixIcon,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
-        ),
-      ),
+    return NeumorphicInputField(
+      controller: controller,
+      hintText: hintText,
+      prefixIcon: prefixIcon,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      suffixIcon: suffixIcon,
+      maxLines: maxLines,
+      onChanged: onChanged,
     );
   }
 
@@ -1497,42 +1498,13 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
   Widget _buildBottomSection() {
     return Column(
       children: [
-        // Next/Submit Button
-        SizedBox(
-          height: 54,
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _handleNext,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _goldBright,
-              foregroundColor: Colors.black,
-              disabledBackgroundColor: Colors.grey[300],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-              elevation: 4,
-              shadowColor: _goldAccent.withOpacity(0.4),
-            ),
-            child: _isLoading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.black54),
-                    ),
-                  )
-                : Text(
-                    _currentStep == _totalSteps - 1
-                        ? 'ยืนยันลงทะเบียน'
-                        : 'ถัดไป',
-                    style: AppTextStyles.button.copyWith(
-                      color: Colors.black,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-          ),
+        // Next/Submit Button - Vibrant Gradient Pill Button สไตล์ Neumorphic
+        NeumorphicVerifyButton(
+          key: const Key('wizard_next'),
+          text: _currentStep == _totalSteps - 1 ? 'ยืนยันลงทะเบียน' : 'ถัดไป',
+          isLoading: _isLoading,
+          isEnabled: !_isLoading,
+          onPressed: _handleNext,
         ),
         const SizedBox(height: 12),
 
@@ -1540,7 +1512,7 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
         Text(
           'ขั้นตอนที่ ${_currentStep + 1} จาก $_totalSteps',
           style: AppTextStyles.bodySmall.copyWith(
-            color: _goldAccent,
+            color: NeumorphicTheme.primaryBlue,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1710,7 +1682,10 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
             ),
           );
         }
-        if (_passwordController.text != _confirmPasswordController.text) {
+        // หากช่องยืนยันถูกซ่อน แปลว่าผู้ใช้เลือกแสดงรหัสผ่านแล้ว
+        // จึงไม่ต้องบังคับตรวจสอบรหัสซ้ำในขั้นตอนนี้
+        if (_showConfirmPasswordField &&
+            _passwordController.text != _confirmPasswordController.text) {
           issues.add(
             const _ValidationIssue(
               message: 'รหัสผ่านไม่ตรงกัน',
@@ -1824,79 +1799,117 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('ข้อมูลไม่ครบ'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'พบรายการที่ต้องแก้ไขก่อนดำเนินการต่อ',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...issues.map((issue) {
-                final icon = issue.type == _ValidationIssueType.attachment
-                    ? Icons.attachment
-                    : Icons.error_outline;
-                final color = issue.type == _ValidationIssueType.attachment
-                    ? AppColors.warning
-                    : AppColors.error;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(icon, size: 18, color: color),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          issue.message,
-                          style: AppTextStyles.bodySmall.copyWith(color: color),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
+      builder: (ctx) => Theme(
+        data: Theme.of(ctx).copyWith(
+          // ปุ่มหลักเป็นโทนฟ้า Neumorphic แทนสีเขียวของธีมแอป
+          colorScheme: Theme.of(
+            ctx,
+          ).colorScheme.copyWith(primary: NeumorphicTheme.primaryBlue),
+          // ปุ่มปิดเป็นสีเทา Slate ตามโทน Neumorphic
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: NeumorphicTheme.textSecondary,
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('ปิด'),
+        child: AlertDialog(
+          backgroundColor: NeumorphicTheme.baseColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-          if (firstFormIssue != null)
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _currentStep = firstFormIssue.stepIndex;
-                });
-              },
-              icon: const Icon(Icons.edit_outlined),
-              label: Text(
-                firstFormIssue.stepIndex == 2
-                    ? 'ไปกรอกฟอร์มเพิ่มเติม'
-                    : 'ไปกรอกฟอร์มที่ขาด',
+          title: const Text(
+            'ข้อมูลไม่ครบ',
+            style: TextStyle(
+              color: NeumorphicTheme.textPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'พบรายการที่ต้องแก้ไขก่อนดำเนินการต่อ',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: NeumorphicTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...issues.map((issue) {
+                  final icon = issue.type == _ValidationIssueType.attachment
+                      ? Icons.attachment
+                      : Icons.error_outline;
+                  final color = issue.type == _ValidationIssueType.attachment
+                      ? AppColors.warning
+                      : AppColors.error;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(icon, size: 18, color: color),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            issue.message,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: color,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ปิด'),
+            ),
+            if (firstFormIssue != null)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _currentStep = firstFormIssue.stepIndex;
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NeumorphicTheme.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: Text(
+                  firstFormIssue.stepIndex == 2
+                      ? 'ไปกรอกฟอร์มเพิ่มเติม'
+                      : 'ไปกรอกฟอร์มที่ขาด',
+                ),
               ),
-            ),
-          if (firstAttachmentIssue != null)
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _currentStep = firstAttachmentIssue.stepIndex;
-                });
-              },
-              icon: const Icon(Icons.attachment_outlined),
-              label: const Text('ไปแนบเอกสารที่ขาด'),
-            ),
-        ],
+            if (firstAttachmentIssue != null)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _currentStep = firstAttachmentIssue.stepIndex;
+                  });
+                },
+                icon: const Icon(Icons.attachment_outlined, size: 18),
+                label: const Text('ไปแนบเอกสารที่ขาด'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NeumorphicTheme.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -2138,7 +2151,11 @@ class _RegisterWizardPageState extends State<RegisterWizardPage> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        backgroundColor: NeumorphicTheme.textPrimary,
+      ),
     );
   }
 

@@ -95,6 +95,7 @@ String? _resolveNotificationRoute(AppNotification notification) {
     'health' => '/health',
     'articles' => '/articles',
     'admin' => '/admin/applications',
+    'sport' => '/community/sport-club/sport/review',
     'system' => '/profile',
     'procurement' || 'inventory' || 'kpi' || 'hr' => '/erp',
     _ => null,
@@ -109,7 +110,8 @@ Object? _notificationArguments(String route, Map<String, dynamic> payload) {
       route == '/health' ||
       route == '/erp' ||
       route == '/profile' ||
-      route == '/admin/applications') {
+      route == '/admin/applications' ||
+      route == '/community/sport-club/sport/review') {
     return null;
   }
   return payload.isEmpty ? null : payload;
@@ -132,6 +134,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     (label: 'คำปรึกษา', value: 'consultation'),
     (label: 'ERP', value: 'procurement'),
     (label: 'อนุมัติอาชีพ', value: 'admin'),
+    (label: 'ประเภทกีฬา', value: 'sport'),
     (label: 'ผลการสมัคร', value: 'system'),
     (label: 'บริจาค', value: 'donation'),
     (label: 'สุขภาพ', value: 'health'),

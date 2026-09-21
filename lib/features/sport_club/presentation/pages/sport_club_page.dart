@@ -542,11 +542,6 @@ class _SportClubPageState extends State<SportClubPage> {
                       icon: const Icon(Icons.refresh, color: Colors.white),
                       onPressed: _reloadingGroups ? null : _reload,
                     ),
-                    IconButton(
-                      tooltip: 'ค้นหา',
-                      icon: const Icon(Icons.search, color: Colors.white),
-                      onPressed: _showAdvancedFilterSheet,
-                    ),
                   ],
                 ),
               ),

@@ -32,6 +32,14 @@ Map<String, dynamic>? groupChatNotificationRouteArguments(
   return {'intent': 'open_chat', 'groupId': groupId, 'chatRoomId': roomId};
 }
 
+/// เส้นทางปลายทางที่ notification ระบุไว้ใน payload
+/// ใช้กับ event ที่ไม่ใช่แชทก๊วน เช่นคำขอเพิ่มประเภทกีฬา (`/community/sport-club/sport/review`)
+String? notificationPayloadRoute(AppNotification notification) {
+  final route = notification.payload['route']?.toString();
+  if (route == null || !route.startsWith('/')) return null;
+  return route;
+}
+
 /// ตัด prefix mention `@ชื่อ น.\n` ออกเพื่อแสดงเฉพาะเนื้อความจริง
 String groupChatReplyDisplayBody(String? content) {
   final raw = (content ?? '').trim();
@@ -307,14 +315,29 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     final notification = _current;
     if (notification == null) return;
 
-    final arguments = groupChatNotificationRouteArguments(notification);
-    if (arguments == null) return;
+    final chatArguments = groupChatNotificationRouteArguments(notification);
+    if (chatArguments != null) {
+      _hideCurrent();
+      NavigationService.navigatorKey.currentState?.pushNamed(
+        '/community/sport-club',
+        arguments: chatArguments,
+      );
+      return;
+    }
 
+    // event อื่นที่ระบุ route ปลายทางมาใน payload (เช่นคำขอเพิ่มประเภทกีฬา)
+    final route = notificationPayloadRoute(notification);
+    if (route == null) return;
     _hideCurrent();
-    NavigationService.navigatorKey.currentState?.pushNamed(
-      '/community/sport-club',
-      arguments: arguments,
-    );
+    NavigationService.navigatorKey.currentState?.pushNamed(route);
+  }
+
+  /// การ์ดปัจจุบันกดเปิดปลายทางได้หรือไม่ (แชทก๊วน หรือ route ใน payload)
+  bool _isCurrentOpenable() {
+    final notification = _current;
+    if (notification == null) return false;
+    return groupChatNotificationRouteArguments(notification) != null ||
+        notificationPayloadRoute(notification) != null;
   }
 
   /// ปัดซ้ายเพื่อยกเลิกรายการแจ้งเตือนนั้น
@@ -355,9 +378,7 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       child: SwipeToDismissCard(
         key: ValueKey('tlz_notification_toast_${_current!.id}'),
         backgroundRadius: 20,
-        onTap: groupChatNotificationRouteArguments(_current!) == null
-            ? null
-            : _openCurrentNotification,
+        onTap: _isCurrentOpenable() ? _openCurrentNotification : null,
         onDismissed: _dismissCurrent,
         child: SlideTransition(
           position: _slide,

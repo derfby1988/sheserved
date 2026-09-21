@@ -84,6 +84,7 @@ const emergencyHealthMonitorService = require('./services/emergency-health-monit
 const inventoryAlertChecker = require('./services/inventory-alert-checker');
 const { archiveChatMessages } = require('./services/chat-archive-service');
 const { notificationsRoutes, professionChangeRoute } = require('./routes/notifications');
+const { sportsRoutes } = require('./routes/sports');
 const { chatApiRoutes } = require('./routes/chat-api');
 const { healthRoutes } = require('./routes/health');
 const { emergencyHealthRoutes } = require('./routes/emergency-health');
@@ -335,6 +336,8 @@ app.use('/api', strictRouteGuard());
 // ── Phase 13.3 P1-3: route extraction — inline handlers moved to routes/ ──
 app.use('/api/notifications', verifyToken(pool), notificationsRoutes({ supabaseForSync, socketService }));
 app.use('/api/profession-change', verifyToken(pool), professionChangeRoute({ supabaseForSync, socketService }));
+// Sport-type proposals: admin notification + realtime broadcast (mirrors profession-change).
+app.use('/api/sports/propose', verifyToken(pool), sportsRoutes({ supabaseForSync, socketService }));
 app.use('/api', chatApiRoutes({ pool }));
 app.use('/api/emergency-health', emergencyHealthRoutes({ verifyTokenMw: verifyToken(pool) }));
 app.use('/api/professions', professionsRoutes({ pool }));

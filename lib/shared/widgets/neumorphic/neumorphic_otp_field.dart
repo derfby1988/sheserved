@@ -109,71 +109,87 @@ class _NeumorphicOtpFieldState extends State<NeumorphicOtpField> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _focus,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // แถวของกล่อง Neumorphic 6 กล่อง
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(widget.length, (index) {
-              final bool hasValue = index < text.length;
-              final String char = hasValue ? text[index] : '';
-              final bool isActive = isFocused && index == activeIndex;
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // คำนวณขนาดกล่องอัตโนมัติให้พอดีความกว้างที่มี (กัน RIGHT OVERFLOW บนจอ/dialog แคบ)
+          double boxWidth = widget.boxWidth;
+          final double totalWidth =
+              widget.length * (boxWidth + widget.spacing);
+          if (constraints.maxWidth.isFinite &&
+              totalWidth > constraints.maxWidth) {
+            boxWidth = (constraints.maxWidth / widget.length) - widget.spacing;
+            boxWidth = boxWidth.clamp(28.0, widget.boxWidth);
+          }
 
-              return Padding(
-                padding: EdgeInsets.symmetric(horizontal: widget.spacing / 2),
-                child: _buildOtpBox(
-                  value: char,
-                  isActive: isActive,
-                  hasValue: hasValue,
-                ),
-              );
-            }),
-          ),
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // แถวของกล่อง Neumorphic 6 กล่อง
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.length, (index) {
+                  final bool hasValue = index < text.length;
+                  final String char = hasValue ? text[index] : '';
+                  final bool isActive = isFocused && index == activeIndex;
 
-          // ซ่อน TextField ตัวจริงไว้รับ Keyboard / Autofill
-          Positioned.fill(
-            child: Align(
-              alignment: Alignment.center,
-              child: SizedBox(
-                width: 1,
-                height: 1,
-                child: Opacity(
-                  opacity: 0.01,
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    autofocus: widget.autoFocus,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.oneTimeCode],
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    showCursor: false,
-                    cursorColor: Colors.transparent,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.transparent,
-                      fontSize: 1,
+                  return Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: widget.spacing / 2),
+                    child: _buildOtpBox(
+                      value: char,
+                      isActive: isActive,
+                      hasValue: hasValue,
+                      boxWidth: boxWidth,
                     ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      counterText: '',
-                      isCollapsed: true,
-                      contentPadding: EdgeInsets.zero,
+                  );
+                }),
+              ),
+
+              // ซ่อน TextField ตัวจริงไว้รับ Keyboard / Autofill
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: SizedBox(
+                    width: 1,
+                    height: 1,
+                    child: Opacity(
+                      opacity: 0.01,
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        autofocus: widget.autoFocus,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        enableSuggestions: false,
+                        autocorrect: false,
+                        showCursor: false,
+                        cursorColor: Colors.transparent,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.transparent,
+                          fontSize: 1,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          counterText: '',
+                          isCollapsed: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(widget.length),
+                        ],
+                      ),
                     ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(widget.length),
-                    ],
                   ),
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -182,9 +198,10 @@ class _NeumorphicOtpFieldState extends State<NeumorphicOtpField> {
     required String value,
     required bool isActive,
     required bool hasValue,
+    required double boxWidth,
   }) {
     return NeumorphicInsetBox(
-      width: widget.boxWidth,
+      width: boxWidth,
       height: widget.boxHeight,
       borderRadius: widget.borderRadius,
       distance: 3.5,

@@ -269,6 +269,42 @@ class AuthenticatedHttpClient {
     return data;
   }
 
+  /// Submit a new sport-type proposal through the gateway.
+  ///
+  /// The gateway writes the pending sport row and notifies every active admin,
+  /// mirroring [submitProfessionChange]. Returns the created sport id.
+  Future<String> proposeSportType({
+    required String nameTh,
+    String? nameEn,
+    String? fieldLayout,
+    Map<String, dynamic>? fieldStyle,
+  }) async {
+    if (_baseUrl == null) {
+      throw StateError(
+        'AuthenticatedHttpClient not configured — call configure() first',
+      );
+    }
+
+    final response = await request(
+      'POST',
+      '/api/sports/propose',
+      body: jsonEncode({
+        'nameTh': nameTh,
+        'nameEn': nameEn,
+        'fieldLayout': fieldLayout,
+        'fieldStyle': fieldStyle,
+      }),
+    );
+    final data = _safeDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AuthException(
+        data['error']?.toString() ?? 'Sport proposal failed',
+        statusCode: response.statusCode,
+      );
+    }
+    return data['sportId']?.toString() ?? '';
+  }
+
   /// Login via backend — stores tokens on success.
   /// [identifier] may be a phone number or a username (backend resolves both).
   Future<Map<String, dynamic>> login({

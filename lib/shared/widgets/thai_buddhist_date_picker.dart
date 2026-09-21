@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_text_styles.dart';
+import 'neumorphic/neumorphic_theme.dart';
+import 'neumorphic/neumorphic_inset.dart';
 
 /// ยูทิลิตี้สำหรับจัดการวันที่ไทย (พ.ศ.)
 class ThaiDateUtils {
@@ -49,6 +50,13 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
   final ValueChanged<DateTime> onDateSelected;
   final String? errorText;
 
+  /// สีสำเนียงหลัก (กรอบ/ไอคอน/ปุ่มในปฏิทิน) — default เดิมคือ [AppColors.primary]
+  final Color accentColor;
+
+  /// แสดงผลเป็นร่องลึกแบบ Neumorphic Inset ให้เข้าชุดกับ [NeumorphicInputField]
+  /// (หาก false จะเป็นกล่องสีขาวมนแบบเดิม)
+  final bool useInsetStyle;
+
   const ThaiBuddhistDatePickerField({
     super.key,
     required this.value,
@@ -57,6 +65,8 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
     this.hint = 'เลือกวันที่',
     this.isRequired = false,
     this.errorText,
+    this.accentColor = AppColors.primary,
+    this.useInsetStyle = false,
   });
 
   @override
@@ -66,57 +76,87 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
         ? ThaiDateUtils.formatShortDateBE(value!)
         : (isRequired ? '$label *' : label);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final Color idleColor = useInsetStyle
+        ? NeumorphicTheme.textSecondary
+        : Colors.grey[400]!;
+    final Widget fieldContent = Row(
       children: [
-        InkWell(
-          onTap: () => _handleTap(context),
-          borderRadius: BorderRadius.circular(28),
-          child: Container(
+        Icon(
+          Icons.calendar_today_outlined,
+          color: errorText != null
+              ? Colors.redAccent
+              : (hasDate ? accentColor : idleColor),
+          size: 22,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            displayText,
+            style: TextStyle(
+              color: hasDate ? accentColor : idleColor,
+              fontSize: 15,
+              fontWeight: hasDate ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+        if (hasDate)
+          Icon(Icons.edit_calendar_outlined,
+              color: accentColor.withValues(alpha: 0.5), size: 18),
+      ],
+    );
+
+    final Widget field = useInsetStyle
+        ? CustomPaint(
+            painter: NeumorphicInsetPainter(
+              borderRadius: 16,
+              distance: 4.0,
+              blur: 6.0,
+              shadowDark: const Color.fromRGBO(163, 177, 198, 0.90),
+              shadowLight: const Color.fromRGBO(255, 255, 255, 0.95),
+              border: BorderSide(
+                color: Colors.white.withValues(alpha: 0.7),
+                width: 1.0,
+              ),
+            ),
+            // ล็อกความสูง 52 พอดีกับ NeumorphicInputField เพื่อให้ทุกช่องสูงเท่ากัน
+            child: Container(
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.centerLeft,
+              child: fieldContent,
+            ),
+          )
+        : Container(
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
-                color: errorText != null 
-                    ? Colors.redAccent 
-                    : (hasDate ? AppColors.primary : Colors.grey[200]!),
+                color: errorText != null
+                    ? Colors.redAccent
+                    : (hasDate ? accentColor : Colors.grey[200]!),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.calendar_today_outlined,
-                  color: errorText != null 
-                      ? Colors.redAccent 
-                      : (hasDate ? AppColors.primary : Colors.grey[400]),
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    displayText,
-                    style: TextStyle(
-                      color: hasDate ? AppColors.primary : Colors.grey[400],
-                      fontSize: 15,
-                      fontWeight: hasDate ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                ),
-                if (hasDate)
-                  Icon(Icons.edit_calendar_outlined,
-                      color: AppColors.primary.withOpacity(0.5), size: 18),
-              ],
-            ),
-          ),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: fieldContent,
+          );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => _handleTap(context),
+          borderRadius:
+              BorderRadius.circular(useInsetStyle ? 16 : 28),
+          child: field,
         ),
         if (errorText != null)
           Padding(
@@ -145,13 +185,31 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
     );
 
     if (!context.mounted) return;
-    final DateTime? picked = await showThaiDatePicker(
-      context,
-      initialDate: initialDate,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now().add(const Duration(days: 3650)), // อนุญาตให้เลือกอนาคตได้ 10 ปี
-      era: Era.be,
-      locale: 'th_TH',
+    // เรียก dialog ผ่าน Theme override เพื่อให้ปุ่มตกลง/วันที่ที่เลือก
+    // ใช้โทนสีเดียวกับ [accentColor] แทนสีจากธีมหลักของแอป
+    final DateTime? picked = await showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) => Theme(
+        data: Theme.of(dialogContext).copyWith(
+          colorScheme: Theme.of(dialogContext)
+              .colorScheme
+              .copyWith(primary: accentColor),
+          // ปุ่มยกเลิกเป็นสีเทา Slate ตามโทน Neumorphic (ไม่ใช้สี primary เขียว)
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: NeumorphicTheme.textSecondary,
+            ),
+          ),
+        ),
+        child: ThaiDatePickerDialog(
+          initialDate: initialDate,
+          firstDate: DateTime(1900),
+          lastDate:
+              DateTime.now().add(const Duration(days: 3650)), // อนุญาตให้เลือกอนาคตได้ 10 ปี
+          era: Era.be,
+          locale: 'th_TH',
+        ),
+      ),
     );
 
     if (picked != null) {
@@ -190,10 +248,10 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(
               children: [
-                const Icon(Icons.calendar_month, color: AppColors.primary, size: 22),
+                Icon(Icons.calendar_month, color: accentColor, size: 22),
                 const SizedBox(width: 8),
-                const Text('เลือกปี พ.ศ.',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                Text('เลือกปี พ.ศ.',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: accentColor)),
                 const Spacer(),
                 Text('(ระบุปีก่อน)',
                     style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.normal)),
@@ -223,12 +281,12 @@ class ThaiBuddhistDatePickerField extends StatelessWidget {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         decoration: BoxDecoration(
-                          color: isSelected ? AppColors.primary : null,
+                          color: isSelected ? accentColor : null,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: isSelected
-                                ? AppColors.primary
-                                : AppColors.primary.withOpacity(0.2),
+                                ? accentColor
+                                : accentColor.withValues(alpha: 0.2),
                           ),
                         ),
                         alignment: Alignment.center,
