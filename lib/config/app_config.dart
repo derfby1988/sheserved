@@ -88,6 +88,24 @@ class AppConfig {
     defaultValue: false,
   );
 
+  /// ช่องทาง toast สำหรับคำขอเพิ่มประเภทกีฬา
+  ///
+  /// false (ค่าเริ่มต้นสำหรับ development) = Supabase Realtime จากตาราง
+  /// `sports` โดยตรง ไม่ต้องเปิด websocket-server สำหรับการแจ้งเตือน
+  ///
+  /// true (production ที่ต้องการ) = รับ toast จาก
+  /// websocket-server ผ่าน `application-notification` โดยยังเก็บ
+  /// notification ในฐานข้อมูลเหมือนเดิม
+  static const bool useWebsocketSportProposalNotifications =
+      bool.fromEnvironment(
+        'USE_WEBSOCKET_SPORT_PROPOSAL_NOTIFICATIONS',
+        defaultValue: false,
+      );
+
+  /// เปิดใช้ช่องทาง websocket เฉพาะเมื่อเปิด backend auth ด้วย
+  static bool get websocketSportProposalNotificationsEnabled =>
+      useBackendAuth && useWebsocketSportProposalNotifications;
+
   /// Base URL ของ websocket-server backend (Caddy reverse proxy)
   /// ใช้สำหรับ /api/auth/* และ authenticated HTTP requests
   static const String backendApiUrl = String.fromEnvironment(

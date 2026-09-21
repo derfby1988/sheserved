@@ -2,12 +2,12 @@
 
 /**
  * Routes: /api/sports/propose
- * Extracted following the Phase 13.3 P1-3 route pattern.
  *
- * Identity contract: mounted behind verifyToken(pool) in server.js —
- * the sport row is written with the service-role client while the proposer
- * comes only from req.userId (verified by verifyToken). Actor IDs from the
- * body are ignored.
+ * The database trigger creates one persisted app_notifications row per active
+ * admin. This route optionally broadcasts those already-created rows over the
+ * websocket-server channel; it never inserts a second notification. Legacy
+ * direct-Supabase submissions still work through the DB trigger + Supabase
+ * Realtime path.
  */
 
 const express = require('express');
@@ -15,73 +15,32 @@ const express = require('express');
 const NOTIFICATION_COLUMNS =
   'id, profession_id, recipient_id, category, event_type, title, body, payload, is_read, read_at, dismissed_at, created_at';
 
-const SPORT_REVIEW_ROUTE = '/community/sport-club/sport/review';
-
 /**
- * @param {{supabaseForSync: object, socketService: object}} deps
+ * @param {{supabaseForSync: object, socketService?: object}} deps
  */
 function sportsRoutes({ supabaseForSync, socketService }) {
   const router = express.Router();
 
-  function requireNotificationStore(res) {
+  function requireStore(res) {
     if (!supabaseForSync) {
-      res.status(503).json({ error: 'Notification store not available' });
+      res.status(503).json({ error: 'Store not available' });
       return false;
     }
     return true;
   }
 
-  /**
-   * Notifies every active admin that a new sport type is waiting for review.
-   * Mirrors the profession-application flow so the in-app toast and the
-   * notification panel behave identically.
-   */
-  async function notifyAdminsOfSportProposal({ sport, proposerName }) {
-    const { data: admins, error: adminError } = await supabaseForSync
-      .from('users')
-      .select('id')
-      .eq('role', 'admin')
-      .eq('is_active', true);
-    if (adminError) throw adminError;
+  async function broadcastCreatedNotifications(sportId) {
+    if (!socketService?.broadcastApplicationNotification) return;
 
-    const recipientIds = (admins || []).map((admin) => admin.id);
-    if (recipientIds.length === 0) return;
-
-    const sportName = sport.name_th || '';
-    const title = 'มีคำขอเพิ่มประเภทกีฬาใหม่';
-    const body = proposerName
-      ? `${proposerName} เสนอประเภทกีฬา "${sportName}"`
-      : `มีผู้เสนอประเภทกีฬา "${sportName}"`;
-    const payload = {
-      sportId: sport.id,
-      sportName,
-      proposedBy: sport.proposed_by || null,
-      route: SPORT_REVIEW_ROUTE,
-    };
-
-    const { data: inserted, error: notifyError } = await supabaseForSync
+    const { data, error } = await supabaseForSync
       .from('app_notifications')
-      .insert(
-        recipientIds.map((recipientId) => ({
-          recipient_id: recipientId,
-          category: 'sport',
-          event_type: 'sport.proposal_submitted',
-          title,
-          body,
-          payload,
-        })),
-      )
-      .select(NOTIFICATION_COLUMNS);
+      .select(NOTIFICATION_COLUMNS)
+      .eq('category', 'sport')
+      .eq('event_type', 'sport.proposal_submitted')
+      .contains('payload', { sportId });
+    if (error) throw error;
 
-    if (notifyError) {
-      console.error(
-        '[Sports] Admin notification failed:',
-        notifyError.message,
-      );
-      return;
-    }
-
-    for (const notification of inserted || []) {
+    for (const notification of data || []) {
       socketService.broadcastApplicationNotification(
         [notification.recipient_id],
         notification,
@@ -89,25 +48,9 @@ function sportsRoutes({ supabaseForSync, socketService }) {
     }
   }
 
-  async function proposerDisplayName(userId) {
-    try {
-      const { data } = await supabaseForSync
-        .from('users')
-        .select('first_name, last_name')
-        .eq('id', userId)
-        .maybeSingle();
-      return [data?.first_name, data?.last_name]
-        .map((value) => (value || '').trim())
-        .filter((value) => value.length > 0)
-        .join(' ');
-    } catch (_) {
-      return '';
-    }
-  }
-
   router.post('/', async (req, res) => {
     if (!req.userId) return res.status(401).json({ error: 'Login required' });
-    if (!requireNotificationStore(res)) return;
+    if (!requireStore(res)) return;
 
     const { nameTh, nameEn, fieldLayout, fieldStyle } = req.body || {};
     const trimmedNameTh = typeof nameTh === 'string' ? nameTh.trim() : '';
@@ -135,17 +78,19 @@ function sportsRoutes({ supabaseForSync, socketService }) {
       const { data: sport, error: insertError } = await supabaseForSync
         .from('sports')
         .insert(row)
-        .select('id, name_th, proposed_by')
+        .select('id')
         .single();
       if (insertError) throw insertError;
 
       try {
-        const proposerName = await proposerDisplayName(req.userId);
-        await notifyAdminsOfSportProposal({ sport, proposerName });
-      } catch (notifyError) {
-        // The request itself succeeded — a failed admin notification must not
-        // roll back the proposal the user just submitted.
-        console.error('[Sports] Notify admins failed:', notifyError.message);
+        // The DB trigger owns persistence; this is only the optional live
+        // websocket delivery path and therefore cannot create duplicates.
+        await broadcastCreatedNotifications(sport.id);
+      } catch (notificationError) {
+        console.error(
+          '[Sports] Websocket notification failed:',
+          notificationError.message,
+        );
       }
 
       res.status(201).json({ sportId: sport.id });

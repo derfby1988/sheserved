@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../config/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../features/erp/data/models/app_notification.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
@@ -83,10 +84,12 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
   StreamSubscription<Map<String, dynamic>>? _applicationSubscription;
   StreamSubscription<AuthState>? _supabaseAuthSubscription;
   RealtimeChannel? _chatReplyChannel;
+  RealtimeChannel? _sportProposalChannel;
   Timer? _hideTimer;
   AppNotification? _current;
   String? _subscribedUserId;
   final Set<String> _seenReplyMessageIds = {};
+  final Set<String> _seenSportProposalIds = {};
   final Map<String, Map<String, dynamic>> _roomCache = {};
   final Map<String, String> _userNameCache = {};
 
@@ -128,6 +131,9 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       debugPrint('[TlzNotificationToast] supabase auth listen error: $e');
     }
     _subscribeChatReplies();
+    if (!AppConfig.websocketSportProposalNotificationsEnabled) {
+      _subscribeSportProposals();
+    }
   }
 
   void _handleAuthChanged() {
@@ -175,6 +181,79 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     } catch (e) {
       debugPrint('[TlzNotificationToast] chat reply subscribe error: $e');
     }
+  }
+
+  /// คำขอเพิ่มประเภทกีฬาใหม่ — ส่งถึง admin ผ่าน Supabase Realtime ของตาราง
+  /// `sports` โดยตรง (ตารางอยู่ใน publication `supabase_realtime`) จึงไม่ต้อง
+  /// เปิด websocket-server เลย
+  ///
+  /// ใช้ตาราง `sports` ไม่ใช่ `app_notifications` เพราะ RLS ของ
+  /// `app_notifications` ผูกกับ `auth.uid()` ซึ่งแอปนี้ไม่มี Supabase Auth
+  /// session (อ่านแบบ anon) — แถวจะไม่ถูกส่งมาทาง Realtime
+  void _subscribeSportProposals() {
+    if (_sportProposalChannel != null) return;
+    try {
+      _sportProposalChannel = Supabase.instance.client
+          .channel('sport_proposal_toast')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'sports',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'status',
+              value: 'pending',
+            ),
+            callback: _onSportProposalInsert,
+          )
+          .subscribe();
+      debugPrint('[TlzNotificationToast] subscribed sport proposals');
+    } catch (e) {
+      debugPrint('[TlzNotificationToast] sport proposal subscribe error: $e');
+    }
+  }
+
+  Future<void> _onSportProposalInsert(PostgresChangePayload payload) async {
+    final record = payload.newRecord;
+    // การ์ดนี้มีไว้ให้ admin เท่านั้น — ผู้ใช้ทั่วไปไม่ต้องเห็นคำขอที่รอตรวจ
+    if (!mounted || !AuthService.instance.isAdmin) return;
+
+    final sportId = record['id']?.toString() ?? '';
+    if (sportId.isEmpty || !_seenSportProposalIds.add(sportId)) return;
+
+    final sportName = record['name_th']?.toString().trim() ?? '';
+    final proposedBy = record['proposed_by']?.toString() ?? '';
+    final proposerName = proposedBy.isEmpty
+        ? ''
+        : await _userDisplayName(proposedBy);
+    if (!mounted) return;
+
+    final notification = AppNotification(
+      id: 'sport_proposal_$sportId',
+      professionId: '',
+      recipientId: AuthService.instance.userId ?? '',
+      category: 'sport',
+      eventType: 'sport.proposal_submitted',
+      title: 'มีคำขอเพิ่มประเภทกีฬาใหม่',
+      body: proposerName.isEmpty
+          ? 'มีผู้เสนอประเภทกีฬา "$sportName"'
+          : '$proposerName เสนอประเภทกีฬา "$sportName"',
+      payload: {
+        'route': '/community/sport-club/sport/review',
+        'sportId': sportId,
+        'sportName': sportName,
+        if (proposedBy.isNotEmpty) 'proposedBy': proposedBy,
+      },
+      createdAt:
+          DateTime.tryParse(record['proposed_at']?.toString() ?? '') ??
+          DateTime.now(),
+    );
+
+    // อัปเดตรายการ + badge ในหน่วยความจำทันที (ไม่ต้องรอ refresh รอบถัดไป)
+    ref
+        .read(notificationProvider.notifier)
+        .receiveLocalNotification(notification);
+    _showNotification(notification);
   }
 
   Future<void> _onChatReplyInsert(PostgresChangePayload payload) async {
@@ -267,6 +346,23 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     debugPrint(
       '[TlzNotificationToast] received: ${data['type'] ?? data['event_type'] ?? 'unknown'}',
     );
+    final eventType = data['event_type']?.toString() ?? '';
+    if (eventType == 'sport.proposal_submitted' &&
+        !AppConfig.websocketSportProposalNotificationsEnabled) {
+      // Development/legacy channel is Supabase Realtime on `sports`.
+      // Ignore the optional websocket copy if a backend happens to be online.
+      return;
+    }
+    final rawPayload = data['payload'];
+    final payload = rawPayload is Map
+        ? Map<String, dynamic>.from(rawPayload)
+        : const <String, dynamic>{};
+    final sportId = payload['sportId']?.toString();
+    if (eventType == 'sport.proposal_submitted' &&
+        sportId != null &&
+        !_seenSportProposalIds.add(sportId)) {
+      return;
+    }
     AppNotification notification;
     try {
       notification = AppNotification.fromJson(data);
@@ -341,14 +437,19 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
   }
 
   /// ปัดซ้ายเพื่อยกเลิกรายการแจ้งเตือนนั้น
+  /// การ์ดที่ประกอบขึ้นในเครื่อง ไม่มีแถวจริงใน `app_notifications`
+  /// (id ที่สร้างไม่ตรงกับแถวของ DB) — ปัดแล้วจึงไม่ต้อง mark ที่ฐานข้อมูล
+  bool _isLocalOnlyNotification(AppNotification notification) =>
+      notification.eventType == 'fitness_group.chat_reply' ||
+      notification.eventType == 'sport.proposal_submitted';
+
   /// ปิดการ์ดทันที แล้วแจ้ง provider เพื่อ mark dismissed (non-blocking)
   void _dismissCurrent() {
     final notification = _current;
     _hideTimer?.cancel();
     _controller.stop();
     setState(() => _current = null);
-    if (notification == null ||
-        notification.eventType == 'fitness_group.chat_reply') {
+    if (notification == null || _isLocalOnlyNotification(notification)) {
       return;
     }
     ref
@@ -363,6 +464,7 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     _applicationSubscription?.cancel();
     _supabaseAuthSubscription?.cancel();
     _chatReplyChannel?.unsubscribe();
+    _sportProposalChannel?.unsubscribe();
     AuthService.instance.removeListener(_handleAuthChanged);
     super.dispose();
   }

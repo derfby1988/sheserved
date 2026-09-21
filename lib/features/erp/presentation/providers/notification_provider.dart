@@ -60,17 +60,26 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   void _receiveApplicationNotification(Map<String, dynamic> data) {
     try {
-      final notification = AppNotification.fromJson(data);
-      state = state.copyWith(
-        notifications: [
-          notification,
-          ...state.notifications.where((item) => item.id != notification.id),
-        ],
-        unreadCount: state.unreadCount + (notification.isRead ? 0 : 1),
-      );
+      receiveLocalNotification(AppNotification.fromJson(data));
     } catch (_) {
       // Ignore malformed realtime payloads; the next gateway refresh repairs state.
     }
+  }
+
+  /// แจ้งเตือนที่มาทาง Supabase Realtime (เช่นคำขอเพิ่มประเภทกีฬา) —
+  /// อัปเดตรายการ + badge ทันทีโดยไม่ต้องรอ refresh รอบถัดไป
+  void receiveLocalNotification(AppNotification notification) {
+    final previous = state.notifications
+        .where((item) => item.id == notification.id)
+        .firstOrNull;
+    final unreadDelta = previous == null && !notification.isRead ? 1 : 0;
+    state = state.copyWith(
+      notifications: [
+        notification,
+        ...state.notifications.where((item) => item.id != notification.id),
+      ],
+      unreadCount: state.unreadCount + unreadDelta,
+    );
   }
 
   @override

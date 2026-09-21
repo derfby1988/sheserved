@@ -48,10 +48,10 @@ class _ProposeSportPageState extends State<ProposeSportPage> {
           : _nameEnCtrl.text.trim();
       final fieldStyle = _fieldLayout == 'none' ? null : _fieldStyle.toJson();
 
-      // Gateway path: writes the pending sport row and notifies every active
-      // admin (in-app notification + realtime toast) in one request.
-      // Legacy mode keeps the direct Supabase insert during compatibility —
-      // admins then see the request once they refresh the review page.
+      // ทั้งสองเส้นทางเขียนแถว `sports` สถานะ pending เหมือนกัน — DB trigger
+      // `notify_admins_of_sport_proposal` เป็นผู้สร้างแจ้งเตือนให้ admin
+      // ทุกคน และส่งการ์ดถึงแอป admin ผ่าน Supabase Realtime
+      // จึงไม่ต้องพึ่ง websocket-server ในเส้นทางแจ้งเตือนเลย
       if (AppConfig.useBackendAuth) {
         AuthenticatedHttpClient.instance.configure(
           baseUrl: AppConfig.backendApiUrl,

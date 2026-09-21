@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../config/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../features/chat/presentation/chat_unread_provider.dart';
 import '../../features/chat/presentation/pages/chat_room_page.dart';
 import '../../features/erp/data/models/app_notification.dart';
 import '../../features/erp/presentation/providers/notification_provider.dart';
 import '../../features/erp/presentation/widgets/glass_card.dart';
+import '../../services/auth_service.dart';
 import 'swipe_to_dismiss_card.dart';
 
 Future<void> showTlzNotificationPanel(
@@ -142,7 +145,10 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
 
   String? _selectedCategory;
   List<Map<String, dynamic>> _chatRooms = [];
+  List<AppNotification> _sportProposalNotifications = [];
+  final Set<String> _dismissedSportProposalIds = {};
   bool _isLoadingChatRooms = false;
+  bool _isLoadingSportProposals = false;
   bool _isInitialLoading = true;
 
   bool get _showsChat =>
@@ -150,6 +156,13 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
 
   bool get _needsChatData =>
       widget.category == null || _selectedCategory == 'chat';
+
+  bool get _showsSportProposals =>
+      _selectedCategory == null || _selectedCategory == 'sport';
+
+  bool get _needsSportProposalData =>
+      _showsSportProposals &&
+      !AppConfig.websocketSportProposalNotificationsEnabled;
 
   @override
   void initState() {
@@ -166,6 +179,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     try {
       final tasks = <Future<void>>[_loadNotifications()];
       if (_needsChatData) tasks.add(_loadChatRooms());
+      if (_needsSportProposalData) tasks.add(_loadSportProposals());
       await Future.wait(tasks);
     } finally {
       if (mounted) setState(() => _isInitialLoading = false);
@@ -196,7 +210,66 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     if (_needsChatData) {
       tasks.add(_loadChatRooms());
     }
+    if (_needsSportProposalData) {
+      tasks.add(_loadSportProposals());
+    }
     await Future.wait(tasks);
+  }
+
+  Future<void> _loadSportProposals() async {
+    if (_isLoadingSportProposals || !AuthService.instance.isAdmin) return;
+    _isLoadingSportProposals = true;
+    try {
+      final response = await Supabase.instance.client
+          .from('sports')
+          .select(
+            'id, name_th, name_en, proposed_by, proposed_at, field_layout, field_style',
+          )
+          .eq('status', 'pending')
+          .order('proposed_at', ascending: false)
+          .limit(50);
+      if (!mounted) return;
+
+      final recipientId = AuthService.instance.userId ?? '';
+      final proposals = (response as List)
+          .map((raw) {
+            final row = Map<String, dynamic>.from(raw as Map);
+            final sportId = row['id']?.toString() ?? '';
+            final proposedAt =
+                DateTime.tryParse(row['proposed_at']?.toString() ?? '') ??
+                DateTime.now();
+            return AppNotification(
+              id: 'sport_proposal_$sportId',
+              professionId: '',
+              recipientId: recipientId,
+              category: 'sport',
+              eventType: 'sport.proposal_submitted',
+              title: 'มีคำขอเพิ่มประเภทกีฬาใหม่',
+              body: 'เสนอประเภทกีฬา "${row['name_th'] ?? ''}"',
+              payload: {
+                'route': '/community/sport-club/sport/review',
+                'sportId': sportId,
+                'sportName': row['name_th']?.toString() ?? '',
+                if (row['proposed_by'] != null)
+                  'proposedBy': row['proposed_by'].toString(),
+              },
+              createdAt: proposedAt,
+            );
+          })
+          .where((item) {
+            final sportId = item.payload['sportId']?.toString() ?? '';
+            return sportId.isNotEmpty &&
+                !_dismissedSportProposalIds.contains(sportId);
+          })
+          .toList();
+
+      setState(() {
+        _sportProposalNotifications = proposals;
+        _isLoadingSportProposals = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingSportProposals = false);
+    }
   }
 
   Future<void> _changeCategory(String? category) async {
@@ -221,10 +294,32 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     await _refresh();
   }
 
+  bool _isLocalSportProposal(AppNotification notification) =>
+      notification.eventType == 'sport.proposal_submitted' &&
+      notification.id.startsWith('sport_proposal_');
+
   Future<void> _openNotification(AppNotification notification) async {
     final route = _resolveNotificationRoute(notification);
     if (route == null) {
       _showMessage('ยังไม่พบหน้าปลายทางของการแจ้งเตือนนี้');
+      return;
+    }
+
+    // Local sport cards come from the `sports` table in legacy mode and do
+    // not have a corresponding client-readable app_notifications row.
+    if (_isLocalSportProposal(notification)) {
+      _dismissedSportProposalIds.add(
+        notification.payload['sportId']?.toString() ?? '',
+      );
+      setState(() {
+        _sportProposalNotifications = _sportProposalNotifications
+            .where((item) => item.id != notification.id)
+            .toList();
+      });
+      if (mounted) Navigator.of(context).pop();
+      if (context.mounted) {
+        await Navigator.of(context).pushNamed(route);
+      }
       return;
     }
 
@@ -252,6 +347,19 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
 
   /// ปัดซ้ายเพื่อซ่อนรายการแจ้งเตือน — ลบออกจากรายการ + refresh unread count
   Future<void> _dismissNotification(AppNotification notification) async {
+    if (_isLocalSportProposal(notification)) {
+      final sportId = notification.payload['sportId']?.toString() ?? '';
+      _dismissedSportProposalIds.add(sportId);
+      if (mounted) {
+        setState(() {
+          _sportProposalNotifications = _sportProposalNotifications
+              .where((item) => item.id != notification.id)
+              .toList();
+        });
+      }
+      return;
+    }
+
     final dismissed = await ref
         .read(notificationProvider.notifier)
         .dismissNotification(notification.id, category: _selectedCategory);
@@ -436,9 +544,11 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
       0,
       (total, room) => total + ((room['unreadCount'] as num?)?.toInt() ?? 0),
     );
+    final localSportUnreadCount = _sportProposalNotifications.length;
     final selectedAppUnreadCount = _selectedCategory == null
-        ? allSummary.unreadCount
-        : selectedSummary.unreadCount;
+        ? allSummary.unreadCount + localSportUnreadCount
+        : selectedSummary.unreadCount +
+              (_selectedCategory == 'sport' ? localSportUnreadCount : 0);
     final totalUnread =
         selectedAppUnreadCount + (_showsChat ? chatUnreadCount : 0);
     final latestChatAt = _latestChatAt();
@@ -446,7 +556,10 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
       allSummary: allSummary,
       chatUnreadCount: chatUnreadCount,
       latestChatAt: latestChatAt,
-      loadedNotifications: state.notifications,
+      loadedNotifications: [
+        ...state.notifications,
+        if (_needsSportProposalData) ..._sportProposalNotifications,
+      ],
     );
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -633,8 +746,12 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   /// first, so a fresh notification is never hidden below older chat items.
   List<Widget> _buildFeedChildren(NotificationState state) {
     final showChat = _chatRooms.isNotEmpty && _showsChat;
+    final notifications = [
+      ...state.notifications,
+      if (_needsSportProposalData) ..._sportProposalNotifications,
+    ];
     final showNotifications =
-        state.notifications.isNotEmpty && _selectedCategory != 'chat';
+        notifications.isNotEmpty && _selectedCategory != 'chat';
     if (!showChat && !showNotifications) return [_buildEmptyState()];
 
     final entries = <({DateTime? at, Widget widget})>[
@@ -645,7 +762,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
             widget: _buildChatRoomCard(room),
           ),
       if (showNotifications)
-        for (final notification in state.notifications)
+        for (final notification in notifications)
           (
             at: notification.createdAt,
             widget: _buildNotificationCard(notification),

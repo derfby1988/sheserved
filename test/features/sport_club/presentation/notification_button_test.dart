@@ -136,6 +136,44 @@ void main() {
     expect(fitnessGroupChatTarget({'roomId': 'direct-room-id'}), isNull);
   });
 
+  test('opens the admin review page from a sport proposal card', () {
+    final notification = AppNotification(
+      id: 'sport_proposal_sport-1',
+      professionId: '',
+      recipientId: 'admin-1',
+      category: 'sport',
+      eventType: 'sport.proposal_submitted',
+      title: 'มีคำขอเพิ่มประเภทกีฬาใหม่',
+      createdAt: DateTime.utc(2026, 9, 22),
+      payload: const {
+        'route': '/community/sport-club/sport/review',
+        'sportId': 'sport-1',
+      },
+    );
+
+    expect(
+      notificationPayloadRoute(notification),
+      '/community/sport-club/sport/review',
+    );
+    // การ์ดนี้ไม่ใช่แชทก๊วน จึงไม่ควรได้อาร์กิวเมนต์เปิดแชท
+    expect(groupChatNotificationRouteArguments(notification), isNull);
+  });
+
+  test('ignores payload routes that are not in-app routes', () {
+    final notification = AppNotification(
+      id: 'notification-3',
+      professionId: '',
+      recipientId: 'member-1',
+      category: 'system',
+      eventType: 'system.notice',
+      title: 'แจ้งเตือน',
+      createdAt: DateTime.utc(2026, 9, 22),
+      payload: const {'route': 'https://example.com/notifications'},
+    );
+
+    expect(notificationPayloadRoute(notification), isNull);
+  });
+
   testWidgets(
     'refreshes its unread count on init and app resume without page reload',
     (tester) async {

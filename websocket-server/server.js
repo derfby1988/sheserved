@@ -336,8 +336,13 @@ app.use('/api', strictRouteGuard());
 // ── Phase 13.3 P1-3: route extraction — inline handlers moved to routes/ ──
 app.use('/api/notifications', verifyToken(pool), notificationsRoutes({ supabaseForSync, socketService }));
 app.use('/api/profession-change', verifyToken(pool), professionChangeRoute({ supabaseForSync, socketService }));
-// Sport-type proposals: admin notification + realtime broadcast (mirrors profession-change).
-app.use('/api/sports/propose', verifyToken(pool), sportsRoutes({ supabaseForSync, socketService }));
+// Sport-type proposals: the DB trigger persists notifications; the route may
+// additionally broadcast those same rows through websocket-server.
+app.use(
+  '/api/sports/propose',
+  verifyToken(pool),
+  sportsRoutes({ supabaseForSync, socketService }),
+);
 app.use('/api', chatApiRoutes({ pool }));
 app.use('/api/emergency-health', emergencyHealthRoutes({ verifyTokenMw: verifyToken(pool) }));
 app.use('/api/professions', professionsRoutes({ pool }));
