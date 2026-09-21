@@ -17,6 +17,7 @@ export 'tlz_bottom_navigation_bar.dart';
 
 // OTP Verification
 export 'otp_verification_dialog.dart';
+export 'neumorphic/neumorphic.dart';
 
 // Bookmark Widgets
 export 'ribbon_bookmark.dart';

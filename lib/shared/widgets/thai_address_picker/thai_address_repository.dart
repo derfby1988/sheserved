@@ -39,6 +39,57 @@ class ThaiAddressRepository {
 
   ThaiAddressRepository(this._client);
 
+  /// ดึงรายชื่อจังหวัดทั้งหมดสำหรับตัวกรองที่อยู่
+  Future<List<String>> getAllProvinces() async {
+    const pageSize = 1000;
+    final provinces = <String>{};
+    var offset = 0;
+
+    while (true) {
+      final response = await _client
+          .from('thai_addresses')
+          .select('province')
+          .order('province')
+          .range(offset, offset + pageSize - 1);
+      final rows = response as List;
+      provinces.addAll(
+        rows
+            .map((r) => r['province']?.toString() ?? '')
+            .where((province) => province.isNotEmpty),
+      );
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return provinces.toList()..sort();
+  }
+
+  /// ดึงรายชื่ออำเภอ/เขตจากจังหวัดสำหรับตัวกรองที่อยู่
+  Future<List<String>> getDistrictsByProvince(String province) async {
+    const pageSize = 1000;
+    final districts = <String>{};
+    var offset = 0;
+
+    while (true) {
+      final response = await _client
+          .from('thai_addresses')
+          .select('district')
+          .eq('province', province)
+          .order('district')
+          .range(offset, offset + pageSize - 1);
+      final rows = response as List;
+      districts.addAll(
+        rows
+            .map((r) => r['district']?.toString() ?? '')
+            .where((district) => district.isNotEmpty),
+      );
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return districts.toList()..sort();
+  }
+
   /// ค้นหาจังหวัดจากรหัสไปรษณีย์
   Future<List<String>> getProvincesByPostalCode(String postalCode) async {
     final response = await _client
@@ -55,7 +106,10 @@ class ThaiAddressRepository {
   }
 
   /// ค้นหาอำเภอ/เขต จากรหัสไปรษณีย์และจังหวัด
-  Future<List<String>> getDistrictsByPostalCodeAndProvince(String postalCode, String province) async {
+  Future<List<String>> getDistrictsByPostalCodeAndProvince(
+    String postalCode,
+    String province,
+  ) async {
     final response = await _client
         .from('thai_addresses')
         .select('district')
@@ -72,7 +126,10 @@ class ThaiAddressRepository {
 
   /// ค้นหาตำบล/แขวง จากรหัสไปรษณีย์ จังหวัด และอำเภอ
   Future<List<String>> getSubDistrictsByPostalCodeProvinceAndDistrict(
-      String postalCode, String province, String district) async {
+    String postalCode,
+    String province,
+    String district,
+  ) async {
     final response = await _client
         .from('thai_addresses')
         .select('sub_district')

@@ -2,15 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
-import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_text_styles.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/services/social_auth_service.dart';
 import '../widgets/social_login_button.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../shared/widgets/widgets.dart';
 
 /// Login Page
-/// หน้าลงชื่อเข้าใช้ - Dark Gold Theme ตามภาพตัวอย่าง
+/// หน้าลงชื่อเข้าใช้ - ออกแบบ UI และ UX ใหม่ในสไตล์ Neumorphism ตามรูปต้นฉบับ
 class LoginPage extends StatefulWidget {
   final UserRepository? userRepository;
 
@@ -39,13 +38,6 @@ class _LoginPageState extends State<LoginPage>
   // Services (nullable - may not be initialized if Supabase not configured)
   UserRepository? _userRepository;
   SocialAuthService? _socialAuthService;
-
-  // Dark Gold Theme Colors
-  static const Color _bgDark = Color(0xFF1A1200);
-  static const Color _bgGold = Color(0xFF8B6000);
-  static const Color _goldAccent = Color(0xFFF5A623);
-  static const Color _goldBright = Color(0xFFFFBF00);
-  static const Color _cardBg = Color(0xFFFFFDF5);
 
   @override
   void initState() {
@@ -76,7 +68,7 @@ class _LoginPageState extends State<LoginPage>
     );
 
     _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero).animate(
+        Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _animationController,
             curve: Curves.easeOutCubic,
@@ -98,348 +90,279 @@ class _LoginPageState extends State<LoginPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       body: Stack(
         children: [
-          // Background Gradient - Dark Gold
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFD4900A), Color(0xFF8B6000), _bgDark],
-                stops: [0.0, 0.5, 1.0],
+          // 1. วงกลม Neumorphic ลอยเป็นพื้นหลังตาม CSS .bg-circle ในภาพต้นฉบับ
+          Positioned(
+            top: -60,
+            left: -60,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: NeumorphicTheme.baseColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: NeumorphicTheme.shadowDark.withValues(alpha: 0.55),
+                    offset: const Offset(15, 15),
+                    blurRadius: 30,
+                  ),
+                  BoxShadow(
+                    color: NeumorphicTheme.shadowLight,
+                    offset: const Offset(-15, -15),
+                    blurRadius: 30,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -70,
+            right: -70,
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: NeumorphicTheme.baseColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: NeumorphicTheme.shadowDark.withValues(alpha: 0.55),
+                    offset: const Offset(15, 15),
+                    blurRadius: 30,
+                  ),
+                  BoxShadow(
+                    color: NeumorphicTheme.shadowLight,
+                    offset: const Offset(-15, -15),
+                    blurRadius: 30,
+                  ),
+                ],
               ),
             ),
           ),
 
-          // Subtle grid/glow overlay
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: MediaQuery.of(context).size.height * 0.55,
-            child: CustomPaint(painter: _GlowGridPainter()),
-          ),
-
-          // Content
+          // 2. เนื้อหาหลัก - การ์ด Neumorphic Form Panel
           SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        children: [
-                          // Top Section - Logo & Welcome
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: NeumorphicContainer(
+                        color: NeumorphicTheme.baseColor,
+                        // ค่าตาม CSS .form-panel { border-radius: 35px; padding: 40px 38px; }
+                        borderRadius: 35.0,
+                        depth: 20.0,
+                        blur: 40.0,
+                        padding: const EdgeInsets.fromLTRB(30, 36, 30, 30),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // ไอคอนแม่กุญแจสีทองในวงกลมนูน Neumorphic ด้านบนตามภาพต้นฉบับ
+                              const Center(
+                                child: NeumorphicLockBadge(
+                                  size: 82,
+                                  iconSize: 38,
+                                ),
                               ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // App Logo / Icon
-                                  Container(
-                                    width: 90,
-                                    height: 90,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: const RadialGradient(
-                                        colors: [
-                                          Color(0xFFFFD700),
-                                          Color(0xFFB8860B),
-                                        ],
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: _goldAccent.withOpacity(0.5),
-                                          blurRadius: 24,
-                                          spreadRadius: 4,
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Icon(
-                                      Icons.local_hospital_rounded,
-                                      color: Colors.white,
-                                      size: 46,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 20),
+                              const SizedBox(height: 20),
 
-                                  // Welcome Text
-                                  Text(
-                                    'ยินดีต้อนรับ!',
-                                    style: AppTextStyles.heading2.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 28,
-                                      letterSpacing: 0.5,
+                              // หัวข้อ "ยินดีต้อนรับ!"
+                              const Text(
+                                'ยินดีต้อนรับ!',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w800,
+                                  color: NeumorphicTheme.textPrimary,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+
+                              // คำอธิบายรอง "เข้าสู่ระบบเพื่อเริ่มต้นใช้งาน"
+                              const Text(
+                                'เข้าสู่ระบบเพื่อเริ่มต้นใช้งาน',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: NeumorphicTheme.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 26),
+
+                              // ฟิลด์ชื่อผู้ใช้ / เบอร์โทรศัพท์ (Neumorphic Input)
+                              _buildFieldLabel('ชื่อผู้ใช้ / เบอร์โทรศัพท์'),
+                              const SizedBox(height: 8),
+                              NeumorphicInputField(
+                                controller: _usernameController,
+                                hintText: 'กรอกชื่อผู้ใช้หรือเบอร์โทร',
+                                prefixIcon: Icons.person_outline_rounded,
+                                keyboardType: TextInputType.text,
+                                textInputAction: TextInputAction.next,
+                                onSubmitted: (_) {
+                                  FocusScope.of(context).nextFocus();
+                                },
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ฟิลด์รหัสผ่าน (Neumorphic Input)
+                              _buildFieldLabel('รหัสผ่าน'),
+                              const SizedBox(height: 8),
+                              NeumorphicInputField(
+                                controller: _passwordController,
+                                hintText: '••••••••',
+                                prefixIcon: Icons.lock_outline_rounded,
+                                obscureText: _obscurePassword,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) {
+                                  if (_isLoading || _isLoginCooldownActive) return;
+                                  _handleLogin();
+                                },
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: NeumorphicTheme.textSecondary,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 28),
+
+                              // ปุ่มเข้าสู่ระบบ (Vibrant Gradient Pill Button แบบ Neumorphic)
+                              NeumorphicVerifyButton(
+                                key: const Key('login_submit'),
+                                text: _isLoginCooldownActive
+                                    ? 'รอ $_loginCooldownRemainingSeconds วิ'
+                                    : 'เข้าสู่ระบบ',
+                                isLoading: _isLoading,
+                                isEnabled: !_isLoading && !_isLoginCooldownActive,
+                                onPressed: _handleLogin,
+                              ),
+                              const SizedBox(height: 24),
+
+                              // เส้นคั่น "หรือเข้าสู่ระบบด้วย"
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      height: 1,
+                                      color: const Color(0xFFCBD5E1),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'เข้าสู่ระบบเพื่อเริ่มต้นใช้งาน',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: Colors.white.withOpacity(0.75),
-                                      fontSize: 14,
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 12),
+                                    child: Text(
+                                      'หรือเข้าสู่ระบบด้วย',
+                                      style: TextStyle(
+                                        color: NeumorphicTheme.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      height: 1,
+                                      color: const Color(0xFFCBD5E1),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
+                              const SizedBox(height: 18),
 
-                          // Bottom Card - Login Form
-                          FadeTransition(
-                            opacity: _fadeAnimation,
-                            child: SlideTransition(
-                              position: _slideAnimation,
-                              child: Container(
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: _cardBg,
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(36),
-                                    topRight: Radius.circular(36),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.3),
-                                      blurRadius: 24,
-                                      offset: const Offset(0, -4),
+                              // ปุ่ม Social Login สไตล์ Neumorphic
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    SocialProvider.google,
+                                    onPressed: () => _handleSocialLogin(
+                                      SocialProvider.google,
                                     ),
-                                  ],
-                                ),
-                                padding: const EdgeInsets.fromLTRB(
-                                  24,
-                                  32,
-                                  24,
-                                  24,
-                                ),
-                                child: Form(
-                                  key: _formKey,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Username/Phone Field
-                                      _buildFieldLabel(
-                                        'ชื่อผู้ใช้ / เบอร์โทรศัพท์',
-                                      ),
-                                      const SizedBox(height: 6),
-                                      _buildInputField(
-                                        controller: _usernameController,
-                                        hintText: 'กรอกชื่อผู้ใช้หรือเบอร์โทร',
-                                        prefixIcon:
-                                            Icons.person_outline_rounded,
-                                        keyboardType: TextInputType.text,
-                                        textInputAction: TextInputAction.next,
-                                        onSubmitted: (_) {
-                                          FocusScope.of(context).nextFocus();
-                                        },
-                                      ),
-                                      const SizedBox(height: 16),
-
-                                      // Password Field
-                                      _buildFieldLabel('รหัสผ่าน'),
-                                      const SizedBox(height: 6),
-                                      _buildInputField(
-                                        controller: _passwordController,
-                                        hintText: '••••••••',
-                                        prefixIcon: Icons.lock_outline_rounded,
-                                        obscureText: _obscurePassword,
-                                        textInputAction: TextInputAction.done,
-                                        onSubmitted: (_) {
-                                          if (_isLoading || _isLoginCooldownActive) return;
-                                          _handleLogin();
-                                        },
-                                        suffixIcon: IconButton(
-                                          onPressed: () {
-                                            setState(() {
-                                              _obscurePassword =
-                                                  !_obscurePassword;
-                                            });
-                                          },
-                                          icon: Icon(
-                                            _obscurePassword
-                                                ? Icons.visibility_outlined
-                                                : Icons.visibility_off_outlined,
-                                            color: Colors.grey[500],
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 28),
-
-                                      // Login Button - Gold
-                                      SizedBox(
-                                        height: 54,
-                                        child: ElevatedButton(
-                                          key: const Key('login_submit'),
-                                          onPressed: _isLoading || _isLoginCooldownActive
-                                              ? null
-                                              : _handleLogin,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: _goldBright,
-                                            foregroundColor: Colors.black,
-                                            disabledBackgroundColor:
-                                                Colors.grey[300],
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(28),
-                                            ),
-                                            elevation: 4,
-                                            shadowColor: _goldAccent
-                                                .withOpacity(0.5),
-                                          ),
-                                          child: _isLoading
-                                              ? const SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<
-                                                          Color
-                                                        >(Colors.black54),
-                                                  ),
-                                                )
-                                              : Text(
-                                                  _isLoginCooldownActive
-                                                      ? 'รอ $_loginCooldownRemainingSeconds วิ'
-                                                      : 'เข้าสู่ระบบ',
-                                                  style: AppTextStyles.button
-                                                      .copyWith(
-                                                        color: Colors.black,
-                                                        fontSize: 17,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 20),
-
-                                      // Divider
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Divider(
-                                              color: Colors.grey[300],
-                                              thickness: 1,
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            child: Text(
-                                              'หรือเข้าสู่ระบบด้วย',
-                                              style: AppTextStyles.bodySmall
-                                                  .copyWith(
-                                                    color: Colors.grey[500],
-                                                    fontSize: 12,
-                                                  ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Divider(
-                                              color: Colors.grey[300],
-                                              thickness: 1,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-
-                                      // Social Login Icons
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          _buildSocialButton(
-                                            SocialProvider.google,
-                                            onPressed: () => _handleSocialLogin(
-                                              SocialProvider.google,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          _buildSocialButton(
-                                            SocialProvider.facebook,
-                                            onPressed: () => _handleSocialLogin(
-                                              SocialProvider.facebook,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          _buildSocialButton(
-                                            SocialProvider.apple,
-                                            onPressed: () => _handleSocialLogin(
-                                              SocialProvider.apple,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          _buildSocialButton(
-                                            SocialProvider.line,
-                                            onPressed: () => _handleSocialLogin(
-                                              SocialProvider.line,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 20),
-
-                                      // Register Link
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            'ยังไม่มีบัญชี? ',
-                                            style: AppTextStyles.bodyMedium
-                                                .copyWith(
-                                                  color: Colors.grey[600],
-                                                  fontSize: 14,
-                                                ),
-                                          ),
-                                          GestureDetector(
-                                            onTap: _handleSignUp,
-                                            child: Text(
-                                              'ลงทะเบียน',
-                                              style: AppTextStyles.bodyMedium
-                                                  .copyWith(
-                                                    color: _goldAccent,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                  ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                    ],
                                   ),
-                                ),
+                                  const SizedBox(width: 14),
+                                  _buildSocialButton(
+                                    SocialProvider.facebook,
+                                    onPressed: () => _handleSocialLogin(
+                                      SocialProvider.facebook,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  _buildSocialButton(
+                                    SocialProvider.apple,
+                                    onPressed: () => _handleSocialLogin(
+                                      SocialProvider.apple,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  _buildSocialButton(
+                                    SocialProvider.line,
+                                    onPressed: () => _handleSocialLogin(
+                                      SocialProvider.line,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              const SizedBox(height: 24),
+
+                              // ลิงก์ลงทะเบียน (สไตล์เดียวกับ Resend OTP ในภาพ)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text(
+                                    'ยังไม่มีบัญชี? ',
+                                    style: TextStyle(
+                                      color: NeumorphicTheme.textSecondary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: _handleSignUp,
+                                    child: const Text(
+                                      'ลงทะเบียน',
+                                      style: TextStyle(
+                                        color: Color(0xFF0284C7),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
 
-          // Back Button
+          // ปุ่มย้อนกลับ (Neumorphic Circle Back Button)
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
@@ -450,11 +373,20 @@ class _LoginPageState extends State<LoginPage>
                   }
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: NeumorphicTheme.baseColor,
+                    shape: BoxShape.circle,
+                    boxShadow: NeumorphicTheme.smallShadows(
+                      distance: 4,
+                      blur: 8,
+                    ),
+                  ),
                   child: const Icon(
                     Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 22,
+                    color: NeumorphicTheme.textPrimary,
+                    size: 18,
                   ),
                 ),
               ),
@@ -468,111 +400,53 @@ class _LoginPageState extends State<LoginPage>
   Widget _buildFieldLabel(String label) {
     return Text(
       label,
-      style: AppTextStyles.bodySmall.copyWith(
-        color: Colors.grey[700],
+      style: const TextStyle(
+        color: NeumorphicTheme.textPrimary,
         fontWeight: FontWeight.w600,
         fontSize: 13,
       ),
     );
   }
 
-  /// Build custom input field - White bg, subtle border, rounded
-  Widget _buildInputField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData prefixIcon,
-    TextInputType? keyboardType,
-    TextInputAction? textInputAction,
-    ValueChanged<String>? onSubmitted,
-    bool obscureText = false,
-    Widget? suffixIcon,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.grey[200]!, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        textInputAction: textInputAction,
-        onSubmitted: onSubmitted,
-        obscureText: obscureText,
-        style: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.textPrimary,
-          fontSize: 15,
-        ),
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: AppTextStyles.bodyMedium.copyWith(
-            color: Colors.grey[400],
-            fontSize: 14,
-          ),
-          prefixIcon: Icon(prefixIcon, color: Colors.grey[500], size: 22),
-          suffixIcon: suffixIcon,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Build social login button
+  /// สร้างปุ่ม Social Login วงกลมนูนสไตล์ Neumorphic
   Widget _buildSocialButton(
     SocialProvider provider, {
     required VoidCallback onPressed,
   }) {
     Widget iconWidget;
-    Color backgroundColor;
-    Color? borderColor;
+    Color iconBgColor;
 
     switch (provider) {
       case SocialProvider.google:
-        backgroundColor = Colors.white;
-        borderColor = Colors.grey[200];
+        iconBgColor = Colors.white;
         iconWidget = _buildGoogleIcon();
         break;
       case SocialProvider.facebook:
-        backgroundColor = const Color(0xFF1877F2);
-        borderColor = null;
-        iconWidget = const Icon(Icons.facebook, color: Colors.white, size: 26);
+        iconBgColor = const Color(0xFF1877F2);
+        iconWidget = const Icon(Icons.facebook, color: Colors.white, size: 24);
         break;
       case SocialProvider.apple:
-        backgroundColor = Colors.black;
-        borderColor = null;
-        iconWidget = const Icon(Icons.apple, color: Colors.white, size: 26);
+        iconBgColor = Colors.black;
+        iconWidget = const Icon(Icons.apple, color: Colors.white, size: 24);
         break;
       case SocialProvider.line:
-        backgroundColor = const Color(0xFF00C300);
-        borderColor = null;
+        iconBgColor = const Color(0xFF00C300);
         iconWidget = const Text(
           'L',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
         );
         break;
       case SocialProvider.tiktok:
-        backgroundColor = Colors.black;
-        borderColor = null;
+        iconBgColor = Colors.black;
         iconWidget = const Text(
           'T',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
         );
@@ -581,48 +455,47 @@ class _LoginPageState extends State<LoginPage>
 
     final isLoadingThis = _isLoading && _loadingProvider == provider;
 
-    return InkWell(
+    return GestureDetector(
       onTap: _isLoading ? null : onPressed,
-      borderRadius: BorderRadius.circular(26),
       child: Container(
-        width: 52,
-        height: 52,
+        width: 50,
+        height: 50,
         decoration: BoxDecoration(
-          color: backgroundColor,
+          color: NeumorphicTheme.baseColor,
           shape: BoxShape.circle,
-          border: borderColor != null
-              ? Border.all(color: borderColor, width: 1.5)
-              : null,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.10),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+          boxShadow: NeumorphicTheme.smallShadows(
+            distance: 4,
+            blur: 8,
+          ),
         ),
         child: Center(
-          child: isLoadingThis
-              ? SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      provider == SocialProvider.google
-                          ? _goldAccent
-                          : Colors.white,
-                    ),
-                  ),
-                )
-              : iconWidget,
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: isLoadingThis
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : iconWidget,
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildGoogleIcon() {
-    return CustomPaint(size: const Size(26, 26), painter: _GoogleIconPainter());
+    return CustomPaint(size: const Size(22, 22), painter: _GoogleIconPainter());
   }
 
   bool get _isLoginCooldownActive =>
@@ -904,52 +777,10 @@ class _LoginPageState extends State<LoginPage>
       SnackBar(
         content: Text(message),
         duration: const Duration(seconds: 2),
-        backgroundColor: _bgGold,
+        backgroundColor: const Color(0xFF1E293B),
       ),
     );
   }
-}
-
-/// Subtle glow/grid background painter
-class _GlowGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFFFBF00).withOpacity(0.04)
-      ..strokeWidth = 0.8
-      ..style = PaintingStyle.stroke;
-
-    const spacing = 32.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-
-    // Center glow
-    final glowPaint = Paint()
-      ..shader =
-          RadialGradient(
-            colors: [
-              const Color(0xFFFFBF00).withOpacity(0.15),
-              Colors.transparent,
-            ],
-          ).createShader(
-            Rect.fromCircle(
-              center: Offset(size.width / 2, size.height * 0.4),
-              radius: size.width * 0.6,
-            ),
-          );
-    canvas.drawCircle(
-      Offset(size.width / 2, size.height * 0.4),
-      size.width * 0.6,
-      glowPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Custom Painter for Google "G" icon with colors

@@ -4,7 +4,7 @@
 > **อัปเดต:** 2026-09-19 — ปรับให้เข้ากับ Phase 13 (Trusted Backend Identity Bridge Rollout) ใน `docs/plans/Match_Sport_PLAN.md`
 > **อัปเดต:** 2026-09-20 — เพิ่ม mobile-safety guardrails, UI layout invariants และ release gates หลัง dependency map ในส่วน 3
 > **อัปเดต:** 2026-09-21 — re-baseline กับ Phase 13.3 ที่มี implementation บางส่วนแล้ว และเพิ่ม socket token lifecycle, CSP external origins, passkeys, domain/cache delivery checks
-> **สถานะ:** 📋 แผนเพื่อการตัดสินใจ — ยังไม่ลงมือ implement ส่วน Flutter Web จนกว่าจะได้รับอนุมัติ
+> **สถานะ:** � **W0/W1 implement + verify แล้ว (2026-09-21)** — web build/serve ผ่าน, analyzer diff 0, Android/iOS build ผ่าน (หลักฐานท้าย W1); �📋 W2–W5 ยังเป็นแผนเพื่อการตัดสินใจ ต้องปิด checklist ก่อนลงมือ
 > **ขอบเขต:** ทำให้ `flutter run -d chrome` / `flutter build web` ทำงานได้โดยไม่ขัดกับ `docs/infrastructure/`, `docs/secure/` และ Phase 13 contract
 > **กติกา rollout:** ทุก phase ต้องเป็น release ที่ deploy ได้อิสระตามกฎ Q1-B (ปล่อยค้างได้โดยระบบไม่แย่ลง), มี tests + rollback และห้ามเปลี่ยน `AuthService`/`ServiceLocator` ไปใช้ `Supabase.instance.client.auth.currentUser` (ตาม `.agent/workflows/auth_data_guidelines.md`)
 
