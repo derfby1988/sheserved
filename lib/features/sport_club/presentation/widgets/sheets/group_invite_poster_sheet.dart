@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:gal/gal.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/core/utils/file_ops.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
 
@@ -155,6 +157,34 @@ class _GroupInvitePosterSheetState extends State<GroupInvitePosterSheet> {
       }
 
       final uint8List = byteData.buffer.asUint8List();
+
+      if (kIsWeb) {
+        // Gal/Share.shareXFiles ไม่รองรับ web — บันทึกเป็น browser download แทน
+        await saveUserDocument(
+          uint8List,
+          'sheserved_invite_${DateTime.now().millisecondsSinceEpoch}.png',
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.download_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('ดาวน์โหลดโปสเตอร์เชิญชวนสำเร็จแล้ว!'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+          ),
+        );
+        return;
+      }
 
       bool hasAccess = await Gal.hasAccess(toAlbum: true);
       if (!hasAccess) {

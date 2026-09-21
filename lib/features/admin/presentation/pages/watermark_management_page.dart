@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sheserved/config/app_config.dart';
@@ -118,8 +117,8 @@ class _WatermarkManagementPageState extends State<WatermarkManagementPage> {
   Future<void> _pickAndUploadImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
-      // Validate PNG
-      if (!image.path.toLowerCase().endsWith('.png')) {
+      // Validate PNG — ใช้ name เพราะบน web path เป็น blob URL ไม่มีนามสกุล
+      if (!image.name.toLowerCase().endsWith('.png')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('กรุณาอัปโหลดไฟล์ PNG เท่านั้น เพื่อความโปร่งใสของลายน้ำ'),
@@ -130,7 +129,7 @@ class _WatermarkManagementPageState extends State<WatermarkManagementPage> {
       }
       
       setState(() => _isSaving = true);
-      final url = await _repository.uploadImage(File(image.path));
+      final url = await _repository.uploadImage(image);
       setState(() => _isSaving = false);
       
       if (url != null) {

@@ -1,7 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:sheserved/core/network/authenticated_http_client.dart';
+import 'package:sheserved/core/utils/file_ops.dart';
 import 'package:sheserved/services/service_locator.dart';
 
 class WatermarkConfig {
@@ -105,7 +106,7 @@ class WatermarkRepository {
     }
   }
 
-  Future<String?> uploadImage(File imageFile) async {
+  Future<String?> uploadImage(XFile imageFile) async {
     try {
       final userId = ServiceLocator.instance.currentUser?.id;
       final streamedResponse = await AuthenticatedHttpClient.instance
@@ -120,10 +121,7 @@ class WatermarkRepository {
               request.headers['x-user-id'] = userId;
             }
             request.files.add(
-              await http.MultipartFile.fromPath(
-                'watermark_image',
-                imageFile.path,
-              ),
+              await multipartFileFromXFile('watermark_image', imageFile),
             );
             return request;
           });

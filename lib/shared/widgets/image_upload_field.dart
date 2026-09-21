@@ -1,13 +1,10 @@
-import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../core/utils/file_ops.dart';
 
 /// Widget สำหรับเลือก/บีบอัด/อัปโหลดและแสดงรูปภาพ
 /// รองรับทั้ง local preview ก่อนอัปโหลด และ cached URL หลังอัปโหลด
@@ -58,7 +55,7 @@ class ImageUploadField extends StatefulWidget {
 
 class _ImageUploadFieldState extends State<ImageUploadField> {
   final _picker = ImagePicker();
-  File? _localFile;
+  XFile? _localFile;
   String? _uploadedUrl;
   bool _isUploading = false;
   double _uploadProgress = 0;
@@ -81,13 +78,17 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
       if (picked == null) return;
 
       setState(() {
-        _localFile = File(picked.path);
+        _localFile = picked;
         _isUploading = true;
         _uploadProgress = 0.1;
       });
 
-      // ── บีบอัดรูป ──
-      final compressedBytes = await _compress(File(picked.path));
+      // ── บีบอัดรูป (web: คืน bytes ต้นฉบับ — ไม่มี compressor) ──
+      final compressedBytes = await compressImageToBytes(
+        picked,
+        quality: widget.quality,
+        maxDimension: min(widget.maxDimension, 1080),
+      );
       setState(() => _uploadProgress = 0.4);
 
       // ── สร้าง unique path ──
@@ -131,27 +132,7 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
     }
   }
 
-  /// บีบอัดรูปโดยใช้ flutter_image_compress
-  Future<Uint8List> _compress(File file) async {
-    final tmpDir = await getTemporaryDirectory();
-    final outPath = '${tmpDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-    final result = await FlutterImageCompress.compressAndGetFile(
-      file.absolute.path,
-      outPath,
-      quality: widget.quality,
-      minWidth: min(widget.maxDimension, 1080),
-      minHeight: min(widget.maxDimension, 1080),
-      format: CompressFormat.jpeg,
-      keepExif: false,
-    );
-
-    if (result == null) {
-      // fallback: ใช้ไฟล์ต้นฉบับ
-      return await file.readAsBytes();
-    }
-    return await File(result.path).readAsBytes();
-  }
 
   void _removeImage() {
     setState(() {
@@ -319,8 +300,8 @@ class _ImageUploadFieldState extends State<ImageUploadField> {
         children: [
           // ── ภาพ (local file หรือ cached network) ──
           if (_localFile != null)
-            Image.file(
-              _localFile!,
+            Image(
+              image: localImageProvider(_localFile!.path),
               fit: BoxFit.contain,
               width: double.infinity,
               gaplessPlayback: true,

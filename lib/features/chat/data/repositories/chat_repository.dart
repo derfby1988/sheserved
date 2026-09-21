@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/utils/file_ops.dart';
 import '../models/chat_models.dart';
 import '../../../../services/websocket_service.dart';
 
@@ -347,13 +349,26 @@ class ChatRepository {
   }
 
   /// Upload a file to Supabase Storage and return a signed URL (BOLA: time-limited access)
-  Future<String?> uploadFile(File file, String path) async {
+  /// Accepts [XFile] — on web `path` is a blob URL, so bytes are uploaded instead.
+  Future<String?> uploadFile(XFile file, String path) async {
     try {
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+          '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
       final fullPath = '$path/$fileName';
 
-      await _supabase.storage.from('chat_attachments').upload(fullPath, file);
+      if (kIsWeb) {
+        await _supabase.storage.from('chat_attachments').uploadBinary(
+              fullPath,
+              await file.readAsBytes(),
+              fileOptions: FileOptions(
+                contentType: contentTypeFor(file.name),
+              ),
+            );
+      } else {
+        await _supabase.storage
+            .from('chat_attachments')
+            .upload(fullPath, File(file.path));
+      }
 
       final signedUrl = await _supabase.storage
           .from('chat_attachments')

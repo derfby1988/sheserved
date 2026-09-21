@@ -1,9 +1,9 @@
-import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/services/platform_service.dart';
 
 /// วิดเจ็ต Navigation Bar ส่วนกลางที่ออกแบบมาให้ลอยเด่น (Floating) อยู่เหนือเนื้อหาด้วยสไตล์ Glassmorphism
 /// 
@@ -104,7 +104,7 @@ class _TlzBottomNavigationBarState extends State<TlzBottomNavigationBar> {
     
     // ดึงค่าพื้นที่ปลอดภัยด้านล่าง (เช่น แถบ Home ของ iOS)
     // ปรับให้ iOS สูง 14px คงที่ ส่วน Android ยกขึ้น 26px (คูณ scale) โดยไม่สนว่ามี gesture bar หรือไม
-    final bottomMargin = Platform.isAndroid ? 26 * s : 14.0;
+    final bottomMargin = PlatformService.isAndroid ? 26 * s : 14.0;
 
     return AnimatedSlide(
       duration: const Duration(milliseconds: 300),

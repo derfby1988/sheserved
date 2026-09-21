@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:convert';
 import '../../../../features/consultation/presentation/pages/my_consultations_page.dart';
 import '../../../../features/consultation/presentation/pages/provider_history_page.dart';
@@ -7,8 +6,7 @@ import '../../../../features/consultation/presentation/pages/health_program_requ
     show dashboardRouteObserver;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../../../core/utils/file_ops.dart';
 import 'package:flutter/rendering.dart';
 import 'package:thai_buddhist_date/thai_buddhist_date.dart';
 import 'package:thai_buddhist_date_pickers/thai_buddhist_date_pickers.dart';
@@ -76,7 +74,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   bool _thaiMhungEnabled = true; // ความสมัครใจไทยมุง
   int _alertRadius = 500; // รัศมีการแจ้งเตือน (เมตร)
   int _yieldWayRadius = 1000; // รัศมีการให้ทาง (เมตร)
-  File? _tempProfileImage;
+  XFile? _tempProfileImage;
   bool _isUploadingAvatar = false;
   ProfileTab _selectedTab = ProfileTab.profile;
   bool _isNavBarVisible = true; // ควบคุมการแสดงผล Navigation Bar ตอนเลื่อนจอ
@@ -3153,20 +3151,12 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     setState(() => _isUploadingAvatar = true);
 
     try {
-      // 1. บีบอัดไฟล์ (Compress)
-      final tempDir = await getTemporaryDirectory();
-      final targetPath =
-          '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg';
-
-      final compressedFile = await FlutterImageCompress.compressAndGetFile(
-        pickedFile.path,
-        targetPath,
+      // 1. บีบอัดไฟล์ (Compress) — บน web compressImageToBytes คืน bytes ต้นฉบับ
+      final imageBytes = await compressImageToBytes(
+        pickedFile,
         quality: 70, // ลดคุณภาพลงเหลือ 70%
-        minWidth: 800, // จำกัดความกว้างสูงสุด
-        minHeight: 800, // จำกัดความสูงสูงสุด
+        maxDimension: 800, // จำกัดความกว้าง/สูงสูงสุด
       );
-
-      if (compressedFile == null) throw Exception('บีบอัดภาพไม่สำเร็จ');
 
       // 2. อัปโหลดลง Storage
       final userId = _user!.id;
@@ -3174,9 +3164,14 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           'profiles/$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final supabase = Supabase.instance.client;
 
-      await supabase.storage
-          .from('avatars')
-          .upload(fileName, File(compressedFile.path));
+      // upload(File) → uploadBinary: storage_client อ่าน bytes อยู่แล้ว (W0.4)
+      await supabase.storage.from('avatars').uploadBinary(
+            fileName,
+            imageBytes,
+            fileOptions: FileOptions(
+              contentType: contentTypeFor(fileName),
+            ),
+          );
       final imageUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
 
       // 3. บันทึกลงตารางจริง (users table)

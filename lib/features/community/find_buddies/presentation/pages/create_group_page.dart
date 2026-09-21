@@ -50,8 +50,11 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   bool _allowPop = false;
   bool _sportsLoadFailed = false;
   List<String> _recentGroupNames = [];
+  bool _showMembershipSection = true;
   bool _showImageSection = false;
   bool _showSettingsSection = false;
+  bool _showSkillSection = false;
+  bool _showFieldSection = false;
   bool _showCostsSection = false;
   // Phase 9.1: draft cost standards, written to DB after the group exists.
   List<Map<String, dynamic>> _groupFeeDrafts = [];
@@ -68,6 +71,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   bool _isSearchingPlace = false;
   List<Map<String, dynamic>> _placeSearchResults = [];
   String? _placeSearchMessage;
+  int _placeSearchRequestId = 0;
 
   String? _customFieldLayout;
 
@@ -352,14 +356,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       await _saveRecentName(_nameCtrl.text.trim());
       if (!mounted) return;
       // กลับไปหน้าก่อนหน้า พร้อมส่ง groupId + sportId เพื่อให้หน้า SportClub เลือกแถบกีฬาและ scroll ไปการ์ดใหม่
-      Navigator.pop(context, {
-        'groupId': groupId,
-        'sportId': _sportId,
-        'positionsConfigured': _positionDrafts.isNotEmpty,
-        'positionFeatureEnabled':
-            _fieldLayout == 'single' || _fieldLayout == 'double',
-        'ownerAutoJoin': _ownerAutoJoin,
-      });
+      Navigator.pop(context, {'groupId': groupId, 'sportId': _sportId});
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -543,213 +540,340 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                       child: Form(
                         key: _formKey,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                        child: Column(
                           children: [
-                            _buildModernSection(
-                              title: 'ข้อมูลพื้นฐาน',
-                              icon: Icons.info_outline,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  24,
+                                  20,
+                                  24,
+                                ),
                                 children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: _isSportsLoading
-                                            ? _buildLoadingField('กีฬา')
-                                            : _sportsLoadFailed
-                                            ? _buildSportsErrorField()
-                                            : _buildModernSportDropdown(),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildModernTextField(
-                                    controller: _nameCtrl,
-                                    label: 'ชื่อก๊วน',
-                                    hint: 'ระบุชื่อที่สื่อถึงกิจกรรม',
-                                    maxLength: 60,
-                                    validator: (v) =>
-                                        (v == null || v.trim().isEmpty)
-                                        ? 'กรุณาระบุชื่อก๊วน'
-                                        : null,
-                                  ),
-                                  if (_recentGroupNames.isNotEmpty) ...[
-                                    const SizedBox(height: 12),
-                                    const Text(
-                                      'ใช้ชื่อที่เคยใช้ล่าสุด:',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildRecentNames(),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            _buildCollapsibleSection(
-                              title: 'รูปภาพ',
-                              icon: Icons.image_outlined,
-                              expanded: _showImageSection,
-                              onToggle: () => setState(
-                                () => _showImageSection = !_showImageSection,
-                              ),
-                              child: Column(
-                                children: [
-                                  ImageUploadField(
-                                    label: 'ภาพปกก๊วน',
-                                    bucket: 'fitness-group-covers',
-                                    pathPrefix: 'covers/',
-                                    initialUrl: _coverImageUrl,
-                                    onUploaded: (url) =>
-                                        setState(() => _coverImageUrl = url),
-                                    onRemoved: () =>
-                                        setState(() => _coverImageUrl = null),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  ImageUploadField(
-                                    label: 'ภาพถ่ายสนาม',
-                                    bucket: 'fitness-group-venues',
-                                    pathPrefix: 'venues/',
-                                    initialUrl: _venuePhotoUrl,
-                                    onUploaded: (url) =>
-                                        setState(() => _venuePhotoUrl = url),
-                                    onRemoved: () =>
-                                        setState(() => _venuePhotoUrl = null),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            _buildCollapsibleSection(
-                              title: 'เงื่อนไขเพิ่มเติม',
-                              icon: Icons.settings_outlined,
-                              expanded: _showSettingsSection,
-                              onToggle: () => setState(
-                                () => _showSettingsSection =
-                                    !_showSettingsSection,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 20),
-                                  const Text(
-                                    'เพศที่ต้องการชวนเข้าร่วม',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 14,
+                                  _buildModernSection(
+                                    title: 'ข้อมูลพื้นฐาน',
+                                    icon: Icons.info_outline,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _isSportsLoading
+                                                  ? _buildLoadingField('กีฬา')
+                                                  : _sportsLoadFailed
+                                                  ? _buildSportsErrorField()
+                                                  : _buildModernSportDropdown(),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _buildModernTextField(
+                                          controller: _nameCtrl,
+                                          label: 'ชื่อก๊วน',
+                                          hint: 'ระบุชื่อที่สื่อถึงกิจกรรม',
+                                          maxLength: 60,
+                                          validator: (v) =>
+                                              (v == null || v.trim().isEmpty)
+                                              ? 'กรุณาระบุชื่อก๊วน'
+                                              : null,
+                                        ),
+                                        if (_recentGroupNames.isNotEmpty) ...[
+                                          const SizedBox(height: 12),
+                                          const Text(
+                                            'ใช้ชื่อที่เคยใช้ล่าสุด:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          _buildRecentNames(),
+                                        ],
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  _buildModernGenderPicker(),
-                                  const SizedBox(height: 20),
-                                  _buildModernSwitch(
-                                    title: 'ก๊วนส่วนตัว',
-                                    subtitle:
-                                        'ต้องรอให้เจ้าของอนุมัติก่อนจึงจะจองได้',
-                                    value: _requiresOwnerApproval,
-                                    onChanged: (v) => setState(
-                                      () => _requiresOwnerApproval = v,
+                                  const SizedBox(height: 32),
+                                  _buildCollapsibleSection(
+                                    title: 'การเข้าร่วมก๊วน',
+                                    icon: Icons.group_outlined,
+                                    expanded: _showMembershipSection,
+                                    onToggle: () => setState(
+                                      () => _showMembershipSection =
+                                          !_showMembershipSection,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _buildModernSwitch(
+                                          title: 'ก๊วนส่วนตัว',
+                                          subtitle:
+                                              'ต้องรอให้เจ้าของอนุมัติก่อนจึงจะจองได้',
+                                          value: _requiresOwnerApproval,
+                                          onChanged: (v) => setState(
+                                            () => _requiresOwnerApproval = v,
+                                          ),
+                                        ),
+                                        const Divider(height: 24),
+                                        _buildModernSwitch(
+                                          title: 'เข้าร่วมอัตโนมัติ',
+                                          subtitle:
+                                              'เจ้าของก๊วนจะอยู่ในรายชื่อจองทุกรอบนัด',
+                                          value: _ownerAutoJoin,
+                                          onChanged: (v) => setState(
+                                            () => _ownerAutoJoin = v,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const Divider(height: 24),
-                                  _buildModernSwitch(
-                                    title: 'เข้าร่วมอัตโนมัติ',
-                                    subtitle:
-                                        'เจ้าของก๊วนจะอยู่ในรายชื่อจองทุกรอบนัด',
-                                    value: _ownerAutoJoin,
-                                    onChanged: (v) =>
-                                        setState(() => _ownerAutoJoin = v),
-                                  ),
-                                  const Divider(height: 24),
-                                  SkillLevelSelector(
-                                    availableLevels: resolveSkillLevelsForSport(
-                                      sportData: _selectedSportData,
+                                  const SizedBox(height: 32),
+                                  _buildCollapsibleSection(
+                                    title: 'รูปภาพ',
+                                    icon: Icons.image_outlined,
+                                    expanded: _showImageSection,
+                                    onToggle: () => setState(
+                                      () => _showImageSection =
+                                          !_showImageSection,
                                     ),
-                                    selectedLevels: _targetSkillLevels,
-                                    onLevelsChanged: (levels) {
-                                      setState(() {
-                                        _targetSkillLevels = levels;
-                                      });
-                                    },
-                                    noteController: _skillNoteCtrl,
+                                    child: Column(
+                                      children: [
+                                        ImageUploadField(
+                                          label: 'หน้าปกก๊วน',
+                                          bucket: 'fitness-group-covers',
+                                          pathPrefix: 'covers/',
+                                          initialUrl: _coverImageUrl,
+                                          onUploaded: (url) => setState(
+                                            () => _coverImageUrl = url,
+                                          ),
+                                          onRemoved: () => setState(
+                                            () => _coverImageUrl = null,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ImageUploadField(
+                                          label: 'ถ่ายสนาม',
+                                          bucket: 'fitness-group-venues',
+                                          pathPrefix: 'venues/',
+                                          initialUrl: _venuePhotoUrl,
+                                          onUploaded: (url) => setState(
+                                            () => _venuePhotoUrl = url,
+                                          ),
+                                          onRemoved: () => setState(
+                                            () => _venuePhotoUrl = null,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
+                                  _buildCollapsibleSection(
+                                    title: 'เงื่อนไขเพิ่มเติม',
+                                    icon: Icons.settings_outlined,
+                                    expanded: _showSettingsSection,
+                                    onToggle: () => setState(
+                                      () => _showSettingsSection =
+                                          !_showSettingsSection,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _buildModernTextField(
+                                          controller: _descCtrl,
+                                          label: 'คำอธิบาย (ไม่บังคับ)',
+                                          hint:
+                                              'รายละเอียดเพิ่มเติม เช่น ระดับฝีมือ อุปกรณ์...',
+                                          maxLines: 3,
+                                          maxLength: 500,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
+                                  _buildCollapsibleSection(
+                                    title: 'ระดับฝีมือผู้เล่น',
+                                    icon: Icons.school_outlined,
+                                    expanded: _showSkillSection,
+                                    onToggle: () => setState(
+                                      () => _showSkillSection =
+                                          !_showSkillSection,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SkillLevelSelector(
+                                          availableLevels:
+                                              resolveSkillLevelsForSport(
+                                                sportData: _selectedSportData,
+                                              ),
+                                          selectedLevels: _targetSkillLevels,
+                                          onLevelsChanged: (levels) {
+                                            setState(() {
+                                              _targetSkillLevels = levels;
+                                            });
+                                          },
+                                          noteController: _skillNoteCtrl,
+                                        ),
+                                        const Divider(height: 24),
+                                        const Text(
+                                          'เพศที่ต้องการชวนเข้าร่วม',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        _buildModernGenderPicker(),
+                                      ],
+                                    ),
                                   ),
                                   if (_fieldLayout != null) ...[
-                                    const Divider(height: 24),
-                                    const Text(
-                                      'ตำแหน่งผู้เล่นที่ต้องการบนสนาม',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 14,
+                                    const SizedBox(height: 32),
+                                    _buildCollapsibleSection(
+                                      title: 'รูปแบบสนาม',
+                                      icon: Icons.sports_handball_outlined,
+                                      expanded: _showFieldSection,
+                                      onToggle: () => setState(
+                                        () => _showFieldSection =
+                                            !_showFieldSection,
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      'กำหนดตำแหน่งผู้เล่นล่วงหน้าเพื่อให้สมาชิกเลือกตำแหน่งที่ต้องการเล่นเมื่อจองรอบนัด',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary
+                                                  .withValues(alpha: 0.06),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: AppColors.primary
+                                                    .withValues(alpha: 0.2),
+                                              ),
+                                            ),
+                                            child: const Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(
+                                                  Icons.info_outline,
+                                                  size: 16,
+                                                  color: AppColors.primaryDark,
+                                                ),
+                                                SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'ไม่บังคับ — หากยังไม่กำหนดตำแหน่ง '
+                                                    'ก๊วนจะนับจำนวนผู้เข้าร่วมตามปกติ '
+                                                    'และเพิ่มหรือแก้ไขตำแหน่งภายหลังได้จากหน้าแก้ไขก๊วน',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors
+                                                          .textSecondary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          const Text(
+                                            'ตำแหน่งผู้เล่นที่ต้องการบนสนาม',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          const Text(
+                                            'กำหนดตำแหน่งผู้เล่นล่วงหน้าเพื่อให้สมาชิกเลือกตำแหน่งที่ต้องการเล่นเมื่อจองรอบนัด',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          if (_selectedSportData?['field_layout'] !=
+                                                  null &&
+                                              _selectedSportData?['field_layout'] !=
+                                                  'none') ...[
+                                            _buildFieldLayoutSelector(),
+                                            const SizedBox(height: 16),
+                                          ],
+                                          PositionLineupEditor(
+                                            layout: _fieldLayout!,
+                                            fieldStyle: _fieldStyle,
+                                            positions: _positionDrafts,
+                                            onChanged: (newPositions) {
+                                              setState(() {
+                                                _positionDrafts = newPositions;
+                                              });
+                                            },
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    if (_selectedSportData?['field_layout'] !=
-                                            null &&
-                                        _selectedSportData?['field_layout'] !=
-                                            'none') ...[
-                                      _buildFieldLayoutSelector(),
-                                      const SizedBox(height: 16),
-                                    ],
-                                    PositionLineupEditor(
-                                      layout: _fieldLayout!,
-                                      fieldStyle: _fieldStyle,
-                                      positions: _positionDrafts,
-                                      onChanged: (newPositions) {
-                                        setState(() {
-                                          _positionDrafts = newPositions;
-                                        });
-                                      },
                                     ),
                                   ],
-                                  const Divider(height: 24),
-                                  _buildModernTextField(
-                                    controller: _descCtrl,
-                                    label: 'คำอธิบาย (ไม่บังคับ)',
-                                    hint:
-                                        'รายละเอียดเพิ่มเติม เช่น ระดับฝีมือ อุปกรณ์...',
-                                    maxLines: 3,
-                                    maxLength: 500,
+                                  const SizedBox(height: 32),
+                                  _buildCollapsibleSection(
+                                    title: 'ค่าใช้จ่ายมาตรฐานของก๊วน',
+                                    icon: Icons.payments_outlined,
+                                    expanded: _showCostsSection,
+                                    onToggle: () => setState(
+                                      () => _showCostsSection =
+                                          !_showCostsSection,
+                                    ),
+                                    child: _buildCostStandardsEditor(),
                                   ),
+                                  const SizedBox(height: 32),
+                                  _buildModernSection(
+                                    title: 'สถานที่ตั้งสนาม',
+                                    icon: Icons.location_on_outlined,
+                                    child: Column(
+                                      children: [
+                                        _buildUnifiedLocationInput(),
+                                        const SizedBox(height: 12),
+                                        _buildModernMapCard(),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 32),
-                            _buildCollapsibleSection(
-                              title: 'ค่าใช้จ่ายมาตรฐานของก๊วน',
-                              icon: Icons.payments_outlined,
-                              expanded: _showCostsSection,
-                              onToggle: () => setState(
-                                () => _showCostsSection = !_showCostsSection,
+                            SafeArea(
+                              top: false,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  12,
+                                  20,
+                                  12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                  ),
+                                ),
+                                child: _buildSubmitButton(),
                               ),
-                              child: _buildCostStandardsEditor(),
                             ),
-                            const SizedBox(height: 32),
-                            _buildModernSection(
-                              title: 'สถานที่ตั้งสนาม',
-                              icon: Icons.location_on_outlined,
-                              child: Column(
-                                children: [
-                                  _buildUnifiedLocationInput(),
-                                  const SizedBox(height: 12),
-                                  _buildModernMapCard(),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            _buildSubmitButton(),
                           ],
                         ),
                       ),
@@ -917,6 +1041,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
 
   Widget _buildModernSportDropdown() {
     return FormField<String>(
+      key: ValueKey(_sportId),
       initialValue: _sportId,
       validator: (v) => v == null ? 'กรุณาเลือกประเภทกีฬา' : null,
       builder: (field) {
@@ -1380,6 +1505,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   }
 
   Future<void> _centerMapOnAddress(ThaiAddress address) async {
+    if (!mounted) return;
     setState(() => _isGeocoding = true);
     try {
       final query = Uri.encodeComponent(
@@ -1388,29 +1514,39 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=$query',
       );
-      final response = await http.get(
-        url,
-        headers: {'User-Agent': 'SheservedApp/1.0'},
-      );
+      final response = await http
+          .get(url, headers: {'User-Agent': 'SheservedApp/1.0'})
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) return;
       final list = jsonDecode(response.body) as List<dynamic>;
       if (list.isEmpty) return;
       final first = list.first as Map<String, dynamic>;
       final lat = double.tryParse(first['lat']?.toString() ?? '');
       final lng = double.tryParse(first['lon']?.toString() ?? '');
-      if (lat == null || lng == null) return;
+      if (lat == null || lng == null || !mounted) return;
       setState(() {
         _lat = lat;
         _lng = lng;
       });
-      _mapController?.animateCamera(
-        gm.CameraUpdate.newLatLngZoom(gm.LatLng(lat, lng), 14),
-      );
+      _animateMapTo(gm.LatLng(lat, lng), zoom: 14);
     } catch (_) {
       // Silently ignore geocoding errors; user can still pick manually.
     } finally {
       if (mounted) setState(() => _isGeocoding = false);
     }
+  }
+
+  void _animateMapTo(gm.LatLng target, {required double zoom}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _mapController == null) return;
+      try {
+        await _mapController!.animateCamera(
+          gm.CameraUpdate.newLatLngZoom(target, zoom),
+        );
+      } catch (_) {
+        // The map can be unavailable while its Android SurfaceView is rebuilt.
+      }
+    });
   }
 
   gm.LatLng? _tryParseCoordinates(String text) {
@@ -1437,9 +1573,28 @@ class _CreateGroupPageState extends State<CreateGroupPage>
 
   Future<void> _searchPlace(String rawQuery) async {
     final query = rawQuery.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _placeSearchResults = [];
+          _placeSearchMessage = 'กรุณาระบุชื่อสถานที่ รหัสไปรษณีย์ หรือพิกัด';
+        });
+      }
+      return;
+    }
+    if (_isSearchingPlace) return;
 
-    FocusScope.of(context).unfocus();
+    // Dismiss the IME before changing the result area. This avoids rebuilding
+    // the GoogleMap platform view during the Android keyboard transition.
+    FocusManager.instance.primaryFocus?.unfocus();
+    final requestId = ++_placeSearchRequestId;
+    // Reserve the search slot immediately, before waiting for the keyboard
+    // transition, so repeated taps cannot start concurrent requests.
+    _isSearchingPlace = true;
+    // Let the keyboard/platform-view transition finish before changing the
+    // widget tree or opening the address sheet.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || requestId != _placeSearchRequestId) return;
 
     // 1. ตรวจสอบว่าเป็นรหัสไปรษณีย์ 5 หลักหรือไม่ -> เปิดตัวเลือกที่อยู่รูปแบบเดิม
     final isZip = RegExp(r'^\d{5}$').hasMatch(query);
@@ -1466,11 +1621,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
             'ระบุพิกัดสำเร็จ: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}';
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController?.animateCamera(
-          gm.CameraUpdate.newLatLngZoom(parsedCoord, 16),
-        );
-      });
+      _animateMapTo(parsedCoord, zoom: 16);
       return;
     }
 
@@ -1489,10 +1640,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       final osmUrl = Uri.parse(
         'https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=th&q=$encodedQuery',
       );
-      final osmResponse = await http.get(
-        osmUrl,
-        headers: {'User-Agent': 'SheservedApp/1.0'},
-      );
+      final osmResponse = await http
+          .get(osmUrl, headers: {'User-Agent': 'SheservedApp/1.0'})
+          .timeout(const Duration(seconds: 10));
 
       if (osmResponse.statusCode == 200) {
         final osmList = jsonDecode(osmResponse.body) as List<dynamic>;
@@ -1525,7 +1675,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           final googleUrl = Uri.parse(
             'https://maps.googleapis.com/maps/api/place/textsearch/json?query=$encodedQuery&language=th&key=$apiKey',
           );
-          final gResponse = await http.get(googleUrl);
+          final gResponse = await http
+              .get(googleUrl)
+              .timeout(const Duration(seconds: 10));
           if (gResponse.statusCode == 200) {
             final gData = jsonDecode(gResponse.body) as Map<String, dynamic>;
             final gResults = gData['results'] as List<dynamic>? ?? [];
@@ -1553,7 +1705,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         }
       }
 
-      if (!mounted) return;
+      if (!mounted || requestId != _placeSearchRequestId) return;
       setState(() {
         _isSearchingPlace = false;
         _placeSearchResults = results;
@@ -1563,7 +1715,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         }
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _placeSearchRequestId) return;
       setState(() {
         _isSearchingPlace = false;
         _placeSearchMessage = 'ค้นหาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
@@ -1604,11 +1756,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _placeSearchMessage = 'ระบุพิกัดสำเร็จ: $name';
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController?.animateCamera(
-          gm.CameraUpdate.newLatLngZoom(gm.LatLng(lat, lng), 16),
-        );
-      });
+      _animateMapTo(gm.LatLng(lat, lng), zoom: 16);
     }
   }
 
@@ -1639,6 +1787,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 child: TextField(
                   controller: _searchPlaceCtrl,
                   textInputAction: TextInputAction.search,
+                  onChanged: (_) => setState(() {}),
                   onSubmitted: _searchPlace,
                   decoration: const InputDecoration(
                     hintText: 'รหัสไปรษณีย์ | ชื่อสถานที่',
@@ -1670,13 +1819,21 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   },
                 ),
               IconButton(
-                icon: const Icon(
-                  Icons.arrow_forward,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
+                icon: _isSearchingPlace
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(
+                        Icons.arrow_forward,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                 tooltip: 'ค้นหา',
-                onPressed: () => _searchPlace(_searchPlaceCtrl.text),
+                onPressed: _isSearchingPlace
+                    ? null
+                    : () => _searchPlace(_searchPlaceCtrl.text),
               ),
               Container(height: 24, width: 1, color: Colors.grey[200]),
               IconButton(

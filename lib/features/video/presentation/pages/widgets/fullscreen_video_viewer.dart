@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../../core/utils/file_ops.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../../../models/video_models.dart';
@@ -222,7 +222,7 @@ class _FullscreenVideoViewerState extends State<FullscreenVideoViewer>
 
     try {
       final controller = isLocal
-          ? VideoPlayerController.file(File(url))
+          ? localVideoController(url)
           : VideoPlayerController.networkUrl(Uri.parse(url));
       _videoPlayerController = controller;
 
@@ -284,13 +284,7 @@ class _FullscreenVideoViewerState extends State<FullscreenVideoViewer>
     } catch (_) {}
   }
 
-  Future<bool> _fileExists(String path) async {
-    try {
-      return await File(path).exists();
-    } catch (_) {
-      return false;
-    }
-  }
+  Future<bool> _fileExists(String path) => localRefExists(path);
 
   void _disposeControllers() {
     _chewieController?.dispose();

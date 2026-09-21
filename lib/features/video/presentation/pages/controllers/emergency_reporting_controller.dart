@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
@@ -120,7 +119,7 @@ class EmergencyReportingController {
     }
   }
 
-  Future<void> stopEmergencyRecording(Function(File) onFileReady) async {
+  Future<void> stopEmergencyRecording(Function(XFile) onFileReady) async {
     durationTimer?.cancel();
     if (cameraController == null || !isRecording) return;
     try {
@@ -128,7 +127,7 @@ class EmergencyReportingController {
       if (gpsTimer != null) gpsTimer!.cancel();
       isRecording = false;
       setState(() {});
-      onFileReady(File(videoFile.path));
+      onFileReady(videoFile);
     } catch (e) {
       debugPrint("Error stopping recording: $e");
     }
@@ -151,7 +150,7 @@ class EmergencyReportingController {
     }
   }
 
-  Future<void> uploadIncident(File file) async {
+  Future<void> uploadIncident(XFile file) async {
      // ... (Upload logic)
   }
 

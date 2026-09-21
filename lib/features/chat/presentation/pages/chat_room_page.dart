@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -403,9 +404,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     }
   }
 
-  Future<File> _processImagePDPA(File originalFile) async {
+  /// IO-only: ML Kit face detection + canvas watermark + JPEG compress.
+  /// ไม่เรียกบน web (guard ด้วย kIsWeb ที่ call site) — ตาม W0.5/W2
+  Future<XFile> _processImagePDPA(XFile input) async {
     // 1. Detect faces using Google ML Kit
-    final inputImage = InputImage.fromFile(originalFile);
+    final inputImage = InputImage.fromFile(File(input.path));
     final options = FaceDetectorOptions(
       enableContours: false,
       enableClassification: false,
@@ -416,7 +419,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     faceDetector.close();
 
     // 2. Load image for Canvas
-    final data = await originalFile.readAsBytes();
+    final data = await input.readAsBytes();
     final ui.Image image = await decodeImageFromList(data);
 
     final recorder = ui.PictureRecorder();
@@ -508,7 +511,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     final finalFile = File(targetPath);
     await finalFile.writeAsBytes(compressedBytes);
 
-    return finalFile;
+    return XFile(targetPath);
   }
 
   Future<void> _pickAndSendImage() async {
@@ -521,7 +524,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
     final user = _currentUser;
     if (image != null && user != null) {
-      File file = File(image.path);
+      XFile file = image;
 
       if (!mounted) return;
       showDialog(
@@ -539,10 +542,13 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         ),
       );
 
-      try {
-        file = await _processImagePDPA(file);
-      } catch (e) {
-        debugPrint('PDPA process error: $e');
+      // W0.5: PDPA blur/watermark ใช้ ML Kit + dart:io — ข้ามบน web (W2 ตัดสิน)
+      if (!kIsWeb) {
+        try {
+          file = await _processImagePDPA(file);
+        } catch (e) {
+          debugPrint('PDPA process error: $e');
+        }
       }
 
       final url = await _chatRepository.uploadFile(
@@ -624,9 +630,15 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   Future<void> _startRecording() async {
     try {
       if (await _audioRecorder.hasPermission()) {
-        final directory = await getApplicationDocumentsDirectory();
-        _recordingPath =
-            '${directory.path}/record_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        // record_web ignores `path` and returns a blob URL from stop()
+        final fileName =
+            'record_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        if (kIsWeb) {
+          _recordingPath = fileName;
+        } else {
+          final directory = await getApplicationDocumentsDirectory();
+          _recordingPath = '${directory.path}/$fileName';
+        }
 
         const config = RecordConfig();
         await _audioRecorder.start(config, path: _recordingPath!);
@@ -645,7 +657,11 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
       final user = _currentUser;
       if (path != null && user != null) {
-        final file = File(path);
+        final file = XFile(
+          path,
+          name: 'record_${DateTime.now().millisecondsSinceEpoch}.m4a',
+          mimeType: 'audio/m4a',
+        );
 
         // Upload to Supabase
         if (!mounted) return;

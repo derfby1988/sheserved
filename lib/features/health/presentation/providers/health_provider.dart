@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/sources/health_data_source.dart';
-import '../../data/sources/apple_health_source.dart';
-import '../../data/sources/health_connect_source.dart';
+import '../../data/sources/health_source_factory.dart';
 import '../../data/repositories/health_repository.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
@@ -346,12 +344,8 @@ class HealthNotifier extends StateNotifier<HealthState> {
       );
       return;
     }
-    HealthDataSource source;
-    if (Platform.isIOS) {
-      source = AppleHealthSource();
-    } else if (Platform.isAndroid) {
-      source = HealthConnectSource();
-    } else {
+    final HealthDataSource? source = createPlatformHealthSource();
+    if (source == null) {
       state = state.copyWith(
         connectionState: HealthConnectionState.error,
         errorMessage: 'OS not supported',

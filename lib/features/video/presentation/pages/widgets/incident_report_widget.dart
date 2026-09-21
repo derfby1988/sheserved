@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../../../donation/models/donation_models.dart';
+import '../../../../../core/utils/file_ops.dart';
 
 class IncidentReportWidget extends StatelessWidget {
   final bool isRecording;
@@ -149,7 +149,7 @@ class IncidentReportWidget extends StatelessWidget {
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(color: Colors.white, width: 1.5),
-                                      image: DecorationImage(image: FileImage(File(capturedPhotos[index].path)), fit: BoxFit.cover),
+                                      image: DecorationImage(image: localImageProvider(capturedPhotos[index].path), fit: BoxFit.cover),
                                     ),
                                     child: Align(
                                       alignment: Alignment.topRight,
@@ -554,7 +554,7 @@ class IncidentReportWidget extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
                           image: DecorationImage(
-                            image: FileImage(File(capturedPhotos[index].path)),
+                            image: localImageProvider(capturedPhotos[index].path),
                             fit: BoxFit.cover,
                           ),
                         ),

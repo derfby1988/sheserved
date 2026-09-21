@@ -1440,9 +1440,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (mounted) _isSendingNotifier.value = false;
   }
 
-  Future<File> _processImagePDPA(File originalFile) async {
+  /// IO-only: ML Kit face detection + canvas watermark + JPEG compress.
+  /// ไม่เรียกบน web (guard ด้วย kIsWeb ที่ call site) — ตาม W0.5/W2
+  Future<XFile> _processImagePDPA(XFile input) async {
     // 1. Detect faces using Google ML Kit
-    final inputImage = InputImage.fromFile(originalFile);
+    final inputImage = InputImage.fromFile(File(input.path));
     final options = FaceDetectorOptions(
       enableContours: false,
       enableClassification: false,
@@ -1453,7 +1455,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     faceDetector.close();
 
     // 2. Load image for Canvas
-    final data = await originalFile.readAsBytes();
+    final data = await input.readAsBytes();
     final ui.Image image = await decodeImageFromList(data);
 
     final recorder = ui.PictureRecorder();
@@ -1545,7 +1547,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final finalFile = File(targetPath);
     await finalFile.writeAsBytes(compressedBytes);
 
-    return finalFile;
+    return XFile(targetPath);
   }
 
   Future<void> _pickAndSendImage() async {
@@ -1572,11 +1574,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         ),
       );
 
-      File file = File(image.path);
-      try {
-        file = await _processImagePDPA(file);
-      } catch (e) {
-        debugPrint('PDPA process error: $e');
+      XFile file = image;
+      // W0.5: PDPA blur/watermark ใช้ ML Kit + dart:io — ข้ามบน web (W2 ตัดสิน)
+      if (!kIsWeb) {
+        try {
+          file = await _processImagePDPA(file);
+        } catch (e) {
+          debugPrint('PDPA process error: $e');
+        }
       }
 
       final roomId = _consultationRoomId ?? 'consultation_demo';
@@ -1610,9 +1615,16 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Future<void> _startRecording() async {
     try {
       if (await _audioRecorder.hasPermission()) {
-        final directory = await getTemporaryDirectory();
-        final path =
-            '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        // record_web ignores `path` and returns a blob URL from stop()
+        final fileName =
+            'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final String path;
+        if (kIsWeb) {
+          path = fileName;
+        } else {
+          final directory = await getTemporaryDirectory();
+          path = '${directory.path}/$fileName';
+        }
         await _audioRecorder.start(const RecordConfig(), path: path);
         if (mounted) _isRecordingNotifier.value = true;
       }
@@ -1627,7 +1639,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       if (mounted) _isRecordingNotifier.value = false;
 
       if (path != null && _currentUser != null) {
-        final file = File(path);
+        final file = XFile(
+          path,
+          name: 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
+          mimeType: 'audio/m4a',
+        );
         final roomId = _consultationRoomId ?? 'consultation_demo';
         final url = await _chatRepository.uploadFile(file, 'chat/$roomId');
 

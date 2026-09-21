@@ -1,6 +1,6 @@
 import 'dart:ui';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../../core/utils/file_ops.dart';
 import 'package:chewie/chewie.dart';
 import '../../../models/video_models.dart';
 import '../../../../../services/service_locator.dart';
@@ -201,8 +201,8 @@ class VideoPlayerWidget extends StatelessWidget {
                                         size: 50,
                                       ),
                                     )
-                                  : Image.file(
-                                      File(imageToDisplay),
+                                  : Image(
+                                      image: localImageProvider(imageToDisplay),
                                       fit: BoxFit.cover,
                                       errorBuilder: (_, __, ___) => const Icon(
                                         Icons.broken_image,

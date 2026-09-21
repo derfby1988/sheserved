@@ -3,7 +3,8 @@
 > **วันที่สร้าง:** 2026-09-19
 > **อัปเดต:** 2026-09-19 — ปรับให้เข้ากับ Phase 13 (Trusted Backend Identity Bridge Rollout) ใน `docs/plans/Match_Sport_PLAN.md`
 > **อัปเดต:** 2026-09-20 — เพิ่ม mobile-safety guardrails, UI layout invariants และ release gates หลัง dependency map ในส่วน 3
-> **สถานะ:** 📋 แผนเพื่อการตัดสินใจ — ยังไม่ลงมือ implement จนกว่าจะได้รับอนุมัติ
+> **อัปเดต:** 2026-09-21 — re-baseline กับ Phase 13.3 ที่มี implementation บางส่วนแล้ว และเพิ่ม socket token lifecycle, CSP external origins, passkeys, domain/cache delivery checks
+> **สถานะ:** 📋 แผนเพื่อการตัดสินใจ — ยังไม่ลงมือ implement ส่วน Flutter Web จนกว่าจะได้รับอนุมัติ
 > **ขอบเขต:** ทำให้ `flutter run -d chrome` / `flutter build web` ทำงานได้โดยไม่ขัดกับ `docs/infrastructure/`, `docs/secure/` และ Phase 13 contract
 > **กติกา rollout:** ทุก phase ต้องเป็น release ที่ deploy ได้อิสระตามกฎ Q1-B (ปล่อยค้างได้โดยระบบไม่แย่ลง), มี tests + rollback และห้ามเปลี่ยน `AuthService`/`ServiceLocator` ไปใช้ `Supabase.instance.client.auth.currentUser` (ตาม `.agent/workflows/auth_data_guidelines.md`)
 
@@ -15,7 +16,7 @@
 
 | # | ปัญหา | ระดับ | หลักฐาน |
 |---|--------|-------|----------|
-| P1 | `import 'dart:io'` ใน 22 ไฟล์ (reachable จาก `main.dart` ทั้งหมด) | 🔴 compile fail | `lib/features/chat/`, `lib/features/admin/`, `lib/features/health/`, `lib/shared/widgets/` |
+| P1 | `import 'dart:io'` ใน 23 ไฟล์ที่พบจาก inventory (ต้องยืนยันอีกครั้งว่าไฟล์ใด reachable จาก `main.dart`) — **อัปเดตจากการทำ W0 จริง:** dart2js/DDC compile `dart:io` ผ่านแล้ว (SDK stub — API throw `UnsupportedError` ตอน runtime) จึงเป็น 🔴 runtime fail ไม่ใช่ compile fail; compile blocker จริงคือ icon tree-shake ที่ `expert_status_helpers.dart` (dynamic `IconData` จาก DB — ต้อง `--no-tree-shake-icons`) | 🔴 runtime fail (dart:io stub) + icon tree-shake | `lib/features/chat/`, `lib/features/admin/`, `lib/features/health/`, `lib/shared/widgets/` และไฟล์ video/profile/donation ที่เกี่ยวข้อง |
 | P2 | `package:health` import `dart:io` ภายใน (`health-13.3.1/lib/health.dart:5`) | 🔴 compile fail | `health_connect_source.dart`, `apple_health_source.dart` |
 | P3 | Plugin native-only: `google_mlkit_face_detection`, `flutter_compass`, `health` | � compile/runtime fail — ML Kit/health มี import chain ที่ชน `dart:io`; compass เป็น runtime-only | `chat_room_page.dart`, `chart_board_page.dart`, `emergency_live_page.dart`, `rescue_page.dart` |
 | P4 | File/path semantics บน web: `File(xfile.path)`, `FilePicker.path=null`, `getTemporaryDirectory()`, `MultipartFile.fromPath`, `VideoPlayerController.file` | 🟡 runtime fail | 15+ จุดใน chat/admin/video/donation |
@@ -32,7 +33,7 @@
 - ✅ **13.1** DB roles (`sheserved_app`/`sheserved_gateway`/...), `app.current_user_id()` unified helper, Supabase direct-pool adapter (`withTransaction` + `SET LOCAL`) — spike ผ่าน 2026-09-06
 - ✅ **13.2** `/api/auth/*` ครบ (register/login/social/refresh/logout/me/sessions), Argon2id, refresh rotation + grace 60 วิ, `audit_logs` + worker, PostgREST token mint (TTL ≤5 นาที), Google/Apple JWKS verify, `helmet()` wired, `x-app-version` min-version middleware — E2E 37/37 + device-verified
 - ✅ **Flutter switch เสร็จแล้ว:** `AuthenticatedHttpClient` (refresh-once/single-flight, Bearer, `x-app-version`), `AuthService.restoreSession()` ถูกเรียกใน `main()` ก่อน UI, `useBackendAuth` dart-define flag
-- ⏳ **13.3** (วางแผน staged): `socket-auth.js`, room authorization, verified `req.userId`/`socket.userId` — ยังไม่ implement
+- 🟡 **13.3** (staged implementation มีบางส่วนแล้ว): `middleware/socket-auth.js` ถูกสร้างและ wired ใน `server.js`; `STRICT_SOCKET_AUTH`/`STRICT_SOCKET_EVENTS`/`STRICT_ROOM_AUTH` เป็น rollout flags และมี socket revocation wiring แล้ว — room authorization, event coverage, Flutter token lifecycle และ strict cutover ยังต้องผ่าน gate ตาม `Match_Sport_PLAN.md`
 - **Dev policy 2026-09-15:** `useBackendAuth` default `false` + `mainMachineIp` ชี้เครื่องหลัก — dev ไม่ต้องเปิด server ทุกครั้ง; security test ใช้ `--dart-define=USE_BACKEND_AUTH=true`
 
 ---
@@ -76,7 +77,7 @@ Phase W4 — Serving & CORS           (พึ่ง 13.0 ✅ เสร็จแ�
 Phase W5 — Web Hardening            (ก่อน production — รวม 13.3 socket-auth contract)
 ```
 
-> **Dependency map:** W0–W2 ทำได้ทันทีไม่ต้องรอ Phase 13; W3 ใช้สิ่งที่ 13.2 ส่งมอบแล้ว (`/api/auth/*`, `AuthenticatedHttpClient`, social verify); W4 ใช้สิ่งที่ 13.0 ส่งมอบแล้ว (CORS fail-closed, Caddyfile.staging); W5 ต้องรวมสัญญา 13.3 (socket-auth, room auth) ที่กำลังจะ implement
+> **Dependency map:** W0–W2 ทำได้ทันทีไม่ต้องรอ Phase 13; W3 ใช้สิ่งที่ 13.2 ส่งมอบแล้ว (`/api/auth/*`, `AuthenticatedHttpClient`, social verify) และตรวจผลของ 13.3 ที่ implement บางส่วนแล้ว; W4 ใช้สิ่งที่ 13.0 ส่งมอบแล้ว (CORS fail-closed, Caddyfile.staging); W5 ต้องปิด gate ของ 13.3 ที่ยังเหลือ (room auth, event coverage, token lifecycle และ strict cutover)
 
 > **Guardrails ข้าม phase (mobile safety) — บังคับทุก phase ที่แตะ shared code:**
 > 1. **IO คง path-based, web ใช้ bytes — ห้ามแปลง unconditional:** `MultipartFile.fromPath`, `Image.file`/`FileImage`, `VideoPlayerController.file`, `getTemporaryDirectory()`, `FilePicker.files.single.path` ทำงานบน iOS/Android ปกติ — ห้ามแทนทับด้วย bytes/memory ทั้งแอป เพราะ (a) `fromBytes`/`Image.memory` โหลดไฟล์ทั้งก้อนเข้า RAM (วิดีโอ emergency หลักร้อย MB → memory spike บนมือถือ), (b) `fromBytes`/`uploadBinary` ต้องส่ง `filename`+`contentType` เอง ไม่งั้น mime หลุดเป็น `application/octet-stream`, (c) `FilePicker.bytes` เป็น null บน mobile ถ้าไม่ส่ง `withData: true` — ให้แยกผ่าน conditional import/`kIsWeb` เสมอ (ข้อยกเว้นที่เช็คแล้ว: `storage_client 2.5.7` อ่าน `file.readAsBytesSync()` เต็มไฟล์อยู่แล้วและเดา mime จาก path — `upload(File)` → `uploadBinary` จึงปลอดภัย แต่ต้องคง extension ใน storage path)
@@ -98,7 +99,7 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | W0.5 | Guard หน้าที่ใช้ `dart:io` หนัก (chat_room PDPA blur, chart_board, body_region_admin) — แยก widget ที่ใช้ `File` ออกเป็น conditional import หรือ `kIsWeb` early-return placeholder | `chat_room_page.dart`, `chart_board_page.dart`, `body_region_admin_page.dart` |
 | W0.6 | Guard `health` sources — `health_provider._initSource` มี `kIsWeb` check อยู่แล้ว แต่ import chain ยังชน `dart:io` → แยก source impl เป็น conditional import (web = `NullHealthSource`) | `health_connect_source.dart`, `apple_health_source.dart`, `health_provider.dart` |
 
-**Verification:** `flutter build web` compile ผ่าน; `flutter run -d chrome` เปิด `MainAppLayout` ได้; login/home render; ผ่าน UI/mobile gate W0 ใน §4.4 (รวม no-overflow และ iOS/Android smoke)
+**Verification:** `flutter build web --no-tree-shake-icons` compile ผ่าน; `flutter run -d chrome` เปิด `MainAppLayout` ได้; login/home render; ผ่าน UI/mobile gate W0 ใน §4.4 (รวม no-overflow และ iOS/Android smoke)
 **Rollback:** conditional import เป็น additive — revert ไฟล์ stub ได้โดยไม่กระทบ mobile; หาก UI mobile ต่างจาก baseline ให้ revert ทั้ง phase
 **Safe stop:** ✅ หยุดค้างได้ — ระบบดีขึ้น (compile web ผ่าน) โดยไม่เปลี่ยน behavior mobile
 
@@ -145,11 +146,13 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | W3.2 | **Web auth mode matrix** — เขียนลง UI/dev docs ชัดเจน: `USE_BACKEND_AUTH=true` (เปิด server + origin ใน ALLOWED_ORIGINS) = login/register/social/private paths ครบ; `false` = **anonymous/public allowlist เท่านั้น** (browse ได้ แต่ไม่มี personal room `user-{id}`, private chat, strict routes — ตาม coexistence policy 13.3 line 1584-1587) | บัญชี Argon2id login ไม่ได้ใน direct mode (line 1575) — dev web ที่ใช้ `false` ต้องสร้าง dev account แยก |
 | W3.3 | ซ่อน/ปิด social provider ที่ backend ยัง 501 บน web — **เหลือ Google (+Apple ถ้า config)**; Facebook/LINE/TikTok แสดง disabled หรือซ่อน | `routes/auth.js` social/:provider fail-closed (`Match_Sport` line 1551, 1563) |
 | W3.4 | Token storage: ใช้ `AuthenticatedHttpClient` + `flutter_secure_storage` ตาม Phase 13.2 ที่ approve แล้ว — บน web = localStorage (ทั้ง access+refresh ตาม implementation จริง) | บันทึก: doc 08 เสนอ httpOnly cookie เป็น hardening ระยะยาว — ถ้าเลือกทางนั้นต้องเปิดแผน 15 (CSRF) เป็น P0 พร้อมกัน |
-| W3.5 | WebSocket handshake: `websocket_service.dart:257` ปัจจุบันส่ง `{'userId': userId, 'token': authToken}` เป็น raw identity — เมื่อ 13.3 implement `socket-auth.js` ต้องส่ง **Backend access token** ใน `setAuth`; direct mode = anonymous เท่านั้น | 13.3 P0-4; web เป็นไปตาม contract เดียวกัน — ห้ามเพิ่ม path พิเศษสำหรับ web |
-| W3.6 | Private Supabase reads บน web ต้องใช้ **PostgREST token** (backend mint, TTL ≤5 นาที, sign ด้วย `SUPABASE_JWT_SECRET`) เมื่อ data path migrate — ไม่ใช้ anon key กับ private data | Q7-C (`Match_Sport` line 1385, 1535); `lib/postgrest-token.js` มีแล้ว + live check ผ่าน |
-| W3.7 | `x-app-version` ถูกส่งทุก request โดย `AuthenticatedHttpClient` อยู่แล้ว — ตรวจ `AppVersionChecker`/426 handling ทำงานบน web build; `MIN_APP_VERSION_ENFORCE=false` ใน dev | 13.2 amendment (line 1801); เมื่อเปิด enforce ต้องให้ web build ส่งเวอร์ชันถูก |
+| W3.5 | WebSocket handshake: ใช้ **Backend access token** ใน `setAuth` เป็น identity เดียวที่เชื่อถือได้; direct mode = anonymous เท่านั้น และไม่ใช้ `userId` จาก client เพื่อยกระดับสิทธิ์ | `socket-auth.js` มีและถูก wired แล้วใน 13.3; ต้องทดสอบ strict/legacy transition และ personal-room source จาก `socket.userId` เท่านั้น — ห้ามเพิ่ม path พิเศษสำหรับ web |
+| W3.6 | Socket token lifecycle: หลัง `AuthenticatedHttpClient` refresh token แล้ว ต้อง reconnect ด้วย access token ใหม่; token หมดอายุ/revoke ให้หยุด retry ด้วย token เดิมและกลับสู่ anonymous/login flow ตาม mode | 13.3 P0-4; ใช้ event/connection error contract ที่มีอยู่ ไม่เพิ่ม auth path หรือยืด TTL |
+| W3.7 | Private Supabase reads บน web ต้องใช้ **PostgREST token** (backend mint, TTL ≤5 นาที, sign ด้วย `SUPABASE_JWT_SECRET`) เมื่อ data path migrate — ไม่ใช้ anon key กับ private data | Q7-C (`Match_Sport` line 1385, 1535); `websocket-server/lib/postgrest-token.js` มีแล้ว + live check ผ่าน |
+| W3.8 | `x-app-version` ถูกส่งทุก request โดย `AuthenticatedHttpClient` อยู่แล้ว — ตรวจ `AppVersionChecker`/426 handling ทำงานบน web build; `MIN_APP_VERSION_ENFORCE=false` ใน dev | 13.2 amendment (line 1801); เมื่อเปิด enforce ต้องให้ web build ส่งเวอร์ชันถูก |
+| W3.9 | ตรวจ passkeys bundle ที่มีอยู่ใน `web/index.html` ว่าเป็นเพียง web capability ที่ตั้งใจเปิดใช้; ถ้ายังไม่มี Flutter/backend flow ที่อนุมัติ ให้คง bundle ไว้โดยไม่ประกาศว่าเป็น authentication path ที่พร้อมใช้งาน | ต้องไม่เพิ่ม provider, credential หรือ auth path ใหม่; CSP ของ W4.4 ต้องไม่ทำให้ bundle ที่ใช้งานจริงเสีย |
 
-**Verification:** login (backend mode) + Google social บน Chrome ผ่าน; `/me` restore session ทำงาน; direct mode เห็นเฉพาะ public; ไม่มี `x-user-id`/Supabase ID ถูกส่งเพื่อยกระดับ; mobile provider/session UI ผ่าน Gate W3 ใน §4.4
+**Verification:** login (backend mode) + Google social บน Chrome ผ่าน; `/me` restore session ทำงาน; direct mode เห็นเฉพาะ public; ไม่มี `x-user-id`/Supabase ID ถูกส่งเพื่อยกระดับ; token refresh แล้ว socket reconnect ด้วย token ใหม่; token หมดอายุ/revoke ไม่ retry ด้วย token เดิม; mobile provider/session UI ผ่าน Gate W3 ใน §4.4
 
 ---
 
@@ -158,10 +161,11 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | # | งาน | รายละเอียด |
 |---|-----|-----------|
 | W4.1 | `ALLOWED_ORIGINS` เพิ่ม web origin แบบ explicit — **env ops เท่านั้น ไม่แก้ code**: dev เพิ่ม origin ของ `flutter run` (เช่น `http://localhost:5000`); staging/prod เพิ่ม domain web จริง — ห้าม `*` | 13.0 ทำ fail-closed + validator แล้ว (`Match_Sport` line 1463); Socket.IO ใช้ allowlist เดียวกัน (`server.js:114-116`) |
-| W4.2 | เสิร์ฟ `build/web` หลัง Caddy — เพิ่ม site block ตาม pattern `Caddyfile.staging` (TLS auto + HSTS + security headers) ด้วย `try_files {path} /index.html` (SPA fallback); ช่อง `admin.sheserved.com` ใน `reverse_proxy_plan.md` รออยู่ | ไม่เพิ่ม infra (zero-cost); ใช้ `CADDY_STAGING_DOMAIN`/`CADDY_ACME_EMAIL` env เดิม |
+| W4.2 | เสิร์ฟ `build/web` หลัง Caddy — เพิ่ม site block ตาม pattern `Caddyfile.staging` (TLS auto + HSTS + security headers) ด้วย `try_files {path} /index.html` (SPA fallback); ยืนยัน domain ที่เลือกก่อนแก้ Caddy | ไม่เพิ่ม infra (zero-cost); ใช้ `CADDY_STAGING_DOMAIN`/`CADDY_ACME_EMAIL` env เดิม; ห้ามสมมติว่า `admin.sheserved.com` เป็นคำตอบสุดท้าย |
 | W4.3 | HTTPS: web served ผ่าน https → backend calls ต้อง https (mixed content) — `backendApiUrl`/websocket ต้องเป็น `https://`/`wss://` ผ่าน dart-define; dev ใช้ `http://<IP>:8080` ได้ถ้า origin allowlisted | `Caddyfile.staging` ทำ WSS ผ่าน `/socket.io/*` แล้ว (13.0 line 1464) |
-| W4.4 | Security headers: `helmet()` wired แล้วใน 13.2 — เหลือ CSP สำหรับ web host (implement ที่แผน 04 จุดเดียวตาม dependency map) | `14_xss.md` ตัวเลือก C |
+| W4.4 | Security headers: `helmet()` wired แล้วใน 13.2 — เหลือ CSP สำหรับ web host (implement ที่แผน 04 จุดเดียวตาม dependency map); ระบุ external origins ที่จำเป็นต่อ `model-viewer` จาก `unpkg.com` และ endpoint ของ passkeys เฉพาะเมื่อ flow นั้นถูกเปิดใช้จริง แล้วตรวจว่า CSP ไม่เปิด `unsafe-eval`/`unsafe-inline` กว้างเกินจำเป็น | `14_xss.md` ตัวเลือก C; เป็นการปรับ header ที่ host เท่านั้น ไม่เปลี่ยน Flutter auth/data path |
 | W4.5 | คง `_isWebMapEnabled = false` — ถ้าเปิดต้องมี web Maps key แยก (HTTP referrer restriction) เป็น cost decision | `Delivery_PLAN.md:98`, key guide |
+| W4.6 | กำหนด web delivery profile ก่อน staging: renderer ที่ใช้, service worker/PWA caching และ cache-busting ของ `flutter_bootstrap.js`/asset manifest; deploy ต้อง invalidate cache ตาม build เดียวกัน | ตรวจด้วย clean browser profile และ hard reload; ไม่เพิ่ม runtime dependency หรือเปลี่ยน mobile build |
 
 ---
 
@@ -172,7 +176,7 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 | W5.1 | Audit sanitize-on-render: user content ที่ render ใน DOM (chat, articles, rich text); `HtmlElementView`/`dart:html` ทุกจุด | `14_xss.md` X1/X6 |
 | W5.2 | SVG upload policy — เสิร์ฟผ่าน browser จะ execute script | `14_xss.md` X9 |
 | W5.3 | CSRF review: คง Bearer header auth (ต่ำ) — **ถ้า W3.4 เปลี่ยนเป็น cookie ในอนาคต → implement แผน 15 เต็มก่อน deploy** | `15_csrf.md` trigger |
-| W5.4 | Socket contract ตาม 13.3: ห้ามส่ง `auth.userId`/raw identity จาก web client; anonymous socket = public allowlist เท่านั้น; strict/private rooms ต้อง Backend JWT | 13.3 P0-4, line 1683-1686 |
+| W5.4 | Socket contract ตาม 13.3: ห้ามส่ง `auth.userId`/raw identity จาก web client; anonymous socket = public allowlist เท่านั้น; strict/private rooms ต้อง Backend JWT; หลัง refresh/re-auth หรือ token expiry/revoke ต้อง reconnect ด้วย token ใหม่และห้าม retry ด้วย token เดิม | 13.3 P0-4, line 1693-1700; ใช้ `socket-auth.js`/rollout flags ที่มีอยู่ ไม่สร้าง path พิเศษสำหรับ web |
 | W5.5 | `gitleaks` scan `web/` + `index.html` — ยืนยันไม่มี P2/P3; meta client ID (P1) และ maps key (P0+restriction) เท่านั้น | `07` ตัวเลือก E |
 | W5.6 | CI: เพิ่ม `flutter build web` ใน pipeline เพื่อกัน dart:io ถดถอย | `06_dependency_vulnerabilities.md` |
 | W5.7 | Token storage hardening decision: ยืนยันคง localStorage (Phase 13.2 contract) หรือเลื่อนเป็น memory-only access token / httpOnly cookie ตาม doc 08 — ถ้าเลือก cookie ให้เปิดแผน 15 พร้อมกัน | `08:116`, `15:87`; บันทึกว่า impl ปัจจุบัน persist access token ด้วย |
@@ -218,10 +222,12 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 ```bash
 flutter analyze
 flutter test
-flutter build web
+flutter build web --no-tree-shake-icons   # IconData แบบ dynamic จาก DB (expert_status_helpers.dart) ปิด tree-shake ทั้งแอป — flag นี้คง behavior เดิม
 flutter build apk --debug
 flutter build ios --simulator --debug
 ```
+
+หมายเหตุ WASM (พบจาก build จริง): `flutter_secure_storage_web`/`ua_client_hints` ใช้ `dart:html`/`dart:js_util` → เสิร์ฟได้เฉพาะ JS build; หากต้องการ `--wasm` ต้องเปลี่ยน storage impl ใน W5
 
 `flutter build apk`/`flutter build ios` ให้รันใน runner หรือเครื่องที่รองรับ platform นั้น หาก environment ไม่พร้อมต้องระบุเป็น **blocked evidence** ไม่ใช่ข้าม gate เงียบ ๆ ส่วน UI/device gate ต้องตรวจเพิ่ม:
 
@@ -238,7 +244,7 @@ flutter build ios --simulator --debug
 | **W0** | Web compile/boot ผ่าน; `dart:io`/native-only import ถูกแยก; Login/Home/MainAppLayout และ bottom navigation ไม่ overflow บน iOS/Android; health/map ยังใช้ native path บน mobile | `flutter build web`, analyzer/tests, mobile build + UI smoke, screenshot baseline diff |
 | **W1** | Web upload/preview/export ผ่าน; mobile คง `fromPath`/`File` path และ preview geometry เดิม; chat/avatar/emergency media ผ่าน | web media evidence, iOS+Android upload/preview smoke, memory/overflow check |
 | **W2** | ทุก feature decision มี owner/behavior ระบุ; web fallback ไม่ทำให้ parent ยุบ; compass/health/camera/WebRTC บน mobile ไม่ถูกซ่อนหรือเปลี่ยนโดยไม่ตั้งใจ | decision record, feature smoke, mobile screenshot/no-overflow evidence |
-| **W3** | Backend auth/social web flow ผ่าน; mobile login/session/provider UI เหมือน baseline; การกรอง provider เกิดเฉพาะ web | Chrome auth evidence, iOS+Android login/session smoke, provider layout comparison |
+| **W3** | Backend auth/social web flow ผ่าน; mobile login/session/provider UI เหมือน baseline; การกรอง provider เกิดเฉพาะ web; socket reconnect ใช้ token ใหม่หลัง refresh และ fail closed เมื่อ token หมดอายุ/revoke; passkeys status ไม่อ้างเกิน implementation จริง | Chrome auth evidence, socket lifecycle evidence, iOS+Android login/session smoke, provider layout comparison |
 | **W4** | Caddy/CORS/HTTPS/WSS ผ่าน staging; mobile app build และ core smoke ผ่านโดยไม่มี source/config regression | staging evidence, web smoke, mobile build/smoke result |
 | **W5** | sanitize/SVG/CSP/socket hardening ผ่าน; content ยาว/unsafe ไม่ทำให้ mobile chat/article overflow; CI/gitleaks/build gate ผ่าน | security evidence, mobile content regression, CI artifacts และ rollback readiness |
 
@@ -263,13 +269,16 @@ flutter build ios --simulator --debug
 - [ ] ยืนยัน W3.3: ซ่อน Facebook/LINE/TikTok บน web (backend 501) — Apple รอ paid dev account ตาม 13.2 blocker
 - [ ] ตัดสินใจ W5.7: token storage บน web — คง localStorage ตาม 13.2 หรือลงทุน httpOnly cookie + CSRF (แผน 15) พร้อมกัน
 - [ ] ตัดสินใจ W4.5: เปิด Google Maps บน web หรือไม่ (cost decision — ขัด intent ของ Delivery plan)
-- [ ] ตัดสินใจ domain เสิร์ฟ web (`admin.sheserved.com` ตาม reverse proxy plan หรือแยก)
+- [ ] ตัดสินใจ domain เสิร์ฟ web (`admin.sheserved.com` ตาม reverse proxy plan หรือแยก) และใช้ domain เดียวกันใน Caddy, `ALLOWED_ORIGINS`, OAuth และ CSP
+- [ ] ยืนยัน W3.6 socket token lifecycle: refresh/revoke/expiry ต้อง reconnect ด้วย token ใหม่หรือกลับสู่ anonymous/login โดยไม่ retry token เดิม
+- [ ] ตรวจ W3.9 passkeys bundle: ระบุว่าเปิดใช้จริงหรือคงไว้เป็น asset ที่ยังไม่ประกาศเป็น auth flow
+- [ ] ยืนยัน W4.4 external origins ใน CSP และ W4.6 renderer/service-worker/cache-busting profile ก่อน staging
 
 ## 6. ความสอดคล้องกับเอกสารที่มีอยู่
 
 | เอกสาร | ผลกระทบ |
 |--------|---------|
-| `docs/plans/Match_Sport_PLAN.md` Phase 13 | **แผนนี้อยู่ภายใต้สัญญา Phase 13** — W3/W4/W5 อิงสิ่งที่ 13.0/13.1/13.2 ส่งมอบแล้วและ contract ของ 13.3; ห้ามสร้าง auth path แยกสำหรับ web |
+| `docs/plans/Match_Sport_PLAN.md` Phase 13 | **แผนนี้อยู่ภายใต้สัญญา Phase 13** — W3/W4/W5 อิงสิ่งที่ 13.0/13.1/13.2 ส่งมอบแล้วและ 13.3 ที่มี `socket-auth`/rollout wiring บางส่วน; room/event/token-lifecycle gate ที่เหลือต้องใช้ contract เดิมและห้ามสร้าง auth path แยกสำหรับ web |
 | `docs/design/PHASE_13_2_TEMPORARY_DIRECT_AUTH_DEVELOPMENT_PLAN.md` | W3.2 coexistence matrix ตามเอกสารนี้ |
 | `docs/secure/README.md` rollout rules | ✅ Q1-B ทุก phase deploy ได้อิสระ; ไม่เปลี่ยน AuthService/ServiceLocator |
 | `docs/secure/04_security_misconfiguration.md` | W4.1/W4.4 เป็นงานเดียวกับแผน 04 (M1, headers) — CORS ทำเสร็จใน 13.0 แล้ว |
@@ -278,7 +287,7 @@ flutter build ios --simulator --debug
 | `docs/secure/14_xss.md` | W5 ครอบคลุม X1/X6/X9 |
 | `docs/secure/15_csrf.md` | trigger-based — activate เมื่อใช้ cookie |
 | `docs/secure/17_phase_13_1_supabase_spike_runbook.md` | ไม่เกี่ยวข้องโดยตรง (DB-side) — web ใช้ผลลัพธ์ของ 13.1 ผ่าน API เท่านั้น |
-| `docs/infrastructure/reverse_proxy_plan.md` | เสิร์ฟ web ผ่าน Caddy slot ที่เตรียมไว้; `Caddyfile.staging` เป็น template (zero-cost) |
+| `docs/infrastructure/reverse_proxy_plan.md` | เสิร์ฟ web ผ่าน Caddy slot ที่เตรียมไว้; `Caddyfile.staging` เป็น template (zero-cost); domain จริงต้องถูกยืนยันก่อนผูก Caddy/CORS/OAuth/CSP |
 | `docs/infrastructure/architecture_analysis.md` | web client เข้าผ่าน path เดิม (Caddy → websocket-server) ไม่เปลี่ยน architecture |
 | `docs/plans/Delivery_PLAN.md` | คง maps-off บน web ตาม cost-zero intent |
 | `docs/guides/TEST_PLAN.md` | ใช้ Maestro smoke/regression, iOS simulator/physical device และต้องเพิ่ม Android device evidence ตาม UI release gate §4 |

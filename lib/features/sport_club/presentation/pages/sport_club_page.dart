@@ -11,7 +11,6 @@ import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../widgets/sheets/session_picker_sheet.dart';
 import '../widgets/sheets/create_session_sheet.dart';
-import '../widgets/sheets/edit_group_sheet.dart';
 import '../widgets/sheets/advanced_filter_sheet.dart';
 import '../widgets/sheets/group_detail_sheet.dart';
 import '../widgets/feed/sport_category_chips.dart';
@@ -819,27 +818,11 @@ class _SportClubPageState extends State<SportClubPage> {
           if (newSportId != null && _sportId != newSportId) {
             setState(() => _filter = _filter.copyWith(sportId: newSportId));
           }
-          final positionsConfigured = result['positionsConfigured'] == true;
-          final positionFeatureEnabled =
-              result['positionFeatureEnabled'] == true;
-          final ownerAutoJoin = result['ownerAutoJoin'] != false;
           final refreshFuture = _reload();
           if (groupId.isNotEmpty) {
             try {
               await refreshFuture;
             } catch (_) {}
-            if (!mounted) return;
-            await EditGroupSheet.maybePromptPositionSetup(
-              context,
-              repo: _repo,
-              client: _client,
-              knownGroups: _groups,
-              groupId: groupId,
-              positionsConfigured: positionsConfigured,
-              positionFeatureEnabled: positionFeatureEnabled,
-              ownerAutoJoin: ownerAutoJoin,
-              onGroupSaved: _init,
-            );
             if (!mounted) return;
             await CreateSessionSheet.show(
               context,

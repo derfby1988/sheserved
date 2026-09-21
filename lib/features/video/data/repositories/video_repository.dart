@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../../../core/network/authenticated_http_client.dart';
+import '../../../../core/utils/file_ops.dart';
 import '../../../../services/auth_service.dart';
 import '../../models/video_models.dart';
 
@@ -730,7 +731,7 @@ class VideoRepository {
   /// ต้องส่ง [userId] เข้ามาเสมอตาม auth_data_guidelines.md
   Future<String?> uploadEmergencyVideo({
     required String userId,
-    required File videoFile,
+    required XFile videoFile,
     required List<Map<String, dynamic>> gpsTracks,
     String? categoryId,
   }) async {
@@ -759,7 +760,7 @@ class VideoRepository {
         request.fields['gpsTracks'] = jsonEncode(gpsTracks);
 
         request.files.add(
-          await http.MultipartFile.fromPath('video', videoFile.path),
+          await multipartFileFromXFile('video', videoFile),
         );
         return request;
       },
@@ -780,7 +781,7 @@ class VideoRepository {
   /// Returns: { videoId, photoIds, photoUrls, status, incidentId } for Phase 6.12 async blur
   Future<Map<String, dynamic>?> uploadEmergencyPhotos({
     required String userId,
-    required List<File> photoFiles,
+    required List<XFile> photoFiles,
     required List<Map<String, dynamic>> gpsTracks,
     String? categoryId,
     bool isThaiMhung = false,
@@ -830,7 +831,7 @@ class VideoRepository {
 
         for (var file in photoFiles) {
           request.files.add(
-            await http.MultipartFile.fromPath('photos', file.path),
+            await multipartFileFromXFile('photos', file),
           );
         }
         return request;

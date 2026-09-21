@@ -1,8 +1,9 @@
-import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/file_ops.dart';
 import '../../data/models/body_region_model.dart';
 import '../../data/models/body_landmark_model.dart';
 import '../../data/services/calibration_service.dart';
@@ -542,9 +543,9 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
   /// Calibration target platform for this region.
   String _calibrationPlatform = 'universal';
 
-  File? _iconImageFile;
-  File? _image2dFile;
-  File? _model3dFile;
+  XFile? _iconImageFile;
+  XFile? _image2dFile;
+  XFile? _model3dFile;
   bool _isSaving = false;
 
   // Toggle between 2D picker view and 3D reference body view in the position picker
@@ -593,19 +594,26 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() {
-        _image2dFile = File(pickedFile.path);
+        _image2dFile = pickedFile;
       });
     }
   }
 
   Future<void> _pick3dModel() async {
+    // withData จำเป็นบน web เพราะ PlatformFile.path เป็น null (ไม่มี filesystem)
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['glb', 'obj', 'gltf'],
+      withData: kIsWeb,
     );
-    if (result != null && result.files.single.path != null) {
+    if (result != null) {
+      final platformFile = result.files.single;
+      // xFile: web ใช้ bytes (withData), IO ใช้ path — ข้ามถ้าข้อมูลไม่ครบ
+      if (kIsWeb ? platformFile.bytes == null : platformFile.path == null) {
+        return;
+      }
       setState(() {
-        _model3dFile = File(result.files.single.path!);
+        _model3dFile = platformFile.xFile;
       });
     }
   }
@@ -614,7 +622,7 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
-      setState(() => _iconImageFile = File(pickedFile.path));
+      setState(() => _iconImageFile = pickedFile);
     }
   }
 
@@ -789,8 +797,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                           ),
                           child: _iconImageFile != null
                               ? ClipOval(
-                                  child: Image.file(
-                                    _iconImageFile!,
+                                  child: Image(
+                                    image: localImageProvider(_iconImageFile!.path),
                                     width: 48,
                                     height: 48,
                                     fit: BoxFit.cover,
@@ -849,8 +857,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
                           ),
                           child: _iconImageFile != null
                               ? ClipOval(
-                                  child: Image.file(
-                                    _iconImageFile!,
+                                  child: Image(
+                                    image: localImageProvider(_iconImageFile!.path),
                                     width: 48,
                                     height: 48,
                                     fit: BoxFit.cover,
@@ -1592,8 +1600,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
       ),
       child: _iconImageFile != null
           ? ClipOval(
-              child: Image.file(
-                _iconImageFile!,
+              child: Image(
+                image: localImageProvider(_iconImageFile!.path),
                 width: 24,
                 height: 24,
                 fit: BoxFit.cover,
@@ -1664,8 +1672,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
         Expanded(
           child: _model3dFile != null || widget.region?.model3dUrl != null
             ? ModelViewer(
-                src: _model3dFile != null 
-                    ? 'file://${_model3dFile!.path}' 
+                src: _model3dFile != null
+                    ? (kIsWeb ? _model3dFile!.path : 'file://${_model3dFile!.path}')
                     : widget.region!.model3dUrl!,
                 alt: "A 3D model",
                 ar: false,
@@ -1674,8 +1682,8 @@ class _BodyRegionEditorPageState extends State<_BodyRegionEditorPage> {
               )
             : _image2dFile != null || widget.region?.image2dUrl != null
               ? Center(
-                  child: _image2dFile != null 
-                    ? Image.file(_image2dFile!, fit: BoxFit.contain)
+                  child: _image2dFile != null
+                    ? Image(image: localImageProvider(_image2dFile!.path), fit: BoxFit.contain)
                     : Image.network(widget.region!.image2dUrl!, fit: BoxFit.contain),
                 )
               : _buildReferenceModelViewer(),

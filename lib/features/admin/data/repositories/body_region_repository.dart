@@ -1,6 +1,7 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/utils/file_ops.dart';
 import '../models/body_region_model.dart';
 import 'package:path/path.dart' as p;
 
@@ -25,7 +26,7 @@ class BodyRegionRepository {
     }
   }
 
-  Future<BodyRegionModel> createRegion(BodyRegionModel region, {File? iconImageFile, File? image2dFile, File? model3dFile}) async {
+  Future<BodyRegionModel> createRegion(BodyRegionModel region, {XFile? iconImageFile, XFile? image2dFile, XFile? model3dFile}) async {
     try {
       String? iconImageUrl;
       String? image2dUrl;
@@ -54,7 +55,7 @@ class BodyRegionRepository {
     }
   }
 
-  Future<BodyRegionModel> updateRegion(String id, BodyRegionModel region, {File? iconImageFile, File? image2dFile, File? model3dFile, bool deleteIcon = false, bool delete2d = false, bool delete3d = false}) async {
+  Future<BodyRegionModel> updateRegion(String id, BodyRegionModel region, {XFile? iconImageFile, XFile? image2dFile, XFile? model3dFile, bool deleteIcon = false, bool delete2d = false, bool delete3d = false}) async {
     try {
       String? iconImageUrl = region.iconImageUrl;
       String? image2dUrl = region.image2dUrl;
@@ -112,11 +113,18 @@ class BodyRegionRepository {
     }
   }
 
-  Future<String> uploadFile(String regionId, File file, String type) async {
-    final ext = p.extension(file.path);
+  Future<String> uploadFile(String regionId, XFile file, String type) async {
+    // ใช้ file.name — บน web file.path เป็น blob URL ที่ไม่มีนามสกุลไฟล์
+    final ext = p.extension(file.name);
     final fileName = '${regionId}_${type}_${DateTime.now().millisecondsSinceEpoch}$ext';
-    
-    await _client.storage.from(_bucketName).upload(fileName, file);
+
+    // upload(File) → uploadBinary is safe: storage_client reads the file into
+    // bytes internally anyway; extension + contentType are preserved via name.
+    await _client.storage.from(_bucketName).uploadBinary(
+          fileName,
+          await file.readAsBytes(),
+          fileOptions: FileOptions(contentType: contentTypeFor(file.name)),
+        );
     return _client.storage.from(_bucketName).getPublicUrl(fileName);
   }
 

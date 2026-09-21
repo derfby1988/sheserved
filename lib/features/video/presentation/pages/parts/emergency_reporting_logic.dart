@@ -130,7 +130,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       if (_gpsTimer != null) _gpsTimer!.cancel();
       _isRecording = false;
       if (mounted) setState(() {});
-      _uploadIncident(File(videoFile.path));
+      _uploadIncident(videoFile);
     } catch (e) {
       debugPrint("Error stopping recording: $e");
     }
@@ -231,7 +231,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
     try {
       final userId = AuthService.instance.userId;
       if (userId == null) throw Exception("User not logged in");
-      List<File> filesToUpload = _capturedPhotos.map((x) => File(x.path)).toList();
+      final filesToUpload = List<XFile>.from(_capturedPhotos);
       final uploadResult = await ServiceLocator.instance.videoRepository.uploadEmergencyPhotos(
         userId: userId,
         photoFiles: filesToUpload,
@@ -298,7 +298,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
     }
   }
 
-  Future<void> _uploadIncident(File file) async {
+  Future<void> _uploadIncident(XFile file) async {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const AlertDialog(content: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text('กำลังอัปโหลดข้อมูลเหตุฉุกเฉิน...')])));
     String? insertedVideoId;
     try {

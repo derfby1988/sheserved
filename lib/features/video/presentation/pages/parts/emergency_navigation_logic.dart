@@ -370,7 +370,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       }
       if (video != null) {
         if (video.localFilePath != null &&
-            File(video.localFilePath!).existsSync()) {
+            localRefExistsSync(video.localFilePath!)) {
           _initializePlayer(video.localFilePath!, isLocal: true);
         } else if (video.bunnyUrl != null && video.bunnyUrl!.isNotEmpty) {
           _initializePlayer(
@@ -1483,7 +1483,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
 
     final controller = isLocal
-        ? VideoPlayerController.file(File(url))
+        ? localVideoController(url)
         : VideoPlayerController.networkUrl(Uri.parse(url));
     _videoPlayerController = controller;
 
@@ -1738,7 +1738,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      List<File> files = _capturedPhotos.map((x) => File(x.path)).toList();
+      final files = List<XFile>.from(_capturedPhotos);
       final uploadResult = await ServiceLocator.instance.videoRepository
           .uploadEmergencyPhotos(
             userId: userId,

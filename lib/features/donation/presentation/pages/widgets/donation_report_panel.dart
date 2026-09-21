@@ -1,9 +1,11 @@
-import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:csv/csv.dart';
+import 'package:sheserved/core/utils/file_ops.dart';
 
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/core/constants/app_text_styles.dart';
@@ -122,22 +124,30 @@ class _DonationReportPanelState extends State<DonationReportPanel> {
 
   Future<void> _saveCsvAndNotify(String csvData, String fileName) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final File file = File('${directory.path}/$fileName');
-      await file.writeAsString(csvData);
+      // IO: เขียนลง documents dir คืน path — Web: trigger browser download
+      final saved = await saveUserDocument(
+        Uint8List.fromList(utf8.encode(csvData)),
+        fileName,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('ดาวน์โหลดสำเร็จ! บันทึกไว้ที่: ${file.path}'),
+          content: Text(
+            kIsWeb
+                ? 'ดาวน์โหลดสำเร็จ! ($saved)'
+                : 'ดาวน์โหลดสำเร็จ! บันทึกไว้ที่: $saved',
+          ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'คัดลอก Path',
-            textColor: Colors.white,
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: file.path));
-            },
-          ),
+          action: kIsWeb
+              ? null
+              : SnackBarAction(
+                  label: 'คัดลอก Path',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: saved));
+                  },
+                ),
         ));
       }
     } catch (e) {
