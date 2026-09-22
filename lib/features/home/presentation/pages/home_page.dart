@@ -2742,7 +2742,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   Widget _buildTopNavigationBar(BuildContext context) {
     final chatCount = ref.watch(chatUnreadProvider);
-    final erpCount = ref.watch(notificationProvider).unreadCount;
+    final erpCount = ref.watch(notificationProvider).totalUnreadCount;
     final total = chatCount + erpCount;
 
     return AnimatedContainer(

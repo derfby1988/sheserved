@@ -4,6 +4,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   void _initCompass() {
     _compassSub?.cancel();
     _compassSub = null;
+    // W2: flutter_compass ไม่มี web impl — ซ่อน/ข้ามบน web
+    if (kIsWeb) return;
     if (_currentResponseId == null) return;
     _compassSub = FlutterCompass.events?.listen((event) {
       if (mounted && event.heading != null) {

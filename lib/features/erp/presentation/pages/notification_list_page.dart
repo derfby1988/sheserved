@@ -35,7 +35,7 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
       appBar: AppBar(
         title: const Text('การแจ้งเตือน'),
         actions: [
-          if (state.unreadCount > 0)
+          if (state.totalUnreadCount > 0)
             TextButton.icon(
               onPressed: () {
                 ref

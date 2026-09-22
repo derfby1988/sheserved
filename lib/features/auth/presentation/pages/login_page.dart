@@ -147,7 +147,10 @@ class _LoginPageState extends State<LoginPage>
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 24,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: FadeTransition(
@@ -226,7 +229,8 @@ class _LoginPageState extends State<LoginPage>
                                 obscureText: _obscurePassword,
                                 textInputAction: TextInputAction.done,
                                 onSubmitted: (_) {
-                                  if (_isLoading || _isLoginCooldownActive) return;
+                                  if (_isLoading || _isLoginCooldownActive)
+                                    return;
                                   _handleLogin();
                                 },
                                 suffixIcon: IconButton(
@@ -253,7 +257,8 @@ class _LoginPageState extends State<LoginPage>
                                     ? 'รอ $_loginCooldownRemainingSeconds วิ'
                                     : 'เข้าสู่ระบบ',
                                 isLoading: _isLoading,
-                                isEnabled: !_isLoading && !_isLoginCooldownActive,
+                                isEnabled:
+                                    !_isLoading && !_isLoginCooldownActive,
                                 onPressed: _handleLogin,
                               ),
                               const SizedBox(height: 24),
@@ -268,7 +273,9 @@ class _LoginPageState extends State<LoginPage>
                                     ),
                                   ),
                                   const Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 12),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
                                     child: Text(
                                       'หรือเข้าสู่ระบบด้วย',
                                       style: TextStyle(
@@ -289,37 +296,40 @@ class _LoginPageState extends State<LoginPage>
                               const SizedBox(height: 18),
 
                               // ปุ่ม Social Login สไตล์ Neumorphic
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _buildSocialButton(
-                                    SocialProvider.google,
-                                    onPressed: () => _handleSocialLogin(
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _buildSocialButton(
                                       SocialProvider.google,
+                                      onPressed: () => _handleSocialLogin(
+                                        SocialProvider.google,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  _buildSocialButton(
-                                    SocialProvider.facebook,
-                                    onPressed: () => _handleSocialLogin(
+                                    const SizedBox(width: 14),
+                                    _buildSocialButton(
                                       SocialProvider.facebook,
+                                      onPressed: () => _handleSocialLogin(
+                                        SocialProvider.facebook,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  _buildSocialButton(
-                                    SocialProvider.apple,
-                                    onPressed: () => _handleSocialLogin(
+                                    const SizedBox(width: 14),
+                                    _buildSocialButton(
                                       SocialProvider.apple,
+                                      onPressed: () => _handleSocialLogin(
+                                        SocialProvider.apple,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  _buildSocialButton(
-                                    SocialProvider.line,
-                                    onPressed: () => _handleSocialLogin(
+                                    const SizedBox(width: 14),
+                                    _buildSocialButton(
                                       SocialProvider.line,
+                                      onPressed: () => _handleSocialLogin(
+                                        SocialProvider.line,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 24),
 
@@ -463,10 +473,7 @@ class _LoginPageState extends State<LoginPage>
         decoration: BoxDecoration(
           color: NeumorphicTheme.baseColor,
           shape: BoxShape.circle,
-          boxShadow: NeumorphicTheme.smallShadows(
-            distance: 4,
-            blur: 8,
-          ),
+          boxShadow: NeumorphicTheme.smallShadows(distance: 4, blur: 8),
         ),
         child: Center(
           child: Container(
@@ -573,19 +580,25 @@ class _LoginPageState extends State<LoginPage>
         _usernameController.text.trim(),
         _passwordController.text,
       );
-      debugPrint('LoginPage: _userRepository.login() returned user=${user != null}');
+      debugPrint(
+        'LoginPage: _userRepository.login() returned user=${user != null}',
+      );
 
       if (!mounted) return;
 
       if (user != null) {
         _resetFailedLoginAttempts();
         debugPrint('LoginPage: calling AuthService.instance.login()');
-        await AuthService.instance.login(user).timeout(
-          const Duration(seconds: 3),
-          onTimeout: () {
-            debugPrint('LoginPage: AuthService.login() timeout! Proceeding anyway.');
-          },
-        );
+        await AuthService.instance
+            .login(user)
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () {
+                debugPrint(
+                  'LoginPage: AuthService.login() timeout! Proceeding anyway.',
+                );
+              },
+            );
         debugPrint('LoginPage: AuthService.instance.login() completed');
         if (mounted) _showSnackBar('เข้าสู่ระบบสำเร็จ');
 
@@ -614,10 +627,18 @@ class _LoginPageState extends State<LoginPage>
               final dynamic targetArgs = args['args'] ?? args['arguments'];
               if (target != null) {
                 debugPrint('LoginPage: navigating to $target');
-                Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+                Navigator.pushReplacementNamed(
+                  context,
+                  target,
+                  arguments: targetArgs,
+                );
               } else {
                 debugPrint('LoginPage: no target, going to /');
-                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/',
+                  (route) => false,
+                );
               }
             } else if (args is String) {
               debugPrint('LoginPage: navigating to $args');
@@ -689,12 +710,16 @@ class _LoginPageState extends State<LoginPage>
 
       if (result.success && result.user != null) {
         debugPrint('LoginPage: social calling AuthService.instance.login()');
-        await AuthService.instance.login(result.user!).timeout(
-          const Duration(seconds: 3),
-          onTimeout: () {
-            debugPrint('LoginPage: social AuthService.login() timeout! Proceeding anyway.');
-          },
-        );
+        await AuthService.instance
+            .login(result.user!)
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () {
+                debugPrint(
+                  'LoginPage: social AuthService.login() timeout! Proceeding anyway.',
+                );
+              },
+            );
         debugPrint('LoginPage: social AuthService.instance.login() completed');
 
         if (mounted) {
@@ -731,10 +756,18 @@ class _LoginPageState extends State<LoginPage>
               final dynamic targetArgs = args['args'] ?? args['arguments'];
               if (target != null) {
                 debugPrint('LoginPage: navigating to $target');
-                Navigator.pushReplacementNamed(context, target, arguments: targetArgs);
+                Navigator.pushReplacementNamed(
+                  context,
+                  target,
+                  arguments: targetArgs,
+                );
               } else {
                 debugPrint('LoginPage: no target, going to /');
-                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/',
+                  (route) => false,
+                );
               }
             } else if (args is String) {
               debugPrint('LoginPage: navigating to $args');

@@ -267,9 +267,31 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
         _sportProposalNotifications = proposals;
         _isLoadingSportProposals = false;
       });
+      _syncSportBadge();
     } catch (_) {
       if (mounted) setState(() => _isLoadingSportProposals = false);
     }
+  }
+
+  /// แจ้ง provider ให้คง/ตัดการ์ดคำขอกีฬาในหน่วยความจำตามรายการที่ยัง
+  /// `pending` จริง — ตัวเลขบน badge จึงไม่ค้างอยู่หลังคำขอถูกตรวจแล้ว
+  void _syncSportBadge() {
+    if (!_needsSportProposalData) return;
+    ref
+        .read(notificationProvider.notifier)
+        .syncLocalNotifications(_sportProposalNotifications);
+  }
+
+  void _hideLocalSportProposal(AppNotification notification) {
+    _dismissedSportProposalIds.add(
+      notification.payload['sportId']?.toString() ?? '',
+    );
+    setState(() {
+      _sportProposalNotifications = _sportProposalNotifications
+          .where((item) => item.id != notification.id)
+          .toList();
+    });
+    _syncSportBadge();
   }
 
   Future<void> _changeCategory(String? category) async {
@@ -282,6 +304,19 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   }
 
   Future<void> _markAllAsRead() async {
+    // การ์ดคำขอกีฬาเป็นรายการที่สร้างฝั่ง client จึงไม่มีแถวให้ mark read
+    // ต้องซ่อนไว้ในหน่วยความจำก่อน ไม่งั้น _refresh() จะโหลดกลับมาและ badge
+    // ขึ้นใหม่ทันทีหลังกด "อ่านทั้งหมด"
+    if (_needsSportProposalData && _sportProposalNotifications.isNotEmpty) {
+      for (final item in _sportProposalNotifications) {
+        _dismissedSportProposalIds.add(
+          item.payload['sportId']?.toString() ?? '',
+        );
+      }
+      setState(() => _sportProposalNotifications = []);
+      _syncSportBadge();
+    }
+
     final tasks = <Future<void>>[
       ref
           .read(notificationProvider.notifier)
@@ -308,14 +343,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     // Local sport cards come from the `sports` table in legacy mode and do
     // not have a corresponding client-readable app_notifications row.
     if (_isLocalSportProposal(notification)) {
-      _dismissedSportProposalIds.add(
-        notification.payload['sportId']?.toString() ?? '',
-      );
-      setState(() {
-        _sportProposalNotifications = _sportProposalNotifications
-            .where((item) => item.id != notification.id)
-            .toList();
-      });
+      _hideLocalSportProposal(notification);
       if (mounted) Navigator.of(context).pop();
       if (context.mounted) {
         await Navigator.of(context).pushNamed(route);
@@ -348,15 +376,7 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   /// ปัดซ้ายเพื่อซ่อนรายการแจ้งเตือน — ลบออกจากรายการ + refresh unread count
   Future<void> _dismissNotification(AppNotification notification) async {
     if (_isLocalSportProposal(notification)) {
-      final sportId = notification.payload['sportId']?.toString() ?? '';
-      _dismissedSportProposalIds.add(sportId);
-      if (mounted) {
-        setState(() {
-          _sportProposalNotifications = _sportProposalNotifications
-              .where((item) => item.id != notification.id)
-              .toList();
-        });
-      }
+      _hideLocalSportProposal(notification);
       return;
     }
 

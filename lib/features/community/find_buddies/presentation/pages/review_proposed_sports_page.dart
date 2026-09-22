@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../../../core/constants/app_colors.dart';
 import '../../../../../../services/auth_service.dart';
+import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
+import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
@@ -8,10 +11,12 @@ class ReviewProposedSportsPage extends StatefulWidget {
   const ReviewProposedSportsPage({super.key});
 
   @override
-  State<ReviewProposedSportsPage> createState() => _ReviewProposedSportsPageState();
+  State<ReviewProposedSportsPage> createState() =>
+      _ReviewProposedSportsPageState();
 }
 
-class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
+class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage>
+    with TlzNavBarScrollMixin {
   late final FitnessBuddiesRepository _repo;
   bool _loading = true;
   String? _error;
@@ -36,7 +41,11 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
       return const TextStyle(fontFamily: 'Segoe UI Emoji');
     }
     return const TextStyle(
-      fontFamilyFallback: ['Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Emoji'],
+      fontFamilyFallback: [
+        'Apple Color Emoji',
+        'Noto Color Emoji',
+        'Segoe UI Emoji',
+      ],
     );
   }
 
@@ -69,13 +78,20 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
-        final ctrl = TextEditingController(text: sport['icon']?.toString() ?? '');
-        String selectedLayout = (initialLayout == 'single' || initialLayout == 'double') ? initialLayout : 'none';
+        final ctrl = TextEditingController(
+          text: sport['icon']?.toString() ?? '',
+        );
+        String selectedLayout =
+            (initialLayout == 'single' || initialLayout == 'double')
+            ? initialLayout
+            : 'none';
         FieldStyle selectedStyle = FieldStyle.fromJson(sport['field_style']);
 
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            final previewLayout = selectedLayout == 'none' ? 'single' : selectedLayout;
+            final previewLayout = selectedLayout == 'none'
+                ? 'single'
+                : selectedLayout;
             return AlertDialog(
               title: Text('อนุมัติกีฬา: ${sport['name_th'] ?? ''}'),
               content: SingleChildScrollView(
@@ -91,7 +107,13 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('ยืนยันรูปแบบสนาม (Field Layout):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      'ยืนยันรูปแบบสนาม (Field Layout):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     SegmentedButton<String>(
                       segments: const [
@@ -100,7 +122,8 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                         ButtonSegment(value: 'double', label: Text('2 ฝั่ง')),
                       ],
                       selected: {selectedLayout},
-                      onSelectionChanged: (set) => setDialogState(() => selectedLayout = set.first),
+                      onSelectionChanged: (set) =>
+                          setDialogState(() => selectedLayout = set.first),
                     ),
                     if (selectedLayout != 'none') ...[
                       const SizedBox(height: 12),
@@ -121,14 +144,18 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
                       FieldStylePicker(
                         value: selectedStyle,
                         sportName: sport['name_th']?.toString(),
-                        onChanged: (s) => setDialogState(() => selectedStyle = s),
+                        onChanged: (s) =>
+                            setDialogState(() => selectedStyle = s),
                       ),
                     ],
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('ยกเลิก'),
+                ),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, {
                     'icon': ctrl.text.trim(),
@@ -170,8 +197,14 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
           title: const Text('ระบุเหตุผลในการปฏิเสธ'),
           content: TextField(controller: ctrl),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('ยกเลิก')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('ยืนยัน')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('ยืนยัน'),
+            ),
           ],
         );
       },
@@ -181,83 +214,206 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage> {
     _load();
   }
 
+  void _goBack() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacementNamed(context, '/community/sport-club');
+    }
+  }
+
+  void _onNavIndexChanged(int index) {
+    if (index == 2) return;
+    Navigator.pushReplacementNamed(
+      context,
+      '/main-app',
+      arguments: {'index': index},
+    );
+  }
+
+  void _onAddPressed() {
+    if (AuthService.instance.currentUser == null) {
+      Navigator.pushNamed(context, '/login', arguments: '/emergency-live');
+      return;
+    }
+    Navigator.pushNamed(context, '/emergency-live');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ตรวจคำขอเพิ่มประเภทกีฬา')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                      const SizedBox(height: 12),
-                      const Text('โหลดไม่สำเร็จ',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Text(_error!,
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('ลองใหม่'),
-                      ),
-                    ],
-                  ),
-                )
-              : _items.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.check_circle_outline, size: 48, color: Colors.green),
-                          const SizedBox(height: 12),
-                          const Text('ไม่มีคำขอที่รอตรวจ',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: _load,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('รีเฟรช'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () async => _load(),
-                      child: ListView.builder(
-                        itemCount: _items.length,
-                        itemBuilder: (context, i) {
-                          final s = _items[i];
-                          final layout = s['field_layout']?.toString() ?? 'none';
-                          final layoutLabel = layout == 'double' ? 'สนาม 2 ฝั่ง' : (layout == 'single' ? 'สนาม 1 ฝั่ง' : 'ไม่ใช้สนาม');
-
-                          return Card(
-                            child: ListTile(
-                              leading: Text.rich(
-                                TextSpan(
-                                  text: s['icon']?.toString() ?? '🏅',
-                                  style: _emojiTextStyle(context).merge(const TextStyle(fontSize: 24)),
-                                ),
-                              ),
-                              title: Text(s['name_th']?.toString() ?? ''),
-                              subtitle: Text('${s['name_en'] ?? ''} • แนะนำ: $layoutLabel'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(onPressed: () => _reject(s['id'].toString()), icon: const Icon(Icons.close, color: Colors.red)),
-                                  IconButton(onPressed: () => _approve(s), icon: const Icon(Icons.check, color: Colors.green)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+      backgroundColor: AppColors.primary,
+      extendBody: true,
+      bottomNavigationBar: TlzBottomNavigationBar(
+        currentIndex: -1,
+        isVisible: isNavBarVisible,
+        onIndexChanged: _onNavIndexChanged,
+        onAddPressed: _onAddPressed,
+      ),
+      body: Column(
+        children: [
+          // Custom Header matching sport club page style
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  leading: IconButton(
+                    tooltip: 'ย้อนกลับ',
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new,
+                      color: Colors.white,
                     ),
+                    onPressed: _goBack,
+                  ),
+                  middle: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'ตรวจคำขอเพิ่มประเภทกีฬา',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                  actions: [
+                    IconButton(
+                      tooltip: 'รีเฟรช',
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      onPressed: _load,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Body content
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32),
+                  topRight: Radius.circular(32),
+                ),
+              ),
+              child: wrapScrollNotification(child: _buildBody()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 12),
+            const Text(
+              'โหลดไม่สำเร็จ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _error!,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              label: const Text('ลองใหม่'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              size: 48,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'ไม่มีคำขอที่รอตรวจ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              label: const Text('รีเฟรช'),
+            ),
+          ],
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: () async => _load(),
+      child: ListView.builder(
+        padding: const EdgeInsets.only(bottom: 120),
+        itemCount: _items.length,
+        itemBuilder: (context, i) {
+          final s = _items[i];
+          final layout = s['field_layout']?.toString() ?? 'none';
+          final layoutLabel = layout == 'double'
+              ? 'สนาม 2 ฝั่ง'
+              : (layout == 'single' ? 'สนาม 1 ฝั่ง' : 'ไม่ใช้สนาม');
+
+          return Card(
+            child: ListTile(
+              leading: Text.rich(
+                TextSpan(
+                  text: s['icon']?.toString() ?? '🏅',
+                  style: _emojiTextStyle(
+                    context,
+                  ).merge(const TextStyle(fontSize: 24)),
+                ),
+              ),
+              title: Text(s['name_th']?.toString() ?? ''),
+              subtitle: Text('${s['name_en'] ?? ''} • แนะนำ: $layoutLabel'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => _reject(s['id'].toString()),
+                    icon: const Icon(Icons.close, color: Colors.red),
+                  ),
+                  IconButton(
+                    onPressed: () => _approve(s),
+                    icon: const Icon(Icons.check, color: Colors.green),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

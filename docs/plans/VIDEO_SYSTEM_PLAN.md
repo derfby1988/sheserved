@@ -5580,3 +5580,29 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 - **Bug Fix #12** (ข้อ 5: ห้าม phantom id): ปิดรูรั่วที่เหลือผ่าน Supabase fallback — ทำให้ "id ต้องมาจาก Local DB" สมบูรณ์
 - **Bug Fix #12 F1** (rate limit): guard อยู่ใน request เดิม ไม่เพิ่ม call — ไม่เกี่ยวข้อง
 - **Reporter Mission Lock — Backend Guard** (§Responder Response System): Phase นี้ implement ฝั่ง volunteer accept; backend guard ฝั่ง reporter (ห้ามแจ้งเหตุซ้อนที่ insert) ยังเป็นงานต่างหาก ไม่รวมใน Phase นี้
+## 18. ข้อจำกัดบน Flutter Web (W0–W2 — เพิ่ม 2026-09-21)
+
+อ้างอิง `docs/guides/flutter_web_enablement_plan.md` — ข้อจำกัดเหล่านี้มีผลเฉพาะ web target เท่านั้น mobile (iOS/Android) ไม่เปลี่ยนแปลง
+
+### 18.1 PDPA Face Blur บน web ต้องพึ่ง backend
+
+- Mobile ใช้ ML Kit on-device; **web ไม่มี ML Kit** → เรียก `POST /api/media/face-blur` (ใหม่ใน W2) ที่ใช้ `face-blur-service.js` (Python `deface` + CenterFace) เดียวกับ pipeline ของ `routes/video.js`
+- **Fail-closed โดยตั้งใจ:** ถ้า backend ไม่ตอบ/blur ไม่สำเร็จ → client **ไม่ส่งรูป** (แสดง snackbar "ไม่สามารถเบลอใบหน้าได้") — ไม่มี path ใดอัปโหลดภาพ unblurred จาก web
+- **ผลข้างเคียง:** การส่งรูปใน chat/consultation บน web จึงผูกกับความพร้อมของ backend — backend down = ส่งรูปไม่ได้ (ยอมรับเพื่อ PDPA)
+- Endpoint อยู่หลัง `verifyToken` — dev แบบ `USE_BACKEND_AUTH=false` ใช้ compat `x-user-id` window ได้ชั่วคราว; production ต้องรอ W3 backend auth
+
+### 18.2 Compass ถูกซ่อนบน web
+
+- `flutter_compass` ไม่มี web impl — `_initCompass` ทั้งใน `rescue_page.dart` และ `parts/emergency_navigation_logic.dart` return ตั้งแต่ต้นเมื่อ `kIsWeb`
+- `_deviceHeading` จะเป็น null เสมอบน web → `ResponderCompassWidget` ต้อง render สภาพ null ได้ (มีอยู่แล้ว); heading ของ volunteer ไม่ถูกส่ง/แสดงบน web
+
+### 18.3 Route drawing ปิดบน web (rescue map)
+
+- `rescue_page._drawRouteToEmergency` บน web **ไม่เรียก** Directions REST (โดน CORS) — แสดงเฉพาะ marker จุดเกิดเหตุ/อาสา + zoom bounds; `_distanceString`/`_durationString` แสดง '—' แทนค่าจาก API
+- `PolylinePoints.decodePolyline` จุดอื่น (`map_background_widget`, `yield_way_map_dialog`, `emergency_navigation_logic`) เป็น pure Dart — decode polyline ที่ server ส่งมาได้ปกติ ไม่ใช่การยิง REST เอง
+- เส้นทางที่จะเปิด route drawing บน web ในอนาคต: proxy ผ่าน backend (ตัวเลือก b ที่ยังไม่เลือก)
+
+### 18.4 ยังไม่ได้ verify บน browser จริง
+
+- Compile/build ผ่าน (`flutter build web --no-tree-shake-icons`) แต่ยังไม่มี browser smoke: upload รูปผ่าน face-blur endpoint, emergency map markers, incident report media
+- สถานะ verify ทั้งหมดอยู่ในหลักฐานท้าย W1 ของ web enablement plan

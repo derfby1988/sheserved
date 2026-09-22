@@ -15,7 +15,11 @@ class HealthArticleDialogs {
     BuildContext context, {
     String? commentId,
     required List<HealthArticleComment> comments,
-    required Future<HealthArticleComment?> Function(String content, {String? parentId}) onSubmit,
+    required Future<HealthArticleComment?> Function(
+      String content, {
+      String? parentId,
+    })
+    onSubmit,
     required Future<void> Function(String commentId) onScrollToComment,
     required int totalRootComments,
     required String currentSort,
@@ -159,17 +163,16 @@ class HealthArticleDialogs {
                                           content,
                                           parentId: commentId,
                                         );
-                                        if (context.mounted && newComment != null) {
+                                        if (context.mounted &&
+                                            newComment != null) {
                                           Navigator.pop(context);
 
                                           if (commentId == null) {
                                             final totalRootPages =
-                                                (totalRootComments / 10)
-                                                    .ceil();
+                                                (totalRootComments / 10).ceil();
 
                                             if (currentSort == 'oldest' &&
-                                                currentPage !=
-                                                    totalRootPages) {
+                                                currentPage != totalRootPages) {
                                               await changePage(totalRootPages);
                                             } else if (currentSort ==
                                                     'newest' &&
@@ -266,7 +269,11 @@ class HealthArticleDialogs {
   static void showEditDialog(
     BuildContext context, {
     required HealthArticleComment comment,
-    required Future<HealthArticleComment?> Function(String commentId, String content) onUpdate,
+    required Future<HealthArticleComment?> Function(
+      String commentId,
+      String content,
+    )
+    onUpdate,
     required Future<void> Function(String commentId) onScrollToComment,
   }) {
     final controller = TextEditingController(text: comment.content);
@@ -392,12 +399,12 @@ class HealthArticleDialogs {
                                     if (content.trim().isNotEmpty) {
                                       setDialogState(() => isSubmitting = true);
                                       try {
-                                        final updatedComment =
-                                            await onUpdate(
-                                              comment.id,
-                                              content,
-                                            );
-                                        if (context.mounted && updatedComment != null) {
+                                        final updatedComment = await onUpdate(
+                                          comment.id,
+                                          content,
+                                        );
+                                        if (context.mounted &&
+                                            updatedComment != null) {
                                           Navigator.pop(context);
                                           onScrollToComment(comment.id);
                                         }
@@ -1191,13 +1198,16 @@ class HealthArticleDialogs {
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'ขอระบุแท็กยาและผลิตภัณฑ์สุขภาพ',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              fontFamily: 'SukhumvitSet',
+                          const Expanded(
+                            child: Text(
+                              'ขอระบุแท็กยาและผลิตภัณฑ์สุขภาพ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                fontFamily: 'SukhumvitSet',
+                              ),
                             ),
                           ),
                           IconButton(
@@ -1415,10 +1425,7 @@ class HealthArticleDialogs {
   }
 
   /// Add tag dialog for selecting medications to tag in the article.
-  static void showAddTagDialog(
-    BuildContext context,
-    Function(String) onAdd,
-  ) {
+  static void showAddTagDialog(BuildContext context, Function(String) onAdd) {
     String searchQuery = '';
     List<MedicationModel> searchResults = [];
     List<String> selectedTags = [];
@@ -1723,9 +1730,7 @@ class HealthArticleDialogs {
                               Navigator.pop(context);
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(
-                                0xFF1E3A8A,
-                              ),
+                              backgroundColor: const Color(0xFF1E3A8A),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(

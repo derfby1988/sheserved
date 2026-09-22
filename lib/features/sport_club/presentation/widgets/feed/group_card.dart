@@ -378,11 +378,15 @@ class GroupCard extends StatelessWidget {
                     color: hasCover ? Colors.white70 : AppColors.primaryDark,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    'มีค่าใช้จ่าย กดเพื่อแสดงรายละเอียด',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: hasCover ? Colors.white70 : Colors.grey[800],
+                  Flexible(
+                    child: Text(
+                      'มีค่าใช้จ่าย กดเพื่อแสดงรายละเอียด',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: hasCover ? Colors.white70 : Colors.grey[800],
+                      ),
                     ),
                   ),
                 ],
@@ -470,22 +474,26 @@ class GroupCard extends StatelessWidget {
             child: Center(child: textPill(const Text('กดเพื่อแสดงรอบอื่น ๆ'))),
           ),
         if (isAdmin)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              joinButton,
-              TextButton.icon(
-                onPressed: () => CreateSessionSheet.show(
-                  context,
-                  repo: repo,
-                  client: client,
-                  groupId: group['id'].toString(),
-                  onSessionCreated: onSessionCreated,
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                joinButton,
+                TextButton.icon(
+                  onPressed: () => CreateSessionSheet.show(
+                    context,
+                    repo: repo,
+                    client: client,
+                    groupId: group['id'].toString(),
+                    onSessionCreated: onSessionCreated,
+                  ),
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('เพิ่มรอบนัด'),
                 ),
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('เพิ่มรอบนัด'),
-              ),
-            ],
+              ],
+            ),
           )
         else
           Align(alignment: Alignment.centerRight, child: joinButton),

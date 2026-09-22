@@ -39,9 +39,7 @@ class NeumorphicLockBadge extends StatelessWidget {
           ),
         ],
       ),
-      child: Center(
-        child: _buildGoldLock(iconSize),
-      ),
+      child: Center(child: _buildGoldLock(iconSize)),
     );
   }
 
@@ -59,29 +57,40 @@ class NeumorphicLockBadge extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           // ห่วงแม่กุญแจ (Shackle) ด้านบน
+          // วาดเป็นวงแหวน gradient สองชั้นแทน Border หลายสี
+          // (BoxDecoration ไม่รองรับ borderRadius กับ border ที่สีไม่เท่ากัน)
           Positioned(
             top: size * 0.08,
             child: Container(
               width: shackleRadius * 2,
               height: shackleRadius * 2,
               decoration: BoxDecoration(
-                shape: BoxShape.rectangle,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(shackleRadius),
                   topRight: Radius.circular(shackleRadius),
                 ),
-                border: Border(
-                  top: BorderSide(
-                    color: const Color(0xFFE5B350),
-                    width: shackleStroke,
-                  ),
-                  left: BorderSide(
-                    color: const Color(0xFFC48E2E),
-                    width: shackleStroke,
-                  ),
-                  right: BorderSide(
-                    color: const Color(0xFFE5B350),
-                    width: shackleStroke,
+                gradient: const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Color(0xFFC48E2E),
+                    Color(0xFFE5B350),
+                    Color(0xFFE5B350),
+                  ],
+                  stops: [0.0, 0.35, 1.0],
+                ),
+              ),
+              padding: EdgeInsets.only(
+                top: shackleStroke,
+                left: shackleStroke,
+                right: shackleStroke,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: NeumorphicTheme.baseColor,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(shackleRadius - shackleStroke),
+                    topRight: Radius.circular(shackleRadius - shackleStroke),
                   ),
                 ),
               ),

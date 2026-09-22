@@ -2082,48 +2082,63 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ],
-                const Spacer(),
-                if (_lat != null && _lng != null)
-                  TextButton.icon(
-                    onPressed: () => setState(() {
-                      _lat = null;
-                      _lng = null;
-                    }),
-                    icon: const Icon(Icons.clear, size: 16),
-                    label: const Text(
-                      'ล้างพิกัด',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                    ),
-                  ),
-                TextButton.icon(
-                  onPressed: _isGettingLocation ? null : _getCurrentLocation,
-                  icon: _isGettingLocation
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.my_location, size: 16),
-                  label: const Text(
-                    'ใช้ตำแหน่งฉัน',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (_lat != null && _lng != null)
+                        TextButton.icon(
+                          onPressed: () => setState(() {
+                            _lat = null;
+                            _lng = null;
+                          }),
+                          icon: const Icon(Icons.clear, size: 16),
+                          label: const Text(
+                            'ล้างพิกัด',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                          ),
+                        ),
+                      TextButton.icon(
+                        onPressed: _isGettingLocation
+                            ? null
+                            : _getCurrentLocation,
+                        icon: _isGettingLocation
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.my_location, size: 16),
+                        label: const Text(
+                          'ใช้ตำแหน่งฉัน',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                        ),
+                      ),
+                      if (showLiveMap)
+                        TextButton.icon(
+                          onPressed: _showFullscreenMapPicker,
+                          icon: const Icon(Icons.fullscreen, size: 16),
+                          label: const Text(
+                            'ขยาย',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                if (showLiveMap)
-                  TextButton.icon(
-                    onPressed: _showFullscreenMapPicker,
-                    icon: const Icon(Icons.fullscreen, size: 16),
-                    label: const Text('ขยาย', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -2421,9 +2436,11 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   color: Colors.grey.shade500,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'ยังไม่ได้กำหนดค่าก๊วน/ค่าสมาชิก (ไม่บังคับ)',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                Expanded(
+                  child: Text(
+                    'ยังไม่ได้กำหนดค่าก๊วน/ค่าสมาชิก (ไม่บังคับ)',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
                 ),
               ],
             ),
@@ -2503,9 +2520,11 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   color: Colors.grey.shade500,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'ยังไม่ได้กำหนดแม่แบบค่าใช้จ่ายรอบ (ไม่บังคับ)',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                Expanded(
+                  child: Text(
+                    'ยังไม่ได้กำหนดแม่แบบค่าใช้จ่ายรอบ (ไม่บังคับ)',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
                 ),
               ],
             ),
@@ -2704,8 +2723,20 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           width: double.infinity,
           child: SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'single', label: Text('ครึ่งสนาม (1 ฝั่ง)')),
-              ButtonSegment(value: 'double', label: Text('เต็มสนาม (2 ฝั่ง)')),
+              ButtonSegment(
+                value: 'single',
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('ครึ่งสนาม (1 ฝั่ง)'),
+                ),
+              ),
+              ButtonSegment(
+                value: 'double',
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('เต็มสนาม (2 ฝั่ง)'),
+                ),
+              ),
             ],
             selected: {layout},
             onSelectionChanged: (Set<String> newSelection) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/services/auth_service.dart';
 
 /// Label for a sport chip: optional emoji icon + name.
 /// Also used by [GroupCard] for the sport pill on each card.
@@ -100,7 +101,16 @@ class AddSportFab extends StatelessWidget {
       ),
       padding: const EdgeInsets.only(left: 4, right: 8),
       child: InkWell(
-        onTap: () {
+        onTap: () async {
+          if (AuthService.instance.currentUser == null) {
+            await Navigator.pushNamed(
+              context,
+              '/login',
+              arguments: {'returnAfterLogin': true},
+            );
+            if (!context.mounted) return;
+            if (AuthService.instance.currentUser == null) return;
+          }
           Navigator.pushNamed(context, '/community/sport-club/sport/propose');
         },
         customBorder: const CircleBorder(),

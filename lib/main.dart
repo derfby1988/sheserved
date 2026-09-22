@@ -300,7 +300,7 @@ class SheservedApp extends StatelessWidget {
         '/community/sport-club/group/create': (context) =>
             const CreateGroupPage(),
         '/community/sport-club/sport/propose': (context) =>
-            const ProposeSportPage(),
+            const AuthGuardWidget(child: ProposeSportPage()),
         '/community/sport-club/sport/review': (context) =>
             const AuthGuardWidget(
               requiredRole: 'admin',

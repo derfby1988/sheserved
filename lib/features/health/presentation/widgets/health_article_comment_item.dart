@@ -23,14 +23,19 @@ class HealthArticleCommentHeader extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'การแสดงความคิดเห็น',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                  color: Color(0xFF4A89C8),
+              const Flexible(
+                child: Text(
+                  'การแสดงความคิดเห็น',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: Color(0xFF4A89C8),
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: currentSort,
@@ -75,9 +80,7 @@ class HealthArticleCommentHeader extends StatelessWidget {
                     size: 20,
                     color: Color(0xFFF1AE27),
                   ),
-                  style: const TextStyle(
-                    color: Colors.white,
-                  ),
+                  style: const TextStyle(color: Colors.white),
                 ),
               ),
             ],
@@ -339,69 +342,77 @@ class HealthArticleCommentItem extends StatelessWidget {
             Positioned(
               left: 0,
               top: 0,
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1C40F).withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'ความคิดเห็นที่ $displayNumber',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1C40F).withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'ความคิดเห็นที่ $displayNumber',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
-                  ),
-                  if (parentDisplayNumber != null) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.reply, size: 12, color: Colors.white70),
-                    const SizedBox(width: 4),
-                    Text(
-                      parentDisplayNumber!,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.bold,
+                    if (parentDisplayNumber != null) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.reply, size: 12, color: Colors.white70),
+                      const SizedBox(width: 4),
+                      Text(
+                        parentDisplayNumber!,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: onReply,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1AE27).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.reply,
+                              size: 14,
+                              color: Color(0xFFF1AE27),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'ตอบกลับ',
+                              style: TextStyle(
+                                color: Color(0xFFF1AE27),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: onReply,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1AE27).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.reply, size: 14, color: Color(0xFFF1AE27)),
-                          SizedBox(width: 4),
-                          Text(
-                            'ตอบกลับ',
-                            style: TextStyle(
-                              color: Color(0xFFF1AE27),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],

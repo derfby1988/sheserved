@@ -2303,6 +2303,10 @@ class GroupDetailSheet {
                                                               fee['name']
                                                                       ?.toString() ??
                                                                   '',
+                                                              maxLines: 1,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                               style: const TextStyle(
                                                                 fontSize: 13.5,
                                                                 fontWeight:
@@ -2316,41 +2320,51 @@ class GroupDetailSheet {
                                                             const SizedBox(
                                                               height: 2,
                                                             ),
-                                                            Row(
-                                                              children: [
-                                                                Text(
-                                                                  formatBaht(
-                                                                    fee['amount']
-                                                                        as num?,
+                                                            Text.rich(
+                                                              TextSpan(
+                                                                children: [
+                                                                  TextSpan(
+                                                                    text: formatBaht(
+                                                                      fee['amount']
+                                                                          as num?,
+                                                                    ),
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          13.5,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .bold,
+                                                                      color: AppColors
+                                                                          .primaryDark,
+                                                                    ),
                                                                   ),
-                                                                  style: const TextStyle(
-                                                                    fontSize:
-                                                                        13.5,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .bold,
-                                                                    color: AppColors
-                                                                        .primaryDark,
+                                                                  TextSpan(
+                                                                    text:
+                                                                        ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
+                                                                    style: TextStyle(
+                                                                      fontSize:
+                                                                          12,
+                                                                      color: Colors
+                                                                          .grey
+                                                                          .shade600,
+                                                                    ),
                                                                   ),
-                                                                ),
-                                                                Text(
-                                                                  ' / ${billingPeriodLabel(fee['billing_period']?.toString())}',
-                                                                  style: TextStyle(
-                                                                    fontSize:
-                                                                        12,
-                                                                    color: Colors
-                                                                        .grey
-                                                                        .shade600,
-                                                                  ),
-                                                                ),
-                                                              ],
+                                                                ],
+                                                              ),
                                                             ),
                                                           ],
                                                         ),
                                                       ),
-                                                      paymentTimingBadge(
-                                                        fee['payment_timing']
-                                                            ?.toString(),
+                                                      Flexible(
+                                                        child: FittedBox(
+                                                          fit: BoxFit.scaleDown,
+                                                          alignment: Alignment
+                                                              .centerRight,
+                                                          child: paymentTimingBadge(
+                                                            fee['payment_timing']
+                                                                ?.toString(),
+                                                          ),
+                                                        ),
                                                       ),
                                                     ],
                                                   ),

@@ -244,11 +244,17 @@ class EditGroupSheet {
                               segments: const [
                                 ButtonSegment(
                                   value: 'single',
-                                  label: Text('ครึ่งสนาม (1 ฝั่ง)'),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('ครึ่งสนาม (1 ฝั่ง)'),
+                                  ),
                                 ),
                                 ButtonSegment(
                                   value: 'double',
-                                  label: Text('เต็มสนาม (2 ฝั่ง)'),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('เต็มสนาม (2 ฝั่ง)'),
+                                  ),
                                 ),
                               ],
                               selected: {fieldLayout ?? 'double'},

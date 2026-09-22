@@ -14,6 +14,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/network/face_blur_client.dart';
 import '../../data/models/chat_models.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../services/auth_service.dart';
@@ -404,6 +405,17 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     }
   }
 
+  /// Web-only: PDPA blur ผ่าน backend deface/CenterFace (W2 decision b)
+  /// — fail-closed: throw ถ้า backend ใช้ไม่ได้ ห้าม fallback ไปอัปโหลดภาพ unblurred
+  Future<XFile> _blurImageViaBackend(XFile input, String userId) async {
+    final blurred = await blurImageViaBackend(
+      bytes: await input.readAsBytes(),
+      filename: input.name,
+      userId: userId,
+    );
+    return XFile.fromData(blurred, name: input.name);
+  }
+
   /// IO-only: ML Kit face detection + canvas watermark + JPEG compress.
   /// ไม่เรียกบน web (guard ด้วย kIsWeb ที่ call site) — ตาม W0.5/W2
   Future<XFile> _processImagePDPA(XFile input) async {
@@ -542,12 +554,23 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         ),
       );
 
-      // W0.5: PDPA blur/watermark ใช้ ML Kit + dart:io — ข้ามบน web (W2 ตัดสิน)
-      if (!kIsWeb) {
-        try {
-          file = await _processImagePDPA(file);
-        } catch (e) {
-          debugPrint('PDPA process error: $e');
+      // W2: IO ใช้ ML Kit on-device; web ใช้ backend deface/CenterFace (fail-closed)
+      try {
+        file = kIsWeb
+            ? await _blurImageViaBackend(file, user.id)
+            : await _processImagePDPA(file);
+      } catch (e) {
+        debugPrint('PDPA process error: $e');
+        if (kIsWeb) {
+          if (mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('ไม่สามารถเบลอใบหน้าได้ — รูปภาพไม่ถูกส่ง'),
+              ),
+            );
+          }
+          return;
         }
       }
 

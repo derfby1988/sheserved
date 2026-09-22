@@ -425,6 +425,13 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     final route = notificationPayloadRoute(notification);
     if (route == null) return;
     _hideCurrent();
+    // การ์ดคำขอกีฬาที่รับสดถูกนับใน badge ไว้แล้ว — กดเปิดแล้วต้องตัดออก
+    // ทันที ไม่งั้นตัวเลขค้างอยู่หลังเข้าหน้าตรวจคำขอ
+    if (_isLocalOnlyNotification(notification)) {
+      ref
+          .read(notificationProvider.notifier)
+          .removeLocalNotification(notification.id);
+    }
     NavigationService.navigatorKey.currentState?.pushNamed(route);
   }
 
@@ -449,7 +456,14 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
     _hideTimer?.cancel();
     _controller.stop();
     setState(() => _current = null);
-    if (notification == null || _isLocalOnlyNotification(notification)) {
+    if (notification == null) return;
+    // การ์ดที่ประกอบขึ้นในเครื่องไม่มีแถวจริงใน `app_notifications`
+    // (id ที่สร้างไม่ตรงกับแถวของ DB) — ตัดออกจาก badge ในหน่วยความจำ
+    // โดยไม่ยิง mark ที่ฐานข้อมูล
+    if (_isLocalOnlyNotification(notification)) {
+      ref
+          .read(notificationProvider.notifier)
+          .removeLocalNotification(notification.id);
       return;
     }
     ref

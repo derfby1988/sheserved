@@ -160,16 +160,23 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
   Widget build(BuildContext context) {
     final chatUnreadCount = ref.watch(chatUnreadProvider);
     final notificationState = ref.watch(notificationProvider);
+    final localCategoryCount = widget.category == null
+        ? 0
+        : ref
+              .read(notificationProvider.notifier)
+              .localUnreadCountFor(widget.category);
     final categoryCount = widget.category == null
         ? null
         : ref
-              .watch(notificationUnreadCountProvider(widget.category))
-              .when(
-                data: (count) => count,
-                loading: () => 0,
-                error: (_, _) => 0,
-              );
-    final notificationCount = categoryCount ?? notificationState.unreadCount;
+                  .watch(notificationUnreadCountProvider(widget.category))
+                  .when(
+                    data: (count) => count,
+                    loading: () => 0,
+                    error: (_, _) => 0,
+                  ) +
+              localCategoryCount;
+    final notificationCount =
+        categoryCount ?? notificationState.totalUnreadCount;
     final includesChat = widget.category == null || widget.category == 'chat';
     final count =
         widget.badgeCount ??

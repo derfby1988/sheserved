@@ -2934,6 +2934,403 @@ ALTER TABLE public.fitness_group_bookings
 - [ ] เมื่อเปิด Deep Link แอปนำทางไปที่ก๊วนและรอบนัดเป้าหมายได้อย่างถูกต้องแม้ใน Guest Mode
 - [ ] การเข้าร่วมยังคงผ่าน Qualification Guards ทั้งหมด 100%
 
+---
 
+## Phase 21 — Sports Hub: จองสนามกีฬาและค้นหาโค้ช/เทรนเนอร์ ⏳ รอ implement
 
+> **หมายเหตุเรื่องลำดับ Phase:** ผู้ขอเรียกแผนนี้ว่า “Phase 17” แต่ไฟล์นี้มี Phase 17–20 อยู่แล้ว จึงใช้เลข **Phase 21** เพื่อไม่ให้เลขซ้ำและไม่ทำให้ลิงก์/ประวัติการพัฒนาคลาดเคลื่อน แนวคิดนี้คือแผน Sports Hub ที่ต่อยอดจากข้อเสนอเดิมเรื่อง Phase 17
+>
+> สรุป: ขยายหน้า `SportClubPage` ให้เป็น Sports Hub ที่ผู้ใช้ปัดซ้าย/ขวาระหว่าง 3 ประสบการณ์หลัก โดยให้ **หาเพื่อนออกกำลังกายอยู่ตรงกลาง** เป็นหน้าหลักเดิม และมีหน้าจองสนามกีฬาอยู่ด้านหนึ่งกับหน้าค้นหาโค้ช/เทรนเนอร์อยู่อีกด้านหนึ่ง ใช้ตัวกรองกีฬา/พื้นที่ร่วมกันเฉพาะส่วนที่มีความหมายร่วมกัน แต่แยกตัวกรองเฉพาะ domain และแยกโฟลเดอร์โค้ดเพื่อให้ค้นหา แก้ไข และทดสอบได้ง่าย
 
+### 21.1 ข้อเสนอหลักและมติด้าน UX
+
+#### โครงสร้างหน้าหลัก
+
+ใช้ `SportsHubPage` เป็น shell กลาง:
+
+```text
+SportsHubPage
+├── SharedSportFilterBar
+├── PageView (initialPage = 1)
+│   ├── BookCourtPage       // index 0: ปัดไปทางขวาเพื่อกลับเข้าหน้านี้
+│   ├── FindBuddiesPage     // index 1: หน้ากลางและหน้าเริ่มต้น
+│   └── FindCoachPage       // index 2: ปัดไปทางซ้ายเพื่อไปหน้านี้
+└── SharedPageIndicator
+    └── icon selector / ruler-style sliding control
+```
+
+- `FindBuddiesPage` อยู่กลางเสมอ และเปิดเป็นหน้าแรกเมื่อเข้าผ่าน route เดิม `/community/sport-club`
+- เปลี่ยนชื่อจาก `BookVenuePage` เป็น **`BookCourtPage`** ให้ตรงกับ scope ระยะแรก ซึ่งเน้นการจองสนาม/คอร์ทที่เป็น resource สำหรับเล่นกีฬา
+- `SportsHubPage` รับผิดชอบเฉพาะ page navigation, shared state, lifecycle และการ restore state; ไม่ใส่ query ของก๊วน สนาม หรือโค้ชไว้ใน shell
+- แต่ละหน้าต้องโหลดข้อมูลเฉพาะ domain ของตนเอง และไม่ยิง query ของอีกสองหน้าพร้อมกันโดยไม่จำเป็น
+- เมื่อเปิดรายละเอียดหรือเริ่ม booking ให้คง context ของหน้าปัจจุบันและ filter ที่เกี่ยวข้องไว้ เมื่อย้อนกลับต้องกลับมาหน้าเดิมและตำแหน่งเดิมได้
+
+#### Page indicator แบบ icon และลักษณะปุ่มตามภาพตัวอย่าง
+
+ไม่ใช้ตัวเลข `1 2 3` เป็นตัวชี้หน้าหลัก ให้ใช้ control แบบ pill/track คล้ายปุ่มในภาพตัวอย่าง:
+
+```text
+┌──────────────────────────────────────────────┐
+│  ◀  🏟 สนามกีฬา   ●  👥 หาเพื่อน   🧑‍🏫 โค้ช  ▶ │
+└──────────────────────────────────────────────┘
+```
+
+มติด้าน interaction:
+
+- แสดง icon ประจำหน้าอย่างน้อย 3 ตัว:
+  - `Icons.sports_tennis_rounded` หรือ icon สนาม — จองสนาม
+  - `Icons.groups_rounded` — หาเพื่อนออกกำลังกาย
+  - `Icons.sports_rounded`/`Icons.school_rounded` — หาโค้ช/เทรนเนอร์
+- หน้าปัจจุบันใช้สีหลักของแอปเป็น active pill มี label แสดงชัดเจน ส่วนหน้าข้างเคียงใช้ icon + label ขนาดย่อ
+- ใช้ปุ่มลูกศรซ้าย/ขวาที่ขอบเมื่อหน้ามีอยู่จริง เพื่อสื่อว่าปัดได้และรองรับการแตะสำหรับผู้ใช้ที่ไม่ใช้ gesture
+- ใช้ `PageView` เป็น interaction หลัก; ปุ่ม icon selector เรียก `animateToPage()` และ indicator อัปเดตจาก `onPageChanged`
+- เพิ่ม drag affordance บน track เช่น handle/จุดเลื่อนแบบ ruler แต่ **ไม่** ใช้ ruler เป็น navigation เพียงช่องทางเดียว
+- ถ้าหน้าจอแคบ ให้ลด label ของหน้าข้างเคียงเหลือ icon และคง label ของหน้าปัจจุบัน ไม่บังคับให้ทั้งสาม label อยู่บรรทัดเดียว
+- ทุก icon ต้องมี `Tooltip`, semantic label และขนาด hit area อย่างน้อย 44×44 dp
+- การปัดต้องไม่ถูกดักเมื่อผู้ใช้กำลังเลื่อน list แนวตั้งภายในหน้า; `PageView` เป็นแกนแนวนอนและ list ภายในเป็นแกนแนวตั้ง
+- กำหนดทิศทางให้สม่ำเสมอ: index 0 → 1 → 2 เมื่อปัดไปทางซ้ายตามค่าเริ่มต้นของ `PageView`; มีปุ่มลูกศรและ label บอกทิศทางเพื่อไม่พึ่งความจำของผู้ใช้
+
+### 21.2 Shared filter และตัวกรองเฉพาะ domain
+
+ไม่ส่ง `SportClubFilter` เดิมไปใช้ทั้งสามหน้าโดยตรง เพราะมี field ที่เป็นความหมายเฉพาะของก๊วน เช่น `joinedOnly`, `managedOnly`, `allLevelsOnly`, `genderAnyOnly` และ `noFeesOnly` ซึ่งไม่ควรมีผลกับสนามหรือโค้ช
+
+#### Shared filter — ใช้ร่วมกันทุกหน้า
+
+สร้าง value object กลางสำหรับสิ่งที่มีความหมายร่วมกัน:
+
+```dart
+class SportsDiscoveryFilter {
+  final String? sportId;
+  final String query;
+  final String? province;
+  final String? district;
+  final bool locationEnabled;
+  final double radiusKm;
+  final DateTime? selectedDate;
+}
+```
+
+ขอบเขตของ shared filter ระยะแรก:
+
+- `sportId` — ต้องคงค่าเมื่อปัดเปลี่ยนหน้า
+- keyword ค้นหา — คงได้เมื่อยังมีความหมายกับหน้าปลายทาง
+- จังหวัด/อำเภอ
+- location permission และ radius
+- วันที่ที่เลือก หากหน้าปลายทางรองรับ
+- ไม่แชร์ค่าเฉพาะการจอง เช่น เวลาเริ่ม, duration หรือราคาโดยอัตโนมัติจนกว่าจะออกแบบ contract ร่วมชัดเจน
+
+#### Domain-specific filter
+
+```dart
+class FindBuddiesFilter {
+  final bool openOnly;
+  final bool joinedOnly;
+  final bool managedOnly;
+  final bool allLevelsOnly;
+  final bool genderAnyOnly;
+  final bool noFeesOnly;
+}
+
+class BookCourtFilter {
+  final DateTime? date;
+  final TimeOfDay? startTime;
+  final Duration? duration;
+  final double? maxPrice;
+  final bool availableOnly;
+  final String? courtType;
+  final bool indoorOnly;
+}
+
+class FindCoachFilter {
+  final String? skillLevel;
+  final List<String> specialties;
+  final double? maxHourlyRate;
+  final bool verifiedOnly;
+  final bool availableOnly;
+  final String? teachingMode; // onsite / online / both
+}
+```
+
+รวม state ที่ shell ใช้:
+
+```dart
+class SportsHubFilterState {
+  final SportsDiscoveryFilter shared;
+  final FindBuddiesFilter buddies;
+  final BookCourtFilter courts;
+  final FindCoachFilter coaches;
+}
+```
+
+กฎสำคัญ:
+
+- เลือกกีฬาใน shared bar แล้วทุกหน้าต้องสะท้อนกีฬาเดียวกัน
+- เปลี่ยน filter เฉพาะหน้าไม่ล้าง shared filter
+- `joinedOnly`/`managedOnly` ใช้เฉพาะ Find Buddies
+- `maxPrice`/`courtType` ใช้เฉพาะ Book Court
+- `maxHourlyRate`/`specialties`/`teachingMode` ใช้เฉพาะ Find Coach
+- filter ของแต่ละหน้าเป็น immutable state และ update ผ่าน controller/store กลาง ไม่แก้ map กระจายอยู่ใน widget
+
+### 21.3 พฤติกรรมเมื่อปัดเปลี่ยนหน้า
+
+ตัวอย่าง state ที่ต้องรักษา:
+
+```text
+ผู้ใช้เลือก: แบดมินตัน + กรุงเทพฯ + รัศมี 10 กม.
+
+Find Buddies:
+  ก๊วนแบดมินตันในกรุงเทพฯ
+
+ปัดไป Book Court:
+  สนาม/คอร์ทแบดมินตันในกรุงเทพฯ
+  คงกีฬา พื้นที่ และรัศมี
+  ใช้ filter วัน เวลา ราคา และ availability ของหน้าสนาม
+
+ปัดไป Find Coach:
+  โค้ชแบดมินตันในกรุงเทพฯ
+  คงกีฬา พื้นที่ และรัศมี
+  ใช้ filter ระดับฝีมือ ราคา และรูปแบบการสอนของหน้าโค้ช
+```
+
+ข้อกำหนด:
+
+- ไม่ reset `sportId`, province, district หรือ radius เมื่อ page เปลี่ยน
+- ไม่เอา filter domain หนึ่งไป query อีก domain
+- เมื่อ page ถูกเปิดครั้งแรกให้โหลดเฉพาะหน้ากลางและข้อมูลที่จำเป็นของ indicator
+- preload หน้าข้างเคียงได้ทีละหนึ่งหน้าเมื่อ network/อุปกรณ์เหมาะสม แต่ต้องยกเลิกผลลัพธ์ stale ได้
+- ใช้ request token หรือ generation id แยกต่อ domain เพื่อไม่ให้ผล query เก่าเขียนทับผล query ใหม่
+- เก็บ scroll position แยกต่อหน้า และ restore เมื่อผู้ใช้กลับมา
+- เมื่อ login/logout เปลี่ยน ต้อง re-evaluate filter ส่วนตัว (`joinedOnly`, `managedOnly`) โดยไม่ล้าง shared filter ที่ยังใช้ได้
+- ถ้ากีฬาไม่รองรับสนามหรือไม่มีโค้ช ให้แสดง empty state เฉพาะหน้าปัจจุบัน ไม่เปลี่ยนหน้าและไม่ล้างตัวกรอง
+
+### 21.4 โครงสร้างโฟลเดอร์และขอบเขตไฟล์
+
+ระบบใหม่ต้องแยกจากโค้ดหาเพื่อนออกกำลังกายเดิมภายใน `lib/features/sport_club` ดังนี้:
+
+```text
+lib/features/sport_club/
+├── shared/                         # ใช้ร่วมกันใน Sports Hub เท่านั้น
+│   ├── domain/
+│   │   ├── sports_discovery_filter.dart
+│   │   └── sports_hub_filter_state.dart
+│   ├── application/
+│   │   ├── sports_hub_controller.dart
+│   │   └── sports_hub_filter_store.dart
+│   └── presentation/widgets/
+│       ├── shared_sport_filter_bar.dart
+│       ├── sports_hub_page_indicator.dart
+│       └── sports_hub_navigation_button.dart
+│
+├── book_court/                     # ระบบจองสนามกีฬาเท่านั้น
+│   ├── data/
+│   │   ├── book_court_repository.dart
+│   │   └── book_court_models.dart
+│   ├── domain/
+│   │   └── book_court_filter.dart
+│   ├── application/
+│   │   ├── book_court_query.dart
+│   │   └── book_court_booking_service.dart
+│   └── presentation/
+│       ├── pages/
+│       │   ├── book_court_page.dart
+│       │   └── court_detail_page.dart
+│       └── widgets/
+│           ├── court_card.dart
+│           ├── court_availability_picker.dart
+│           └── court_booking_sheet.dart
+│
+├── find_coach/                     # ระบบค้นหาโค้ช/เทรนเนอร์เท่านั้น
+│   ├── data/
+│   │   ├── find_coach_repository.dart
+│   │   └── find_coach_models.dart
+│   ├── domain/
+│   │   └── find_coach_filter.dart
+│   ├── application/
+│   │   ├── find_coach_query.dart
+│   │   └── coach_booking_service.dart
+│   └── presentation/
+│       ├── pages/
+│       │   ├── find_coach_page.dart
+│       │   └── coach_detail_page.dart
+│       └── widgets/
+│           ├── coach_card.dart
+│           ├── coach_filter_sheet.dart
+│           └── coach_request_sheet.dart
+│
+└── presentation/pages/
+    └── sports_hub_page.dart         # shell: PageView + shared state เท่านั้น
+```
+
+กฎการ import:
+
+- `book_court/` ห้าม import implementation จาก `find_coach/`
+- `find_coach/` ห้าม import implementation จาก `book_court/`
+- ทั้งสองระบบ import shared contract ได้จาก `shared/`
+- โค้ดหาเพื่อนเดิม เช่น `SportClubPage`, `GroupCard`, `SportClubFilter`, `SportClubGroupQuery` คงไว้ก่อนเพื่อ backward compatibility
+- `sports_hub_page.dart` เรียก page/domain ผ่าน public constructor และ callback contract ไม่เข้าถึง repository ภายในของแต่ละ domain
+- ห้ามย้ายไฟล์เดิมจำนวนมากใน Phase เดียว เพราะ route, deep link, notification และ login redirect เดิมอ้างอิงหน้า Sport Club อยู่แล้ว
+
+### 21.5 Route และ backward compatibility
+
+เพิ่ม route ใหม่สำหรับ hub และรายละเอียดของระบบใหม่:
+
+```text
+/community/sports
+/community/sports/courts
+/community/sports/courts/:courtId
+/community/sports/courts/:courtId/booking
+/community/sports/coaches
+/community/sports/coaches/:coachId
+/community/sports/coaches/:coachId/request
+```
+
+คง route เดิม:
+
+```text
+/community/sport-club
+    → เปิด SportsHubPage ที่ page index = 1
+
+/community/sport-club/group/:id
+    → เปิดรายละเอียดก๊วนเดิม
+```
+
+- deep link ก๊วน, notification, login redirect และ route เดิมต้องไม่เปลี่ยน behavior
+- หากเปิด route `/community/sport-club` พร้อม intent ของก๊วน ให้ hub mount แล้วส่ง intent ต่อไปยัง Find Buddies page ก่อนเปิดรายละเอียด
+- route รายละเอียดสนามและโค้ชต้องไม่ใช้ `groupId`/`sessionId` ของระบบก๊วนปะปนกัน
+- redirect หลัง login ต้องระบุ `returnPage` และ filter context ที่จำเป็นอย่างชัดเจน ไม่พึ่ง index ของ `PageView` เพียงอย่างเดียว
+
+### 21.6 Data model ระยะต้น
+
+#### Book Court
+
+แนะนำแยกสถานที่กับ resource ที่จอง:
+
+```text
+sports_venues
+sports_venue_sports
+sports_venue_courts
+sports_venue_operating_hours
+sports_venue_availability
+sports_venue_bookings
+```
+
+- ผู้ใช้จอง `court` หรือ resource ย่อย ไม่ใช่เพียง venue รวม
+- ต้องรองรับสนามหนึ่งแห่งมีหลายคอร์ทและหลายชนิดกีฬา
+- availability ต้องป้องกันการจองเวลาทับซ้อนใน transaction เดียว
+- ระยะ discovery แรกยังไม่ต้องเปิด payment เต็มรูปแบบ
+
+#### Find Coach
+
+```text
+coach_profiles
+coach_sports
+coach_certifications
+coach_service_areas
+coach_availability
+coach_booking_requests
+coach_reviews
+```
+
+- `coach_profiles` แยกจาก `users` เพราะผู้ใช้คนเดียวอาจเป็นผู้เล่นและโค้ชได้
+- profile ต้องแยกสถานะ `pending/approved/suspended` และ verified state
+- booking request ต้องเก็บ snapshot ของกีฬา รูปแบบการสอน ราคา และเวลาที่ผู้ใช้ร้องขอ
+- review ต้องผูกกับ booking ที่เสร็จจริง ไม่เปิดให้รีวิวจากการค้นหาอย่างเดียว
+
+Payment และ refund ให้เป็น phase ย่อยภายหลัง โดย reuse แนวคิด payment obligation เดิมของ Match Sport แต่ไม่สร้าง obligation เต็มรูปแบบก่อนที่ venue/coach booking contract จะนิ่ง
+
+### 21.7 ลำดับการ implement
+
+#### 21.7.1 Sports Hub Shell
+
+- สร้าง `SportsHubPage`
+- สร้าง `PageController(initialPage: 1)`
+- วาง `BookCourtPage`, `FindBuddiesPage`, `FindCoachPage` ตามลำดับ
+- ย้าย/ห่อ `SportClubPage` เดิมเป็น Find Buddies adapter โดยไม่เปลี่ยน query behavior ในรอบแรก
+- สร้าง icon page indicator, arrow buttons, drag affordance และ semantics
+- เพิ่ม state สำหรับ current page และ scroll restoration
+
+#### 21.7.2 Shared Filter Contract
+
+- สร้าง shared filter/value objects และ controller
+- ทำ adapter จาก `SportsDiscoveryFilter` ไป `SportClubFilter` เดิม
+- ทำ `SharedSportFilterBar` reuse sport data/chips เดิม โดยไม่ copy query logic
+- แยก persistence เป็น namespace ใหม่ เช่น `sports_hub_shared_filter_v1_<userId>` และคง `sport_club_filters_v1_<userId>` ไว้จน migration/compatibility ผ่าน
+- เพิ่ม tests ว่า shared sport/location อยู่ครบเมื่อปัดไปกลับ และ domain filter ไม่ปนกัน
+
+#### 21.7.3 Book Court MVP
+
+- สร้าง read-only venue/court discovery ก่อน
+- รองรับ sport, location, date, availability
+- เพิ่ม court detail และเลือกช่วงเวลา
+- สร้าง booking request/confirmation แบบไม่ผูก payment จริงในรอบแรก
+- เพิ่ม conflict guard และ idempotent booking contract ที่ DB/application layer
+
+#### 21.7.4 Find Coach MVP
+
+- สร้าง coach discovery/profile ก่อน
+- รองรับ sport, location, specialty, skill level, availability และราคา
+- เพิ่ม request/booking flow แบบ pending/confirmed/cancelled
+- เพิ่ม verification และรีวิวหลัง booking เสร็จใน sub-phase แยก
+
+### 21.8 Test plan และ Acceptance Criteria
+
+#### UI/Widget tests
+
+- เปิด route เดิมแล้วเริ่มที่ Find Buddies index 1
+- icon indicator แสดง active state ถูกต้องสำหรับทั้ง 3 หน้า
+- แตะ icon/arrow เปลี่ยนหน้าได้ และ `PageView` ปัดซ้าย/ขว้าได้
+- หน้าจอแคบลด label ของหน้าข้างเคียงโดยไม่ overflow
+- hit area, tooltip, semantic label และ keyboard navigation ทำงาน
+- shared sport/location filter คงอยู่เมื่อปัดไป-กลับ
+- domain-specific filter ไม่ถูกส่งไปยัง query ของอีกหน้า
+- scroll position ของทั้งสามหน้าถูก restore แยกกัน
+
+#### State/concurrency tests
+
+- query เก่าของ Book Court ไม่เขียนทับผล query ใหม่หลังเปลี่ยนกีฬา/หน้า
+- logout ทำให้ personal filter ถูกปิดอย่างถูกต้อง แต่ไม่ล้าง shared filter ที่ยัง valid
+- เปลี่ยน shared sport filter แล้วทุกหน้าที่ active แสดง loading/empty state ของตนเองโดยไม่กระทบอีกหน้า
+- dispose hub ระหว่าง request ไม่เรียก `setState` หลัง unmount
+
+#### Integration/E2E tests
+
+- `/community/sport-club` เปิด Sports Hub ได้โดยไม่ทำลาย group deep link
+- login redirect จากการเข้าร่วมก๊วนกลับไป Find Buddies และรักษา intent เดิม
+- route court/coach แยก ID และ query จาก group/session ได้ถูกต้อง
+- จอง court ที่เวลาทับซ้อนถูกป้องกันแบบ atomic
+- coach request สร้างสถานะและ snapshot ที่ตรวจสอบย้อนหลังได้
+
+### Gate 21 — Definition of Done
+
+- [ ] `SportsHubPage` ทำงานด้วย `PageView` 3 หน้า โดย Find Buddies อยู่ index 1 และเป็นหน้าเริ่มต้น
+- [ ] indicator ใช้ icon + active pill + arrow/drag affordance ไม่ใช้ตัวเลขเป็น navigation หลัก
+- [ ] ผู้ใช้เข้าใจได้จาก UI ว่าสามารถปัดซ้าย/ขวา และยังเปลี่ยนหน้าด้วยการแตะได้
+- [ ] shared sport/location filter ใช้งานร่วมกันได้โดยไม่ทำให้ domain-specific filter ปนกัน
+- [ ] state, filter persistence, scroll position และ stale request guard ทำงานครบ
+- [ ] โค้ด Book Court และ Find Coach อยู่คนละโฟลเดอร์ภายใน `lib/features/sport_club`
+- [ ] Find Buddies เดิมยังทำงานผ่าน route/deep link/notification/login redirect เดิม
+- [ ] Book Court MVP ผ่าน discovery, availability, conflict guard และ booking confirmation
+- [ ] Find Coach MVP ผ่าน discovery, profile, availability และ request flow
+- [ ] ผ่าน widget, unit, integration, accessibility และ device QA บนจอเล็ก
+
+### 21.9 ความเสี่ยงและแนวทางป้องกัน
+
+| ความเสี่ยง | ผลกระทบ | แนวทางป้องกัน |
+|---|---|---|
+| ปัดแนวนอนชนกับ list แนวตั้ง | ผู้ใช้เลื่อนผิดแกน/เปลี่ยนหน้าโดยไม่ตั้งใจ | ให้ PageView เป็นแกนนอน, list เป็นแกนตั้ง, ใช้ indicator/arrow เป็นทางเลือก |
+| แชร์ filter มากเกินไป | filter ของก๊วนไปกระทบสนาม/โค้ช | แยก shared filter กับ domain filter และ map ผ่าน adapter เท่านั้น |
+| ย้าย `SportClubPage` ครั้งเดียวมากเกินไป | deep link/notification/login redirect เสีย | ใช้ adapter และคง route เดิมก่อน |
+| โหลดข้อมูลทั้งสามหน้าพร้อมกัน | network และ memory สูง | lazy-load หน้าปัจจุบัน, preload ได้เพียงหน้าข้างเคียงหนึ่งหน้า |
+| ใช้ index เป็นตัวแทน redirect context | กลับมาผิดหน้าเมื่อเพิ่ม/ลบ tab | ใช้ stable page key เช่น `book_court`, `find_buddies`, `find_coach` |
+| สร้าง payment ก่อน booking contract นิ่ง | schema/RPC เปลี่ยนซ้ำและข้อมูลค้าง | แยก payment เป็น phase หลัง MVP และใช้ obligation เมื่อ contract พร้อม |
+
+### 21.10 โครงสร้างไฟล์ที่ต้องสร้างจริงเมื่อเริ่ม implement
+
+Phase นี้เป็นแผน ยังไม่สร้างไฟล์ implementation หรือ directory ว่างในรอบบันทึกแผนนี้ โดยเมื่อเริ่มพัฒนาจะสร้างเฉพาะโฟลเดอร์ต่อไปนี้:
+
+- `lib/features/sport_club/shared/` — shared filter, hub controller และ icon indicator
+- `lib/features/sport_club/book_court/` — ระบบจองสนามกีฬา
+- `lib/features/sport_club/find_coach/` — ระบบค้นหาโค้ช/เทรนเนอร์
+- `lib/features/sport_club/presentation/pages/sports_hub_page.dart` — shell รวมสามหน้า
+
+ไฟล์เดิมของ Find Buddies จะไม่ถูกย้ายหรือปะปนกับสองระบบใหม่ จนกว่าจะมี migration plan และ regression evidence แยกต่างหาก

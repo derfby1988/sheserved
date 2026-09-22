@@ -89,6 +89,7 @@ const { chatApiRoutes } = require('./routes/chat-api');
 const { healthRoutes } = require('./routes/health');
 const { emergencyHealthRoutes } = require('./routes/emergency-health');
 const { professionsRoutes } = require('./routes/professions');
+const { mediaRoutes } = require('./routes/media');
 const { usersRoutes } = require('./routes/users');
 const { applicationsRoutes } = require('./routes/applications');
 const { locationsRoutes } = require('./routes/locations');
@@ -343,6 +344,9 @@ app.use(
   verifyToken(pool),
   sportsRoutes({ supabaseForSync, socketService }),
 );
+// PDPA face blur for clients without on-device ML Kit (Flutter Web).
+// Reuses services/face-blur-service.js (deface/CenterFace) — fail-closed.
+app.use('/api/media', verifyToken(pool), mediaRoutes());
 app.use('/api', chatApiRoutes({ pool }));
 app.use('/api/emergency-health', emergencyHealthRoutes({ verifyTokenMw: verifyToken(pool) }));
 app.use('/api/professions', professionsRoutes({ pool }));

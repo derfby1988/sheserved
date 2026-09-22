@@ -18,6 +18,11 @@ class NotificationRepository {
 
   bool get _useGateway => AppConfig.useBackendAuth;
 
+  /// true = อ่าน/นับแจ้งเตือนผ่าน backend gateway ซึ่งมองเห็นทุกแถวใน
+  /// `app_notifications` (รวมแถวที่ DB trigger สร้าง) — โหมด legacy
+  /// (`false`) จะอ่านผ่าน Supabase ตรงและคืน 0 เมื่อไม่มี Supabase Auth session
+  bool get usesGateway => _useGateway;
+
   void _configureGateway() {
     AuthenticatedHttpClient.instance.configure(
       baseUrl: AppConfig.backendApiUrl,

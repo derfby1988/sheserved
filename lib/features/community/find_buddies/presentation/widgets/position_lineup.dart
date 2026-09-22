@@ -7,10 +7,19 @@ const Map<String, ({IconData icon, String label})> kPositionIconChoices = {
   // 1. ผู้เล่น / บุคคล / บทบาทหลัก (Original + People roles)
   'player': (icon: Icons.person_rounded, label: 'ผู้เล่นทั่วไป'),
   'forward': (icon: Icons.sports_soccer_rounded, label: 'ฟุตบอล / สไตรเกอร์'),
-  'midfielder': (icon: Icons.all_inclusive_rounded, label: 'กองกลาง / บ็อกซ์ทูบ็อกซ์'),
+  'midfielder': (
+    icon: Icons.all_inclusive_rounded,
+    label: 'กองกลาง / บ็อกซ์ทูบ็อกซ์',
+  ),
   'defender': (icon: Icons.shield_rounded, label: 'กองหลัง / ป้องกัน'),
-  'goalkeeper': (icon: Icons.front_hand_rounded, label: 'ผู้รักษาประตู / บล็อกเกอร์'),
-  'shooter': (icon: Icons.sports_basketball_rounded, label: 'บาสเกตบอล / ชู๊ตเตอร์'),
+  'goalkeeper': (
+    icon: Icons.front_hand_rounded,
+    label: 'ผู้รักษาประตู / บล็อกเกอร์',
+  ),
+  'shooter': (
+    icon: Icons.sports_basketball_rounded,
+    label: 'บาสเกตบอล / ชู๊ตเตอร์',
+  ),
   'captain': (icon: Icons.stars_rounded, label: 'กัปตันทีม'),
   'marker': (icon: Icons.location_on_rounded, label: 'ตำแหน่งสนาม'),
 
@@ -18,13 +27,19 @@ const Map<String, ({IconData icon, String label})> kPositionIconChoices = {
   'volleyball': (icon: Icons.sports_volleyball_rounded, label: 'วอลเลย์บอล'),
   'tennis': (icon: Icons.sports_tennis_rounded, label: 'เทนนิส / แร็กเกต'),
   'baseball': (icon: Icons.sports_baseball_rounded, label: 'เบสบอล / ซอฟต์บอล'),
-  'football_us': (icon: Icons.sports_football_rounded, label: 'อเมริกันฟุตบอล / รักบี้'),
+  'football_us': (
+    icon: Icons.sports_football_rounded,
+    label: 'อเมริกันฟุตบอล / รักบี้',
+  ),
   'golf': (icon: Icons.sports_golf_rounded, label: 'กอล์ฟ'),
   'cricket': (icon: Icons.sports_cricket_rounded, label: 'คริกเก็ต'),
   'hockey': (icon: Icons.sports_hockey_rounded, label: 'ฮอกกี้'),
   'handball': (icon: Icons.sports_handball_rounded, label: 'แฮนด์บอล'),
   'sports_ball': (icon: Icons.sports_rounded, label: 'ลูกบอล / นกหวีด'),
-  'sports_score': (icon: Icons.sports_score_rounded, label: 'สกอร์ / ธงตาหมากรุก'),
+  'sports_score': (
+    icon: Icons.sports_score_rounded,
+    label: 'สกอร์ / ธงตาหมากรุก',
+  ),
 
   // 3. ยิม / กรีฑา / แอ็กชัน / กีฬาทางน้ำ / ล้อเลื่อน
   'fitness': (icon: Icons.fitness_center_rounded, label: 'ฟิตเนส / ยกน้ำหนัก'),
@@ -41,17 +56,32 @@ const Map<String, ({IconData icon, String label})> kPositionIconChoices = {
   'skiing': (icon: Icons.downhill_skiing_rounded, label: 'สกี'),
   'snowboarding': (icon: Icons.snowboarding_rounded, label: 'สโนว์บอร์ด'),
   'yoga': (icon: Icons.self_improvement_rounded, label: 'โยคะ / สมาธิ'),
-  'combat': (icon: Icons.sports_mma_rounded, label: 'ต่อสู้ / มวย / ศิลปะป้องกันตัว'),
+  'combat': (
+    icon: Icons.sports_mma_rounded,
+    label: 'ต่อสู้ / มวย / ศิลปะป้องกันตัว',
+  ),
   'gymnastics': (icon: Icons.sports_gymnastics_rounded, label: 'ยิมนาสติก'),
-  'motorsports': (icon: Icons.sports_motorsports_rounded, label: 'มอเตอร์สปอร์ต'),
+  'motorsports': (
+    icon: Icons.sports_motorsports_rounded,
+    label: 'มอเตอร์สปอร์ต',
+  ),
   'kabaddi': (icon: Icons.sports_kabaddi_rounded, label: 'แท็กเกิล / มวยปล้ำ'),
 
   // 4. บทบาททีม / สภาพจิตวิทยา / หน้าที่
   'pair': (icon: Icons.people_rounded, label: 'คู่ / แท็กทีม'),
-  'group_work': (icon: Icons.group_work_rounded, label: 'ทีมเวิร์ก / ประสานงาน'),
-  'athlete': (icon: Icons.accessibility_new_rounded, label: 'นักกีฬา / ความคล่องตัว'),
+  'group_work': (
+    icon: Icons.group_work_rounded,
+    label: 'ทีมเวิร์ก / ประสานงาน',
+  ),
+  'athlete': (
+    icon: Icons.accessibility_new_rounded,
+    label: 'นักกีฬา / ความคล่องตัว',
+  ),
   'back_hand': (icon: Icons.back_hand_rounded, label: 'ตัวเซ็ต / แฮนด์'),
-  'sweeper': (icon: Icons.security_rounded, label: 'สวีปเปอร์ / กองหลังตัวกวาด'),
+  'sweeper': (
+    icon: Icons.security_rounded,
+    label: 'สวีปเปอร์ / กองหลังตัวกวาด',
+  ),
   'mvp': (icon: Icons.workspace_premium_rounded, label: 'MVP / ยอดเยี่ยม'),
   'medal': (icon: Icons.military_tech_rounded, label: 'เหรียญรางวัล'),
   'trophy': (icon: Icons.emoji_events_rounded, label: 'ถ้วยรางวัล / แชมป์'),
@@ -65,21 +95,42 @@ const Map<String, ({IconData icon, String label})> kPositionIconChoices = {
   'fire': (icon: Icons.local_fire_department_rounded, label: 'ไฟแรง / มือขึ้น'),
   'rocket': (icon: Icons.rocket_launch_rounded, label: 'ตัวทะลวง / จรวด'),
   'heart': (icon: Icons.favorite_rounded, label: 'หัวใจ / ซัพพอร์ต'),
-  'playmaker': (icon: Icons.psychology_rounded, label: 'เพลย์เมกเกอร์ / บัญชาการ'),
+  'playmaker': (
+    icon: Icons.psychology_rounded,
+    label: 'เพลย์เมกเกอร์ / บัญชาการ',
+  ),
   'radar': (icon: Icons.radar_rounded, label: 'เรดาร์ / คุมพื้นที่กว้าง'),
   'navigator': (icon: Icons.navigation_rounded, label: 'นำทิศทาง / ไกด์'),
   'target': (icon: Icons.my_location_rounded, label: 'เป้าหมาย / เซ็นเตอร์'),
   'bullseye': (icon: Icons.adjust_rounded, label: 'ตรงเป้า / แม่นยำ'),
-  'sniper': (icon: Icons.center_focus_strong_rounded, label: 'สไนเปอร์ / ยิงไกล'),
+  'sniper': (
+    icon: Icons.center_focus_strong_rounded,
+    label: 'สไนเปอร์ / ยิงไกล',
+  ),
   'pivot': (icon: Icons.transform_rounded, label: 'จุดหมุน / พิวอต'),
   'switch': (icon: Icons.swap_horiz_rounded, label: 'สลับตำแหน่ง / โอนย้าย'),
   'transition': (icon: Icons.sync_alt_rounded, label: 'สวนกลับ / สลับรับรุก'),
-  'substitute': (icon: Icons.change_circle_rounded, label: 'ตัวสำรอง / สับเปลี่ยน'),
-  'bench': (icon: Icons.hourglass_top_rounded, label: 'ม้านั่งสำรอง / สแตนด์บาย'),
-  'free_role': (icon: Icons.control_camera_rounded, label: 'ฟรีโรล / วิ่งอิสระ'),
-  'medic': (icon: Icons.medical_services_rounded, label: 'หน่วยพยาบาล / กายภาพ'),
+  'substitute': (
+    icon: Icons.change_circle_rounded,
+    label: 'ตัวสำรอง / สับเปลี่ยน',
+  ),
+  'bench': (
+    icon: Icons.hourglass_top_rounded,
+    label: 'ม้านั่งสำรอง / สแตนด์บาย',
+  ),
+  'free_role': (
+    icon: Icons.control_camera_rounded,
+    label: 'ฟรีโรล / วิ่งอิสระ',
+  ),
+  'medic': (
+    icon: Icons.medical_services_rounded,
+    label: 'หน่วยพยาบาล / กายภาพ',
+  ),
   'recovery': (icon: Icons.healing_rounded, label: 'ฟื้นฟูสภาพร่างกาย'),
-  'stamina': (icon: Icons.battery_charging_full_rounded, label: 'พละกำลัง / ความอึด'),
+  'stamina': (
+    icon: Icons.battery_charging_full_rounded,
+    label: 'พละกำลัง / ความอึด',
+  ),
   'anchor': (icon: Icons.anchor_rounded, label: 'สมอเรือ / ตัวยึดแนวรับ'),
   'diamond': (icon: Icons.diamond_rounded, label: 'ไดมอนด์ / รูปเพชร'),
   'hub': (icon: Icons.hub_rounded, label: 'ศูนย์กลางการกระจายบอล'),
@@ -113,7 +164,10 @@ const List<String> kPositionColorChoices = [
   '#607D8B', // เทาน้ำเงิน / Blue Grey
 ];
 
-Color parseHexColor(String? hexString, {Color fallback = const Color(0xFF2196F3)}) {
+Color parseHexColor(
+  String? hexString, {
+  Color fallback = const Color(0xFF2196F3),
+}) {
   if (hexString == null || hexString.isEmpty) return fallback;
   final buffer = StringBuffer();
   if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
@@ -210,12 +264,36 @@ class FieldCategoryItem {
 }
 
 const List<FieldCategoryItem> kFieldCategories = [
-  FieldCategoryItem(key: 'all', label: 'ทั้งหมด', icon: Icons.grid_view_rounded),
-  FieldCategoryItem(key: 'ball', label: 'บอล / ทีม', icon: Icons.sports_soccer_rounded),
-  FieldCategoryItem(key: 'racquet', label: 'แร็กเก็ต / โต๊ะ', icon: Icons.sports_tennis_rounded),
-  FieldCategoryItem(key: 'combat', label: 'ต่อสู้ / เวที', icon: Icons.sports_kabaddi_rounded),
-  FieldCategoryItem(key: 'track_target', label: 'ลู่ / สระ / เป้า', icon: Icons.timer_outlined),
-  FieldCategoryItem(key: 'generic', label: 'ทั่วไป', icon: Icons.crop_square_rounded),
+  FieldCategoryItem(
+    key: 'all',
+    label: 'ทั้งหมด',
+    icon: Icons.grid_view_rounded,
+  ),
+  FieldCategoryItem(
+    key: 'ball',
+    label: 'บอล / ทีม',
+    icon: Icons.sports_soccer_rounded,
+  ),
+  FieldCategoryItem(
+    key: 'racquet',
+    label: 'แร็กเก็ต / โต๊ะ',
+    icon: Icons.sports_tennis_rounded,
+  ),
+  FieldCategoryItem(
+    key: 'combat',
+    label: 'ต่อสู้ / เวที',
+    icon: Icons.sports_kabaddi_rounded,
+  ),
+  FieldCategoryItem(
+    key: 'track_target',
+    label: 'ลู่ / สระ / เป้า',
+    icon: Icons.timer_outlined,
+  ),
+  FieldCategoryItem(
+    key: 'generic',
+    label: 'ทั่วไป',
+    icon: Icons.crop_square_rounded,
+  ),
 ];
 
 /// Helper to map sport name to field category
@@ -313,98 +391,246 @@ FieldStyle getDefaultFieldStyleForSport(String? sportName) {
     return FieldStyle.fallback;
   }
   final s = sportName.toLowerCase();
-  if (s.contains('ฟุตซอล') || s.contains('แฮนด์บอล') || s.contains('futsal') || s.contains('handball')) {
-    return const FieldStyle(preset: 'futsal', surface: '#1565C0', line: '#FFFFFF');
+  if (s.contains('ฟุตซอล') ||
+      s.contains('แฮนด์บอล') ||
+      s.contains('futsal') ||
+      s.contains('handball')) {
+    return const FieldStyle(
+      preset: 'futsal',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ฟุตบอล') || s.contains('football') || s.contains('soccer')) {
-    return const FieldStyle(preset: 'football', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'football',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('บาส') || s.contains('basketball')) {
-    return const FieldStyle(preset: 'basketball', surface: '#EF6C00', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'basketball',
+      surface: '#EF6C00',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('วอลเลย์บอลชายหาด') || s.contains('beach volleyball')) {
-    return const FieldStyle(preset: 'beach_volleyball', surface: '#EF6C00', line: '#212121');
+    return const FieldStyle(
+      preset: 'beach_volleyball',
+      surface: '#EF6C00',
+      line: '#212121',
+    );
   }
   if (s.contains('วอลเลย์') || s.contains('volleyball')) {
-    return const FieldStyle(preset: 'volleyball', surface: '#00838F', line: '#FFF176');
+    return const FieldStyle(
+      preset: 'volleyball',
+      surface: '#00838F',
+      line: '#FFF176',
+    );
   }
   if (s.contains('ตะกร้อ') || s.contains('takraw')) {
-    return const FieldStyle(preset: 'takraw', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'takraw',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('รักบี้') || s.contains('rugby')) {
-    return const FieldStyle(preset: 'rugby', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'rugby',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('อเมริกันฟุตบอล') || s.contains('american football')) {
-    return const FieldStyle(preset: 'american_football', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'american_football',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
-  if (s.contains('เบสบอล') || s.contains('ซอฟต์บอล') || s.contains('baseball') || s.contains('softball')) {
-    return const FieldStyle(preset: 'baseball', surface: '#2E7D32', line: '#FFFFFF');
+  if (s.contains('เบสบอล') ||
+      s.contains('ซอฟต์บอล') ||
+      s.contains('baseball') ||
+      s.contains('softball')) {
+    return const FieldStyle(
+      preset: 'baseball',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('คริกเก็ต') || s.contains('cricket')) {
-    return const FieldStyle(preset: 'cricket', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'cricket',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ฮอกกี้น้ำแข็ง') || s.contains('ice hockey')) {
-    return const FieldStyle(preset: 'ice_hockey', surface: '#546E7A', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'ice_hockey',
+      surface: '#546E7A',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ฮอกกี้') || s.contains('hockey')) {
-    return const FieldStyle(preset: 'field_hockey', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'field_hockey',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('แบดมินตัน') || s.contains('badminton')) {
-    return const FieldStyle(preset: 'badminton', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'badminton',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('เทนนิส') || s.contains('tennis')) {
-    return const FieldStyle(preset: 'tennis', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'tennis',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ปิงปอง') || s.contains('table tennis')) {
-    return const FieldStyle(preset: 'table_tennis', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'table_tennis',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('พิคเคิลบอล') || s.contains('pickleball')) {
-    return const FieldStyle(preset: 'pickleball', surface: '#00838F', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'pickleball',
+      surface: '#00838F',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('สควอช') || s.contains('squash')) {
-    return const FieldStyle(preset: 'squash', surface: '#6D4C41', line: '#B71C1C');
+    return const FieldStyle(
+      preset: 'squash',
+      surface: '#6D4C41',
+      line: '#B71C1C',
+    );
   }
   if (s.contains('มวย') || s.contains('boxing') || s.contains('muay thai')) {
-    return const FieldStyle(preset: 'boxing', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'boxing',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('เทควันโด') || s.contains('taekwondo')) {
-    return const FieldStyle(preset: 'taekwondo', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'taekwondo',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
-  if (s.contains('ยูโด') || s.contains('คาราเต้') || s.contains('ยิวยิตสู') || s.contains('judo') || s.contains('karate') || s.contains('bjj')) {
-    return const FieldStyle(preset: 'martial_arts', surface: '#2E7D32', line: '#FFFFFF');
+  if (s.contains('ยูโด') ||
+      s.contains('คาราเต้') ||
+      s.contains('ยิวยิตสู') ||
+      s.contains('judo') ||
+      s.contains('karate') ||
+      s.contains('bjj')) {
+    return const FieldStyle(
+      preset: 'martial_arts',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('มวยปล้ำ') || s.contains('wrestling')) {
-    return const FieldStyle(preset: 'wrestling', surface: '#1565C0', line: '#FFF176');
+    return const FieldStyle(
+      preset: 'wrestling',
+      surface: '#1565C0',
+      line: '#FFF176',
+    );
   }
   if (s.contains('ฟันดาบ') || s.contains('fencing')) {
-    return const FieldStyle(preset: 'fencing', surface: '#546E7A', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'fencing',
+      surface: '#546E7A',
+      line: '#FFFFFF',
+    );
   }
-  if (s.contains('วิ่ง') || s.contains('มาราธอน') || s.contains('กรีฑา') || s.contains('running')) {
-    return const FieldStyle(preset: 'running_track', surface: '#B71C1C', line: '#FFFFFF');
+  if (s.contains('วิ่ง') ||
+      s.contains('มาราธอน') ||
+      s.contains('กรีฑา') ||
+      s.contains('running')) {
+    return const FieldStyle(
+      preset: 'running_track',
+      surface: '#B71C1C',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ว่าย') || s.contains('โปโลน้ำ') || s.contains('swimming')) {
-    return const FieldStyle(preset: 'swimming', surface: '#1565C0', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'swimming',
+      surface: '#1565C0',
+      line: '#FFFFFF',
+    );
   }
-  if (s.contains('สนุ๊ก') || s.contains('สนุกเกอร์') || s.contains('บิลเลียด') || s.contains('snooker') || s.contains('billiards')) {
-    return const FieldStyle(preset: 'snooker', surface: '#2E7D32', line: '#FFFFFF');
+  if (s.contains('สนุ๊ก') ||
+      s.contains('สนุกเกอร์') ||
+      s.contains('บิลเลียด') ||
+      s.contains('snooker') ||
+      s.contains('billiards')) {
+    return const FieldStyle(
+      preset: 'snooker',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('โบว์ลิ่ง') || s.contains('bowling')) {
-    return const FieldStyle(preset: 'bowling', surface: '#6D4C41', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'bowling',
+      surface: '#6D4C41',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ธนู') || s.contains('archery')) {
-    return const FieldStyle(preset: 'archery', surface: '#546E7A', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'archery',
+      surface: '#546E7A',
+      line: '#FFFFFF',
+    );
   }
-  if (s.contains('ยิงปืน') || s.contains('ดาร์ท') || s.contains('shooting') || s.contains('darts')) {
-    return const FieldStyle(preset: 'shooting_range', surface: '#37474F', line: '#FFFFFF');
+  if (s.contains('ยิงปืน') ||
+      s.contains('ดาร์ท') ||
+      s.contains('shooting') ||
+      s.contains('darts')) {
+    return const FieldStyle(
+      preset: 'shooting_range',
+      surface: '#37474F',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('กอล์ฟ') || s.contains('golf')) {
-    return const FieldStyle(preset: 'golf', surface: '#2E7D32', line: '#FFFFFF');
+    return const FieldStyle(
+      preset: 'golf',
+      surface: '#2E7D32',
+      line: '#FFFFFF',
+    );
   }
   if (s.contains('ยิมนาสติก') || s.contains('gymnastics')) {
-    return const FieldStyle(preset: 'gymnastics', surface: '#1565C0', line: '#FFF176');
+    return const FieldStyle(
+      preset: 'gymnastics',
+      surface: '#1565C0',
+      line: '#FFF176',
+    );
   }
-  if (s.contains('จักรยาน') || s.contains('เวโลโดรม') || s.contains('cycling') || s.contains('velodrome')) {
-    return const FieldStyle(preset: 'cycling_track', surface: '#C62828', line: '#FFFFFF');
+  if (s.contains('จักรยาน') ||
+      s.contains('เวโลโดรม') ||
+      s.contains('cycling') ||
+      s.contains('velodrome')) {
+    return const FieldStyle(
+      preset: 'cycling_track',
+      surface: '#C62828',
+      line: '#FFFFFF',
+    );
   }
   return FieldStyle.fallback;
 }
@@ -453,10 +679,10 @@ class FieldStyle {
   }
 
   Map<String, dynamic> toJson() => {
-        'preset': preset,
-        'surface': surface,
-        'line': line,
-      };
+    'preset': preset,
+    'surface': surface,
+    'line': line,
+  };
 
   FieldStyle copyWith({String? preset, String? surface, String? line}) {
     return FieldStyle(
@@ -469,9 +695,7 @@ class FieldStyle {
 
 Color _darkenColor(Color c, double factor) {
   final hsl = HSLColor.fromColor(c);
-  return hsl
-      .withLightness((hsl.lightness * factor).clamp(0.0, 1.0))
-      .toColor();
+  return hsl.withLightness((hsl.lightness * factor).clamp(0.0, 1.0)).toColor();
 }
 
 /// Custom painter for grass field (single or double side) with subtle markings.
@@ -492,7 +716,10 @@ class FieldCanvasPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(16));
 
-    final surface = parseHexColor(style.surface, fallback: const Color(0xFF2E7D32));
+    final surface = parseHexColor(
+      style.surface,
+      fallback: const Color(0xFF2E7D32),
+    );
     final surfaceDark = _darkenColor(surface, 0.66);
     final basePaint = Paint()
       ..shader = LinearGradient(
@@ -511,7 +738,12 @@ class FieldCanvasPainter extends CustomPainter {
     final stripeCount = 6;
     final stripeWidth = size.width / stripeCount;
     for (int i = 0; i < stripeCount; i += 2) {
-      final stripeRect = Rect.fromLTWH(i * stripeWidth, 0, stripeWidth, size.height);
+      final stripeRect = Rect.fromLTWH(
+        i * stripeWidth,
+        0,
+        stripeWidth,
+        size.height,
+      );
       canvas.save();
       canvas.clipRRect(rrect);
       canvas.drawRect(stripeRect, stripePaint);
@@ -527,7 +759,12 @@ class FieldCanvasPainter extends CustomPainter {
 
     final innerInset = 10.0;
     final pitchRect = RRect.fromRectAndRadius(
-      Rect.fromLTRB(innerInset, innerInset, size.width - innerInset, size.height - innerInset),
+      Rect.fromLTRB(
+        innerInset,
+        innerInset,
+        size.width - innerInset,
+        size.height - innerInset,
+      ),
       const Radius.circular(8),
     );
     canvas.drawRRect(pitchRect, linePaint);
@@ -544,34 +781,105 @@ class FieldCanvasPainter extends CustomPainter {
 
     switch (style.preset) {
       case 'football':
-        _paintFootball(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        _paintFootball(
+          canvas,
+          size,
+          linePaint,
+          dotPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'futsal':
-        _paintFutsalHandball(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        _paintFutsalHandball(
+          canvas,
+          size,
+          linePaint,
+          dotPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'badminton':
-        _paintBadminton(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintBadminton(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'volleyball':
-        _paintVolleyball(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintVolleyball(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'beach_volleyball':
-        _paintBeachVolleyball(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintBeachVolleyball(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'takraw':
-        _paintTakraw(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintTakraw(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'tennis':
-        _paintTennis(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintTennis(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'basketball':
-        _paintBasketball(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        _paintBasketball(
+          canvas,
+          size,
+          linePaint,
+          dotPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'rugby':
         _paintRugby(canvas, size, linePaint, innerInset, isDouble, midX);
         break;
       case 'american_football':
-        _paintAmericanFootball(canvas, size, linePaint, innerInset, isDouble, midX);
+        _paintAmericanFootball(
+          canvas,
+          size,
+          linePaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'baseball':
         _paintBaseball(canvas, size, linePaint, dotPaint, innerInset);
@@ -580,16 +888,48 @@ class FieldCanvasPainter extends CustomPainter {
         _paintCricket(canvas, size, linePaint, innerInset);
         break;
       case 'field_hockey':
-        _paintFieldHockey(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        _paintFieldHockey(
+          canvas,
+          size,
+          linePaint,
+          dotPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'ice_hockey':
-        _paintIceHockey(canvas, size, linePaint, dotPaint, innerInset, isDouble, midX);
+        _paintIceHockey(
+          canvas,
+          size,
+          linePaint,
+          dotPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'table_tennis':
-        _paintTableTennis(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintTableTennis(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'pickleball':
-        _paintPickleball(canvas, size, linePaint, netPaint, innerInset, isDouble, midX);
+        _paintPickleball(
+          canvas,
+          size,
+          linePaint,
+          netPaint,
+          innerInset,
+          isDouble,
+          midX,
+        );
         break;
       case 'squash':
         _paintSquash(canvas, size, linePaint, innerInset);
@@ -647,8 +987,15 @@ class FieldCanvasPainter extends CustomPainter {
     }
   }
 
-  void _paintFootball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintFootball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
       canvas.drawLine(
         Offset(midX, innerInset),
@@ -656,7 +1003,11 @@ class FieldCanvasPainter extends CustomPainter {
         linePaint,
       );
       final centerCircleRadius = (size.height - innerInset * 2) * 0.22;
-      canvas.drawCircle(Offset(midX, size.height / 2), centerCircleRadius, linePaint);
+      canvas.drawCircle(
+        Offset(midX, size.height / 2),
+        centerCircleRadius,
+        linePaint,
+      );
       canvas.drawCircle(Offset(midX, size.height / 2), 3.5, dotPaint);
 
       final boxWidth = size.width * 0.16;
@@ -667,7 +1018,12 @@ class FieldCanvasPainter extends CustomPainter {
         linePaint,
       );
       canvas.drawRect(
-        Rect.fromLTWH(size.width - innerInset - boxWidth, boxTop, boxWidth, boxHeight),
+        Rect.fromLTWH(
+          size.width - innerInset - boxWidth,
+          boxTop,
+          boxWidth,
+          boxHeight,
+        ),
         linePaint,
       );
     } else {
@@ -675,129 +1031,322 @@ class FieldCanvasPainter extends CustomPainter {
       final boxHeight = size.height * 0.26;
       final boxLeft = (size.width - boxWidth) / 2;
       canvas.drawRect(
-        Rect.fromLTWH(boxLeft, size.height - innerInset - boxHeight, boxWidth, boxHeight),
+        Rect.fromLTWH(
+          boxLeft,
+          size.height - innerInset - boxHeight,
+          boxWidth,
+          boxHeight,
+        ),
         linePaint,
       );
       final arcRadius = size.width * 0.22;
-      canvas.drawCircle(Offset(size.width / 2, innerInset), arcRadius, linePaint);
+      canvas.drawCircle(
+        Offset(size.width / 2, innerInset),
+        arcRadius,
+        linePaint,
+      );
     }
   }
 
-  void _paintFutsalHandball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintFutsalHandball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
-      canvas.drawCircle(Offset(midX, size.height / 2), (size.height - innerInset * 2) * 0.18, linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawCircle(
+        Offset(midX, size.height / 2),
+        (size.height - innerInset * 2) * 0.18,
+        linePaint,
+      );
       canvas.drawCircle(Offset(midX, size.height / 2), 3.0, dotPaint);
 
       final dRadius = (size.height - innerInset * 2) * 0.35;
       final midY = size.height / 2;
       canvas.drawArc(
         Rect.fromCircle(center: Offset(innerInset, midY), radius: dRadius),
-        -1.5708, 3.1416, false, linePaint,
+        -1.5708,
+        3.1416,
+        false,
+        linePaint,
       );
       canvas.drawArc(
-        Rect.fromCircle(center: Offset(size.width - innerInset, midY), radius: dRadius),
-        1.5708, 3.1416, false, linePaint,
+        Rect.fromCircle(
+          center: Offset(size.width - innerInset, midY),
+          radius: dRadius,
+        ),
+        1.5708,
+        3.1416,
+        false,
+        linePaint,
       );
-      canvas.drawCircle(Offset(innerInset + dRadius * 0.6, midY), 2.5, dotPaint);
-      canvas.drawCircle(Offset(size.width - innerInset - dRadius * 0.6, midY), 2.5, dotPaint);
+      canvas.drawCircle(
+        Offset(innerInset + dRadius * 0.6, midY),
+        2.5,
+        dotPaint,
+      );
+      canvas.drawCircle(
+        Offset(size.width - innerInset - dRadius * 0.6, midY),
+        2.5,
+        dotPaint,
+      );
     } else {
       final dRadius = size.width * 0.35;
       final midX2 = size.width / 2;
       canvas.drawArc(
-        Rect.fromCircle(center: Offset(midX2, size.height - innerInset), radius: dRadius),
-        3.1416, 3.1416, false, linePaint,
+        Rect.fromCircle(
+          center: Offset(midX2, size.height - innerInset),
+          radius: dRadius,
+        ),
+        3.1416,
+        3.1416,
+        false,
+        linePaint,
       );
-      canvas.drawCircle(Offset(midX2, size.height - innerInset - dRadius * 0.6), 2.5, dotPaint);
+      canvas.drawCircle(
+        Offset(midX2, size.height - innerInset - dRadius * 0.6),
+        2.5,
+        dotPaint,
+      );
     }
   }
 
-  void _paintBeachVolleyball(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintBeachVolleyball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
       // Net in the middle
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
     } else {
       // Single side view: net line + attack zone suggestion
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       // Mark mid-court (no attack line in beach volleyball, just net + free zone)
     }
   }
 
-  void _paintTakraw(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintTakraw(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       final qcRadius = (size.height - innerInset * 2) * 0.16;
       canvas.drawArc(
         Rect.fromCircle(center: Offset(midX, innerInset), radius: qcRadius),
-        0, 3.1416, false, linePaint,
+        0,
+        3.1416,
+        false,
+        linePaint,
       );
       canvas.drawArc(
-        Rect.fromCircle(center: Offset(midX, size.height - innerInset), radius: qcRadius),
-        3.1416, 3.1416, false, linePaint,
+        Rect.fromCircle(
+          center: Offset(midX, size.height - innerInset),
+          radius: qcRadius,
+        ),
+        3.1416,
+        3.1416,
+        false,
+        linePaint,
       );
       final serveRadius = (size.height - innerInset * 2) * 0.12;
       final halfW = midX - innerInset;
-      canvas.drawCircle(Offset(innerInset + halfW * 0.5, size.height / 2), serveRadius, linePaint);
-      canvas.drawCircle(Offset(size.width - innerInset - halfW * 0.5, size.height / 2), serveRadius, linePaint);
+      canvas.drawCircle(
+        Offset(innerInset + halfW * 0.5, size.height / 2),
+        serveRadius,
+        linePaint,
+      );
+      canvas.drawCircle(
+        Offset(size.width - innerInset - halfW * 0.5, size.height / 2),
+        serveRadius,
+        linePaint,
+      );
     } else {
       final serveRadius = size.height * 0.16;
-      canvas.drawCircle(Offset(size.width / 2, size.height / 2), serveRadius, linePaint);
+      canvas.drawCircle(
+        Offset(size.width / 2, size.height / 2),
+        serveRadius,
+        linePaint,
+      );
     }
   }
 
-  void _paintRugby(Canvas canvas, Size size, Paint linePaint, double innerInset, bool isDouble, double midX) {
+  void _paintRugby(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final courtW = size.width - innerInset * 2;
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        linePaint,
+      );
       final tryLineOffset = courtW * 0.10;
-      canvas.drawLine(Offset(innerInset + tryLineOffset, innerInset), Offset(innerInset + tryLineOffset, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - tryLineOffset, innerInset), Offset(size.width - innerInset - tryLineOffset, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + tryLineOffset, innerInset),
+        Offset(innerInset + tryLineOffset, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - tryLineOffset, innerInset),
+        Offset(
+          size.width - innerInset - tryLineOffset,
+          size.height - innerInset,
+        ),
+        linePaint,
+      );
       final line22Offset = courtW * 0.28;
-      canvas.drawLine(Offset(innerInset + line22Offset, innerInset), Offset(innerInset + line22Offset, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - line22Offset, innerInset), Offset(size.width - innerInset - line22Offset, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + line22Offset, innerInset),
+        Offset(innerInset + line22Offset, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - line22Offset, innerInset),
+        Offset(
+          size.width - innerInset - line22Offset,
+          size.height - innerInset,
+        ),
+        linePaint,
+      );
       final line10Offset = courtW * 0.40;
-      canvas.drawLine(Offset(innerInset + line10Offset, innerInset), Offset(innerInset + line10Offset, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - line10Offset, innerInset), Offset(size.width - innerInset - line10Offset, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + line10Offset, innerInset),
+        Offset(innerInset + line10Offset, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - line10Offset, innerInset),
+        Offset(
+          size.width - innerInset - line10Offset,
+          size.height - innerInset,
+        ),
+        linePaint,
+      );
     } else {
       final tryLineOffset = size.height * 0.18;
-      canvas.drawLine(Offset(innerInset, size.height - innerInset - tryLineOffset), Offset(size.width - innerInset, size.height - innerInset - tryLineOffset), linePaint);
-      canvas.drawLine(Offset(innerInset, size.height - innerInset - tryLineOffset * 2), Offset(size.width - innerInset, size.height - innerInset - tryLineOffset * 2), linePaint);
+      canvas.drawLine(
+        Offset(innerInset, size.height - innerInset - tryLineOffset),
+        Offset(
+          size.width - innerInset,
+          size.height - innerInset - tryLineOffset,
+        ),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset, size.height - innerInset - tryLineOffset * 2),
+        Offset(
+          size.width - innerInset,
+          size.height - innerInset - tryLineOffset * 2,
+        ),
+        linePaint,
+      );
     }
   }
 
-  void _paintAmericanFootball(Canvas canvas, Size size, Paint linePaint, double innerInset, bool isDouble, double midX) {
+  void _paintAmericanFootball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final courtW = size.width - innerInset * 2;
     if (isDouble) {
       // Top-view landscape: end zones + yard lines
       final endZoneW = courtW * 0.11;
-      canvas.drawLine(Offset(innerInset + endZoneW, innerInset), Offset(innerInset + endZoneW, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - endZoneW, innerInset), Offset(size.width - innerInset - endZoneW, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + endZoneW, innerInset),
+        Offset(innerInset + endZoneW, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - endZoneW, innerInset),
+        Offset(size.width - innerInset - endZoneW, size.height - innerInset),
+        linePaint,
+      );
       // Center line
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        linePaint,
+      );
       final playableW = courtW - endZoneW * 2;
       final yardInterval = playableW / 10;
       for (int i = 1; i < 10; i++) {
         if (i == 5) continue; // skip center — already drawn
         final x = innerInset + endZoneW + i * yardInterval;
-        canvas.drawLine(Offset(x, innerInset), Offset(x, size.height - innerInset), linePaint);
+        canvas.drawLine(
+          Offset(x, innerInset),
+          Offset(x, size.height - innerInset),
+          linePaint,
+        );
       }
     } else {
       // Single side: end zone at bottom + hash marks
       final courtH = size.height - innerInset * 2;
       final endZoneH = courtH * 0.18;
-      canvas.drawLine(Offset(innerInset, size.height - innerInset - endZoneH), Offset(size.width - innerInset, size.height - innerInset - endZoneH), linePaint);
+      canvas.drawLine(
+        Offset(innerInset, size.height - innerInset - endZoneH),
+        Offset(size.width - innerInset, size.height - innerInset - endZoneH),
+        linePaint,
+      );
       final yardInterval = (courtH - endZoneH) / 5;
       for (int i = 1; i < 5; i++) {
         final y = size.height - innerInset - endZoneH - i * yardInterval;
-        canvas.drawLine(Offset(innerInset, y), Offset(size.width - innerInset, y), linePaint);
+        canvas.drawLine(
+          Offset(innerInset, y),
+          Offset(size.width - innerInset, y),
+          linePaint,
+        );
       }
     }
   }
 
-  void _paintBaseball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintBaseball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final homeY = size.height - innerInset - 4;
     final diamondSize = (size.height - innerInset * 2) * 0.55;
@@ -810,56 +1359,154 @@ class FieldCanvasPainter extends CustomPainter {
       ..close();
     canvas.drawPath(path, linePaint);
 
-    canvas.drawLine(Offset(midX, homeY), Offset(innerInset, innerInset + 10), linePaint);
-    canvas.drawLine(Offset(midX, homeY), Offset(size.width - innerInset, innerInset + 10), linePaint);
+    canvas.drawLine(
+      Offset(midX, homeY),
+      Offset(innerInset, innerInset + 10),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(midX, homeY),
+      Offset(size.width - innerInset, innerInset + 10),
+      linePaint,
+    );
 
-    final outfieldRect = Rect.fromCircle(center: Offset(midX, homeY), radius: diamondSize * 1.35);
+    final outfieldRect = Rect.fromCircle(
+      center: Offset(midX, homeY),
+      radius: diamondSize * 1.35,
+    );
     canvas.drawArc(outfieldRect, -2.5, 1.86, false, linePaint);
 
     canvas.drawCircle(Offset(midX, homeY), 3.0, dotPaint);
-    canvas.drawCircle(Offset(midX + diamondSize * 0.6, homeY - diamondSize * 0.5), 3.0, dotPaint);
+    canvas.drawCircle(
+      Offset(midX + diamondSize * 0.6, homeY - diamondSize * 0.5),
+      3.0,
+      dotPaint,
+    );
     canvas.drawCircle(Offset(midX, homeY - diamondSize), 3.0, dotPaint);
-    canvas.drawCircle(Offset(midX - diamondSize * 0.6, homeY - diamondSize * 0.5), 3.0, dotPaint);
+    canvas.drawCircle(
+      Offset(midX - diamondSize * 0.6, homeY - diamondSize * 0.5),
+      3.0,
+      dotPaint,
+    );
     canvas.drawCircle(Offset(midX, homeY - diamondSize * 0.5), 3.0, dotPaint);
   }
 
-  void _paintCricket(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintCricket(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
-    final ovalRect = Rect.fromLTRB(innerInset + 8, innerInset + 4, size.width - innerInset - 8, size.height - innerInset - 4);
+    final ovalRect = Rect.fromLTRB(
+      innerInset + 8,
+      innerInset + 4,
+      size.width - innerInset - 8,
+      size.height - innerInset - 4,
+    );
     canvas.drawOval(ovalRect, linePaint);
 
-    final innerOval = Rect.fromLTRB(midX - size.width * 0.28, midY - size.height * 0.36, midX + size.width * 0.28, midY + size.height * 0.36);
+    final innerOval = Rect.fromLTRB(
+      midX - size.width * 0.28,
+      midY - size.height * 0.36,
+      midX + size.width * 0.28,
+      midY + size.height * 0.36,
+    );
     canvas.drawOval(innerOval, linePaint);
 
     final pitchW = size.width * 0.24;
     final pitchH = size.height * 0.16;
-    final pitchRect = Rect.fromCenter(center: Offset(midX, midY), width: pitchW, height: pitchH);
+    final pitchRect = Rect.fromCenter(
+      center: Offset(midX, midY),
+      width: pitchW,
+      height: pitchH,
+    );
     canvas.drawRect(pitchRect, linePaint);
 
-    canvas.drawLine(Offset(pitchRect.left + pitchW * 0.15, pitchRect.top), Offset(pitchRect.left + pitchW * 0.15, pitchRect.bottom), linePaint);
-    canvas.drawLine(Offset(pitchRect.right - pitchW * 0.15, pitchRect.top), Offset(pitchRect.right - pitchW * 0.15, pitchRect.bottom), linePaint);
+    canvas.drawLine(
+      Offset(pitchRect.left + pitchW * 0.15, pitchRect.top),
+      Offset(pitchRect.left + pitchW * 0.15, pitchRect.bottom),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(pitchRect.right - pitchW * 0.15, pitchRect.top),
+      Offset(pitchRect.right - pitchW * 0.15, pitchRect.bottom),
+      linePaint,
+    );
   }
 
-  void _paintFieldHockey(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset, bool isDouble, double midX) {
+  void _paintFieldHockey(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final courtW = size.width - innerInset * 2;
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        linePaint,
+      );
       final line23 = courtW * 0.25;
-      canvas.drawLine(Offset(innerInset + line23, innerInset), Offset(innerInset + line23, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - line23, innerInset), Offset(size.width - innerInset - line23, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + line23, innerInset),
+        Offset(innerInset + line23, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - line23, innerInset),
+        Offset(size.width - innerInset - line23, size.height - innerInset),
+        linePaint,
+      );
 
       final dRadius = (size.height - innerInset * 2) * 0.40;
       final midY = size.height / 2;
-      canvas.drawArc(Rect.fromCircle(center: Offset(innerInset, midY), radius: dRadius), -1.5708, 3.1416, false, linePaint);
-      canvas.drawArc(Rect.fromCircle(center: Offset(size.width - innerInset, midY), radius: dRadius), 1.5708, 3.1416, false, linePaint);
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(innerInset, midY), radius: dRadius),
+        -1.5708,
+        3.1416,
+        false,
+        linePaint,
+      );
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: Offset(size.width - innerInset, midY),
+          radius: dRadius,
+        ),
+        1.5708,
+        3.1416,
+        false,
+        linePaint,
+      );
     } else {
       final dRadius = size.width * 0.38;
-      canvas.drawArc(Rect.fromCircle(center: Offset(size.width / 2, size.height - innerInset), radius: dRadius), 3.1416, 3.1416, false, linePaint);
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: Offset(size.width / 2, size.height - innerInset),
+          radius: dRadius,
+        ),
+        3.1416,
+        3.1416,
+        false,
+        linePaint,
+      );
     }
   }
 
-  void _paintIceHockey(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset, bool isDouble, double midX) {
+  void _paintIceHockey(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final midY = size.height / 2;
     final courtW = size.width - innerInset * 2;
 
@@ -868,8 +1515,16 @@ class FieldCanvasPainter extends CustomPainter {
       ..color = Colors.red.shade600.withValues(alpha: 0.85)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
-    canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), redPaint);
-    canvas.drawCircle(Offset(midX, midY), (size.height - innerInset * 2) * 0.22, redPaint);
+    canvas.drawLine(
+      Offset(midX, innerInset),
+      Offset(midX, size.height - innerInset),
+      redPaint,
+    );
+    canvas.drawCircle(
+      Offset(midX, midY),
+      (size.height - innerInset * 2) * 0.22,
+      redPaint,
+    );
     canvas.drawCircle(Offset(midX, midY), 3.0, dotPaint);
 
     // Blue lines
@@ -879,15 +1534,24 @@ class FieldCanvasPainter extends CustomPainter {
       ..strokeWidth = 3.0;
     final blue1X = innerInset + courtW * 0.33;
     final blue2X = size.width - innerInset - courtW * 0.33;
-    canvas.drawLine(Offset(blue1X, innerInset), Offset(blue1X, size.height - innerInset), bluePaint);
-    canvas.drawLine(Offset(blue2X, innerInset), Offset(blue2X, size.height - innerInset), bluePaint);
+    canvas.drawLine(
+      Offset(blue1X, innerInset),
+      Offset(blue1X, size.height - innerInset),
+      bluePaint,
+    );
+    canvas.drawLine(
+      Offset(blue2X, innerInset),
+      Offset(blue2X, size.height - innerInset),
+      bluePaint,
+    );
 
     // Face-off spots
     final spotRadius = (size.height - innerInset * 2) * 0.16;
     final leftSpotX = innerInset + courtW * 0.16;
     final rightSpotX = size.width - innerInset - courtW * 0.16;
     final topSpotY = innerInset + (size.height - innerInset * 2) * 0.25;
-    final botSpotY = size.height - innerInset - (size.height - innerInset * 2) * 0.25;
+    final botSpotY =
+        size.height - innerInset - (size.height - innerInset * 2) * 0.25;
 
     canvas.drawCircle(Offset(leftSpotX, topSpotY), spotRadius, linePaint);
     canvas.drawCircle(Offset(leftSpotX, botSpotY), spotRadius, linePaint);
@@ -895,49 +1559,145 @@ class FieldCanvasPainter extends CustomPainter {
     canvas.drawCircle(Offset(rightSpotX, botSpotY), spotRadius, linePaint);
 
     // Goal crease arcs at each end
-    canvas.drawArc(Rect.fromCircle(center: Offset(innerInset + 8, midY), radius: 14), -1.5708, 3.1416, false, linePaint);
-    canvas.drawArc(Rect.fromCircle(center: Offset(size.width - innerInset - 8, midY), radius: 14), 1.5708, 3.1416, false, linePaint);
+    canvas.drawArc(
+      Rect.fromCircle(center: Offset(innerInset + 8, midY), radius: 14),
+      -1.5708,
+      3.1416,
+      false,
+      linePaint,
+    );
+    canvas.drawArc(
+      Rect.fromCircle(
+        center: Offset(size.width - innerInset - 8, midY),
+        radius: 14,
+      ),
+      1.5708,
+      3.1416,
+      false,
+      linePaint,
+    );
   }
 
-  void _paintTableTennis(Canvas canvas, Size size, Paint linePaint, Paint netPaint, double innerInset, bool isDouble, double midX) {
+  void _paintTableTennis(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final midY = size.height / 2;
-    canvas.drawLine(Offset(innerInset, midY), Offset(size.width - innerInset, midY), linePaint);
-    canvas.drawLine(Offset(midX, innerInset - 4), Offset(midX, size.height - innerInset + 4), netPaint);
+    canvas.drawLine(
+      Offset(innerInset, midY),
+      Offset(size.width - innerInset, midY),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(midX, innerInset - 4),
+      Offset(midX, size.height - innerInset + 4),
+      netPaint,
+    );
   }
 
-  void _paintPickleball(Canvas canvas, Size size, Paint linePaint, Paint netPaint, double innerInset, bool isDouble, double midX) {
+  void _paintPickleball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     final midY = size.height / 2;
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       final halfW = midX - innerInset;
       final kitchen1X = midX - halfW * 0.35;
       final kitchen2X = midX + halfW * 0.35;
-      canvas.drawLine(Offset(kitchen1X, innerInset), Offset(kitchen1X, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(kitchen2X, innerInset), Offset(kitchen2X, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(innerInset, midY), Offset(kitchen1X, midY), linePaint);
-      canvas.drawLine(Offset(kitchen2X, midY), Offset(size.width - innerInset, midY), linePaint);
+      canvas.drawLine(
+        Offset(kitchen1X, innerInset),
+        Offset(kitchen1X, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(kitchen2X, innerInset),
+        Offset(kitchen2X, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset, midY),
+        Offset(kitchen1X, midY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(kitchen2X, midY),
+        Offset(size.width - innerInset, midY),
+        linePaint,
+      );
     } else {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
-      canvas.drawLine(Offset(innerInset, midY), Offset(size.width - innerInset, midY), linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset, midY),
+        Offset(size.width - innerInset, midY),
+        linePaint,
+      );
     }
   }
 
-  void _paintSquash(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintSquash(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final midY = size.height / 2;
     final courtW = size.width - innerInset * 2;
     // Short service line divides the court ~55% from the back wall (left/front)
     final shortLineX = innerInset + courtW * 0.55;
-    canvas.drawLine(Offset(shortLineX, innerInset), Offset(shortLineX, size.height - innerInset), linePaint);
+    canvas.drawLine(
+      Offset(shortLineX, innerInset),
+      Offset(shortLineX, size.height - innerInset),
+      linePaint,
+    );
     // Half-court line extends from short line to the FRONT wall (right side = front)
-    canvas.drawLine(Offset(shortLineX, midY), Offset(size.width - innerInset, midY), linePaint);
+    canvas.drawLine(
+      Offset(shortLineX, midY),
+      Offset(size.width - innerInset, midY),
+      linePaint,
+    );
 
     // Service boxes are on the FRONT side (right of short line)
     final boxSize = (size.height - innerInset * 2) * 0.28;
-    canvas.drawRect(Rect.fromLTWH(shortLineX, innerInset, boxSize, boxSize), linePaint);
-    canvas.drawRect(Rect.fromLTWH(shortLineX, size.height - innerInset - boxSize, boxSize, boxSize), linePaint);
+    canvas.drawRect(
+      Rect.fromLTWH(shortLineX, innerInset, boxSize, boxSize),
+      linePaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        shortLineX,
+        size.height - innerInset - boxSize,
+        boxSize,
+        boxSize,
+      ),
+      linePaint,
+    );
   }
 
-  void _paintBoxing(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintBoxing(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final side = (size.height - innerInset * 2);
     final left = (size.width - side) / 2;
     final ringRect = Rect.fromLTWH(left, innerInset, side, side);
@@ -953,17 +1713,41 @@ class FieldCanvasPainter extends CustomPainter {
     }
 
     // Corner indicators: red / blue (opposite) / white (neutral x2)
-    final padPaintRed = Paint()..color = Colors.red.shade700..style = PaintingStyle.fill;
-    final padPaintBlue = Paint()..color = Colors.blue.shade700..style = PaintingStyle.fill;
-    final padPaintNeutral = Paint()..color = Colors.grey.shade300..style = PaintingStyle.fill;
+    final padPaintRed = Paint()
+      ..color = Colors.red.shade700
+      ..style = PaintingStyle.fill;
+    final padPaintBlue = Paint()
+      ..color = Colors.blue.shade700
+      ..style = PaintingStyle.fill;
+    final padPaintNeutral = Paint()
+      ..color = Colors.grey.shade300
+      ..style = PaintingStyle.fill;
 
     canvas.drawCircle(Offset(left + 5, innerInset + 5), 5.0, padPaintRed);
-    canvas.drawCircle(Offset(left + side - 5, innerInset + side - 5), 5.0, padPaintBlue);
-    canvas.drawCircle(Offset(left + side - 5, innerInset + 5), 5.0, padPaintNeutral);
-    canvas.drawCircle(Offset(left + 5, innerInset + side - 5), 5.0, padPaintNeutral);
+    canvas.drawCircle(
+      Offset(left + side - 5, innerInset + side - 5),
+      5.0,
+      padPaintBlue,
+    );
+    canvas.drawCircle(
+      Offset(left + side - 5, innerInset + 5),
+      5.0,
+      padPaintNeutral,
+    );
+    canvas.drawCircle(
+      Offset(left + 5, innerInset + side - 5),
+      5.0,
+      padPaintNeutral,
+    );
   }
 
-  void _paintTaekwondo(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintTaekwondo(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
     final r = (size.height - innerInset * 2) * 0.44;
@@ -982,23 +1766,58 @@ class FieldCanvasPainter extends CustomPainter {
     path.close();
     canvas.drawPath(path, linePaint);
 
-    canvas.drawLine(Offset(midX - 10, midY), Offset(midX + 10, midY), linePaint);
-    canvas.drawLine(Offset(midX, midY - 10), Offset(midX, midY + 10), linePaint);
+    canvas.drawLine(
+      Offset(midX - 10, midY),
+      Offset(midX + 10, midY),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(midX, midY - 10),
+      Offset(midX, midY + 10),
+      linePaint,
+    );
     canvas.drawCircle(Offset(midX, midY), 3.0, dotPaint);
   }
 
-  void _paintMartialArts(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintMartialArts(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
     final innerW = size.width * 0.55;
     final innerH = size.height * 0.58;
-    canvas.drawRect(Rect.fromCenter(center: Offset(midX, midY), width: innerW, height: innerH), linePaint);
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(midX, midY),
+        width: innerW,
+        height: innerH,
+      ),
+      linePaint,
+    );
 
-    canvas.drawLine(Offset(midX - 14, midY - 12), Offset(midX - 14, midY + 12), linePaint);
-    canvas.drawLine(Offset(midX + 14, midY - 12), Offset(midX + 14, midY + 12), linePaint);
+    canvas.drawLine(
+      Offset(midX - 14, midY - 12),
+      Offset(midX - 14, midY + 12),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(midX + 14, midY - 12),
+      Offset(midX + 14, midY + 12),
+      linePaint,
+    );
   }
 
-  void _paintWrestling(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintWrestling(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
     final radius = (size.height - innerInset * 2) * 0.44;
@@ -1015,25 +1834,61 @@ class FieldCanvasPainter extends CustomPainter {
     canvas.drawCircle(Offset(midX, midY), 3.0, dotPaint);
   }
 
-  void _paintFencing(Canvas canvas, Size size, Paint linePaint, Paint netPaint, double innerInset) {
+  void _paintFencing(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
     final pisteH = size.height * 0.40;
-    final pisteRect = Rect.fromLTWH(innerInset, midY - pisteH / 2, size.width - innerInset * 2, pisteH);
+    final pisteRect = Rect.fromLTWH(
+      innerInset,
+      midY - pisteH / 2,
+      size.width - innerInset * 2,
+      pisteH,
+    );
     canvas.drawRect(pisteRect, linePaint);
 
-    canvas.drawLine(Offset(midX, pisteRect.top), Offset(midX, pisteRect.bottom), netPaint);
+    canvas.drawLine(
+      Offset(midX, pisteRect.top),
+      Offset(midX, pisteRect.bottom),
+      netPaint,
+    );
 
     final guardOffset = (size.width - innerInset * 2) * 0.15;
-    canvas.drawLine(Offset(midX - guardOffset, pisteRect.top), Offset(midX - guardOffset, pisteRect.bottom), linePaint);
-    canvas.drawLine(Offset(midX + guardOffset, pisteRect.top), Offset(midX + guardOffset, pisteRect.bottom), linePaint);
+    canvas.drawLine(
+      Offset(midX - guardOffset, pisteRect.top),
+      Offset(midX - guardOffset, pisteRect.bottom),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(midX + guardOffset, pisteRect.top),
+      Offset(midX + guardOffset, pisteRect.bottom),
+      linePaint,
+    );
 
     final warnOffset = (size.width - innerInset * 2) * 0.12;
-    canvas.drawLine(Offset(innerInset + warnOffset, pisteRect.top), Offset(innerInset + warnOffset, pisteRect.bottom), linePaint);
-    canvas.drawLine(Offset(size.width - innerInset - warnOffset, pisteRect.top), Offset(size.width - innerInset - warnOffset, pisteRect.bottom), linePaint);
+    canvas.drawLine(
+      Offset(innerInset + warnOffset, pisteRect.top),
+      Offset(innerInset + warnOffset, pisteRect.bottom),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(size.width - innerInset - warnOffset, pisteRect.top),
+      Offset(size.width - innerInset - warnOffset, pisteRect.bottom),
+      linePaint,
+    );
   }
 
-  void _paintRunningTrack(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintRunningTrack(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final laneCount = 4;
     for (int i = 0; i < laneCount; i++) {
       final inset = innerInset + i * 7.0;
@@ -1052,66 +1907,153 @@ class FieldCanvasPainter extends CustomPainter {
     );
   }
 
-  void _paintSwimming(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintSwimming(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final laneCount = 5;
     final courtH = size.height - innerInset * 2;
     final laneH = courtH / laneCount;
     // Lane dividers
     for (int i = 1; i < laneCount; i++) {
       final y = innerInset + i * laneH;
-      canvas.drawLine(Offset(innerInset, y), Offset(size.width - innerInset, y), linePaint);
+      canvas.drawLine(
+        Offset(innerInset, y),
+        Offset(size.width - innerInset, y),
+        linePaint,
+      );
     }
     // T-markers at both ends of each lane (top & bottom)
     for (int i = 0; i < laneCount; i++) {
       final laneTopY = innerInset + i * laneH;
       final laneMidY = laneTopY + laneH / 2;
       // Top wall T-mark
-      canvas.drawLine(Offset(innerInset + 8, laneTopY), Offset(innerInset + 8, laneTopY + laneH * 0.3), linePaint);
-      canvas.drawLine(Offset(innerInset + 4, laneTopY + laneH * 0.3), Offset(innerInset + 12, laneTopY + laneH * 0.3), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + 8, laneTopY),
+        Offset(innerInset + 8, laneTopY + laneH * 0.3),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset + 4, laneTopY + laneH * 0.3),
+        Offset(innerInset + 12, laneTopY + laneH * 0.3),
+        linePaint,
+      );
       // Bottom wall T-mark (mirrored)
-      canvas.drawLine(Offset(size.width - innerInset - 8, laneTopY + laneH), Offset(size.width - innerInset - 8, laneTopY + laneH * 0.7), linePaint);
-      canvas.drawLine(Offset(size.width - innerInset - 12, laneTopY + laneH * 0.7), Offset(size.width - innerInset - 4, laneTopY + laneH * 0.7), linePaint);
+      canvas.drawLine(
+        Offset(size.width - innerInset - 8, laneTopY + laneH),
+        Offset(size.width - innerInset - 8, laneTopY + laneH * 0.7),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - innerInset - 12, laneTopY + laneH * 0.7),
+        Offset(size.width - innerInset - 4, laneTopY + laneH * 0.7),
+        linePaint,
+      );
       // Center guide line
-      canvas.drawLine(Offset(innerInset + laneH * 0.15, laneMidY), Offset(size.width - innerInset - laneH * 0.15, laneMidY), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + laneH * 0.15, laneMidY),
+        Offset(size.width - innerInset - laneH * 0.15, laneMidY),
+        linePaint,
+      );
     }
   }
 
-  void _paintSnooker(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintSnooker(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midY = size.height / 2;
     final courtW = size.width - innerInset * 2;
 
     final baulkX = innerInset + courtW * 0.22;
-    canvas.drawLine(Offset(baulkX, innerInset), Offset(baulkX, size.height - innerInset), linePaint);
+    canvas.drawLine(
+      Offset(baulkX, innerInset),
+      Offset(baulkX, size.height - innerInset),
+      linePaint,
+    );
 
     final dRadius = (size.height - innerInset * 2) * 0.25;
-    canvas.drawArc(Rect.fromCircle(center: Offset(baulkX, midY), radius: dRadius), 1.5708, 3.1416, false, linePaint);
+    canvas.drawArc(
+      Rect.fromCircle(center: Offset(baulkX, midY), radius: dRadius),
+      1.5708,
+      3.1416,
+      false,
+      linePaint,
+    );
 
-    final pocketPaint = Paint()..color = Colors.black87..style = PaintingStyle.fill;
+    final pocketPaint = Paint()
+      ..color = Colors.black87
+      ..style = PaintingStyle.fill;
     final pR = 5.0;
     canvas.drawCircle(Offset(innerInset + 2, innerInset + 2), pR, pocketPaint);
-    canvas.drawCircle(Offset(size.width - innerInset - 2, innerInset + 2), pR, pocketPaint);
-    canvas.drawCircle(Offset(innerInset + 2, size.height - innerInset - 2), pR, pocketPaint);
-    canvas.drawCircle(Offset(size.width - innerInset - 2, size.height - innerInset - 2), pR, pocketPaint);
+    canvas.drawCircle(
+      Offset(size.width - innerInset - 2, innerInset + 2),
+      pR,
+      pocketPaint,
+    );
+    canvas.drawCircle(
+      Offset(innerInset + 2, size.height - innerInset - 2),
+      pR,
+      pocketPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width - innerInset - 2, size.height - innerInset - 2),
+      pR,
+      pocketPaint,
+    );
     canvas.drawCircle(Offset(size.width / 2, innerInset), pR, pocketPaint);
-    canvas.drawCircle(Offset(size.width / 2, size.height - innerInset), pR, pocketPaint);
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height - innerInset),
+      pR,
+      pocketPaint,
+    );
   }
 
-  void _paintBowling(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintBowling(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midY = size.height / 2;
     final laneH = size.height * 0.45;
-    final laneRect = Rect.fromLTWH(innerInset, midY - laneH / 2, size.width - innerInset * 2, laneH);
+    final laneRect = Rect.fromLTWH(
+      innerInset,
+      midY - laneH / 2,
+      size.width - innerInset * 2,
+      laneH,
+    );
     canvas.drawRect(laneRect, linePaint);
 
     final foulX = innerInset + (size.width - innerInset * 2) * 0.15;
-    canvas.drawLine(Offset(foulX, laneRect.top), Offset(foulX, laneRect.bottom), linePaint);
+    canvas.drawLine(
+      Offset(foulX, laneRect.top),
+      Offset(foulX, laneRect.bottom),
+      linePaint,
+    );
 
     final arrowX = innerInset + (size.width - innerInset * 2) * 0.45;
     for (final dy in [-8.0, 0.0, 8.0]) {
-      canvas.drawLine(Offset(arrowX, midY + dy), Offset(arrowX + 8, midY + dy - 3), linePaint);
-      canvas.drawLine(Offset(arrowX, midY + dy), Offset(arrowX + 8, midY + dy + 3), linePaint);
+      canvas.drawLine(
+        Offset(arrowX, midY + dy),
+        Offset(arrowX + 8, midY + dy - 3),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(arrowX, midY + dy),
+        Offset(arrowX + 8, midY + dy + 3),
+        linePaint,
+      );
     }
 
-    final pinDeckX = size.width - innerInset - (size.width - innerInset * 2) * 0.15;
+    final pinDeckX =
+        size.width - innerInset - (size.width - innerInset * 2) * 0.15;
     canvas.drawCircle(Offset(pinDeckX, midY), 2.5, dotPaint);
     canvas.drawCircle(Offset(pinDeckX + 8, midY - 6), 2.5, dotPaint);
     canvas.drawCircle(Offset(pinDeckX + 8, midY + 6), 2.5, dotPaint);
@@ -1120,7 +2062,13 @@ class FieldCanvasPainter extends CustomPainter {
     canvas.drawCircle(Offset(pinDeckX + 16, midY + 12), 2.5, dotPaint);
   }
 
-  void _paintArchery(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintArchery(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
     final maxR = (size.height - innerInset * 2) * 0.44;
@@ -1134,7 +2082,13 @@ class FieldCanvasPainter extends CustomPainter {
   // ---------------------------------------------------------------------------
   // Golf: Tee box, fairway contour, putting green & flag pole
   // ---------------------------------------------------------------------------
-  void _paintGolf(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintGolf(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midY = size.height / 2;
     final teeX = innerInset + size.width * 0.15;
     final greenX = size.width - innerInset - size.width * 0.22;
@@ -1164,7 +2118,13 @@ class FieldCanvasPainter extends CustomPainter {
   // ---------------------------------------------------------------------------
   // Gymnastics: Floor exercise mat + Vault runway & apparatus
   // ---------------------------------------------------------------------------
-  void _paintGymnastics(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintGymnastics(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final midX = size.width / 2;
     final midY = size.height / 2;
 
@@ -1182,13 +2142,21 @@ class FieldCanvasPainter extends CustomPainter {
     final vaultX = size.width - innerInset - 40;
     canvas.drawLine(Offset(vaultX - 60, midY), Offset(vaultX, midY), linePaint);
     // Vault table
-    canvas.drawRect(Rect.fromCenter(center: Offset(vaultX, midY), width: 14, height: 24), linePaint);
+    canvas.drawRect(
+      Rect.fromCenter(center: Offset(vaultX, midY), width: 14, height: 24),
+      linePaint,
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Cycling Track: Velodrome Oval & Finish line
   // ---------------------------------------------------------------------------
-  void _paintCyclingTrack(Canvas canvas, Size size, Paint linePaint, double innerInset) {
+  void _paintCyclingTrack(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    double innerInset,
+  ) {
     final trackRect = Rect.fromLTWH(
       innerInset + 10,
       innerInset + 10,
@@ -1197,9 +2165,18 @@ class FieldCanvasPainter extends CustomPainter {
     );
 
     // Velodrome concentric ovals
-    final outerRRect = RRect.fromRectAndRadius(trackRect, Radius.circular(size.height * 0.45));
-    final innerRRect = RRect.fromRectAndRadius(trackRect.deflate(22), Radius.circular(size.height * 0.35));
-    final blueLineRRect = RRect.fromRectAndRadius(trackRect.deflate(11), Radius.circular(size.height * 0.40));
+    final outerRRect = RRect.fromRectAndRadius(
+      trackRect,
+      Radius.circular(size.height * 0.45),
+    );
+    final innerRRect = RRect.fromRectAndRadius(
+      trackRect.deflate(22),
+      Radius.circular(size.height * 0.35),
+    );
+    final blueLineRRect = RRect.fromRectAndRadius(
+      trackRect.deflate(11),
+      Radius.circular(size.height * 0.40),
+    );
 
     canvas.drawRRect(outerRRect, linePaint);
     canvas.drawRRect(innerRRect, linePaint);
@@ -1215,12 +2192,22 @@ class FieldCanvasPainter extends CustomPainter {
   // ---------------------------------------------------------------------------
   // Shooting Range: Firing line, lane markers & concentric targets
   // ---------------------------------------------------------------------------
-  void _paintShootingRange(Canvas canvas, Size size, Paint linePaint, Paint dotPaint, double innerInset) {
+  void _paintShootingRange(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+  ) {
     final firingLineX = innerInset + size.width * 0.18;
     final targetLineX = size.width - innerInset - size.width * 0.15;
 
     // Firing line
-    canvas.drawLine(Offset(firingLineX, innerInset), Offset(firingLineX, size.height - innerInset), linePaint);
+    canvas.drawLine(
+      Offset(firingLineX, innerInset),
+      Offset(firingLineX, size.height - innerInset),
+      linePaint,
+    );
 
     // 3 Shooting Lanes
     final h = size.height - innerInset * 2;
@@ -1230,7 +2217,11 @@ class FieldCanvasPainter extends CustomPainter {
 
     for (final y in [laneY1, laneY2, laneY3]) {
       // Lane dividers
-      canvas.drawLine(Offset(firingLineX, y), Offset(targetLineX, y), linePaint);
+      canvas.drawLine(
+        Offset(firingLineX, y),
+        Offset(targetLineX, y),
+        linePaint,
+      );
 
       // Target bulls-eye
       canvas.drawCircle(Offset(targetLineX, y), 14, linePaint);
@@ -1239,8 +2230,15 @@ class FieldCanvasPainter extends CustomPainter {
     }
   }
 
-  void _paintBadminton(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintBadminton(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     // Singles sidelines inset from top/bottom edges.
     final sideInset = size.height * 0.12;
     final topY = innerInset + sideInset;
@@ -1248,48 +2246,106 @@ class FieldCanvasPainter extends CustomPainter {
 
     if (isDouble) {
       // Net at center.
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       // Per half: short service line ~22% from net + singles sidelines.
       final halfW = midX - innerInset;
       for (final dir in [-1.0, 1.0]) {
         final shortServiceX = midX + dir * halfW * 0.22;
-        canvas.drawLine(Offset(shortServiceX, innerInset), Offset(shortServiceX, size.height - innerInset), linePaint);
+        canvas.drawLine(
+          Offset(shortServiceX, innerInset),
+          Offset(shortServiceX, size.height - innerInset),
+          linePaint,
+        );
         // Long service (doubles) line near back boundary.
         final backX = midX + dir * halfW * 0.88;
         canvas.drawLine(Offset(backX, topY), Offset(backX, botY), linePaint);
       }
     } else {
       // Full court without net: doubles boundary + singles sidelines + service lines.
-      canvas.drawLine(Offset(innerInset, topY), Offset(size.width - innerInset, topY), linePaint);
-      canvas.drawLine(Offset(innerInset, botY), Offset(size.width - innerInset, botY), linePaint);
+      canvas.drawLine(
+        Offset(innerInset, topY),
+        Offset(size.width - innerInset, topY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset, botY),
+        Offset(size.width - innerInset, botY),
+        linePaint,
+      );
       final courtW = size.width - innerInset * 2;
-      canvas.drawLine(Offset(innerInset + courtW * 0.28, topY), Offset(innerInset + courtW * 0.28, botY), linePaint);
-      canvas.drawLine(Offset(innerInset + courtW * 0.72, topY), Offset(innerInset + courtW * 0.72, botY), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + courtW * 0.28, topY),
+        Offset(innerInset + courtW * 0.28, botY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset + courtW * 0.72, topY),
+        Offset(innerInset + courtW * 0.72, botY),
+        linePaint,
+      );
       canvas.drawLine(Offset(midX, topY), Offset(midX, botY), linePaint);
     }
   }
 
-  void _paintVolleyball(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintVolleyball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       // Attack (3m) line ~25% from net on each half.
       final halfW = midX - innerInset;
       for (final dir in [-1.0, 1.0]) {
         final attackX = midX + dir * halfW * 0.30;
-        canvas.drawLine(Offset(attackX, innerInset), Offset(attackX, size.height - innerInset), linePaint);
+        canvas.drawLine(
+          Offset(attackX, innerInset),
+          Offset(attackX, size.height - innerInset),
+          linePaint,
+        );
       }
     } else {
       // Center + attack lines.
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       final courtW = size.width - innerInset * 2;
-      canvas.drawLine(Offset(innerInset + courtW * 0.25, innerInset), Offset(innerInset + courtW * 0.25, size.height - innerInset), linePaint);
-      canvas.drawLine(Offset(innerInset + courtW * 0.75, innerInset), Offset(innerInset + courtW * 0.75, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(innerInset + courtW * 0.25, innerInset),
+        Offset(innerInset + courtW * 0.25, size.height - innerInset),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset + courtW * 0.75, innerInset),
+        Offset(innerInset + courtW * 0.75, size.height - innerInset),
+        linePaint,
+      );
     }
   }
 
-  void _paintTennis(Canvas canvas, Size size, Paint linePaint, Paint netPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintTennis(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint netPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     // Singles sidelines inset from top/bottom edges.
     final sideInset = size.height * 0.10;
     final topY = innerInset + sideInset;
@@ -1297,64 +2353,142 @@ class FieldCanvasPainter extends CustomPainter {
     final midY = size.height / 2;
 
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       final halfW = midX - innerInset;
       for (final dir in [-1.0, 1.0]) {
         // Service line ~32% from net.
         final serviceX = midX + dir * halfW * 0.34;
-        canvas.drawLine(Offset(serviceX, topY), Offset(serviceX, botY), linePaint);
+        canvas.drawLine(
+          Offset(serviceX, topY),
+          Offset(serviceX, botY),
+          linePaint,
+        );
         // Center service line from net to service line.
         canvas.drawLine(Offset(midX, midY), Offset(serviceX, midY), linePaint);
       }
       // Singles sidelines.
       canvas.drawLine(Offset(innerInset, topY), Offset(midX, topY), linePaint);
       canvas.drawLine(Offset(innerInset, botY), Offset(midX, botY), linePaint);
-      canvas.drawLine(Offset(midX, topY), Offset(size.width - innerInset, topY), linePaint);
-      canvas.drawLine(Offset(midX, botY), Offset(size.width - innerInset, botY), linePaint);
+      canvas.drawLine(
+        Offset(midX, topY),
+        Offset(size.width - innerInset, topY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(midX, botY),
+        Offset(size.width - innerInset, botY),
+        linePaint,
+      );
     } else {
-      canvas.drawLine(Offset(innerInset, topY), Offset(size.width - innerInset, topY), linePaint);
-      canvas.drawLine(Offset(innerInset, botY), Offset(size.width - innerInset, botY), linePaint);
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), netPaint);
+      canvas.drawLine(
+        Offset(innerInset, topY),
+        Offset(size.width - innerInset, topY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(innerInset, botY),
+        Offset(size.width - innerInset, botY),
+        linePaint,
+      );
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        netPaint,
+      );
       final halfW = midX - innerInset;
       for (final dir in [-1.0, 1.0]) {
         final serviceX = midX + dir * halfW * 0.38;
-        canvas.drawLine(Offset(serviceX, topY), Offset(serviceX, botY), linePaint);
+        canvas.drawLine(
+          Offset(serviceX, topY),
+          Offset(serviceX, botY),
+          linePaint,
+        );
         canvas.drawLine(Offset(midX, midY), Offset(serviceX, midY), linePaint);
       }
     }
   }
 
-  void _paintBasketball(Canvas canvas, Size size, Paint linePaint, Paint dotPaint,
-      double innerInset, bool isDouble, double midX) {
+  void _paintBasketball(
+    Canvas canvas,
+    Size size,
+    Paint linePaint,
+    Paint dotPaint,
+    double innerInset,
+    bool isDouble,
+    double midX,
+  ) {
     if (isDouble) {
-      canvas.drawLine(Offset(midX, innerInset), Offset(midX, size.height - innerInset), linePaint);
+      canvas.drawLine(
+        Offset(midX, innerInset),
+        Offset(midX, size.height - innerInset),
+        linePaint,
+      );
       final centerCircleRadius = (size.height - innerInset * 2) * 0.20;
-      canvas.drawCircle(Offset(midX, size.height / 2), centerCircleRadius, linePaint);
+      canvas.drawCircle(
+        Offset(midX, size.height / 2),
+        centerCircleRadius,
+        linePaint,
+      );
       canvas.drawCircle(Offset(midX, size.height / 2), 3.5, dotPaint);
       // Key + free-throw arc near each end.
       final keyW = size.width * 0.13;
       final keyH = size.height * 0.34;
       final keyTop = (size.height - keyH) / 2;
       canvas.drawRect(Rect.fromLTWH(innerInset, keyTop, keyW, keyH), linePaint);
-      canvas.drawRect(Rect.fromLTWH(size.width - innerInset - keyW, keyTop, keyW, keyH), linePaint);
-      canvas.drawArc(
-        Rect.fromCenter(center: Offset(innerInset + keyW, size.height / 2), width: keyH, height: keyH),
-        -1.5708, 3.1416, false, linePaint,
+      canvas.drawRect(
+        Rect.fromLTWH(size.width - innerInset - keyW, keyTop, keyW, keyH),
+        linePaint,
       );
       canvas.drawArc(
-        Rect.fromCenter(center: Offset(size.width - innerInset - keyW, size.height / 2), width: keyH, height: keyH),
-        1.5708, 3.1416, false, linePaint,
+        Rect.fromCenter(
+          center: Offset(innerInset + keyW, size.height / 2),
+          width: keyH,
+          height: keyH,
+        ),
+        -1.5708,
+        3.1416,
+        false,
+        linePaint,
+      );
+      canvas.drawArc(
+        Rect.fromCenter(
+          center: Offset(size.width - innerInset - keyW, size.height / 2),
+          width: keyH,
+          height: keyH,
+        ),
+        1.5708,
+        3.1416,
+        false,
+        linePaint,
       );
     } else {
       final keyW = size.width * 0.36;
       final keyH = size.height * 0.26;
       final keyLeft = (size.width - keyW) / 2;
-      canvas.drawRect(Rect.fromLTWH(keyLeft, size.height - innerInset - keyH, keyW, keyH), linePaint);
-      canvas.drawArc(
-        Rect.fromCenter(center: Offset(size.width / 2, size.height - innerInset - keyH), width: keyW, height: keyW * 0.7),
-        3.1416, 3.1416, false, linePaint,
+      canvas.drawRect(
+        Rect.fromLTWH(keyLeft, size.height - innerInset - keyH, keyW, keyH),
+        linePaint,
       );
-      canvas.drawCircle(Offset(size.width / 2, innerInset), size.width * 0.20, linePaint);
+      canvas.drawArc(
+        Rect.fromCenter(
+          center: Offset(size.width / 2, size.height - innerInset - keyH),
+          width: keyW,
+          height: keyW * 0.7,
+        ),
+        3.1416,
+        3.1416,
+        false,
+        linePaint,
+      );
+      canvas.drawCircle(
+        Offset(size.width / 2, innerInset),
+        size.width * 0.20,
+        linePaint,
+      );
     }
   }
 
@@ -1414,7 +2548,10 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
     widget.onChanged(List<Map<String, dynamic>>.from(_items));
   }
 
-  Future<void> _openMarkerModal({Map<String, dynamic>? existing, int? index}) async {
+  Future<void> _openMarkerModal({
+    Map<String, dynamic>? existing,
+    int? index,
+  }) async {
     if (!widget.enabled) return;
     final res = await showPositionMarkerEditor(
       context,
@@ -1469,7 +2606,9 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
               child: Row(
                 children: [
                   Icon(
-                    isDouble ? Icons.compare_arrows_rounded : Icons.crop_portrait_rounded,
+                    isDouble
+                        ? Icons.compare_arrows_rounded
+                        : Icons.crop_portrait_rounded,
                     size: 16,
                     color: AppColors.primaryDark,
                   ),
@@ -1511,8 +2650,14 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
               return GestureDetector(
                 onTapUp: widget.enabled
                     ? (details) {
-                        final nx = (details.localPosition.dx / w).clamp(0.05, 0.95);
-                        final ny = (details.localPosition.dy / h).clamp(0.05, 0.95);
+                        final nx = (details.localPosition.dx / w).clamp(
+                          0.05,
+                          0.95,
+                        );
+                        final ny = (details.localPosition.dy / h).clamp(
+                          0.05,
+                          0.95,
+                        );
                         final side = isDouble ? (nx >= 0.5 ? 1 : 0) : 0;
                         showPositionMarkerEditor(
                           context,
@@ -1552,21 +2697,34 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
                       if (_items.isEmpty)
                         Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.touch_app_rounded, color: Colors.white70, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  'แตะที่สนามเพื่อวางตำแหน่งผู้เล่น',
-                                  style: TextStyle(color: Colors.white, fontSize: 13),
-                                ),
-                              ],
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.touch_app_rounded,
+                                    color: Colors.white70,
+                                    size: 18,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'แตะที่สนามเพื่อวางตำแหน่งผู้เล่น',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -1614,14 +2772,21 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
     final x = ((item['x'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0);
     final y = ((item['y'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0);
     final iconKey = item['icon']?.toString() ?? 'player';
-    final iconMeta = kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
+    final iconMeta =
+        kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
     final color = parseHexColor(item['color']?.toString());
     final label = item['label']?.toString() ?? 'ตำแหน่ง';
     final slots = (item['slots'] as num?)?.toInt() ?? 1;
 
     final markerSize = 44.0;
-    final left = (x * canvasWidth - markerSize / 2).clamp(0.0, canvasWidth - markerSize);
-    final top = (y * canvasHeight - markerSize / 2).clamp(0.0, canvasHeight - markerSize);
+    final left = (x * canvasWidth - markerSize / 2).clamp(
+      0.0,
+      canvasWidth - markerSize,
+    );
+    final top = (y * canvasHeight - markerSize / 2).clamp(
+      0.0,
+      canvasHeight - markerSize,
+    );
 
     return Positioned(
       left: left,
@@ -1632,8 +2797,14 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
                 setState(() {
                   final newLeft = left + details.delta.dx;
                   final newTop = top + details.delta.dy;
-                  final nx = ((newLeft + markerSize / 2) / canvasWidth).clamp(0.05, 0.95);
-                  final ny = ((newTop + markerSize / 2) / canvasHeight).clamp(0.05, 0.95);
+                  final nx = ((newLeft + markerSize / 2) / canvasWidth).clamp(
+                    0.05,
+                    0.95,
+                  );
+                  final ny = ((newTop + markerSize / 2) / canvasHeight).clamp(
+                    0.05,
+                    0.95,
+                  );
                   item['x'] = nx;
                   item['y'] = ny;
                   if (isDouble) {
@@ -1693,7 +2864,8 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
     required Map<String, dynamic> item,
   }) {
     final iconKey = item['icon']?.toString() ?? 'player';
-    final iconMeta = kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
+    final iconMeta =
+        kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
     final color = parseHexColor(item['color']?.toString());
     final label = item['label']?.toString() ?? '';
     final slots = (item['slots'] as num?)?.toInt() ?? 1;
@@ -1718,10 +2890,7 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
           Container(
             width: 22,
             height: 22,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             child: Icon(iconMeta.icon, color: Colors.white, size: 14),
           ),
           const SizedBox(width: 8),
@@ -1760,7 +2929,11 @@ class _PositionLineupEditorState extends State<PositionLineupEditor> {
               borderRadius: BorderRadius.circular(12),
               child: const Padding(
                 padding: EdgeInsets.all(2),
-                child: Icon(Icons.close_rounded, size: 16, color: Colors.redAccent),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: Colors.redAccent,
+                ),
               ),
             ),
           ],
@@ -1792,7 +2965,9 @@ class PositionLineupView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDouble = layout == 'double';
-    final activePositions = positions.where((p) => p['is_active'] != false).toList();
+    final activePositions = positions
+        .where((p) => p['is_active'] != false)
+        .toList();
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -1814,9 +2989,7 @@ class PositionLineupView extends StatelessWidget {
                     ),
                   ),
                 ),
-                for (final pos in activePositions) ...[
-                  _buildMarker(pos, w, h),
-                ],
+                for (final pos in activePositions) ...[_buildMarker(pos, w, h)],
               ],
             ),
           );
@@ -1825,24 +2998,38 @@ class PositionLineupView extends StatelessWidget {
     );
   }
 
-  Widget _buildMarker(Map<String, dynamic> pos, double canvasWidth, double canvasHeight) {
+  Widget _buildMarker(
+    Map<String, dynamic> pos,
+    double canvasWidth,
+    double canvasHeight,
+  ) {
     final posId = pos['id']?.toString() ?? '';
     final x = ((pos['x'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0);
     final y = ((pos['y'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0);
     final iconKey = pos['icon']?.toString() ?? 'player';
-    final iconMeta = kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
+    final iconMeta =
+        kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
     final color = parseHexColor(pos['color']?.toString());
     final label = pos['label']?.toString() ?? '';
     final slots = (pos['slots'] as num?)?.toInt() ?? 1;
 
-    final taken = takenCounts != null && posId.isNotEmpty ? (takenCounts![posId] ?? 0) : 0;
+    final taken = takenCounts != null && posId.isNotEmpty
+        ? (takenCounts![posId] ?? 0)
+        : 0;
     final remaining = (slots - taken).clamp(0, slots);
     final isFull = takenCounts != null && remaining <= 0;
-    final isSelected = selectedPositionId != null && selectedPositionId == posId;
+    final isSelected =
+        selectedPositionId != null && selectedPositionId == posId;
 
     final markerSize = 42.0;
-    final left = (x * canvasWidth - markerSize / 2).clamp(0.0, canvasWidth - markerSize);
-    final top = (y * canvasHeight - markerSize / 2).clamp(0.0, canvasHeight - markerSize);
+    final left = (x * canvasWidth - markerSize / 2).clamp(
+      0.0,
+      canvasWidth - markerSize,
+    );
+    final top = (y * canvasHeight - markerSize / 2).clamp(
+      0.0,
+      canvasHeight - markerSize,
+    );
 
     return Positioned(
       left: left,
@@ -1875,18 +3062,16 @@ class PositionLineupView extends StatelessWidget {
                 ],
               ),
               child: Center(
-                child: Icon(
-                  iconMeta.icon,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                child: Icon(iconMeta.icon, color: Colors.white, size: 20),
               ),
             ),
             const SizedBox(height: 2),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               decoration: BoxDecoration(
-                color: isSelected ? AppColors.primaryDark : Colors.black.withValues(alpha: 0.75),
+                color: isSelected
+                    ? AppColors.primaryDark
+                    : Colors.black.withValues(alpha: 0.75),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -1925,7 +3110,8 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
       );
       final iconScrollCtrl = ScrollController();
       String selectedIcon = existing?['icon']?.toString() ?? 'player';
-      String selectedColor = existing?['color']?.toString() ?? kPositionColorChoices.first;
+      String selectedColor =
+          existing?['color']?.toString() ?? kPositionColorChoices.first;
       int slots = (existing?['slots'] as num?)?.toInt() ?? 1;
       int side = (existing?['side'] as num?)?.toInt() ?? 0;
       String? errorText;
@@ -1960,19 +3146,28 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: parseHexColor(selectedColor).withValues(alpha: 0.15),
+                          color: parseHexColor(
+                            selectedColor,
+                          ).withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          (kPositionIconChoices[selectedIcon] ?? kPositionIconChoices['player']!).icon,
+                          (kPositionIconChoices[selectedIcon] ??
+                                  kPositionIconChoices['player']!)
+                              .icon,
                           color: parseHexColor(selectedColor),
                           size: 24,
                         ),
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        existing != null ? 'แก้ไขตำแหน่งผู้เล่น' : 'เพิ่มตำแหน่งผู้เล่น',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        existing != null
+                            ? 'แก้ไขตำแหน่งผู้เล่น'
+                            : 'เพิ่มตำแหน่งผู้เล่น',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
@@ -1985,7 +3180,9 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                     decoration: InputDecoration(
                       labelText: 'ชื่อตำแหน่ง (เช่น กองหน้า, ผู้รักษาประตู)',
                       hintText: 'ระบุชื่อตำแหน่งผู้เล่น',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       errorText: errorText,
                       counterText: '',
                     ),
@@ -1998,11 +3195,17 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                     children: [
                       const Text(
                         'เลือกไอคอนตำแหน่ง',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                       Text(
                         '${kPositionIconChoices.length} แบบ',
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
                   ),
@@ -2029,23 +3232,30 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                             return Tooltip(
                               message: entry.value.label,
                               child: InkWell(
-                                onTap: () => setModalState(() => selectedIcon = entry.key),
+                                onTap: () => setModalState(
+                                  () => selectedIcon = entry.key,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 150),
                                   width: 40,
                                   height: 40,
                                   decoration: BoxDecoration(
-                                    color: isSelected ? AppColors.primary : Colors.white,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : Colors.white,
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: isSelected ? AppColors.primaryDark : Colors.grey.shade300,
+                                      color: isSelected
+                                          ? AppColors.primaryDark
+                                          : Colors.grey.shade300,
                                       width: isSelected ? 2 : 1,
                                     ),
                                     boxShadow: isSelected
                                         ? [
                                             BoxShadow(
-                                              color: AppColors.primary.withValues(alpha: 0.35),
+                                              color: AppColors.primary
+                                                  .withValues(alpha: 0.35),
                                               blurRadius: 4,
                                               offset: const Offset(0, 2),
                                             ),
@@ -2055,7 +3265,9 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                                   child: Icon(
                                     entry.value.icon,
                                     size: 22,
-                                    color: isSelected ? Colors.white : Colors.grey.shade800,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.grey.shade800,
                                   ),
                                 ),
                               ),
@@ -2068,13 +3280,17 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                   const SizedBox(height: 14),
 
                   // Color Palette Picker
-                  const Text('เลือกสีหมุดตำแหน่ง', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const Text(
+                    'เลือกสีหมุดตำแหน่ง',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 10,
                     children: kPositionColorChoices.map((hex) {
                       final c = parseHexColor(hex);
-                      final isSelected = selectedColor.toUpperCase() == hex.toUpperCase();
+                      final isSelected =
+                          selectedColor.toUpperCase() == hex.toUpperCase();
                       return GestureDetector(
                         onTap: () => setModalState(() => selectedColor = hex),
                         child: Container(
@@ -2095,7 +3311,11 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                             ],
                           ),
                           child: isSelected
-                              ? const Icon(Icons.check, color: Colors.white, size: 18)
+                              ? const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 18,
+                                )
                               : null,
                         ),
                       );
@@ -2110,30 +3330,49 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('จำนวนที่รับในตำแหน่งนี้', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          Text('1 – 50 คน', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          Text(
+                            'จำนวนที่รับในตำแหน่งนี้',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            '1 – 50 คน',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
                         ],
                       ),
                       Row(
                         children: [
                           IconButton(
                             icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: slots > 1 ? () => setModalState(() => slots--) : null,
+                            onPressed: slots > 1
+                                ? () => setModalState(() => slots--)
+                                : null,
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               '$slots',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           IconButton(
                             icon: const Icon(Icons.add_circle_outline),
-                            onPressed: slots < 50 ? () => setModalState(() => slots++) : null,
+                            onPressed: slots < 50
+                                ? () => setModalState(() => slots++)
+                                : null,
                           ),
                         ],
                       ),
@@ -2145,15 +3384,28 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Text('ฝั่งสนาม:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Text(
+                          'ฝั่งสนาม:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
                         const SizedBox(width: 12),
                         SegmentedButton<int>(
                           segments: const [
-                            ButtonSegment(value: 0, label: Text('ฝั่งซ้าย / เจ้าบ้าน')),
-                            ButtonSegment(value: 1, label: Text('ฝั่งขวา / ทีมเยือน')),
+                            ButtonSegment(
+                              value: 0,
+                              label: Text('ฝั่งซ้าย / เจ้าบ้าน'),
+                            ),
+                            ButtonSegment(
+                              value: 1,
+                              label: Text('ฝั่งขวา / ทีมเยือน'),
+                            ),
                           ],
                           selected: {side},
-                          onSelectionChanged: (set) => setModalState(() => side = set.first),
+                          onSelectionChanged: (set) =>
+                              setModalState(() => side = set.first),
                         ),
                       ],
                     ),
@@ -2168,12 +3420,16 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: () {
                         final trimmed = labelCtrl.text.trim();
                         if (trimmed.isEmpty) {
-                          setModalState(() => errorText = 'กรุณาระบุชื่อตำแหน่ง');
+                          setModalState(
+                            () => errorText = 'กรุณาระบุชื่อตำแหน่ง',
+                          );
                           return;
                         }
                         Navigator.pop(ctx, {
@@ -2187,7 +3443,13 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                           if (existing?['y'] != null) 'y': existing!['y'],
                         });
                       },
-                      child: const Text('ตกลง', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'ตกลง',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -2279,7 +3541,9 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
                     cat.label,
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: isCatSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isCatSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       color: isCatSelected ? Colors.white : Colors.black87,
                     ),
                   ),
@@ -2309,7 +3573,8 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
             return ChoiceChip(
               label: Text(e.value, style: const TextStyle(fontSize: 12)),
               selected: selected,
-              onSelected: (_) => widget.onChanged(widget.value.copyWith(preset: e.key)),
+              onSelected: (_) =>
+                  widget.onChanged(widget.value.copyWith(preset: e.key)),
               selectedColor: AppColors.primary.withValues(alpha: 0.2),
               labelStyle: TextStyle(
                 color: selected ? AppColors.primaryDark : Colors.black87,
@@ -2329,13 +3594,15 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
           runSpacing: 8,
           children: kFieldSurfaceColors.map((hex) {
             final c = parseHexColor(hex);
-            final selected = widget.value.surface.toUpperCase() == hex.toUpperCase();
+            final selected =
+                widget.value.surface.toUpperCase() == hex.toUpperCase();
             return Semantics(
               label: 'สีพื้นสนาม $hex',
               selected: selected,
               button: true,
               child: GestureDetector(
-                onTap: () => widget.onChanged(widget.value.copyWith(surface: hex)),
+                onTap: () =>
+                    widget.onChanged(widget.value.copyWith(surface: hex)),
                 child: Container(
                   width: 34,
                   height: 34,
@@ -2372,7 +3639,8 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
           spacing: 8,
           children: kFieldLineColors.map((hex) {
             final c = parseHexColor(hex);
-            final selected = widget.value.line.toUpperCase() == hex.toUpperCase();
+            final selected =
+                widget.value.line.toUpperCase() == hex.toUpperCase();
             return Semantics(
               label: 'สีเส้นสนาม $hex',
               selected: selected,
@@ -2386,7 +3654,9 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
                     color: c,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: selected ? AppColors.primaryDark : Colors.grey.shade400,
+                      color: selected
+                          ? AppColors.primaryDark
+                          : Colors.grey.shade400,
                       width: selected ? 3 : 1.5,
                     ),
                     boxShadow: [
@@ -2398,9 +3668,13 @@ class _FieldStylePickerState extends State<FieldStylePicker> {
                     ],
                   ),
                   child: selected
-                      ? Icon(Icons.check,
-                          color: hex == '#212121' ? Colors.white : Colors.black87,
-                          size: 16)
+                      ? Icon(
+                          Icons.check,
+                          color: hex == '#212121'
+                              ? Colors.white
+                              : Colors.black87,
+                          size: 16,
+                        )
                       : null,
                 ),
               ),
@@ -2530,7 +3804,9 @@ Future<String?> showPositionPickerSheet(
                           final isSelected = currentSelectedId == id;
                           final color = parseHexColor(pos['color']?.toString());
                           final iconKey = pos['icon']?.toString() ?? 'player';
-                          final iconMeta = kPositionIconChoices[iconKey] ?? kPositionIconChoices['player']!;
+                          final iconMeta =
+                              kPositionIconChoices[iconKey] ??
+                              kPositionIconChoices['player']!;
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
@@ -2542,7 +3818,9 @@ Future<String?> showPositionPickerSheet(
                               border: Border.all(
                                 color: isSelected
                                     ? AppColors.primaryDark
-                                    : (isFull ? Colors.grey.shade300 : Colors.grey.shade200),
+                                    : (isFull
+                                          ? Colors.grey.shade300
+                                          : Colors.grey.shade200),
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -2561,21 +3839,33 @@ Future<String?> showPositionPickerSheet(
                                   color: isFull ? Colors.grey : color,
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(iconMeta.icon, color: Colors.white, size: 20),
+                                child: Icon(
+                                  iconMeta.icon,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                               ),
                               title: Text(
                                 label,
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: isFull ? Colors.grey : AppColors.textPrimary,
+                                  color: isFull
+                                      ? Colors.grey
+                                      : AppColors.textPrimary,
                                 ),
                               ),
                               subtitle: Text(
-                                isFull ? 'เต็มแล้ว ($taken/$slots)' : 'เหลือ $remaining จาก $slots คน',
+                                isFull
+                                    ? 'เต็มแล้ว ($taken/$slots)'
+                                    : 'เหลือ $remaining จาก $slots คน',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isFull ? Colors.redAccent : AppColors.primaryDark,
-                                  fontWeight: isFull ? FontWeight.bold : FontWeight.w500,
+                                  color: isFull
+                                      ? Colors.redAccent
+                                      : AppColors.primaryDark,
+                                  fontWeight: isFull
+                                      ? FontWeight.bold
+                                      : FontWeight.w500,
                                 ),
                               ),
                               trailing: Radio<String>(
@@ -2616,7 +3906,10 @@ Future<String?> showPositionPickerSheet(
                         ),
                         child: const Text(
                           'ยืนยันการเลือกตำแหน่ง',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -2630,4 +3923,3 @@ Future<String?> showPositionPickerSheet(
     },
   );
 }
-

@@ -119,19 +119,29 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 
 **Verification:** upload รูปแชท/avatar/เอกสารจาก Chrome สำเร็จ; CSV download ทำงาน; preview รูปก่อนส่งแสดงผล; mobile IO path และ preview geometry ผ่าน Gate W1 ใน §4.4 บน iOS/Android
 
+> **หลักฐาน W0+W1 จริง (2026-09-21):**
+> - ✅ `flutter build web --no-tree-shake-icons` → `Built build/web` (45.9s; Wasm dry-run warnings เฉพาะ `flutter_secure_storage_web`/`ua_client_hints_web`/`dart:html`/`package:js` — ไม่ใช่ blocker ของ JS build)
+> - ✅ `flutter run -d web-server` → serve `main.dart` สำเร็จ, HTTP 200 + `<title>Sheserved</title>` (DDC compile path ผ่าน)
+> - ✅ `dart analyze` → 2409 issues = baseline เดิมเป๊ะ (0 issue ใหม่จากการแก้; error ที่เหลืออยู่ใน dead/orphan files `video/.../controllers/` + `presentation/parts/` ที่เสียอยู่ก่อนแล้ว)
+> - ✅ `flutter test` → +175 ~11 −2 — fail ทั้ง 2 เป็น pre-existing environmental: `phase2_role_sync_test` + `widget_test` ต้องการ `Supabase.instance` ที่ initialize แล้ว (ไม่เกี่ยวกับไฟล์ที่แก้)
+> - ✅ `flutter build apk --debug` → `app-debug.apk` (59s)
+> - ✅ `flutter build ios --simulator --debug` → `Runner.app` (118.6s; ต้อง `pod update GoogleUtilities/UserDefaults` → 8.1.3 ก่อน — Podfile.lock stale อยู่ก่อนแล้ว; มี warning MLKit pods ไม่รองรับ arm64 sim แต่ build ผ่าน)
+> - ⚠️ **ยังขาด:** browser smoke จริงบน Chrome (upload/CSV/preview/face-blur fallback ต้องคลิกทดสอบ), iOS/Android device UI smoke + screenshot diff, `flutter analyze` (analysis server exit code 64 — ใช้ `dart analyze` แทน)
+> - `dart:io` API ที่เหลือใน `chat_room_page`/`chart_board_page`/`group_invite_poster_sheet`/`chat_repository` ทั้งหมดอยู่หลัง `kIsWeb` guard หรือใน IO-only branch แล้ว
+
 ---
 
 ### Phase W2 — Feature Parity Decisions 🟡 ต้องตัดสินใจทีละฟีเจอร์
 
 | ฟีเจอร์ | ตัวเลือก | ข้อเสนอแนะ |
 |---------|---------|-----------|
-| PDPA face blur (`google_mlkit_face_detection`) | (a) ซ่อนบน web (b) server-side blur ผ่าน backend (websocket-server มี FFmpeg pipeline อยู่แล้ว) | **(a) ก่อน** — blur ฝั่ง client เป็น UX convenience; ถ้าเป็น PDPA requirement จริงควรทำ server-side อยู่แล้ว |
-| Compass (`flutter_compass`) | ซ่อน widget บน web | ซ่อน — แสดงแผนที่/ตัวเลข heading แทน |
-| Health Connect/Apple Health | แสดง "ไม่รองรับบน web" | คง guard เดิม — manual entry ใช้ได้ |
+| PDPA face blur (`google_mlkit_face_detection`) | (a) ซ่อนบน web (b) server-side blur ผ่าน backend | ✅ **ตัดสินแล้ว: (b)** — `websocket-server/services/face-blur-service.js` มี `blurFacesInImage` (Python `deface`+CenterFace, open source, ไม่มี license/API cost) ใช้จริงใน `routes/video.js:488` แล้ว; เพิ่ม `POST /api/media/face-blur` หลัง `verifyToken` + web path ใน chat/chart เรียกแทน ML Kit; **fail-closed** เมื่อ backend down (ไม่ upload ภาพ unblurred) |
+| Compass (`flutter_compass`) | ซ่อน widget บน web | ✅ **ตัดสินแล้ว: ซ่อน** — แสดงแผนที่/ตัวเลข heading แทนถ้าจำเป็น |
+| Health Connect/Apple Health | แสดง "ไม่รองรับบน web" | ✅ ทำแล้วใน W0.6 — `NullHealthSource` บน web |
 | Camera (`camera_web`) | ทดสอบจริง — ต้อง HTTPS/localhost + permission prompt | verify ใน W4 |
 | Video call (`flutter_webrtc`) | มี web impl — ต้อง TURN/signaling เหมือนเดิม | verify flow; signaling ต้องผ่าน socket-auth เมื่อ 13.3 พร้อม |
 | Voice record (`record_web`) | รองรับเฉพาะ audio บาง codec | verify chat voice message |
-| `flutter_polyline_points` (Directions REST → CORS) | (a) ปิด route drawing บน web (b) proxy ผ่าน backend | **(a)** สอดคล้องกับ maps-off policy (C1) |
+| `flutter_polyline_points` (Directions REST → CORS) | (a) ปิด route drawing บน web (b) proxy ผ่าน backend | ✅ **ตัดสินแล้ว: (a) ปิดบน web** — สอดคล้องกับ maps-off policy (C1) |
 | Offline mutation | — | ตาม Q8-A: Fitness = online-only fail closed — web เป็นไปตามนี้อยู่แล้ว |
 
 ---

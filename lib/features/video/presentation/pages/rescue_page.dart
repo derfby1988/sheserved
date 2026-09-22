@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:convert';
@@ -63,7 +64,9 @@ class _RescuePageState extends State<RescuePage> {
     // ALWAYS cancel existing subscription first to prevent leaks
     _compassSub?.cancel();
     _compassSub = null;
-    
+
+    // W2: flutter_compass ไม่มี web impl — ซ่อน/ข้ามบน web
+    if (kIsWeb) return;
     if (!_isAssisting) return;
     _compassSub = FlutterCompass.events?.listen((event) {
       if (mounted) {
@@ -384,6 +387,32 @@ class _RescuePageState extends State<RescuePage> {
       _distanceString = 'กำลังคำนวณ...';
       _durationString = 'กำลังคำนวณ...';
     });
+
+    // W2 (a): Directions REST โดน CORS บน web — แสดงเฉพาะ marker ทั้งสองปลาย
+    if (kIsWeb) {
+      setState(() {
+        _distanceString = '—';
+        _durationString = '—';
+        _markers.add(Marker(
+          markerId: const MarkerId('incident'),
+          position: endLoc,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'จุดเกิดเหตุ'),
+        ));
+        _markers.add(Marker(
+          markerId: const MarkerId('volunteer_me'),
+          position: startLoc,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'ตำแหน่งของคุณ'),
+        ));
+      });
+      if (_mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(_createBounds(startLoc, endLoc), 80),
+        );
+      }
+      return;
+    }
 
     String url = 'https://maps.googleapis.com/maps/api/directions/json?'
         'origin=${startLoc.latitude},${startLoc.longitude}'
