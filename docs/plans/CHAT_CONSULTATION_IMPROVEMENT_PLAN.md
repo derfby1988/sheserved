@@ -5789,3 +5789,392 @@ double _modelXRatio(List<BodyLandmark> lm, double x2d) {
 ---
 
 *Last Updated: 2026-06-25* — Phase 6.13: Body Region Calibration Improvement Plan — Multi-Point Calibration v2.0 (Gender + Platform + Expandable + xRatio)
+
+---
+
+## 🎯 Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
+
+> **วันที่บันทึก:** 23 กันยายน 2569
+> **สถานะ:** 📋 แผน (Planning)
+> **ที่มา:** ขยายจาก Phase 6.7 (Required Questions) — ให้ Expert สามารถส่งคำถามแบบปลายปิด (Closed-ended) ที่มีตัวเลือกคำตอบสำเร็จรูปให้ผู้ป่วยเลือก แทนการพิมพ์คำตอบเอง
+> **ความเกี่ยวข้อง:** ต่อยอดจากระบบ "คำถามบังคับ" (Phase 6.7) และเครื่องมือแชท (Phase 6.2 Collapsible Chat Tools)
+
+### 🎯 Goal
+
+ให้ผู้เชี่ยวชาญสามารถสร้างคำถามปลายปิด (Closed-ended Question) พร้อมกำหนดตัวเลือกคำตอบล่วงหน้า ทั้งแบบ **เชิงปริมาณ** (Quantitative — ตัวเลขระดับ) และ **เชิงคุณภาพ** (Qualitative — ข้อความกำหนดเอง) ฝั่งผู้ป่วยจะเห็น UI แบบ **Radial/Circular layout** ที่คำตอบล้อมรอบคำถามตรงกลางจอ ฝั่งผู้เชี่ยวชาญจะเห็นเป็นข้อความแชทปกติเพื่อไม่ให้รบกวนสายตา
+
+### 📊 UX Flow
+
+```
+[Expert] กดปุ่มเครื่องมือเพิ่มเติม (attach_file) ข้างช่องแชท → เลือก "คำถามปลายปิด"
+                ↓
+[Dialog] เลือกประเภทคำตอบและกำหนดตัวเลือก:
+    - เชิงปริมาณ → เลือกจำนวนระดับ 3 / 5 / 10
+    - เชิงคุณภาพ → กรอกตัวเลือก 2-10 ข้อ (เพิ่ม/ลบ/จัดลำดับได้)
+                ↓
+[Expert] ยืนยัน config → กลับช่องแชทพร้อม chip "คำถามปลายปิด · บังคับ"
+    - พิมพ์ข้อความคำถามและส่ง
+    - คำถามชนิดนี้ is_required=true เสมอ; ไม่มี toggle ปิด required
+                ↓
+[Patient] แตะคิวคำถามหรือ bubble เพื่อเริ่มตอบ
+    → ซ่อน/ปิดช่องพิมพ์ข้อความขณะ Radial UI เปิด
+    → แสดงคำถามและตัวเลือกที่เลือกได้หนึ่งข้อ
+    → แตะตัวเลือก → ยืนยัน หรือเปลี่ยนตัวเลือก
+                ↓
+[Patient] ยืนยัน → บันทึกคำตอบและ required_status=answered แบบ atomic
+    - ปิด Radial UI เมื่อบันทึกสำเร็จเท่านั้น
+    - หากบันทึกล้มเหลว คงคำถาม pending และคำตอบที่เลือกไว้ให้ลองใหม่
+                ↓
+[Expert] เห็นคำถามและคำตอบที่บันทึกแล้วใน bubble เดิม
+```
+
+ผู้ป่วยยังสามารถปิด Radial UI ชั่วคราวหรือเลือกคำถามบังคับรายการอื่นได้ โดยคำถามปลายปิดที่ยังไม่สำเร็จคง `required_status=reading`, ไม่มีคำตอบที่ยืนยันแล้ว และกลับมาเปิดเพื่อเลือก/ยืนยันใหม่ได้ โดยไม่บังคับให้ตอบคำถาม pending ทุกข้อเรียงตามลำดับ
+
+### 🗄️ Database Schema
+
+#### Design principle: additive migration, preserve legacy chat
+
+Phase 6.14 ต้องเพิ่มความสามารถโดยไม่แก้ความหมายหรือ default ของ message เดิม, `required_question`, `chat_messages.type`, chat routes, required-question queue หรือ policy เดิมที่ใช้ระบบอื่นใน Sheserved ด้วย
+
+- ใช้ `chat_messages.type = 'closed_ended_question'` (คอลัมน์จริงชื่อ `type`; ไม่สร้าง `message_type` alias)
+- เพิ่ม `closed_ended_config JSONB NULL` เป็น **immutable question definition** เท่านั้น; message เดิมและข้อความทั่วไปยังคงเป็น `NULL`
+- แยกคำตอบที่ผู้ป่วยยืนยันแล้วไว้ในตารางใหม่ `closed_ended_question_answers` แทนการแก้ config JSONB:
+
+```sql
+CREATE TABLE public.closed_ended_question_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_message_id UUID NOT NULL UNIQUE
+    REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  patient_id UUID NOT NULL REFERENCES public.users(id),
+  selected_index SMALLINT NOT NULL CHECK (selected_index >= 0),
+  selected_value TEXT NOT NULL CHECK (length(trim(selected_value)) > 0),
+  answered_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+`UNIQUE(question_message_id)` บังคับหนึ่งคำตอบต่อคำถามในระดับฐานข้อมูล; `selected_value` เก็บ snapshot ของ label ที่เลือก เพื่อคงประวัติแม้ metadata ของแอปเปลี่ยนในอนาคต (config ของคำถามที่ส่งแล้วต้องไม่ถูกแก้)
+
+ตัวอย่าง `closed_ended_config`:
+
+```json
+{
+  "schema_version": 1,
+  "type": "qualitative",
+  "options": ["ปวดมาก", "ปวดน้อย", "ไม่ปวดเลย"]
+}
+```
+
+- quantitative ใช้ `type=quantitative` และ `scale_levels` ได้เฉพาะ 3, 5, 10; index ที่บันทึกเป็น 0-based และ value เป็น label `1..N`
+- qualitative ใช้ `type=qualitative` และ `options` จำนวน 2–10 รายการ; trim ข้อความ, ห้ามว่าง/ซ้ำหลัง normalize และจำกัดความยาว label
+- `answer_count` เป็นค่าที่คำนวณจาก `scale_levels` หรือ `options.length` ไม่เก็บซ้ำใน config
+- บันทึก `is_required=true`, `required_status='unread'`, `required_answer=NULL` และ `required_owner_id` ใน message ตาม contract ของ Phase 6.7
+- เมื่อมีคำตอบสำเร็จ ให้ `required_answer` และ `required_answered_at` เป็น compatibility projection สำหรับ UI/completion code เดิม พร้อมเปลี่ยน `required_status='answered'` ใน transaction เดียวกับการ insert answer record
+
+#### Trusted write path, validation and access control
+
+- เพิ่ม RPC `send_closed_ended_question(room_id, content, config, body_part)` สำหรับชนิดใหม่นี้: ตรวจสิทธิ์ Expert ของ consultation, validate config, สร้าง message ด้วย `type='closed_ended_question'`, `is_required=true`, `required_status='unread'`; client ห้ามเลือกส่งแบบ optional
+- เพิ่ม `CHECK` แบบ scoped เฉพาะ `type='closed_ended_question'` ให้ `is_required=true` และ config ไม่เป็น null/ผ่านโครงสร้างขั้นต่ำ; message type อื่นผ่าน constraint เดิมโดยไม่เปลี่ยน behavior
+- เพิ่ม RPC `mark_closed_ended_question_reading(question_message_id)` ให้ผู้ป่วยที่ได้รับมอบหมายเปิดคำถามได้; idempotent สำหรับ `reading`, อนุญาต `unread → reading`, และไม่ยอมให้ `answered` ย้อนสถานะ
+- เพิ่ม RPC `answer_closed_ended_question(question_message_id, selected_index)` เป็นเส้นทางเขียนคำตอบเดียว: ตรวจ `auth.uid()`, ผู้ตอบเป็น patient ที่ผูกกับ consultation/room นั้น (ไม่พอเพียงเป็น participant ทั่วไป), message เป็น `closed_ended_question`, `is_required=true`, config ถูกต้อง, index อยู่ในขอบเขต, และยังไม่มี answer
+- RPC ทำ insert answer และ update `chat_messages.required_answer`, `required_answered_at`, `required_status` ใน transaction เดียว; ใช้ row lock/conditional update และ unique constraint กัน double tap, concurrent request และ replay; ถ้าตอบแล้วให้คืนผล `ALREADY_ANSWERED` โดยไม่เปลี่ยนคำตอบเดิม
+- เนื่องจาก policy เดิมของ `chat_messages` อาจเปิด write ให้ feature อื่น ห้ามเปลี่ยน policy กว้างทั้งตาราง; เพิ่ม guard/permission เฉพาะ `type='closed_ended_question'` เพื่อให้ create/answer/status/config เปลี่ยนผ่าน RPC ที่กำหนดเท่านั้น ส่วนชนิดข้อความเดิมต้องผ่านโดยไม่เปลี่ยน behavior
+- จำกัดการแก้ `closed_ended_config` หลังส่งคำถาม; หากยังไม่ได้ตอบและผู้เชี่ยวชาญต้องแก้ config ให้สร้าง message ใหม่ตามแนวทาง edit required question เดิม ไม่ mutate ตัวเลือกที่ผู้ป่วยกำลังตอบ
+- เปิด RLS เฉพาะตาราง answer ใหม่และกำหนด policy ให้ผู้ป่วยเจ้าของคำตอบกับผู้เชี่ยวชาญใน consultation ที่เกี่ยวข้องอ่านได้; ไม่เพิ่ม policy กว้างหรือเปลี่ยน policy ของ `chat_messages`
+- RPC ใช้ `SECURITY DEFINER` อย่างรัดกุม: qualify object names, ตั้ง `search_path` คงที่, ตรวจผู้เรียกภายใน function, จำกัด `EXECUTE` ให้ `authenticated`, และไม่เปิดให้ client insert/update answer table โดยตรง
+- เพิ่ม index เฉพาะที่ query จริงต้องใช้; ไม่เพิ่ม trigger ที่แก้ behavior ทั่วไปของ `chat_messages`
+- เพิ่มตาราง answer เข้า `supabase_realtime` เฉพาะเมื่อ UI ต้อง subscribe โดยตรง; `chat_messages` status projection ที่ update พร้อมกันเป็น source สำหรับ required queue เดิม
+
+#### ความเข้ากันได้กับ Phase 6.7 (Required Questions)
+
+| ฟิลด์ Phase 6.7 | พฤติกรรมใน Phase 6.14 |
+|---|---|
+| `is_required` | ต้องเป็น `true` เสมอสำหรับ `closed_ended_question`; ไม่มี toggle ให้ปิด |
+| `required_status` | `unread → reading → answered`; ปิด/สลับหน้าระหว่างยังไม่ตอบคง `reading` และยัง pending |
+| `required_answer` | compatibility projection ของ label ที่บันทึกสำเร็จ; ไม่เขียนจาก client โดยตรง |
+| `required_answered_at` | compatibility projection ของเวลาที่บันทึกสำเร็จ |
+| `type` | ใช้ค่าใหม่ `'closed_ended_question'`; ชนิดเดิมไม่เปลี่ยน |
+
+#### Migration and rollout safety
+
+1. เพิ่ม migration ใหม่แบบ additive: `closed_ended_config` nullable, answer table, RLS, RPC/guard และ grants; ห้ามแก้/ลบข้อมูลเดิมหรือเปลี่ยน required-question columns เดิม
+2. Deploy database ก่อน client และเปิด feature ผ่าน rollout gate เท่านั้น; ห้าม Expert ส่งคำถามชนิดนี้ให้ room ที่ patient ยังใช้ client ซึ่งไม่รองรับ closed-ended (ใช้ minimum supported version/capability gate ก่อนเปิดจริง)
+3. client ใหม่อ่านคำถามปลายปิดเมื่อมี config ที่ validate ผ่านเท่านั้น; หาก config หาย/invalid ให้แสดง safe fallback พร้อม log telemetry โดยไม่ log health content และไม่ทำให้ chat เดิม crash
+4. Client ที่ไม่รองรับต้องไม่สามารถส่ง free-text เป็นคำตอบให้ closed-ended; server guard ปฏิเสธ write และ rollout gate ป้องกันไม่ให้เกิดกรณีนี้กับผู้ป่วยจริง
+5. เพิ่ม migration verification: ตรวจ schema, grants/RLS, constraint, RPC/guard behavior, legacy rows, mixed-version rollout และ rollback procedure ที่ไม่ลบคำตอบที่เกิดขึ้นแล้ว
+
+### 🎨 UI ฝั่ง Expert — Dialog กำหนดเงื่อนไขคำตอบ
+
+#### 1. จุดเข้าถึง (Entry Point)
+
+- เพิ่ม `Icons.quiz` + รายการ “คำถามปลายปิด” ใน bottom sheet **“เครื่องมือเพิ่มเติม”** ที่เปิดจากปุ่ม `attach_file` เดิมของ `ChatInputBarWidget` ใน `chart_board_page.dart`; ไม่เพิ่มปุ่ม ☰ ใหม่และไม่เปลี่ยนพฤติกรรมรายการเครื่องมือเดิม
+- แสดงรายการเฉพาะ Expert ที่มีสิทธิ์ส่งข้อความและ consultation/chat เปิดใช้งาน
+- กดแล้วเปิด `ClosedEndedConfigDialog` แบบ scrollable และ keyboard-aware
+
+#### 2. Dialog Layout
+
+```text
+┌──────────────────────────────────────┐
+│          คำถามปลายปิด                │
+│ ประเภท: [เชิงปริมาณ] [เชิงคุณภาพ]    │
+│                                      │
+│ ปริมาณ: จำนวนระดับ [3] [5] [10]      │
+│ หรือ                                  │
+│ คุณภาพ: [ตัวเลือก 1________] [ลบ]    │
+│         [ตัวเลือก 2________] [ลบ]    │
+│         [+ เพิ่มคำตอบ] (สูงสุด 10)   │
+│                                      │
+│        [ยกเลิก]       [ยืนยัน]        │
+└──────────────────────────────────────┘
+```
+
+#### 3. กฎการทำงาน
+
+| เงื่อนไข | พฤติกรรม |
+|---|---|
+| เลือก **เชิงปริมาณ** | แสดงจำนวนระดับ 3/5/10 ให้เลือก; ไม่แสดงช่องข้อความ options |
+| เลือก **เชิงคุณภาพ** | แสดงรายการ TextField เริ่มต้น 2 ข้อ; เพิ่มได้ถึง 10 ข้อ พร้อมลบ/จัดลำดับ |
+| กด **ยืนยัน** | Validate ครบทุกช่อง, trim แล้วไม่ว่าง/ไม่ซ้ำ, จำกัดความยาวต่อ label และ type config; ปิดปุ่มระหว่าง submit |
+| ยืนยัน config สำเร็จ | ปิด dialog → โฟกัสช่องแชท + เปิดแป้นพิมพ์ + แสดง chip “คำถามปลายปิด · บังคับ” เหนือช่องแชท |
+| สถานะ required | ตั้ง `is_required=true` เสมอ; UI ไม่มี toggle เปลี่ยนเป็นคำถามปกติ |
+| ยกเลิก dialog | ไม่ตั้ง pending config และไม่เปลี่ยน input mode |
+| ส่งคำถามสำเร็จ | บันทึก config ไปพร้อม message `type='closed_ended_question'`; ล้าง chip/config หลังได้รับผลสำเร็จเท่านั้น |
+
+#### 4. Chip Indicator (เหนือช่องแชท)
+
+หลังกำหนดเงื่อนไขเสร็จ แสดง chip indicator ระหว่าง Expert พิมพ์คำถาม:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 🔒 คำถามปลายปิด · บังคับ (เชิงคุณภาพ, 3 ตัวเลือก) [✕] │
+├─────────────────────────────────────────────────────────┤
+│ [เครื่องมือ] [ 💬 พิมพ์คำถาม...              ] [➤]     │
+└─────────────────────────────────────────────────────────┘
+```
+
+- คำถามปลายปิดเป็น required เสมอ จึงไม่มี toggle ปิด required
+- `[✕]` ยกเลิก pending config และคืนช่องพิมพ์สู่แชทปกติ
+- เมื่อส่งล้มเหลวให้คงข้อความ/config และแสดง retry/error; ล้าง chip เฉพาะเมื่อยืนยันว่าบันทึก message สำเร็จ
+- config ที่ส่งแล้ว immutable; การแก้คำถามหลังผู้ป่วยเริ่มอ่านให้สร้างคำถามใหม่ โดยเก็บ audit/history ตามแนวทาง Phase 6.7
+
+### 🎨 UI ฝั่ง Expert — การแสดงผลคำตอบ
+
+เมื่อผู้ป่วยเลือกคำตอบแล้ว ฝั่ง Expert **แสดงเป็น bubble ข้อความปกติ**:
+
+```
+┌──────────────────────────────────────────┐
+│ 🏷️ [คำถาม: คุณปวดหัวบ่อยแค่ไหน?]       │
+│     → คำตอบ: ปวดน้อย (ตัวเลือกที่ 2)    │
+│                               13:45     │
+└──────────────────────────────────────────┘
+```
+
+**เหตุผลที่แสดงเป็นข้อความปกติ:**
+- ไม่รบกวนสายตาผู้เชี่ยวชาญท่านอื่นในกลุ่ม
+- กลมกลืนกับ chat flow ปกติ
+- Expert เห็นข้อมูลที่ต้องการครบถ้วนโดยไม่ต้องเปิด UI พิเศษ
+
+### 🎨 UI ฝั่ง Patient — Radial Question View (หน้าจอหลัก)
+
+#### 1. การเข้าถึงและการคงสถานะ
+
+- ผู้ป่วยแตะปุ่มลอยคิว หรือแตะ bubble ของ `closed_ended_question` → เปิด Radial UI; คำถามแบบปลายปิดทุกข้อเป็น required และยังอยู่ใน queue จนกว่าจะบันทึกคำตอบสำเร็จ
+- ขณะ Radial UI เปิด ให้ซ่อน/ปิดช่องพิมพ์คำตอบและ keyboard; ไม่รับข้อความ free-text มาแทนคำตอบที่กำหนด
+- สถานะเปลี่ยนเป็น `reading` เมื่อเริ่มเปิดคำถาม และคง `reading` เมื่อปิด UI, สลับไปตอบคำถามบังคับข้ออื่น หรือเกิด network error; กลับมาเปิดข้อเดิมได้
+- ยกเลิก selection ใน confirmation กลับไปเลือก option ใหม่ได้ โดยไม่เขียน answer record และไม่เปลี่ยนคำถามเป็น `unread`
+- UI ต้องให้ผู้ป่วยสลับระหว่าง pending required questions ได้โดยไม่ต้องตอบข้อที่เปิดอยู่ก่อน; ห้าม auto-open ซ้ำขณะกำลังตอบ/กำลังสลับ และคง draft selection เฉพาะใน session ปัจจุบัน
+- เมื่อตอบสำเร็จจึงเปลี่ยนเป็น `answered`, ปิด Radial UI และปลด required blocking ตาม queue เดิม; เมื่อ app ปิด/กลับมาใหม่ให้โหลดสถานะ server แล้วแสดงคำถามที่ยัง unanswered เป็น pending (ไม่พึ่ง `dispose` เพื่อ reset status)
+
+#### 2. Radial/Circular Layout
+
+```
+                    ┌─────────┐
+                    │คำตอบ 1  │
+                    └────┬────┘
+           ┌─────────┐  │  ┌─────────┐
+           │คำตอบ 6  │  │  │คำตอบ 2  │
+           └────┬────┘  │  └────┬────┘
+                │       │       │
+      ┌─────────┤  ┌────┴────┐  ├─────────┐
+      │คำตอบ 5  │  │  คำถาม  │  │คำตอบ 3  │
+      └─────────┤  │(ตรงกลาง)│  ├─────────┘
+                │  └────┬────┘  │
+           ┌────┴────┐  │  ┌────┴────┐
+           │คำตอบ 4  │  │  │         │
+           └─────────┘  │  └─────────┘
+                        │
+```
+
+**หลักการจัด Layout และป้องกัน overflow:**
+- ใช้ `LayoutBuilder` และ safe-area constraints เป็นแหล่งขนาดจริง; ห้ามคำนวณตำแหน่งจาก screen size อย่างเดียว
+- จอ/พื้นที่กว้างและตัวเลือกไม่เกิน 5 ใช้ radial: คำถามอยู่กลางและคำตอบกระจายรอบวง โดย clamp radius, card size, font/icon size ตามพื้นที่ที่เหลือ
+- ตัวเลือก 6–10, label ยาว, จอแคบ, landscape, split-screen หรือ text scale สูง ให้สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
+- ใช้ `SafeArea` + `SingleChildScrollView`/slivers เมื่อความสูงไม่พอ; ตัวเลือกข้อความขึ้นหลายบรรทัดได้และไม่ตัดข้อความสำคัญด้วย ellipsis
+- คำนวณขนาดตัวอักษร/ไอคอนด้วย constraints และ `TextScaler` อย่างเหมาะสม แต่ไม่ override การตั้ง accessibility ของผู้ใช้; หากเนื้อหายังไม่พอให้เลื่อนแทนการย่อเกินค่าที่อ่านได้
+- Animation ลด/ปิดได้เมื่อ `MediaQuery.disableAnimations` เปิด และต้องไม่ขัดขวางการแตะ/keyboard navigation
+
+#### 3. ตัวเลือกเชิงปริมาณ (Quantitative)
+
+แสดงเป็นปุ่มกลมตัวเลข ล้อมรอบคำถาม:
+
+```
+         [1]    [2]    [3]
+              \  |  /
+      [10] ── คำถาม ── [4]
+              /  |  \
+         [9]    [8]    ...
+```
+
+- ปุ่มตัวเลข 1 ถึง N (3, 5, หรือ 10 ตามที่ expert เลือก)
+- สีไล่ระดับ: เขียว → เหลือง → แดง (น้อย → มาก) หรือกลับด้านตามบริบท
+- กดเลือกแล้ว → ปุ่มนั้น scale up + highlight + ส่งคำตอบ
+
+#### 4. ตัวเลือกเชิงคุณภาพ (Qualitative)
+
+แสดงเป็น chip/card รูปทรงกลมรอบคำถาม:
+
+```
+      ┌──────────┐       ┌──────────┐
+      │ ปวดมาก  │       │ ปวดน้อย │
+      └────┬─────┘       └────┬─────┘
+           │    ┌──────┐      │
+           └────│ คำถาม│──────┘
+                └──┬───┘
+                   │
+           ┌───────┴────────┐
+           │ ไม่ปวดเลย      │
+           └────────────────┘
+```
+
+- Card/Chip ขนาดยืดหยุ่นตามความยาวข้อความ
+- สีพื้น: primary tone (Teal shades) + เงาอ่อนๆ
+- กดเลือกแล้ว → card นั้น glow + bounce animation → ส่งคำตอบ
+
+#### 5. Interaction Flow
+
+```
+[Patient เปิดคำถาม]
+    ↓
+[ตั้ง required_status=reading; ซ่อนช่องพิมพ์คำตอบ]
+    ↓
+[Patient แตะตัวเลือก] → [เลือกใหม่ได้ก่อนยืนยัน]
+    ↓
+[Confirm: "คุณเลือก 'XXX' ใช่หรือไม่?"]
+    ├─ เปลี่ยน/ยกเลิก → กลับ UI เลือกคำตอบ; status ยัง reading; ไม่มีคำตอบที่ persist
+    └─ ยืนยัน → เรียก answer_closed_ended_question RPC
+                  ├─ สำเร็จ: answer row + compatibility fields + status=answered ใน transaction เดียว
+                  │          → ปิด UI; realtime sync; Expert เห็นคำตอบใน bubble
+                  └─ ล้มเหลว: คง UI, selection และ status=reading; แสดง error/retry
+                              → ไม่สร้างคำตอบซ้ำ; อนุญาตสลับไปคำถามบังคับอื่น
+```
+
+> [!IMPORTANT]
+> ต้องยืนยันก่อนบันทึกทุกครั้ง แต่การเลือกใน UI เป็น draft เท่านั้นจน RPC สำเร็จ ผู้ป่วยจึงย้อนเลือกใหม่หรือสลับข้อได้; ห้ามปิด UI/ล้าง selection เมื่อ network write ยังไม่สำเร็จ
+
+### 📡 Realtime Status Sync
+
+ใช้ Supabase realtime stream เดิมจาก Phase 6.7:
+
+| Event | ฝั่ง Expert เห็น | ฝั่ง Patient เห็น |
+|---|---|---|
+| Expert ส่งคำถาม closed-ended สำเร็จ | bubble คำถามปลายปิด + badge | queue แสดง unread; config โหลดจาก message |
+| Patient เปิดคำถาม | สถานะ reading | Radial/adaptive UI เปิด, input ซ่อน, queue ยังคงรายการอื่น |
+| Patient ปิด/สลับคำถาม/เกิด network error | ยังไม่แสดงคำตอบ | สถานะ reading คงอยู่; คำถามยัง pending และเปิดใหม่ได้ |
+| RPC บันทึกคำตอบสำเร็จ | realtime bubble แสดง label คำตอบและเวลาจาก answer projection | สถานะ answered, ปิด UI, queue sync |
+| RPC ล้มเหลวหรือคำตอบซ้ำ | ไม่มี partial/duplicate answer | แสดง retry หรือ refresh สถานะจาก server; ไม่แสดงเป็น answered จนยืนยันสำเร็จ |
+
+### 🎨 Required Question Message Bubble (ปรับจาก Phase 6.7)
+
+สำหรับ `type = 'closed_ended_question'`:
+
+**ก่อนตอบ (ทั้ง Expert และ Patient):**
+- แสดงเหมือน Required Question bubble ปกติ (Phase 6.7) + badge `📊 ปลายปิด`
+- **ขอบสีม่วง** (`Colors.deepPurple.shade400` + `withOpacity(0.5)`) แทนสีเขียว — เพื่อแยกแยะจากคำถามบังคับแบบ open-ended
+
+**หลังตอบ (ฝั่ง Expert — ข้อความปกติ):**
+```
+[คำถาม: คุณปวดหัวบ่อยแค่ไหน?]
+→ คำตอบ: ปวดน้อย (ตัวเลือกที่ 2)
+                         13:45
+```
+
+**หลังตอบ (ฝั่ง Patient — Inline ใน bubble เดิม):**
+- แสดง option ที่เลือกใน box เขียว (เหมือน Phase 6.7)
+
+### 🛠️ Files / Components ที่ต้องแก้ไขหรือสร้าง
+
+| ไฟล์/องค์ประกอบ | ประเภท | การเปลี่ยนแปลง |
+|---|---|---|
+| `supabase/migrations/<timestamp>_closed_ended_questions.sql` | NEW | Additive config column + answer table/constraint/RLS + send/mark-reading/answer RPCs + scoped guard + grants/verification |
+| `chat_models.dart` และ Hive adapter | MODIFY | เพิ่ม `ClosedEndedConfig`, nullable config ใน `ChatMessage`, robust JSON/Hive serialization และ backward-compatible adapter migration |
+| `chat_repository.dart` | MODIFY | ส่ง/ตอบผ่าน RPC, ตรวจ result codes, update cache หลัง server success เท่านั้น |
+| `chart_board_page.dart` | MODIFY | เพิ่ม entry ใน “เครื่องมือเพิ่มเติม”, pending config chip, required queue integration, hide text input while radial answer UI active และสลับคำถามได้ |
+| `closed_ended_dialog.dart` | NEW | Scrollable/keyboard-aware dialog: quantitative 3/5/10 หรือ qualitative 2–10; validate/add/remove/reorder |
+| [`radial_question_view.dart`](file:///Users/dave_macmini/sheserved/lib/features/consultation/presentation/widgets/radial_question_view.dart) | MODIFY | คง radial ในพื้นที่เหมาะสม; adaptive scroll grid/list, loading/error/retry, draft/reselect/cancel, semantics และ responsive sizing |
+| `message_bubble.dart` | MODIFY | แสดง badge/border สำหรับ `type='closed_ended_question'` และ answer projection โดยไม่กระทบชนิดเดิม |
+| Widget/unit/integration tests | NEW/MODIFY | config validation, state transitions, RPC errors/retry/race, responsive overflow, Hive/legacy serialization และ realtime |
+
+### ⚠️ Risks & Edge Cases
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| ตัวเลือก 6–10/ข้อความยาว/พื้นที่แคบ | radial nodes ทับกันหรือ overflow | LayoutBuilder + radial เฉพาะพื้นที่เหมาะสม; fallback scroll grid/list; test text scale, landscape, split-screen |
+| ผู้ป่วยกดผิดหรือเปลี่ยนใจ | บันทึกคำตอบผิด | Confirm ทุกครั้ง; ก่อน RPC เป็น draft ยกเลิก/เลือกใหม่ได้ |
+| Double tap, retry หรือ concurrent write | duplicate/คำตอบไม่ตรง status | RPC transaction + unique(question_message_id) + lock/conditional write; `ALREADY_ANSWERED` ไม่ overwrite |
+| คำถามปลายปิดถูกส่งเป็น optional | ไม่เข้า required queue/จบงานผิดเงื่อนไข | บังคับ `is_required=true` ที่ write path; ไม่มี UI toggle |
+| Patient สลับข้อหรือปิดแอป | status ค้างหรือคำถามหายจาก queue | คง reading จนตอบสำเร็จ; pending query รวม unread/reading; โหลด server state เมื่อเปิดใหม่ ไม่พึ่ง dispose reset |
+| RPC/network ล้มเหลว | UI แสดง answered แต่ข้อมูลไม่ persist | คง reading, selection draft และเปิด retry; ปิด Radial เมื่อ server ยืนยันสำเร็จเท่านั้น |
+| legacy chat / migration compatibility | ข้อความเก่าพังหรือ policy กระทบ feature อื่น | nullable additive column + answer table/RPC ใหม่; ไม่แก้ defaults/policies/behavior เดิม; deploy DB ก่อน client |
+| invalid/malformed config | render crash หรือ option index ผิด | validate ที่ส่งและ RPC; client parse แบบ safe fallback; telemetry โดยไม่ logข้อมูลสุขภาพอ่อนไหว |
+| Expert แก้ config หลังผู้ป่วยเริ่มตอบ | index/value เปลี่ยนความหมาย | immutable config หลังส่ง; แก้ด้วย message ใหม่และเก็บ audit ตาม legacy flow |
+| accessibility text scale / screen reader | controls อ่าน/กดไม่ได้ | Semantics, keyboard focus order, min target 44dp, เคารพ TextScaler และ scroll แทนการย่อตัวอักษรเกินอ่านได้ |
+
+### 🧪 Checklist การดำเนินงาน
+
+#### Database / Security / Rollout
+- [ ] Additive migration เพิ่ม nullable `closed_ended_config JSONB` โดยไม่แก้ default/columns/policies ของ chat เดิม
+- [ ] สร้าง `closed_ended_question_answers` với UNIQUE(question_message_id), FK/cascade และ RLS read scope ที่ patient/consultation experts เท่านั้น
+- [ ] เพิ่ม scoped CHECK และ RPC `send_closed_ended_question` บังคับ expert permission, config validation และ `is_required=true`
+- [ ] เพิ่ม RPC `mark_closed_ended_question_reading` ให้ `unread → reading` แบบ idempotent และไม่ให้ answered ย้อน status
+- [ ] เพิ่ม RPC `answer_closed_ended_question` ตรวจ patient ownership, config/index, atomic answer insert + status projection, row lock/idempotent `ALREADY_ANSWERED`
+- [ ] ยืนยันว่า guard/permission เฉพาะ closed-ended ปิดการ bypass RPC ได้ โดย regression ทดสอบ insert/update ของ message type เดิม
+- [ ] ตรวจ `SECURITY DEFINER`, fixed `search_path`, grants/revoke, RLS ปิด direct answer writes, legacy rows, migration order และ rollback safety
+
+#### Flutter — Models / Repository
+- [ ] เพิ่ม `ClosedEndedConfig` versioned model (quantitative scaleLevels 3/5/10; qualitative options 2–10) พร้อม strict/safe parser
+- [ ] เพิ่ม nullable config ใน `ChatMessage` JSON และ Hive adapter โดยไม่เปลี่ยน serialization ของ message เก่า
+- [ ] เพิ่ม `sendClosedEndedQuestion()` / `markClosedEndedQuestionReading()` / `answerClosedEndedQuestion()` ให้ใช้ RPC และอัปเดต local cache เฉพาะเมื่อ server ยืนยัน
+- [ ] จัดการ result codes: success, validation error, unauthorized, network retry, `ALREADY_ANSWERED`; refresh server state เมื่อผลลัพธ์ไม่แน่ชัด
+
+#### Flutter — UI (Expert Side)
+- [ ] เพิ่ม “คำถามปลายปิด” ใน bottom sheet “เครื่องมือเพิ่มเติม” ของปุ่ม `attach_file` เดิม
+- [ ] สร้าง `ClosedEndedConfigDialog` responsive, keyboard-aware; qualitative เพิ่ม/ลบ/เรียงลำดับได้ 2–10 options
+- [ ] แสดง pending chip “คำถามปลายปิด · บังคับ”; ไม่มี toggle optional; cancel ต้องล้าง pending config
+- [ ] ส่งผ่าน RPC และคง draft/config ให้ retry หากส่งล้มเหลว
+- [ ] แสดง badge/border และคำตอบจาก server projection ใน bubble เดิม
+
+#### Flutter — UI (Patient Side)
+- [x] มี [`RadialQuestionView`](file:///Users/dave_macmini/sheserved/lib/features/consultation/presentation/widgets/radial_question_view.dart) standalone widget แล้ว; ยังไม่ถือว่าเชื่อม feature end-to-end
+- [ ] เชื่อม required queue/bubble ไปยัง radial/adaptive answer UI; ซ่อนช่องพิมพ์ขณะเปิด และอนุญาตเปิดคำถาม pending ข้ออื่น
+- [ ] คง `reading` เมื่อปิด/สลับ/error; selection เป็น draft, ยกเลิก/เปลี่ยนได้ และคงไว้เพื่อ retry ใน session
+- [ ] ปิด Radial และ set answered เฉพาะหลัง RPC success; โหลด unanswered state จาก server หลัง app resume/re-entry
+- [ ] Adaptive radial/grid/list, loading/error/retry, scroll, min tap target, semantics, keyboard/focus, text scaler และ reduced-motion support
+
+#### Flutter — Message Bubble
+- [ ] แยก `type='closed_ended_question'` จาก `required_question` โดยไม่เปลี่ยน rendering ของชนิดเดิม
+- [ ] แสดง badge `📊 ปลายปิด`, style แยก และ inline selected label/answer timestamp จาก server
+
+#### Testing / Acceptance
+- [ ] Model JSON/Hive round-trip และ legacy message ที่ไม่มี config
+- [ ] Config validation: quantitative 3/5/10; qualitative 2–10; empty/duplicate/too-long/malformed options ถูกปฏิเสธ
+- [ ] Widget test expert entry ในเครื่องมือเพิ่มเติม, dialog validation, cancel/retry และไม่มี optional toggle
+- [ ] Widget test required queue: reading persistence, close/reopen, switch questions, text input hidden, successful answer unblocks
+- [ ] Repository/RPC integration: patient authorization, expert unauthorized, invalid index/config, atomic failure, duplicate/concurrent answer, idempotent retry
+- [ ] Realtime test ระหว่างผู้ป่วยและ Expert รวม answer/status consistency
+- [ ] Golden/overflow tests: phone narrow/short, tablet, landscape, split-screen, 10 long labels, text scale 1.0–2.0; assert no overflow and controls remain usable
+- [ ] Accessibility test: screen-reader labels, focus order, minimum 44×44 dp, reduced motion
+- [ ] Regression test existing open-ended required questions, normal messages, completion rules, notifications/routes and old chat records
+- [ ] Rollout test minimum-client/capability gate prevents sending a closed-ended question to an unsupported patient client; legacy writes to other message types still work
+
+---
+
+*Last Updated: 2026-09-23* — Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
