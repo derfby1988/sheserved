@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../../core/constants/app_colors.dart';
+import '../../../../erp/data/models/app_notification.dart';
 import '../../../../../../services/auth_service.dart';
 import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
+import '../../../../erp/presentation/providers/notification_provider.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 
-class ReviewProposedSportsPage extends StatefulWidget {
+class ReviewProposedSportsPage extends ConsumerStatefulWidget {
   const ReviewProposedSportsPage({super.key});
 
   @override
-  State<ReviewProposedSportsPage> createState() =>
+  ConsumerState<ReviewProposedSportsPage> createState() =>
       _ReviewProposedSportsPageState();
 }
 
-class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage>
+class _ReviewProposedSportsPageState
+    extends ConsumerState<ReviewProposedSportsPage>
     with TlzNavBarScrollMixin {
   late final FitnessBuddiesRepository _repo;
   bool _loading = true;
@@ -61,6 +65,28 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage>
         _items = res;
         _loading = false;
       });
+      ref
+          .read(notificationProvider.notifier)
+          .syncLocalNotifications(
+            res.map(
+              (sport) => AppNotification(
+                id: 'sport_proposal_${sport['id']}',
+                professionId: '',
+                recipientId: '',
+                category: 'sport',
+                eventType: 'sport.proposal_submitted',
+                title: 'มีคำขอเพิ่มประเภทกีฬาใหม่',
+                body: 'เสนอประเภทกีฬา "${sport['name_th'] ?? ''}"',
+                payload: {
+                  'route': '/community/sport-club/sport/review',
+                  'sportId': sport['id'].toString(),
+                },
+                createdAt:
+                    DateTime.tryParse(sport['proposed_at']?.toString() ?? '') ??
+                    DateTime.now(),
+              ),
+            ),
+          );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -183,7 +209,7 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage>
       fieldLayout: layout,
       fieldStyle: style,
     );
-    _load();
+    await _load();
   }
 
   Future<void> _reject(String id) async {
@@ -211,7 +237,7 @@ class _ReviewProposedSportsPageState extends State<ReviewProposedSportsPage>
     );
     if (reason == null || reason.isEmpty) return;
     await _repo.rejectSport(sportId: id, reviewedBy: user.id, reason: reason);
-    _load();
+    await _load();
   }
 
   void _goBack() {

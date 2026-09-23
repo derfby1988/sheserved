@@ -81,6 +81,22 @@ AppNotification _sportProposalNotification(String sportId) => AppNotification(
   payload: {'route': '/community/sport-club/sport/review', 'sportId': sportId},
 );
 
+AppNotification _sportProposalResultNotification(
+  String sportId, {
+  required bool approved,
+}) => AppNotification(
+  id: 'sport_proposal_result_$sportId',
+  professionId: '',
+  recipientId: 'member-1',
+  category: 'sport',
+  eventType: approved ? 'sport.proposal_approved' : 'sport.proposal_rejected',
+  title: approved
+      ? 'คำขอเพิ่มประเภทกีฬาได้รับการอนุมัติ'
+      : 'คำขอเพิ่มประเภทกีฬาถูกปฏิเสธ',
+  createdAt: DateTime.utc(2026, 9, 22),
+  payload: const {'route': '/community/sport-club'},
+);
+
 void main() {
   test('builds the Sport Club route for a group reply toast', () {
     final notification = AppNotification(
@@ -342,6 +358,33 @@ void main() {
           .notifications
           .any((item) => item.id == 'sport_proposal_sport-6'),
       isFalse,
+    );
+  });
+
+  test('shows and removes only the resolved sport result notification', () {
+    final container = ProviderContainer(
+      overrides: [
+        notificationRepositoryProvider.overrideWithValue(
+          _ZeroNotificationRepository(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(notificationProvider.notifier);
+    notifier.receiveLocalNotification(
+      _sportProposalResultNotification('sport-8', approved: true),
+    );
+    notifier.receiveLocalNotification(
+      _sportProposalResultNotification('sport-9', approved: false),
+    );
+
+    expect(container.read(notificationProvider).totalUnreadCount, 2);
+    notifier.removeLocalNotification('sport_proposal_result_sport-8');
+    expect(container.read(notificationProvider).totalUnreadCount, 1);
+    expect(
+      container.read(notificationProvider).notifications.single.eventType,
+      'sport.proposal_rejected',
     );
   });
 

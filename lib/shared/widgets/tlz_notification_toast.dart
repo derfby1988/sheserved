@@ -347,6 +347,11 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
       '[TlzNotificationToast] received: ${data['type'] ?? data['event_type'] ?? 'unknown'}',
     );
     final eventType = data['event_type']?.toString() ?? '';
+    if (eventType == 'sport.proposal_approved' ||
+        eventType == 'sport.proposal_rejected') {
+      // ผลการตรวจจะแสดงเฉพาะในปุ่มและ panel ไม่แสดงเป็น toast
+      return;
+    }
     if (eventType == 'sport.proposal_submitted' &&
         !AppConfig.websocketSportProposalNotificationsEnabled) {
       // Development/legacy channel is Supabase Realtime on `sports`.

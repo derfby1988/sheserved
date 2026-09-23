@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../services/auth_service.dart';
 import '../../../../services/websocket_service.dart';
 
 import '../../data/models/app_notification.dart';
@@ -70,11 +71,13 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   late final StreamSubscription<Map<String, dynamic>>
   _applicationNotificationSubscription;
+  RealtimeChannel? _sportResultChannel;
 
   NotificationNotifier(this._repo) : super(const NotificationState()) {
     _applicationNotificationSubscription = WebSocketService()
         .applicationNotificationStream
         .listen(_receiveApplicationNotification);
+    if (!_repo.usesGateway) _subscribeSportResults();
   }
 
   bool get _repoCountsLocalNotifications => _repo.usesGateway;
@@ -101,6 +104,62 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     } catch (_) {
       // Ignore malformed realtime payloads; the next gateway refresh repairs state.
     }
+  }
+
+  /// โหมด legacy ใช้ Supabase Realtime ที่มีอยู่แล้วเพื่อแจ้งผลคำขอให้ผู้ยื่น
+  /// โดยตรง การรับ event นี้อัปเดตเฉพาะ provider จึงไม่สร้าง toast
+  void _subscribeSportResults() {
+    try {
+      _sportResultChannel = Supabase.instance.client
+          .channel('sport_proposal_results')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'sports',
+            callback: _receiveSportReviewUpdate,
+          )
+          .subscribe();
+    } catch (_) {
+      // Realtime is best-effort; the persisted app notification remains available.
+    }
+  }
+
+  void _receiveSportReviewUpdate(PostgresChangePayload change) {
+    final record = change.newRecord;
+    final userId = AuthService.instance.userId;
+    final proposedBy = record['proposed_by']?.toString();
+    final status = record['status']?.toString();
+    final sportId = record['id']?.toString() ?? '';
+    if (userId == null || proposedBy != userId || sportId.isEmpty) return;
+    if (status != 'approved' && status != 'rejected') return;
+
+    final approved = status == 'approved';
+    receiveLocalNotification(
+      AppNotification(
+        id: 'sport_proposal_result_$sportId',
+        professionId: '',
+        recipientId: userId,
+        category: 'sport',
+        eventType: approved
+            ? 'sport.proposal_approved'
+            : 'sport.proposal_rejected',
+        title: approved
+            ? 'คำขอเพิ่มประเภทกีฬาได้รับการอนุมัติ'
+            : 'คำขอเพิ่มประเภทกีฬาถูกปฏิเสธ',
+        body: approved
+            ? 'ประเภทกีฬา "${record['name_th'] ?? ''}" พร้อมใช้งานแล้ว'
+            : 'เหตุผล: ${record['rejection_reason'] ?? 'ไม่ระบุ'}',
+        payload: {
+          'route': '/community/sport-club',
+          'sportId': sportId,
+          'sportName': record['name_th']?.toString() ?? '',
+          if (!approved) 'rejectionReason': record['rejection_reason'],
+        },
+        createdAt:
+            DateTime.tryParse(record['reviewed_at']?.toString() ?? '') ??
+            DateTime.now(),
+      ),
+    );
   }
 
   /// แจ้งเตือนที่มาทาง Supabase Realtime (เช่นคำขอเพิ่มประเภทกีฬา) —
@@ -162,9 +221,14 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     state = state.copyWith(localUnreadCount: localUnreadCount);
   }
 
+  bool _isLocalSportResult(AppNotification notification) =>
+      notification.eventType == 'sport.proposal_approved' ||
+      notification.eventType == 'sport.proposal_rejected';
+
   @override
   void dispose() {
     _applicationNotificationSubscription.cancel();
+    _sportResultChannel?.unsubscribe();
     super.dispose();
   }
 
@@ -172,9 +236,24 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     state = state.copyWith(isLoading: true);
     final notifications = await _repo.getNotifications(category: category);
     final unreadCount = await _repo.getUnreadCount(category: category);
+    final localResults = _localNotifications.values
+        .where(
+          (notification) =>
+              _isLocalSportResult(notification) &&
+              (category == null || notification.category == category),
+        )
+        .toList();
+    final loadedIds = notifications
+        .map((notification) => notification.id)
+        .toSet();
     state = NotificationState(
       isLoading: false,
-      notifications: notifications,
+      notifications: [
+        ...notifications,
+        ...localResults.where(
+          (notification) => !loadedIds.contains(notification.id),
+        ),
+      ],
       unreadCount: unreadCount,
       localUnreadCount: _localUnreadCount,
     );

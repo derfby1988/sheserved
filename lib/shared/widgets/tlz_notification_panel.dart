@@ -333,6 +333,10 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
       notification.eventType == 'sport.proposal_submitted' &&
       notification.id.startsWith('sport_proposal_');
 
+  bool _isLocalSportResult(AppNotification notification) =>
+      notification.eventType == 'sport.proposal_approved' ||
+      notification.eventType == 'sport.proposal_rejected';
+
   Future<void> _openNotification(AppNotification notification) async {
     final route = _resolveNotificationRoute(notification);
     if (route == null) {
@@ -344,6 +348,17 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
     // not have a corresponding client-readable app_notifications row.
     if (_isLocalSportProposal(notification)) {
       _hideLocalSportProposal(notification);
+      if (mounted) Navigator.of(context).pop();
+      if (context.mounted) {
+        await Navigator.of(context).pushNamed(route);
+      }
+      return;
+    }
+
+    if (_isLocalSportResult(notification)) {
+      ref
+          .read(notificationProvider.notifier)
+          .removeLocalNotification(notification.id);
       if (mounted) Navigator.of(context).pop();
       if (context.mounted) {
         await Navigator.of(context).pushNamed(route);
@@ -377,6 +392,12 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
   Future<void> _dismissNotification(AppNotification notification) async {
     if (_isLocalSportProposal(notification)) {
       _hideLocalSportProposal(notification);
+      return;
+    }
+    if (_isLocalSportResult(notification)) {
+      ref
+          .read(notificationProvider.notifier)
+          .removeLocalNotification(notification.id);
       return;
     }
 
