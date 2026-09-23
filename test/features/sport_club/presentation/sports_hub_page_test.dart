@@ -87,6 +87,39 @@ void main() {
       expect(find.byKey(const ValueKey<int>(1)), findsOneWidget);
     });
 
+    testWidgets('keeps the middle page state when swiping away and back', (
+      tester,
+    ) async {
+      var middlePageBuilds = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SportsHubPager(
+              bookCourtPage: const Center(child: Text('Book Court content')),
+              findBuddiesPage: _BuildCountingPage(
+                onBuild: () => middlePageBuilds++,
+              ),
+              findCoachPage: const Center(child: Text('Find Coach content')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(middlePageBuilds, 1);
+
+      final pageView = find.byKey(
+        const PageStorageKey<String>('sports_hub_page_view'),
+      );
+      await tester.drag(pageView, const Offset(-520, 0));
+      await tester.pumpAndSettle();
+      await tester.drag(pageView, const Offset(520, 0));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Find Buddies content'), findsOneWidget);
+      expect(middlePageBuilds, 1);
+    });
+
     testWidgets('selector and arrows change the selected page', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -218,3 +251,26 @@ void main() {
 }
 
 void _ignorePageSelection(int page) {}
+
+/// Counts how many times the page body is built so tests can prove the hub
+/// keeps a page mounted after the user swipes away and comes back.
+class _BuildCountingPage extends StatefulWidget {
+  final VoidCallback onBuild;
+
+  const _BuildCountingPage({required this.onBuild});
+
+  @override
+  State<_BuildCountingPage> createState() => _BuildCountingPageState();
+}
+
+class _BuildCountingPageState extends State<_BuildCountingPage> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onBuild();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      const Center(child: Text('Find Buddies content'));
+}

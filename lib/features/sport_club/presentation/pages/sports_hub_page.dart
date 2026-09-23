@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/book_court_page.dart';
@@ -30,6 +32,7 @@ class _SportsHubPageState extends State<SportsHubPage> {
   void _handlePageChanged(int page) {
     if (_currentPage == page) return;
     setState(() => _currentPage = page);
+    if (page == 1) unawaited(_findBuddiesController.refreshIfStale());
   }
 
   void _onNavIndexChanged(int index) {
@@ -221,15 +224,15 @@ class _SportsHubPagerState extends State<SportsHubPager> {
             controller: _pageController,
             onPageChanged: _handlePageChanged,
             children: [
-              KeyedSubtree(
+              _KeepAlivePage(
                 key: const PageStorageKey<String>('book_court'),
                 child: widget.bookCourtPage,
               ),
-              KeyedSubtree(
+              _KeepAlivePage(
                 key: const PageStorageKey<String>('find_buddies'),
                 child: widget.findBuddiesPage,
               ),
-              KeyedSubtree(
+              _KeepAlivePage(
                 key: const PageStorageKey<String>('find_coach'),
                 child: widget.findCoachPage,
               ),
@@ -238,5 +241,29 @@ class _SportsHubPagerState extends State<SportsHubPager> {
         ),
       ],
     );
+  }
+}
+
+/// Keeps a hub page mounted while the user swipes to another page, so each
+/// page keeps its own loaded data and scroll position instead of reloading
+/// every time it comes back into view.
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAlivePage({super.key, required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

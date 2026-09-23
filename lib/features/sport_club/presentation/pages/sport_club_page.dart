@@ -25,6 +25,7 @@ import '../../application/sport_club_filter_store.dart';
 import '../../application/sport_club_group_query.dart';
 import '../../application/sport_club_card_hydrator.dart';
 import '../../application/sport_club_booking_service.dart';
+import '../../application/sport_club_data_freshness_policy.dart';
 import '../../application/sport_club_intent.dart';
 import '../../application/feed_filter_collapse_controller.dart';
 import '../../services/sport_club_deep_link_service.dart';
@@ -43,17 +44,20 @@ class SportClubPageController {
 
   Object? _owner;
   Future<void> Function()? _refresh;
+  Future<void> Function()? _refreshIfStale;
   Future<void> Function(String roomId, String groupId)? _openChat;
   Future<void> Function()? _createGroup;
 
   void _attach(
     Object owner, {
     required Future<void> Function() refresh,
+    required Future<void> Function() refreshIfStale,
     required Future<void> Function(String roomId, String groupId) openChat,
     required Future<void> Function() createGroup,
   }) {
     _owner = owner;
     _refresh = refresh;
+    _refreshIfStale = refreshIfStale;
     _openChat = openChat;
     _createGroup = createGroup;
   }
@@ -62,12 +66,17 @@ class SportClubPageController {
     if (!identical(_owner, owner)) return;
     _owner = null;
     _refresh = null;
+    _refreshIfStale = null;
     _openChat = null;
     _createGroup = null;
   }
 
   Future<void> refresh() async {
     await _refresh?.call();
+  }
+
+  Future<void> refreshIfStale() async {
+    await _refreshIfStale?.call();
   }
 
   Future<void> openGroupChat(String roomId, String groupId) async {
@@ -103,6 +112,7 @@ class _SportClubPageState extends State<SportClubPage> {
   late final SportClubCardHydrator _cardHydrator;
   late final SportClubBookingService _booking;
   final _filterStore = const SportClubFilterStore();
+  static const _freshnessPolicy = SportClubDataFreshnessPolicy();
   SupabaseClient get _client => Supabase.instance.client;
   List<Map<String, dynamic>> _groups = [];
   Map<String, SportClubGroupCardData> _cardDataByGroupId = {};
@@ -119,6 +129,8 @@ class _SportClubPageState extends State<SportClubPage> {
   double? _userLat;
   double? _userLng;
   int _filterRequestId = 0;
+  DateTime? _lastSuccessfulFetchAt;
+  bool _backgroundRefreshInFlight = false;
   final _listScrollController = ScrollController();
   final _detailScrollController = ScrollController();
   static const _pageSize = 10;
@@ -179,6 +191,7 @@ class _SportClubPageState extends State<SportClubPage> {
     widget.controller?._attach(
       this,
       refresh: _reload,
+      refreshIfStale: _refreshIfStale,
       openChat: _openGroupChatFromNotification,
       createGroup: _onCreateGroupPressed,
     );
@@ -329,7 +342,7 @@ class _SportClubPageState extends State<SportClubPage> {
 
   Future<void> _loadMore() async {
     if (_loading || _reloadingGroups || _isLoadingMore || !_hasMore) return;
-    final requestId = _filterRequestId;
+    final requestId = ++_filterRequestId;
     setState(() => _isLoadingMore = true);
     try {
       final page = await _fetchGroupPage(
@@ -458,6 +471,7 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = membership.blocked;
         _myCreatedSportIds = membership.createdSports;
       });
+      _lastSuccessfulFetchAt = DateTime.now();
 
       _publishFeedTitle();
       // Phase 2.3: handle redirect+intent after login
@@ -572,12 +586,85 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = membership.blocked;
         _myCreatedSportIds = membership.createdSports;
       });
+      _lastSuccessfulFetchAt = DateTime.now();
     } on StateError catch (error) {
       if (error.message != 'STALE_FILTER_REQUEST') rethrow;
     } finally {
       if (mounted && requestId == _filterRequestId) {
         setState(() => _reloadingGroups = false);
       }
+    }
+  }
+
+  Future<void> _refreshIfStale() async {
+    if (!mounted ||
+        _loading ||
+        _reloadingGroups ||
+        _isLoadingMore ||
+        _backgroundRefreshInFlight ||
+        !_freshnessPolicy.shouldRefresh(
+          _lastSuccessfulFetchAt,
+          now: DateTime.now(),
+        )) {
+      return;
+    }
+
+    _backgroundRefreshInFlight = true;
+    final requestId = ++_filterRequestId;
+    try {
+      final userId = AuthService.instance.currentUser?.id;
+      final membership = await _membershipSnapshot(userId);
+      final targetOffset = _currentOffset;
+      final refreshedGroups = <Map<String, dynamic>>[];
+      final groupIdsWithAnySessions = <String>{};
+      var offset = 0;
+      var hasMore = true;
+
+      do {
+        final page = await _fetchGroupPage(
+          offset: offset,
+          adminIds: membership.admin,
+          joinedGroupIds: membership.joined,
+          blockedGroupIds: membership.blocked,
+          requestId: requestId,
+        );
+        refreshedGroups.addAll(page.groups);
+        groupIdsWithAnySessions.addAll(page.groupIdsWithAnySessions);
+        offset = page.nextOffset;
+        hasMore = page.hasMore;
+      } while (hasMore &&
+          (offset < targetOffset || refreshedGroups.length < _groups.length));
+
+      sortGroupsByDistance(
+        refreshedGroups,
+        locationEnabled: _locationEnabled,
+        userLat: _userLat,
+        userLng: _userLng,
+      );
+      final refreshedPage = SportClubGroupPage(
+        groups: refreshedGroups,
+        nextOffset: offset,
+        hasMore: hasMore,
+        groupIdsWithAnySessions: groupIdsWithAnySessions,
+      );
+      final cardData = await _hydrateCardData(refreshedPage);
+
+      if (!mounted || requestId != _filterRequestId) return;
+      setState(() {
+        _groups = refreshedGroups;
+        _cardDataByGroupId = cardData;
+        _currentOffset = offset;
+        _hasMore = hasMore;
+        _myAdminGroups = membership.admin;
+        _myJoinedGroupIds = membership.joined;
+        _myPendingGroupIds = membership.pending;
+        _myBlockedGroupIds = membership.blocked;
+        _myCreatedSportIds = membership.createdSports;
+      });
+      _lastSuccessfulFetchAt = DateTime.now();
+    } catch (_) {
+    } finally {
+      _backgroundRefreshInFlight = false;
     }
   }
 
