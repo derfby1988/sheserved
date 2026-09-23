@@ -25,7 +25,7 @@ import 'features/consultation/presentation/pages/health_program_request_dashboar
 import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
-import 'package:sheserved/features/sport_club/presentation/pages/sport_club_page.dart';
+import 'package:sheserved/features/sport_club/presentation/pages/sports_hub_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
@@ -296,7 +296,7 @@ class SheservedApp extends StatelessWidget {
           requiredRole: 'admin',
           child: PlatformSettingsPage(),
         ),
-        '/community/sport-club': (context) => const SportClubPage(),
+        '/community/sport-club': (context) => const SportsHubPage(),
         '/community/sport-club/group/create': (context) =>
             const CreateGroupPage(),
         '/community/sport-club/sport/propose': (context) =>
@@ -329,13 +329,15 @@ class SheservedApp extends StatelessWidget {
         // Handle Sport Club Group Deep Link
         if (settings.name?.startsWith('/sport-club/group/') == true ||
             settings.name?.startsWith('/community/sport-club/group/') == true) {
-          final deepLink = SportClubDeepLinkService.parseDeepLink(settings.name);
+          final deepLink = SportClubDeepLinkService.parseDeepLink(
+            settings.name,
+          );
           if (deepLink != null) {
             // Store pending link for SportClubPage to consume on init
             SportClubDeepLinkService.storePendingDeepLink(deepLink);
             return MaterialPageRoute(
               settings: settings,
-              builder: (context) => const SportClubPage(),
+              builder: (context) => const SportsHubPage(),
             );
           }
         }
@@ -1006,7 +1008,7 @@ class SheservedApp extends StatelessWidget {
         }
 
         if (settings.name == '/sport-club') {
-          return MaterialPageRoute(builder: (context) => const SportClubPage());
+          return MaterialPageRoute(builder: (context) => const SportsHubPage());
         }
 
         return null;

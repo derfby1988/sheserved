@@ -3,7 +3,7 @@
 # ============================================================
 # วัตถุประสงค์: ตรวจหา overlay / การล้นจอ (RenderFlex overflow) บนหน้า
 # Sport Club ทั้งหน้า feed, group card, group detail sheet, filter sheet
-# โดยล็อกอินเป็นผู้ใช้งานทั่วไป (test)
+# โดยล็อกอินเป็นผู้ใช้งานทั่วไป
 #
 # หมายเหตุ:
 # - drawer ต้องยุบโซน "บริการทางการแพทย์" ก่อนจึงจะเห็นเมนู
@@ -20,32 +20,17 @@ tags:
 - runFlow:
     file: login_CPH1989.yaml
 
-# Step 2: Open drawer via hamburger
-- tapOn:
-    point: "12%, 10%"
-- waitForAnimationToEnd:
-    timeout: 3000
+# Step 2: Enter Find Buddies using the shared drawer navigation flow
+- runFlow:
+    file: sport_club_entry_CPH1989.yaml
 
-# Step 3: Collapse medical-services group so community items become visible
-- tapOn: "บริการทางการแพทย์"
-- waitForAnimationToEnd:
-    timeout: 2000
-
-# Step 4: Enter Sport Club page
-- tapOn: "หาเพื่อนออกกำลังกาย"
-- waitForAnimationToEnd:
-    timeout: 8000
-- extendedWaitUntil:
-    visible: ".*หาเพื่อนออกกำลังกาย.*"
-    timeout: 30000
-
-# Step 5: Assert main UI controls are present
+# Step 3: Assert main UI controls are present
 - assertVisible: ".*ทั้งหมด.*"
 - assertVisible: ".*สร้างก๊วน.*"
 - waitForAnimationToEnd:
     timeout: 3000
 
-# Step 6: Toggle quick filter "ยังเปิดรับ" on and off
+# Step 4: Toggle quick filter "ยังเปิดรับ" on and off
 - tapOn: ".*ยังเปิดรับ.*"
 - waitForAnimationToEnd:
     timeout: 3000
@@ -53,7 +38,7 @@ tags:
 - waitForAnimationToEnd:
     timeout: 3000
 
-# Step 7: Open first group card detail sheet
+# Step 5: Open first group card detail sheet
 - tapOn:
     text: ".*แบดมินตัน.*"
     index: 0
@@ -64,7 +49,7 @@ tags:
 - waitForAnimationToEnd:
     timeout: 3000
 
-# Step 8: Open advanced filter sheet
+# Step 6: Open advanced filter sheet
 - tapOn:
     text: "ค้นหา"
     index: 0
@@ -75,5 +60,5 @@ tags:
 - waitForAnimationToEnd:
     timeout: 3000
 
-# Step 9: Confirm still on sport club feed
+# Step 7: Confirm still on sport club feed
 - assertVisible: ".*หาเพื่อนออกกำลังกาย.*"

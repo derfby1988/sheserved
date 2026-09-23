@@ -1,0 +1,22 @@
+# Shared navigation helper for opening Find Buddies on CPH1989.
+# Call after login_CPH1989.yaml or login_admin_CPH1989.yaml.
+appId: com.sheserved.app
+name: Open Find Buddies from drawer
+tags:
+  - sport-club
+  - navigation
+---
+- tapOn:
+    point: "12%, 10%"
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible: "หน้าหลัก"
+- tapOn: "บริการทางการแพทย์"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "หาเพื่อนออกกำลังกาย"
+- waitForAnimationToEnd:
+    timeout: 8000
+- extendedWaitUntil:
+    visible: ".*หาเพื่อนออกกำลังกาย.*"
+    timeout: 30000
