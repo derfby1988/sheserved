@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -29,6 +31,8 @@ import '../../application/sport_club_data_freshness_policy.dart';
 import '../../application/sport_club_intent.dart';
 import '../../application/feed_filter_collapse_controller.dart';
 import '../../services/sport_club_deep_link_service.dart';
+import '../../shared/application/sports_hub_controller.dart';
+import '../../shared/domain/sports_hub_filter_state.dart';
 
 class SportClubPageController {
   /// Sport name the Sports Hub header should show while the Find Buddies
@@ -96,10 +100,17 @@ class SportClubPage extends StatefulWidget {
   final bool embeddedInSportsHub;
   final SportClubPageController? controller;
 
+  /// Shared Sports Hub filter state. When present, the shared fields of
+  /// [_filter] (sport, keyword, province, district, location/radius) follow
+  /// the hub so the same values apply on the Book Court and Find Coach
+  /// pages, and edits made here propagate back to the hub.
+  final SportsHubController? hubController;
+
   const SportClubPage({
     super.key,
     this.embeddedInSportsHub = false,
     this.controller,
+    this.hubController,
   });
 
   @override
@@ -183,8 +194,23 @@ class _SportClubPageState extends State<SportClubPage> {
     );
     _booking = SportClubBookingService(_repo.bookSession);
     _listScrollController.addListener(_onScroll);
+    widget.hubController?.addListener(_onHubFilterChanged);
     _attachController();
     _init();
+  }
+
+  /// Applies shared hub filter changes (sport, keyword, province, district,
+  /// location/radius) into this page's legacy filter and refetches. Buddies
+  /// domain toggles that differ are adopted as well; the reverse direction
+  /// (page -> hub) goes through [SportsHubController.absorbSportClubFilter]
+  /// inside [_applyFilter], and both sides short-circuit on equality so no
+  /// notification loop can occur.
+  void _onHubFilterChanged() {
+    final hub = widget.hubController;
+    if (hub == null) return;
+    final next = hub.toSportClubFilter();
+    if (next == _filter) return;
+    unawaited(_applyFilter(next));
   }
 
   void _attachController() {
@@ -204,11 +230,17 @@ class _SportClubPageState extends State<SportClubPage> {
       oldWidget.controller?._detach(this);
       _attachController();
     }
+    if (oldWidget.hubController != widget.hubController) {
+      oldWidget.hubController?.removeListener(_onHubFilterChanged);
+      widget.hubController?.addListener(_onHubFilterChanged);
+      _onHubFilterChanged();
+    }
   }
 
   @override
   void dispose() {
     widget.controller?._detach(this);
+    widget.hubController?.removeListener(_onHubFilterChanged);
     _listScrollController.dispose();
     _detailScrollController.dispose();
     super.dispose();
@@ -400,6 +432,18 @@ class _SportClubPageState extends State<SportClubPage> {
     } catch (_) {
       // Ignore malformed or unavailable local preferences and use defaults.
     }
+
+    final hub = widget.hubController;
+    if (hub == null) return;
+    if (!hub.isLoaded) await hub.load();
+    if (hub.state == const SportsHubFilterState()) {
+      // Fresh hub namespace: seed it from the legacy persisted filter so
+      // existing users keep their sport/location choices (21.7.2 migration
+      // path). A hub that already has its own saved state wins instead.
+      hub.seedFromSportClubFilter(_filter);
+    }
+    final hubFilter = hub.toSportClubFilter();
+    if (hubFilter != _filter) _filter = hubFilter;
   }
 
   Future<void> _persistFilterState() =>
@@ -909,6 +953,9 @@ class _SportClubPageState extends State<SportClubPage> {
                                 });
                                 _publishFeedTitle();
                                 await _persistFilterState();
+                                widget.hubController?.absorbSportClubFilter(
+                                  _filter,
+                                );
                                 await _reload();
                               },
                             ),
@@ -987,6 +1034,9 @@ class _SportClubPageState extends State<SportClubPage> {
     setState(() => _filter = next);
     _publishFeedTitle();
     await _persistFilterState();
+    // Push shared fields back into the hub so Book Court / Find Coach see
+    // the same sport and location. No-op when the change came from the hub.
+    widget.hubController?.absorbSportClubFilter(next);
     await _reload();
   }
 

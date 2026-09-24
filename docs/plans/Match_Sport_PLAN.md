@@ -2942,7 +2942,7 @@ ALTER TABLE public.fitness_group_bookings
 >
 > สรุป: ขยายหน้า `SportClubPage` ให้เป็น Sports Hub ที่ผู้ใช้ปัดซ้าย/ขวาระหว่าง 3 ประสบการณ์หลัก โดยให้ **หาเพื่อนออกกำลังกายอยู่ตรงกลาง** เป็นหน้าหลักเดิม และมีหน้าจองสนามกีฬาอยู่ด้านหนึ่งกับหน้าค้นหาโค้ช/เทรนเนอร์อยู่อีกด้านหนึ่ง ใช้ตัวกรองกีฬา/พื้นที่ร่วมกันเฉพาะส่วนที่มีความหมายร่วมกัน แต่แยกตัวกรองเฉพาะ domain และแยกโฟลเดอร์โค้ดเพื่อให้ค้นหา แก้ไข และทดสอบได้ง่าย
 
-> **สถานะปัจจุบัน:** Phase 21.7.1 Sports Hub Shell ทำแล้วใน repository (สามหน้า, เริ่ม Find Buddies, indicator/gesture, route compatibility และ state retention) แต่ Book Court/Find Coach ยังเป็น placeholder; shared filter contract และ domain data/booking phases ยังไม่เริ่ม
+> **สถานะปัจจุบัน:** Phase 21.7.1–21.7.9 implement แล้วใน repository — shared filter contract (persistence/restore/logout), venue supply + owner onboarding/admin review (migration `20260924100000`), discovery + instant booking + owner approval + reviews (migration `20260924110000`, `book_court/`), coach discovery + request lifecycle (migration `20260924120000`, `find_coach/`) พร้อม route wiring ใน `main.dart` และ unit/widget tests เหลือ 21.7.10 release hardening: ยังไม่ได้ apply migration กับฐานข้อมูลจริง, ยังไม่ได้ทดสอบ integration/concurrency ฝั่ง server และ device QA
 
 ### 21.1 ข้อเสนอหลักและมติด้าน UX
 
@@ -3492,24 +3492,24 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - [x] `SportsHubPage` ทำงานด้วย `PageView` 3 หน้า โดย Find Buddies อยู่ index 1 และเป็นหน้าเริ่มต้น
 - [x] indicator คง icon + ชื่อย่อของทั้งสามหน้าใน selector, แสดง active pill, arrow/drag affordance และชื่อเต็มของหน้าปัจจุบันด้านล่าง ไม่ใช้ตัวเลขเป็น navigation หลัก
 - [x] ผู้ใช้เข้าใจได้จาก UI ว่าสามารถปัดซ้าย/ขวา และยังเปลี่ยนหน้าด้วยการแตะได้
-- [ ] shared sport/location filter ใช้งานร่วมกันได้โดยไม่ทำให้ domain-specific filter ปนกัน
-- [ ] state, filter persistence, scroll position และ stale request guard ทำงานครบ
+- [x] shared sport/location filter ใช้งานร่วมกันได้โดยไม่ทำให้ domain-specific filter ปนกัน
+- [x] state, filter persistence, scroll position และ stale request guard ทำงานครบ
 - [x] โค้ด Book Court และ Find Coach อยู่คนละโฟลเดอร์ภายใน `lib/features/sport_club`
 - [x] Find Buddies เดิมยังทำงานผ่าน route/deep link/notification/login redirect เดิม
-- [ ] Book Court มี owner registration พร้อม admin review; เฉพาะ owner ที่ผ่านอนุมัติจึง public listing ได้ และ owner หนึ่งรายจัดการหลายสถานที่ได้
-- [ ] default หน่วยทรัพยากรครอบคลุมกีฬาทุกประเภท, มี fallback ชัดเจน และ owner override ได้ต่อ venue+sport โดยไม่เปลี่ยน snapshot การจองเดิม
-- [ ] owner dashboard จัดการ venues/resources, ราคา, operating hours, availability, bookings, photos/amenities และแสดง dashboard summary ขั้นพื้นฐาน พร้อม authorization แยกตาม venue
-- [ ] Book Court quick filters แสดง “คอร์ทว่าง / รัศมี / เคยจองแล้ว / เป็นเจ้าของ”; filter อื่นอยู่ใน advanced bottom sheet และ query ตรงกับค่าที่เลือก โดย personal filters ต้อง login และใช้ booking history/owner permission จริง
-- [ ] เมื่อเลือก “เป็นเจ้าของ” แสดง `FloatingActionButton.extended` “ลงทะเบียนสนาม” ที่ตำแหน่งเดียวกับ “สร้างก๊วน” (มุมขวาล่าง); ปุ่มซ่อนเมื่อปิด filter, login guard/return navigation และการ restore state ทำงานครบ
-- [ ] Book Court MVP ผ่าน discovery, availability, conflict guard และ booking confirmation โดยยังไม่รวม subscription/payment จริง
-- [ ] booking mode instant/owner-approval ตั้งแยกตามคอร์ท; pending ไม่กิน slot, approve recheck แบบ atomic, conflict คง pending ให้เปลี่ยนเวลาใน court เดิม และ auto-expire ก่อนเริ่ม slot
-- [ ] cancellation cutoff ตั้งโดย owner ใน venue terms; user cancel ก่อน cutoff ได้, owner cancel ระบุเหตุผลและส่ง notification; stale consent version ต้องยอมรับใหม่; ผู้ใช้ยืนยันก่อนยกเลิก
-- [ ] terms dialog ระดับ venue บังคับยอมรับก่อน booking และเก็บ immutable version/text/cutoff snapshot; server ตรวจ version ก่อนสร้าง booking และการเปลี่ยน terms ไม่แก้ snapshot เก่า
-- [ ] notification lifecycle เทียบเท่าการจองก๊วน มี persistent `venue_booking` category, real-time update, read state และ route ไปยัง booking/owner dashboard
-- [ ] venue detail bottom sheet มีปุ่มรีวิว/แสดง review summary และแบบฟอร์มตามภาพ; รีวิวได้เฉพาะ completed booking ที่ยังไม่เคยรีวิว และหนึ่ง booking รีวิวได้ครั้งเดียว
-- [ ] rating/comment, standard multi-select tags และ custom tags ต่อรีวิวถูกบันทึกใน relational tables แบบ atomic; tag รวมไม่เกิน 5 และ aggregate ใช้เฉพาะ review ที่เผยแพร่
-- [ ] Find Coach MVP ผ่าน discovery, profile, availability และ request flow
-- [ ] ผ่าน widget, unit, integration, authorization, accessibility และ device QA บนจอเล็ก
+- [x] Book Court มี owner registration พร้อม admin review; เฉพาะ owner ที่ผ่านอนุมัติจึง public listing ได้ และ owner หนึ่งรายจัดการหลายสถานที่ได้
+- [x] default หน่วยทรัพยากรครอบคลุมกีฬาทุกประเภท, มี fallback ชัดเจน และ owner override ได้ต่อ venue+sport โดยไม่เปลี่ยน snapshot การจองเดิม
+- [x] owner dashboard จัดการ venues/resources, ราคา, operating hours, availability, bookings, photos/amenities และแสดง dashboard summary ขั้นพื้นฐาน พร้อม authorization แยกตาม venue
+- [x] Book Court quick filters แสดง “คอร์ทว่าง / รัศมี / เคยจองแล้ว / เป็นเจ้าของ”; filter อื่นอยู่ใน advanced bottom sheet และ query ตรงกับค่าที่เลือก โดย personal filters ต้อง login และใช้ booking history/owner permission จริง
+- [x] เมื่อเลือก “เป็นเจ้าของ” แสดง `FloatingActionButton.extended` “ลงทะเบียนสนาม” ที่ตำแหน่งเดียวกับ “สร้างก๊วน” (มุมขวาล่าง); ปุ่มซ่อนเมื่อปิด filter, login guard/return navigation และการ restore state ทำงานครบ
+- [x] Book Court MVP ผ่าน discovery, availability, conflict guard และ booking confirmation โดยยังไม่รวม subscription/payment จริง
+- [x] booking mode instant/owner-approval ตั้งแยกตามคอร์ท; pending ไม่กิน slot, approve recheck แบบ atomic, conflict คง pending ให้เปลี่ยนเวลาใน court เดิม และ auto-expire ก่อนเริ่ม slot
+- [x] cancellation cutoff ตั้งโดย owner ใน venue terms; user cancel ก่อน cutoff ได้, owner cancel ระบุเหตุผลและส่ง notification; stale consent version ต้องยอมรับใหม่; ผู้ใช้ยืนยันก่อนยกเลิก
+- [x] terms dialog ระดับ venue บังคับยอมรับก่อน booking และเก็บ immutable version/text/cutoff snapshot; server ตรวจ version ก่อนสร้าง booking และการเปลี่ยน terms ไม่แก้ snapshot เก่า
+- [x] notification lifecycle เทียบเท่าการจองก๊วน มี persistent `venue_booking` category, real-time update, read state และ route ไปยัง booking/owner dashboard
+- [x] venue detail bottom sheet มีปุ่มรีวิว/แสดง review summary และแบบฟอร์มตามภาพ; รีวิวได้เฉพาะ completed booking ที่ยังไม่เคยรีวิว และหนึ่ง booking รีวิวได้ครั้งเดียว
+- [x] rating/comment, standard multi-select tags และ custom tags ต่อรีวิวถูกบันทึกใน relational tables แบบ atomic; tag รวมไม่เกิน 5 และ aggregate ใช้เฉพาะ review ที่เผยแพร่
+- [x] Find Coach MVP ผ่าน discovery, profile, availability และ request flow
+- [ ] ผ่าน widget, unit, integration, authorization, accessibility และ device QA บนจอเล็ก (widget/unit ผ่านแล้ว; เหลือ integration/concurrency ฝั่ง server และ device QA)
 
 ### 21.9 ความเสี่ยงและแนวทางป้องกัน
 
@@ -3536,10 +3536,11 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - `lib/features/sport_club/application/feed_filter_collapse_controller.dart` และ `sport_club_data_freshness_policy.dart` — scroll/filter behavior และ freshness policy ของ feed
 - `lib/features/sport_club/book_court/presentation/pages/book_court_page.dart` และ `find_coach/presentation/pages/find_coach_page.dart` — ปัจจุบันเป็น placeholder เท่านั้น ยังไม่มี domain query/model
 
-#### To add in upcoming phases
+#### Implemented: 21.7.2–21.7.9
 
-- 21.7.2: `shared/domain/` สำหรับ discovery/domain filter contracts และ `shared/application/` สำหรับ controller/persistence; แก้ adapter เดิมโดยไม่ย้ายไฟล์ Find Buddies จำนวนมาก
-- 21.7.3–21.7.7: เพิ่ม repository, model, query/service และ UI ใน `book_court/` ตาม supply → discovery → instant booking → owner approval → reviews
-- 21.7.8–21.7.9: เพิ่ม repository, model, query/service และ UI ใน `find_coach/` ตาม verified discovery → request/booking
-- สร้างเฉพาะไฟล์ที่ phase ปัจจุบันต้องใช้; ไม่สร้าง directory ว่างหรือย้ายโค้ดเดิมทั้งก้อน
-- ห้าม import implementation ข้าม `book_court/` กับ `find_coach/`; สื่อสารผ่าน shared contract เท่านั้น
+- 21.7.2: `shared/domain/` (`sports_discovery_filter.dart`, `sports_hub_filter_state.dart`) และ `shared/application/` (`sports_hub_controller.dart`, `sports_hub_filter_store.dart`) + `shared_sport_filter_bar.dart`; `sport_club_page.dart` ทำหน้าที่ adapter โดยไม่ย้ายไฟล์ Find Buddies
+- 21.7.3–21.7.7: `book_court/` ครบ data (`book_court_models.dart`, `book_court_repository.dart`), domain (`book_court_filter.dart`, `court_unit_catalog.dart`), application (`book_court_query.dart`, `book_court_booking_service.dart`, `court_owner_service.dart`) และ presentation (discovery page, booking/terms/review/owner sheets, `court_my_bookings_page.dart`, `court_owner_bookings_page.dart`, `court_owner_dashboard.dart`, `admin_court_owner_review_page.dart`) + migrations `20260924100000` (supply) และ `20260924110000` (bookings/reviews)
+- 21.7.8–21.7.9: `find_coach/` ครบ data/domain/application (`coach_models.dart`, `find_coach_repository.dart`, `find_coach_filter.dart`, `find_coach_query.dart`, `coach_request_service.dart`) และ presentation (`find_coach_page.dart`, `my_coach_requests_page.dart`, `coach_requests_queue_page.dart`, `admin_coach_review_page.dart` + widgets) + migration `20260924120000`
+- routes ใหม่ใน `main.dart`: `/community/sports`, `/community/sports/courts`, `/community/sports/coaches`, owner dashboard/applications, coach admin review และ prefix deep links สำหรับ `/community/sports/courts/:id` `/community/sports/coaches/:id`
+- tests: `test/features/sport_club/{shared,book_court,find_coach}/` ครอบคลุม filter isolation, persistence/restore, logout deactivation, stale-request guard, pagination, radius filter, booking/request service guards
+- ยังคงห้าม import implementation ข้าม `book_court/` กับ `find_coach/`; สื่อสารผ่าน shared contract เท่านั้น

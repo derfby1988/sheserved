@@ -1,5 +1,9 @@
 import 'package:hive/hive.dart';
 
+import 'closed_ended_config.dart';
+
+export 'closed_ended_config.dart';
+
 part 'chat_models.g.dart';
 
 @HiveType(typeId: 0)
@@ -155,6 +159,8 @@ class ChatMessage {
   final String? replyToContent;
   @HiveField(18)
   final String? replyToSenderId;
+  @HiveField(19)
+  final Map<dynamic, dynamic>? closedEndedConfigJson;
 
   ChatMessage({
     required this.id,
@@ -176,7 +182,15 @@ class ChatMessage {
     this.replyToId,
     this.replyToContent,
     this.replyToSenderId,
+    this.closedEndedConfigJson,
   });
+
+  /// Phase 6.14: parsed `closed_ended_config` definition. Null for legacy
+  /// messages and for invalid/malformed payloads (safe fallback).
+  ClosedEndedConfig? get closedEndedConfig =>
+      ClosedEndedConfig.tryParse(closedEndedConfigJson);
+
+  bool get isClosedEndedQuestion => type == 'closed_ended_question';
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
@@ -213,6 +227,9 @@ class ChatMessage {
       replyToId: json['reply_to_id'],
       replyToContent: json['reply_to_content'],
       replyToSenderId: json['reply_to_sender_id'],
+      closedEndedConfigJson: json['closed_ended_config'] is Map
+          ? Map<dynamic, dynamic>.from(json['closed_ended_config'] as Map)
+          : null,
     );
   }
 
@@ -237,6 +254,7 @@ class ChatMessage {
       'reply_to_id': replyToId,
       'reply_to_content': replyToContent,
       'reply_to_sender_id': replyToSenderId,
+      'closed_ended_config': closedEndedConfigJson,
     };
   }
 
@@ -260,6 +278,7 @@ class ChatMessage {
     String? replyToId,
     String? replyToContent,
     String? replyToSenderId,
+    Map<dynamic, dynamic>? closedEndedConfigJson,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -281,6 +300,8 @@ class ChatMessage {
       replyToId: replyToId ?? this.replyToId,
       replyToContent: replyToContent ?? this.replyToContent,
       replyToSenderId: replyToSenderId ?? this.replyToSenderId,
+      closedEndedConfigJson:
+          closedEndedConfigJson ?? this.closedEndedConfigJson,
     );
   }
 }

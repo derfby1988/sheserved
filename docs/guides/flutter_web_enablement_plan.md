@@ -152,15 +152,47 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 
 | # | งาน | รายละเอียด / เอกสารอ้างอิง |
 |---|-----|---------------------------|
-| W3.1 | `index.html`: `<meta name="google-signin-client_id" content="...">` ด้วย **Web OAuth client ID** | client ID = P1 (`07` §5); server `GOOGLE_CLIENT_IDS`/`GOOGLE_CLIENT_ID` env ต้องรวม `aud` ตัวนี้ — pattern เดียวกับที่ 13.2 เพิ่ม iOS client ID (`Match_Sport` line 1568, 1840) |
-| W3.2 | **Web auth mode matrix** — เขียนลง UI/dev docs ชัดเจน: `USE_BACKEND_AUTH=true` (เปิด server + origin ใน ALLOWED_ORIGINS) = login/register/social/private paths ครบ; `false` = **anonymous/public allowlist เท่านั้น** (browse ได้ แต่ไม่มี personal room `user-{id}`, private chat, strict routes — ตาม coexistence policy 13.3 line 1584-1587) | บัญชี Argon2id login ไม่ได้ใน direct mode (line 1575) — dev web ที่ใช้ `false` ต้องสร้าง dev account แยก |
-| W3.3 | ซ่อน/ปิด social provider ที่ backend ยัง 501 บน web — **เหลือ Google (+Apple ถ้า config)**; Facebook/LINE/TikTok แสดง disabled หรือซ่อน | `routes/auth.js` social/:provider fail-closed (`Match_Sport` line 1551, 1563) |
+| W3.1 | ✅ `index.html`: เพิ่ม `<meta name="google-signin-client_id">` ด้วย Web OAuth client ID แล้ว (`web/index.html`) | client ID = P1 (`07` §5); backend `GOOGLE_CLIENT_ID` ตรงกับ `aud` ตัวนี้แล้ว — **ops prerequisite ที่เหลือ:** เพิ่ม `http://localhost:<port>` (dev) และ `https://<web-domain>` (prod) ใน Authorized JavaScript origins ของ Web client ใน GCP Console — ทำจาก code ไม่ได้ |
+| W3.2 | ✅ **ตัดสินแล้ว: `USE_BACKEND_AUTH=true`** สำหรับ dev web — login/register/social/private paths ครบ; `false` ยังคงเป็น anonymous/public allowlist เท่านั้น | ต้องเปิด backend + origin ของ `flutter run` อยู่ใน `ALLOWED_ORIGINS`; บัญชี Argon2id login ไม่ได้ใน direct mode (line 1575) |
+| W3.3 | ✅ **ตัดสินแล้ว: แสดงทุกปุ่มแต่ disabled บน web เว้น Google** — `lib/features/auth/data/services/social_provider_policy.dart` เป็น central flag (`webEnabled`); `login_page`/`register_page` render ปุ่มเดิมทุกตำแหน่ง ปิด `onTap` + opacity 0.45 + tooltip เฉพาะบน web | `routes/auth.js` social/:provider fail-closed 501 (`Match_Sport` line 1551, 1563); เปิด provider เพิ่ม = backend support + เพิ่มใน `webEnabled` |
 | W3.4 | Token storage: ใช้ `AuthenticatedHttpClient` + `flutter_secure_storage` ตาม Phase 13.2 ที่ approve แล้ว — บน web = localStorage (ทั้ง access+refresh ตาม implementation จริง) | บันทึก: doc 08 เสนอ httpOnly cookie เป็น hardening ระยะยาว — ถ้าเลือกทางนั้นต้องเปิดแผน 15 (CSRF) เป็น P0 พร้อมกัน |
-| W3.5 | WebSocket handshake: ใช้ **Backend access token** ใน `setAuth` เป็น identity เดียวที่เชื่อถือได้; direct mode = anonymous เท่านั้น และไม่ใช้ `userId` จาก client เพื่อยกระดับสิทธิ์ | `socket-auth.js` มีและถูก wired แล้วใน 13.3; ต้องทดสอบ strict/legacy transition และ personal-room source จาก `socket.userId` เท่านั้น — ห้ามเพิ่ม path พิเศษสำหรับ web |
-| W3.6 | Socket token lifecycle: หลัง `AuthenticatedHttpClient` refresh token แล้ว ต้อง reconnect ด้วย access token ใหม่; token หมดอายุ/revoke ให้หยุด retry ด้วย token เดิมและกลับสู่ anonymous/login flow ตาม mode | 13.3 P0-4; ใช้ event/connection error contract ที่มีอยู่ ไม่เพิ่ม auth path หรือยืด TTL |
-| W3.7 | Private Supabase reads บน web ต้องใช้ **PostgREST token** (backend mint, TTL ≤5 นาที, sign ด้วย `SUPABASE_JWT_SECRET`) เมื่อ data path migrate — ไม่ใช้ anon key กับ private data | Q7-C (`Match_Sport` line 1385, 1535); `websocket-server/lib/postgrest-token.js` มีแล้ว + live check ผ่าน |
-| W3.8 | `x-app-version` ถูกส่งทุก request โดย `AuthenticatedHttpClient` อยู่แล้ว — ตรวจ `AppVersionChecker`/426 handling ทำงานบน web build; `MIN_APP_VERSION_ENFORCE=false` ใน dev | 13.2 amendment (line 1801); เมื่อเปิด enforce ต้องให้ web build ส่งเวอร์ชันถูก |
-| W3.9 | ตรวจ passkeys bundle ที่มีอยู่ใน `web/index.html` ว่าเป็นเพียง web capability ที่ตั้งใจเปิดใช้; ถ้ายังไม่มี Flutter/backend flow ที่อนุมัติ ให้คง bundle ไว้โดยไม่ประกาศว่าเป็น authentication path ที่พร้อมใช้งาน | ต้องไม่เพิ่ม provider, credential หรือ auth path ใหม่; CSP ของ W4.4 ต้องไม่ทำให้ bundle ที่ใช้งานจริงเสีย |
+| W3.5 | ✅ WebSocket handshake ส่ง Backend access token ใน `setAuth` แล้ว (`websocket_service.dart`); identity ฝั่ง server มาจาก `socket.userId` (JWT verified) เท่านั้น — `auth.userId` เป็น legacy compat ไม่ใช่ trusted actor | `socket-auth.js` wired ใน 13.3; STRICT_SOCKET_AUTH=true จะ reject legacy — ห้ามเพิ่ม path พิเศษสำหรับ web |
+| W3.6 | ✅ Socket token lifecycle implement แล้ว: `AuthenticatedHttpClient.tokenChanges` broadcast → `WebSocketService` dispose+reconnect ด้วย token ใหม่ (socket.io bake `auth` ตอน construction เปลี่ยนไม่ได้); `null` (logout/revoke) → disconnect ไม่ retry; handshake `Authentication failed` → `refreshTokens()` ครั้งเดียว (single-flight) → ล้มเหลว = clear tokens + หยุด | 13.3 P0-4; ไม่เพิ่ม auth path หรือยืด TTL — ใช้ connect_error contract เดิมของ socket-auth.js |
+| W3.7 | Private Supabase reads บน web ต้องใช้ **PostgREST token** (backend mint, TTL ≤5 นาที, sign ด้วย `SUPABASE_JWT_SECRET`) เมื่อ data path migrate — ไม่ใช้ anon key กับ private data | Q7-C (`Match_Sport` line 1385, 1535); `websocket-server/lib/postgrest-token.js` มีแล้ว — **defer ไป data-path phase** ไม่ block W3 core |
+| W3.8 | `x-app-version` ถูกส่งทุก request โดย `AuthenticatedHttpClient` อยู่แล้ว — ตรวจ `AppVersionChecker`/426 handling ทำงานบน web build; `MIN_APP_VERSION_ENFORCE=false` ใน dev | 13.2 amendment (line 1801); เมื่อเปิด enforce ต้องให้ web build ส่งเวอร์ชันถูก — ค้าง browser smoke |
+| W3.9 | ✅ Passkeys: bundle ใน `web/index.html` ถูก annotate แล้วว่าเป็น **capability เท่านั้น ไม่ใช่ auth path** — ไม่มี Flutter/backend flow ที่อนุมัติ | Corbado คิดตาม MAU เมื่อเปิดใช้จริง → ต้องมี decision + budget approval; CSP ของ W4.4 ต้องไม่ทำให้ bundle เสีย |
+
+**ค่าใช้จ่ายของ W3 — ทุกอย่างที่เปิดใช้อยู่ = 0 บาท:**
+
+| รายการ | ตอนนี้ | ถ้าจะเปิดในอนาคต (ต้องอนุมัติก่อน) |
+|--------|--------|-----------------------------------|
+| Google OAuth (W3.1) | ฟรี — Web client ID มีใน GCP เดิม ไม่ต้องเปิด billing | — |
+| Backend auth/socket/face-blur | self-hosted บน infra เดิม — ไม่มี per-request cost | — |
+| Facebook/LINE/TikTok login | **ปิดบน web** (backend 501 fail-closed) | developer account ฟรี แต่ต้องสร้าง app + config credentials ฝั่ง backend ก่อนเพิ่มใน `webEnabled` |
+| Apple Sign-In | **ปิดบน web** | ต้อง paid Apple Developer **$99/ปี** + Services ID (blocker เดิมจาก 13.2) |
+| Corbado passkeys | bundle เป็น capability เท่านั้น ไม่มี flow เรียกใช้ | Corbado pricing ตาม MAU → อนุมัติ plan + `CORBADO_PROJECT_ID` + backend verify endpoint + ขยาย CSP `connect-src` |
+| Google Maps บน web | `_isWebMapEnabled=false` คงเดิม (W4.5) | web Maps key แยก + HTTP referrer restriction → cost decision |
+| httpOnly cookie token storage | คง localStorage ตาม 13.2 | เปิดแผน 15 (CSRF) เป็น P0 พร้อมกัน (W5.7) |
+
+**งานค้างของ W3 ที่ทำจาก code ไม่ได้ (ops + smoke prerequisites):**
+
+1. **GCP Console — Authorized JavaScript origins** (blocker เดียวของ Google sign-in บน web):
+   - เข้า Google Cloud Console → APIs & Services → Credentials → เปิด **Web OAuth client** ตัวเดียวกับ `GOOGLE_CLIENT_ID` ใน `websocket-server/.env`
+   - เพิ่ม `http://localhost:<port>` (dev — แนะนำ fix port ของ `flutter run -d web-server --web-port`) และ `https://<web-domain>` (prod เมื่อตัดสิน domain ใน W4)
+   - ไม่ต้องแก้ Authorized redirect URIs (Flutter web ใช้ GIS ฝั่ง client)
+   - ถ้าข้ามขั้นนี้ sign-in จะล้มด้วย `idpiframe_initialization_failed` / origin mismatch
+2. **Backend ต้องรันและเข้าถึงได้**: `cd websocket-server && npm start` — ตอนนี้ `http://192.168.1.111:8080` ตอบ `Connection refused` → browser smoke ทุกขั้นยังทำไม่ได้จนกว่า server จะ up; dev web origin ต้องอยู่ใน `ALLOWED_ORIGINS` ของ `.env` ด้วย (W4.1 — env ops เท่านั้น)
+3. **Browser smoke เมื่อ 1+2 พร้อม** (คำสั่งที่ใช้ verify):
+   ```bash
+   flutter run -d web-server --web-port=<port> \
+     --dart-define=USE_BACKEND_AUTH=true \
+     --dart-define=BACKEND_API_URL=http://<backend-host>:8080 \
+     --dart-define=GOOGLE_SERVER_CLIENT_ID=<Web OAuth client ID>
+   ```
+   - login (Argon2id) + Google social บน Chrome ผ่าน; `/me` restore session หลัง reload
+   - ปุ่ม provider: Google กดได้ / FB, Apple, LINE, TikTok แสดง disabled (opacity + tooltip) และไม่ยิง request
+   - socket lifecycle: refresh → reconnect ด้วย token ใหม่ (ดู `auth.token` ใน handshake ใหม่); revoke/logout → disconnect และไม่ retry ด้วย token เดิม; direct mode (`USE_BACKEND_AUTH` ไม่ส่ง) เห็นเฉพาะ public allowlist
+   - `x-app-version` header ถูกส่งทุก request; ทดสอบ 426 เมื่อ `MIN_APP_VERSION_ENFORCE=true`
 
 **Verification:** login (backend mode) + Google social บน Chrome ผ่าน; `/me` restore session ทำงาน; direct mode เห็นเฉพาะ public; ไม่มี `x-user-id`/Supabase ID ถูกส่งเพื่อยกระดับ; token refresh แล้ว socket reconnect ด้วย token ใหม่; token หมดอายุ/revoke ไม่ retry ด้วย token เดิม; mobile provider/session UI ผ่าน Gate W3 ใน §4.4
 
@@ -270,18 +302,19 @@ flutter build ios --simulator --debug
 
 ## 5. Checklist ก่อน implement (รอการตัดสินใจ)
 
-- [ ] อนุมัติ Phase W0/W1 (compile unblock + file abstraction — อิสระจาก Phase 13)
-- [ ] อนุมัติ UI layout invariant และ release gate ในส่วน 4
+- [x] อนุมัติ Phase W0/W1 (compile unblock + file abstraction — อิสระจาก Phase 13) — ✅ implement+verify แล้ว
+- [x] ตัดสินใจ W2: face blur = server-side ผ่าน `POST /api/media/face-blur` (deface ท้องถิ่น ไม่มีค่าใช้จ่าย); compass ซ่อนบน web; polyline ปิดบน web — ✅ implement แล้ว
+- [x] ยืนยัน W3.2: web dev ใช้ `USE_BACKEND_AUTH=true` — ต้องเปิด server + origin ใน `ALLOWED_ORIGINS`
+- [x] ยืนยัน W3.3: แสดงทุก provider แต่ disabled บน web เว้น Google — `SocialProviderPolicy.webEnabled` เป็น flag เดียว; Apple รอ paid dev account ($99/ปี)
+- [x] ยืนยัน W3.6 socket token lifecycle: implement ผ่าน `tokenChanges` + `refreshTokens()` — refresh → reconnect ด้วย token ใหม่, revoke/expiry → หยุดไม่ retry token เดิม
+- [x] ตรวจ W3.9 passkeys bundle: คงไว้เป็น capability เท่านั้น ไม่ประกาศเป็น auth flow — Corbado คิดตาม MAU เมื่อเปิดจริง
 - [ ] บันทึก mobile baseline (screenshot/no-overflow/analyze/test) ตาม matrix ในส่วน 4.2
 - [ ] เตรียม Android emulator/device และระบุรุ่น/device ID สำหรับ mobile gate
-- [ ] ตัดสินใจ W2: ซ่อน face blur บน web หรือ server-side blur ผ่าน FFmpeg pipeline
-- [ ] ยืนยัน W3.2: web dev ใช้ `USE_BACKEND_AUTH=false` (anonymous/public only) หรือ `true` (ต้องเปิด server เสมอ) — แนะนำ `true` สำหรับทดสอบ web จริง
-- [ ] ยืนยัน W3.3: ซ่อน Facebook/LINE/TikTok บน web (backend 501) — Apple รอ paid dev account ตาม 13.2 blocker
+- [ ] ops (ทำจาก code ไม่ได้): เพิ่ม web origin ใน Authorized JavaScript origins ของ Google Web client ใน GCP Console (W3.1) — ขั้นตอนอยู่ในหมายเหตุ "งานค้าง" ของตาราง W3
+- [ ] ops (ทำจาก code ไม่ได้): เปิด backend (`websocket-server`) + เพิ่ม dev web origin ใน `ALLOWED_ORIGINS` แล้วรัน browser smoke ตามขั้นตอนในตาราง W3 (ปัจจุบัน `192.168.1.111:8080` = connection refused)
 - [ ] ตัดสินใจ W5.7: token storage บน web — คง localStorage ตาม 13.2 หรือลงทุน httpOnly cookie + CSRF (แผน 15) พร้อมกัน
 - [ ] ตัดสินใจ W4.5: เปิด Google Maps บน web หรือไม่ (cost decision — ขัด intent ของ Delivery plan)
 - [ ] ตัดสินใจ domain เสิร์ฟ web (`admin.sheserved.com` ตาม reverse proxy plan หรือแยก) และใช้ domain เดียวกันใน Caddy, `ALLOWED_ORIGINS`, OAuth และ CSP
-- [ ] ยืนยัน W3.6 socket token lifecycle: refresh/revoke/expiry ต้อง reconnect ด้วย token ใหม่หรือกลับสู่ anonymous/login โดยไม่ retry token เดิม
-- [ ] ตรวจ W3.9 passkeys bundle: ระบุว่าเปิดใช้จริงหรือคงไว้เป็น asset ที่ยังไม่ประกาศเป็น auth flow
 - [ ] ยืนยัน W4.4 external origins ใน CSP และ W4.6 renderer/service-worker/cache-busting profile ก่อน staging
 
 ## 6. ความสอดคล้องกับเอกสารที่มีอยู่

@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+
+import 'closed_ended_glass_primitives.dart';
+
+/// Phase 6.14 — question prompt card for the patient answer UI.
+///
+/// Purely presentational: renders the question text (and quiz icon) in either
+/// a circular card (center of the radial layout) or a rounded card (compact
+/// scroll layout). No options, no persistence.
+class ClosedEndedQuestionPrompt extends StatelessWidget {
+  final String questionText;
+
+  /// Diameter for [ClosedEndedQuestionPrompt.circular].
+  final double size;
+
+  /// Card width for [ClosedEndedQuestionPrompt.compact].
+  final double width;
+
+  final bool circular;
+  final Animation<double>? pulseAnimation;
+
+  const ClosedEndedQuestionPrompt.circular({
+    super.key,
+    required this.questionText,
+    required this.size,
+    this.pulseAnimation,
+  }) : width = 0,
+       circular = true;
+
+  const ClosedEndedQuestionPrompt.compact({
+    super.key,
+    required this.questionText,
+    required this.width,
+  }) : size = 0,
+       circular = false,
+       pulseAnimation = null;
+
+  @override
+  Widget build(BuildContext context) {
+    if (circular) {
+      final card = GlassCircleCard(
+        size: size,
+        glassOpacity: 0.10,
+        blurSigma: 24,
+        borderOpacity: 0.18,
+        innerShineOpacity: 0.10,
+        borderColor: Colors.white.withValues(alpha: 0.18),
+        tintColor: const Color(0xFF00BCD4).withValues(alpha: 0.05),
+        shadowColor: const Color(0xFF00BCD4).withValues(alpha: 0.08),
+        shadowBlur: 40,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.quiz_rounded,
+                size: 22,
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                questionText,
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final pulse = pulseAnimation;
+      if (pulse == null) return card;
+      return AnimatedBuilder(
+        animation: pulse,
+        builder: (_, _) {
+          final scale = 1.0 + (pulse.value * 0.03);
+          return Transform.scale(scale: scale, child: card);
+        },
+      );
+    }
+
+    return GlassRoundedCard(
+      width: width,
+      minHeight: 112,
+      glassOpacity: 0.12,
+      blurSigma: 20,
+      borderOpacity: 0.18,
+      innerShineOpacity: 0.10,
+      borderRadius: 20,
+      borderColor: Colors.white.withValues(alpha: 0.18),
+      tintColor: const Color(0xFF00BCD4).withValues(alpha: 0.05),
+      shadowColor: const Color(0xFF00BCD4).withValues(alpha: 0.08),
+      shadowBlur: 24,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.quiz_rounded,
+              size: width < 320 ? 18 : 22,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              questionText,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: const TextStyle(
+                fontFamily: 'SukhumvitSet',
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

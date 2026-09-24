@@ -109,13 +109,14 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       replyToId: fields[16] as String?,
       replyToContent: fields[17] as String?,
       replyToSenderId: fields[18] as String?,
+      closedEndedConfigJson: (fields[19] as Map?)?.cast<dynamic, dynamic>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(19)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -153,7 +154,9 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(17)
       ..write(obj.replyToContent)
       ..writeByte(18)
-      ..write(obj.replyToSenderId);
+      ..write(obj.replyToSenderId)
+      ..writeByte(19)
+      ..write(obj.closedEndedConfigJson);
   }
 
   @override

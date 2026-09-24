@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/core/constants/password_policy.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/models/user_model.dart';
+import '../../data/services/social_provider_policy.dart';
 import '../widgets/social_login_button.dart';
 import '../../../../shared/widgets/widgets.dart';
 
@@ -521,25 +522,34 @@ class _RegisterPageState extends State<RegisterPage>
         iconWidget = const SizedBox.shrink();
     }
 
-    return GestureDetector(
-      onTap: _isLoading ? null : onPressed,
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: NeumorphicTheme.baseColor,
-          shape: BoxShape.circle,
-          boxShadow: NeumorphicTheme.smallShadows(distance: 4, blur: 8),
-        ),
-        child: Center(
+    // W3.3: บน web provider ที่ backend ยังไม่รองรับ render เดิมแต่ disabled
+    final enabled = SocialProviderPolicy.isEnabled(provider);
+
+    return Tooltip(
+      message: enabled ? '' : SocialProviderPolicy.disabledReason(provider),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.45,
+        child: GestureDetector(
+          onTap: (_isLoading || !enabled) ? null : onPressed,
           child: Container(
-            width: 38,
-            height: 38,
+            width: 50,
+            height: 50,
             decoration: BoxDecoration(
-              color: iconBgColor,
+              color: NeumorphicTheme.baseColor,
               shape: BoxShape.circle,
+              boxShadow: NeumorphicTheme.smallShadows(distance: 4, blur: 8),
             ),
-            child: Center(child: iconWidget),
+            child: Center(
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(child: iconWidget),
+              ),
+            ),
           ),
         ),
       ),

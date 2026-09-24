@@ -5,7 +5,9 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/book_court_page.dart';
 import 'package:sheserved/features/sport_club/find_coach/presentation/pages/find_coach_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sport_club_page.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/sports_hub_page_indicator.dart';
+import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_bottom_navigation_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_drawer.dart';
@@ -13,7 +15,13 @@ import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 class SportsHubPage extends StatefulWidget {
   final Widget? findBuddiesPage;
 
-  const SportsHubPage({super.key, this.findBuddiesPage});
+  /// Index of the hub page shown first. `/community/sport-club` and legacy
+  /// entry points always use 1 (Find Buddies); dedicated Sports Hub routes
+  /// such as `/community/sports/courts` (0) and `/community/sports/coaches`
+  /// (2) land on their domain page directly.
+  final int initialPage;
+
+  const SportsHubPage({super.key, this.findBuddiesPage, this.initialPage = 1});
 
   @override
   State<SportsHubPage> createState() => _SportsHubPageState();
@@ -21,10 +29,33 @@ class SportsHubPage extends StatefulWidget {
 
 class _SportsHubPageState extends State<SportsHubPage> {
   final _findBuddiesController = SportClubPageController();
+  late final SportsHubController _hubController;
   int _currentPage = 1;
+
+  int get _initialPage => widget.initialPage.clamp(0, 2).toInt();
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPage = _initialPage;
+    _hubController = SportsHubController(
+      userIdProvider: () => AuthService.instance.currentUser?.id,
+    );
+    unawaited(_hubController.load());
+    AuthService.instance.addListener(_onAuthChanged);
+  }
+
+  void _onAuthChanged() {
+    final userId = AuthService.instance.currentUser?.id;
+    _hubController.handleUserChanged(userId);
+    // Load the new user's persisted hub filters (no-op on logout).
+    unawaited(_hubController.load());
+  }
 
   @override
   void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
+    _hubController.dispose();
     _findBuddiesController.dispose();
     super.dispose();
   }
@@ -125,14 +156,16 @@ class _SportsHubPageState extends State<SportsHubPage> {
                 ),
               ),
               child: SportsHubPager(
-                bookCourtPage: const BookCourtPage(),
+                initialPage: _initialPage,
+                bookCourtPage: BookCourtPage(hubController: _hubController),
                 findBuddiesPage:
                     widget.findBuddiesPage ??
                     SportClubPage(
                       embeddedInSportsHub: true,
                       controller: _findBuddiesController,
+                      hubController: _hubController,
                     ),
-                findCoachPage: const FindCoachPage(),
+                findCoachPage: FindCoachPage(hubController: _hubController),
                 onPageChanged: _handlePageChanged,
               ),
             ),
@@ -158,6 +191,7 @@ class SportsHubPager extends StatefulWidget {
   final Widget bookCourtPage;
   final Widget findBuddiesPage;
   final Widget findCoachPage;
+  final int initialPage;
   final ValueChanged<int>? onPageChanged;
 
   const SportsHubPager({
@@ -165,6 +199,7 @@ class SportsHubPager extends StatefulWidget {
     required this.bookCourtPage,
     required this.findBuddiesPage,
     required this.findCoachPage,
+    this.initialPage = 1,
     this.onPageChanged,
   });
 
@@ -174,12 +209,13 @@ class SportsHubPager extends StatefulWidget {
 
 class _SportsHubPagerState extends State<SportsHubPager> {
   late final PageController _pageController;
-  int _currentPage = 1;
+  late int _currentPage;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 1);
+    _currentPage = widget.initialPage.clamp(0, 2).toInt();
+    _pageController = PageController(initialPage: _currentPage);
   }
 
   @override

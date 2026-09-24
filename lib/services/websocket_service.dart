@@ -4,6 +4,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
+import '../core/network/authenticated_http_client.dart';
 import 'auth_service.dart';
 
 /// WebSocket Service for Real-time Communication
@@ -20,6 +21,16 @@ class WebSocketService {
   static const int _maxConnectionAttempts = 3;
   static const int _socketReconnectionAttempts = 10;
   Timer? _heartbeatTimer;
+
+  // ── W3.5/W3.6: token lifecycle state ──
+  // socket.io bakes `auth` into options at construction — internal
+  // auto-reconnect would keep sending the OLD token after a refresh.
+  // We therefore dispose+recreate the socket whenever the backend access
+  // token rotates, and stop entirely when tokens are cleared (revoke/logout).
+  String? _userId;
+  String? _authToken;
+  StreamSubscription<String?>? _tokenSub;
+  bool _handlingAuthFailure = false;
 
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
@@ -230,6 +241,12 @@ class WebSocketService {
       return;
     }
 
+    // W3.5: remember the credentials this socket was created with so a
+    // token rotation can rebuild the connection with the fresh token.
+    _userId = userId;
+    _authToken = authToken;
+    _watchTokenLifecycle();
+
     // Check connection attempts to prevent infinite retry
     if (_connectionAttempts >= _maxConnectionAttempts) {
       debugPrint(
@@ -307,6 +324,12 @@ class WebSocketService {
           );
         }
         _errorController.add('Connection error: $error');
+
+        // W3.6: handshake rejected by socket-auth (expired/revoked token or
+        // strict-mode legacy rejection) — refresh once or stop retrying.
+        if (_isSocketAuthError(error)) {
+          unawaited(_handleSocketAuthFailure());
+        }
       });
 
       // Location Events
@@ -789,6 +812,59 @@ class WebSocketService {
     });
   }
 
+  /// W3.6 — subscribe once to backend token rotation. A new access token
+  /// rebuilds the socket (socket.io cannot mutate auth on an existing
+  /// connection); `null` means logout/revoke → disconnect and stop retrying.
+  void _watchTokenLifecycle() {
+    _tokenSub ??= AuthenticatedHttpClient.instance.tokenChanges.listen((
+      token,
+    ) {
+      if (token == null) {
+        // Session revoked/logged out — never retry with the old token.
+        _authToken = null;
+        disconnect();
+        return;
+      }
+      if (_socket != null && token != _authToken) {
+        final uid = _userId;
+        disconnect(); // disposes the stale-token socket + resets attempts
+        if (uid != null && _isEnabled) {
+          unawaited(connect(userId: uid, authToken: token));
+        }
+      }
+    });
+  }
+
+  bool _isSocketAuthError(dynamic error) =>
+      error.toString().contains('Authentication failed');
+
+  /// Handshake auth was rejected: try one refresh (single-flight in
+  /// [AuthenticatedHttpClient]); on failure the session is revoked/expired —
+  /// clear tokens and stop the socket rather than retrying stale credentials.
+  Future<void> _handleSocketAuthFailure() async {
+    if (_handlingAuthFailure) return;
+    _handlingAuthFailure = true;
+    try {
+      final client = AuthenticatedHttpClient.instance;
+      if (_authToken == null) {
+        // Legacy/anonymous handshake rejected (e.g. STRICT_SOCKET_AUTH) —
+        // no refresh path exists; stop retrying.
+        disconnect();
+        _errorController.add('Verified login required for realtime updates');
+        return;
+      }
+      final refreshed = await client.refreshTokens();
+      if (!refreshed) {
+        await client.clearTokens();
+        disconnect();
+        _errorController.add('Session expired — please log in again');
+      }
+      // On success tokenChanges emitted the new token → listener reconnects.
+    } finally {
+      _handlingAuthFailure = false;
+    }
+  }
+
   /// Disconnect from server
   void disconnect() {
     _stopHeartbeat();
@@ -898,6 +974,8 @@ class WebSocketService {
 
   /// Dispose resources
   void dispose() {
+    _tokenSub?.cancel();
+    _tokenSub = null;
     disconnect();
     _connectionController.close();
     _locationController.close();

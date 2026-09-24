@@ -21,6 +21,8 @@ import '../../../../features/auth/data/repositories/user_repository.dart';
 import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_entry.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
+import '../../../../features/chat/data/repositories/chat_repository.dart'
+    show ClosedEndedRpcCode;
 import '../../data/models/consultation_package.dart';
 import '../widgets/package_wheel_selector.dart';
 import '../../../../features/admin/models/profession.dart';
@@ -55,12 +57,15 @@ import '../../data/models/expert_completion_status.dart';
 import '../../data/models/profession_package_rule.dart';
 import '../widgets/completion_checklist.dart';
 import '../widgets/finish_job_warning_dialog.dart';
+import '../widgets/closed_ended_dialog.dart';
+import '../widgets/radial_question_view.dart';
 
 class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
   final ConsultationEntry? entry; // For active consultations
   final bool readOnly; // true = ดูอย่างเดียว ไม่สามารถดำเนินการได้
-  final bool hasFinished; // true = provider จบงานแล้ว แต่ consultation ยังไม่ปิด
+  final bool
+  hasFinished; // true = provider จบงานแล้ว แต่ consultation ยังไม่ปิด
 
   const ChartBoardPage({
     super.key,
@@ -75,7 +80,10 @@ class ChartBoardPage extends StatefulWidget {
 }
 
 class _ChartBoardPageState extends State<ChartBoardPage>
-    with TickerProviderStateMixin, WidgetsBindingObserver, HealthPermissionMixin {
+    with
+        TickerProviderStateMixin,
+        WidgetsBindingObserver,
+        HealthPermissionMixin {
   final _chatRepository = ServiceLocator.instance.chatRepository;
   final _currentUser = AuthService.instance.currentUser;
   final TextEditingController _msgController = TextEditingController();
@@ -98,8 +106,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isConsultationActive = false; // Locked until paid (for patient)
   bool _isHeaderExpanded = true;
   bool _isProvider = false;
-  bool _hasSubmitted = false; // true = ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
-  bool _hasFinished = false; // true = provider จบงานแล้ว (multi-expert tracking)
+  bool _hasSubmitted =
+      false; // true = ผู้ป่วยกด "ยืนยันและส่งคำรักษา" แล้ว → back ไปหน้า profile/history
+  bool _hasFinished =
+      false; // true = provider จบงานแล้ว (multi-expert tracking)
 
   StreamSubscription? _messagesSub;
   List<ConsultationPackage> _availablePackages = [];
@@ -149,7 +159,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   List<ChatMessage> _requiredQuestions = [];
   ChatMessage? _activeRequiredQuestion;
   bool _showRequiredOverlay = false;
-  final TextEditingController _requiredAnswerController = TextEditingController();
+  final TextEditingController _requiredAnswerController =
+      TextEditingController();
   final FocusNode _requiredAnswerFocus = FocusNode();
   Timer? _typingTimer;
   DateTime? _lastTypingTime;
@@ -161,13 +172,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   bool _isRequiredToggle = false;
   String? _editingQuestionId;
 
+  // --- Closed-ended Questions (Phase 6.14) ---
+  /// Pending expert config waiting for the question text to be sent.
+  ClosedEndedConfig? _pendingClosedEndedConfig;
+  bool _showClosedEndedOverlay = false;
+
+  /// Draft selections keyed by question message id — survives closing,
+  /// switching questions and retries within the session.
+  final Map<String, int> _closedEndedDrafts = {};
+  final FocusNode _msgFocusNode = FocusNode();
+
   // Keyboard visibility for hiding banners
   bool _isKeyboardVisible = false;
 
   @override
   void initState() {
     super.initState();
-    _bodyMapChatController = BodyMapChatController(msgController: _msgController);
+    _bodyMapChatController = BodyMapChatController(
+      msgController: _msgController,
+    );
     // Robust provider check (matches Dashboard logic)
     _isProvider = _currentUser?.isProvider ?? false;
 
@@ -219,7 +242,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (_isProvider) _loadExpertCompletionStatus();
     _loadPackages();
     _loadProfessions();
-    _professionsRefreshController = ProfessionsRefreshController(onRefresh: _loadProfessions);
+    _professionsRefreshController = ProfessionsRefreshController(
+      onRefresh: _loadProfessions,
+    );
     _professionsRefreshController.start();
     WidgetsBinding.instance.addObserver(this);
     // Detect initial keyboard state
@@ -233,7 +258,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   /// โหลดสถานะการเสร็จงานของ experts ทั้งหมดใน consultation นี้
   Future<void> _loadCompletionStatus() async {
-    final consultationId = widget.entry?.id ?? widget.request?.id ?? _activeConsultationId;
+    final consultationId =
+        widget.entry?.id ?? widget.request?.id ?? _activeConsultationId;
     if (consultationId == null || consultationId.isEmpty) return;
 
     setState(() => _isCheckingCompletion = true);
@@ -241,16 +267,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       final repo = ServiceLocator.instance.consultationRepository;
       final status = await repo.getExpertCompletionStatus(consultationId);
       final currentUserId = _currentUser?.id;
-      final experts = (status['experts'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-      final hasCurrentUserFinished = currentUserId != null && experts.any((expert) {
-        return expert['provider_id']?.toString() == currentUserId &&
-            expert['is_finished'] == true;
-      });
+      final experts =
+          (status['experts'] as List?)?.cast<Map<String, dynamic>>() ??
+          const [];
+      final hasCurrentUserFinished =
+          currentUserId != null &&
+          experts.any((expert) {
+            return expert['provider_id']?.toString() == currentUserId &&
+                expert['is_finished'] == true;
+          });
 
       if (mounted) {
         setState(() {
           _completionStatus = status;
-          _hasFinished = widget.hasFinished || _hasFinished || hasCurrentUserFinished;
+          _hasFinished =
+              widget.hasFinished || _hasFinished || hasCurrentUserFinished;
           _isCheckingCompletion = false;
         });
       }
@@ -273,11 +304,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     setState(() => _isCheckingExpertCompletion = true);
     try {
       final repo = ServiceLocator.instance.consultationRepository;
-      final result = await repo.getMyCompletionStatus(consultationId, authUser.id);
+      final result = await repo.getMyCompletionStatus(
+        consultationId,
+        authUser.id,
+      );
 
       // Load profession package rules to know which conditions are actually required
       ProfessionPackageRule? rule;
-      if (packageId != null && packageId.isNotEmpty && professionId != null && professionId.isNotEmpty) {
+      if (packageId != null &&
+          packageId.isNotEmpty &&
+          professionId != null &&
+          professionId.isNotEmpty) {
         try {
           rule = await repo.getProfessionPackageRules(packageId, professionId);
         } catch (e) {
@@ -305,7 +342,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     try {
       final repo = ServiceLocator.instance.consultationRepository;
       final result = await repo.getAllExpertsCanFinish(consultationId);
-      final experts = (result['experts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final experts =
+          (result['experts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       if (mounted && _expertStatuses.isNotEmpty) {
         setState(() {
           for (final expert in _expertStatuses) {
@@ -475,7 +513,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .order('price');
 
       final pks = (response as List)
-          .map((e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => ConsultationPackage.fromJson(Map<String, dynamic>.from(e)),
+          )
           .toList();
 
       if (mounted) {
@@ -488,7 +528,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
         // If expert statuses already loaded, re-merge with package groups to show waiting icons
         if (_expertStatuses.isNotEmpty && _selectedPackage != null) {
-          final joined = _expertStatuses.where((e) => e['status'] == 'joined').toList();
+          final joined = _expertStatuses
+              .where((e) => e['status'] == 'joined')
+              .toList();
           final merged = _mergeWithPackageGroups(joined);
           _applyExpertStatuses(merged, source: 'loadPackages');
         }
@@ -501,12 +543,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   Future<void> _loadProfessions() async {
     try {
-      final professions = await ServiceLocator.instance.professionRepository.getAllProfessions();
+      final professions = await ServiceLocator.instance.professionRepository
+          .getAllProfessions();
       if (mounted) {
         setState(() => _professions = professions);
       }
       if (mounted && _selectedPackage != null && _expertStatuses.isNotEmpty) {
-        final joinedExperts = _expertStatuses.where((e) => e['status'] == 'joined').toList();
+        final joinedExperts = _expertStatuses
+            .where((e) => e['status'] == 'joined')
+            .toList();
         final merged = _mergeWithPackageGroups(joinedExperts);
         _applyExpertStatuses(merged, source: 'loadProfessions');
       }
@@ -517,13 +562,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   String? _canonicalPackageId() {
     final entryPackageId = widget.entry?.packageId?.trim();
-    if (entryPackageId != null && entryPackageId.isNotEmpty) return entryPackageId;
+    if (entryPackageId != null && entryPackageId.isNotEmpty)
+      return entryPackageId;
 
     final requestPackageId = widget.request?.packageId?.trim();
-    if (requestPackageId != null && requestPackageId.isNotEmpty) return requestPackageId;
+    if (requestPackageId != null && requestPackageId.isNotEmpty)
+      return requestPackageId;
 
-    final consultPackageId = _consultationData?['package_id']?.toString().trim();
-    if (consultPackageId != null && consultPackageId.isNotEmpty) return consultPackageId;
+    final consultPackageId = _consultationData?['package_id']
+        ?.toString()
+        .trim();
+    if (consultPackageId != null && consultPackageId.isNotEmpty)
+      return consultPackageId;
 
     return null;
   }
@@ -534,7 +584,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       return;
     }
 
-    final matched = _availablePackages.where((p) => p.id == targetPackageId).toList();
+    final matched = _availablePackages
+        .where((p) => p.id == targetPackageId)
+        .toList();
     if (matched.isNotEmpty) {
       _selectedPackage = matched.first;
     } else {
@@ -563,7 +615,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      final fallbackPackage = ConsultationPackage.fromJson(Map<String, dynamic>.from(packageResponse));
+      final fallbackPackage = ConsultationPackage.fromJson(
+        Map<String, dynamic>.from(packageResponse),
+      );
       if (mounted) {
         setState(() {
           _selectedPackage = fallbackPackage;
@@ -599,7 +653,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       return false;
     }
 
-    final missingCurrentProviders = currentProviderIds.difference(nextProviderIds);
+    final missingCurrentProviders = currentProviderIds.difference(
+      nextProviderIds,
+    );
     if (missingCurrentProviders.isNotEmpty) {
       final nextHasJoined = nextStatuses.any((e) => e['status'] == 'joined');
       if (!nextHasJoined) {
@@ -610,7 +666,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return true;
   }
 
-  void _applyExpertStatuses(List<Map<String, dynamic>> nextStatuses, {required String source, int? token}) {
+  void _applyExpertStatuses(
+    List<Map<String, dynamic>> nextStatuses, {
+    required String source,
+    int? token,
+  }) {
     if (token != null && token != _expertStatusesFetchToken) {
       return;
     }
@@ -625,9 +685,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   String _normalizeConsultationRole(String? raw) {
     final value = (raw ?? '').toLowerCase().trim();
     if (value.isEmpty) return '';
-    if (value.contains('professor') || value.contains('อาจารย์')) return 'professor';
-    if (value.contains('specialist') || value.contains('เฉพาะทาง')) return 'specialist';
-    if (value.contains('pharmacist') || value.contains('เภสัช')) return 'pharmacist';
+    if (value.contains('professor') || value.contains('อาจารย์'))
+      return 'professor';
+    if (value.contains('specialist') || value.contains('เฉพาะทาง'))
+      return 'specialist';
+    if (value.contains('pharmacist') || value.contains('เภสัช'))
+      return 'pharmacist';
     if (value.contains('nurse') || value.contains('พยาบาล')) return 'nurse';
     if (value == 'doctor_gp' || value == 'doctor_family') {
       return 'doctor';
@@ -638,7 +701,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (value == 'pharmacist') {
       return 'pharmacist';
     }
-    if (value.contains('doctor') || value.contains('แพทย์') || value == 'หมอ') return 'doctor';
+    if (value.contains('doctor') || value.contains('แพทย์') || value == 'หมอ')
+      return 'doctor';
     return value;
   }
 
@@ -660,7 +724,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     return '';
   }
-
 
   Future<void> _initChat() async {
     _isChatLoadingNotifier.value = true;
@@ -707,7 +770,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // 2. Fetch Consultation & Room Details
       final results = await Future.wait([
-        supabase.from('consultation_requests').select().eq('id', consultationId).maybeSingle(),
+        supabase
+            .from('consultation_requests')
+            .select()
+            .eq('id', consultationId)
+            .maybeSingle(),
         supabase.from('chat_rooms').select().eq('id', roomId).maybeSingle(),
       ]);
 
@@ -716,16 +783,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       if (consultData != null) {
         if (mounted) {
-          setState(() => _consultationData = consultData as Map<String, dynamic>);
+          setState(
+            () => _consultationData = consultData as Map<String, dynamic>,
+          );
         }
         _syncSelectedPackageFromConsultation();
         final status = consultData['status'] as String? ?? 'pending';
-        
+
         if (mounted) {
           setState(() {
             // Patient needs to confirm first, Providers can always see if they are assigned
             _isConsultationActive = (status == 'in_progress') || _isProvider;
-            
+
             if (consultData['package_id'] != null && _selectedPackage == null) {
               // Try to find in loaded packages later
             }
@@ -741,20 +810,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               if (updatedList.isEmpty) return;
               final updated = updatedList.first;
               final newProviderId = updated['provider_id'] as String?;
-              final oldProviderId = _consultationData?['provider_id'] as String?;
-              final oldStatus = _consultationData?['status'] as String? ?? 'pending';
+              final oldProviderId =
+                  _consultationData?['provider_id'] as String?;
+              final oldStatus =
+                  _consultationData?['status'] as String? ?? 'pending';
               if (mounted) {
                 setState(() {
                   _consultationData = updated;
                   final newStatus = updated['status'] as String? ?? 'pending';
-                  _isConsultationActive = (newStatus == 'in_progress') || _isProvider;
+                  _isConsultationActive =
+                      (newStatus == 'in_progress') || _isProvider;
                 });
               }
               // Re-fetch expert statuses when provider_id or status changes
               final cid = consultationId;
               final newStatus = updated['status'] as String? ?? 'pending';
-              
-              if ((newProviderId != oldProviderId || newStatus != oldStatus) && cid != null && cid.isNotEmpty) {
+
+              if ((newProviderId != oldProviderId || newStatus != oldStatus) &&
+                  cid != null &&
+                  cid.isNotEmpty) {
                 _fetchExpertStatuses(cid);
               }
             });
@@ -776,7 +850,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           final totalSeconds = sessionMins * 60;
 
           if (mounted) {
-            _timerController.remainingSeconds.value = (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
+            _timerController.remainingSeconds.value =
+                (totalSeconds - elapsedSeconds).clamp(0, totalSeconds);
             // ❌ ไม่เริ่ม timer ตรงนี้ — ต้องรอ _fetchExpertStatuses หรือ stream ตรวจสอบ expert ครบก่อน
           }
         }
@@ -791,7 +866,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               final updatedRoom = roomList.first;
               final newStartedAt = updatedRoom['started_at'] as String?;
               final newIsActive = updatedRoom['is_active'] as bool? ?? true;
-              final newSessionMins = (updatedRoom['session_minutes'] as int?) ?? 15;
+              final newSessionMins =
+                  (updatedRoom['session_minutes'] as int?) ?? 15;
 
               if (newStartedAt != null) {
                 _roomStartedAt = DateTime.parse(newStartedAt);
@@ -835,9 +911,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 'joinedAt': e['joined_at'],
                 'leftAt': e['left_at'],
                 'finishedAt': e['finished_at'],
-                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
-                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-                'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+                'providerAvatarUrl':
+                    e['provider_avatar_url'] ??
+                    e['provider_image_url'] ??
+                    e['avatar_url'] ??
+                    e['profile_image_url'] ??
+                    user['profile_image_url'],
+                'expertGroupIcon':
+                    e['expert_group_icon'] ??
+                    e['category_icon'] ??
+                    e['group_icon'] ??
+                    e['icon'],
+                'availabilityStatus':
+                    user['availability_status'] as String? ?? 'offline',
               };
             }).toList();
 
@@ -853,7 +939,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             if (currentUserId != null) {
               bool isFinishedInStream = false;
               for (final e in joined) {
-                if (e['providerId']?.toString() == currentUserId && e['finishedAt'] != null) {
+                if (e['providerId']?.toString() == currentUserId &&
+                    e['finishedAt'] != null) {
                   isFinishedInStream = true;
                   break;
                 }
@@ -865,13 +952,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
             // Start timer only when ALL required experts have joined (per improvement plan)
             // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ data (raw DB)
-            final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
-            final allRequiredJoined = requiredExperts.isNotEmpty &&
-                requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+            final requiredExperts = _expertStatuses
+                .where((e) => e['isRequired'] == true)
+                .toList();
+            final allRequiredJoined =
+                requiredExperts.isNotEmpty &&
+                requiredExperts.every(
+                  (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+                );
             // Fallback: if no required experts defined yet, start when ANY expert joins
-            final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
-            final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-            if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
+            final anyJoined = _expertStatuses.any(
+              (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+            );
+            final shouldStart =
+                allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
+            if (shouldStart &&
+                !_timerController.isRunning.value &&
+                _timerController.remainingSeconds.value > 0) {
               _startTimer();
             }
           });
@@ -882,15 +979,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           .stream(primaryKey: ['id'])
           .listen((userChanges) {
             final joinedProviderIds = _expertStatuses
-                .where((e) => e['status'] == 'joined' && e['providerId'] != null)
+                .where(
+                  (e) => e['status'] == 'joined' && e['providerId'] != null,
+                )
                 .map((e) => e['providerId'] as String)
                 .toSet();
             if (joinedProviderIds.isEmpty) return;
-            
+
             bool shouldRefresh = false;
             for (final change in userChanges) {
               final changedUserId = change['id'] as String?;
-              if (changedUserId != null && joinedProviderIds.contains(changedUserId)) {
+              if (changedUserId != null &&
+                  joinedProviderIds.contains(changedUserId)) {
                 shouldRefresh = true;
                 break;
               }
@@ -901,7 +1001,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           });
 
       // 4. Load Messages
-      final messages = await _chatRepository.getMessages(roomId, callerId: currentUserId);
+      final messages = await _chatRepository.getMessages(
+        roomId,
+        callerId: currentUserId,
+      );
 
       if (mounted) {
         _messagesNotifier.value = messages;
@@ -914,17 +1017,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         );
 
         // Subscribe to messages
-        _messagesSub = _chatRepository.streamMessages(roomId, callerId: currentUserId).listen((updatedMessages) {
-          if (mounted) {
-            _messagesNotifier.value = updatedMessages;
-            _scrollToBottom();
-            // Refresh body part counts on new messages (Phase 6.6)
-            _bodyMapChatController.loadMessageCounts(
-              roomId: roomId,
-              currentUserId: currentUserId,
-            );
-          }
-        });
+        _messagesSub = _chatRepository
+            .streamMessages(roomId, callerId: currentUserId)
+            .listen((updatedMessages) {
+              if (mounted) {
+                _messagesNotifier.value = updatedMessages;
+                _scrollToBottom();
+                // Refresh body part counts on new messages (Phase 6.6)
+                _bodyMapChatController.loadMessageCounts(
+                  roomId: roomId,
+                  currentUserId: currentUserId,
+                );
+              }
+            });
 
         _fadeController.forward();
         _slideController.forward();
@@ -941,7 +1046,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     try {
       final data = await Supabase.instance.client
           .from('consultation_room_experts')
-          .select('*, users!inner(availability_status, first_name, last_name, profile_image_url)')
+          .select(
+            '*, users!inner(availability_status, first_name, last_name, profile_image_url)',
+          )
           .eq('consultation_id', consultationId);
 
       for (final row in data) {
@@ -959,9 +1066,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           'joinedAt': e['joined_at'],
           'leftAt': e['left_at'],
           'finishedAt': e['finished_at'],
-          'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
-          'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-          'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+          'providerAvatarUrl':
+              e['provider_avatar_url'] ??
+              e['provider_image_url'] ??
+              e['avatar_url'] ??
+              e['profile_image_url'] ??
+              user['profile_image_url'],
+          'expertGroupIcon':
+              e['expert_group_icon'] ??
+              e['category_icon'] ??
+              e['group_icon'] ??
+              e['icon'],
+          'availabilityStatus':
+              user['availability_status'] as String? ?? 'offline',
         };
       }).toList();
 
@@ -992,9 +1109,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               'joinedAt': e['joined_at'],
               'leftAt': e['left_at'],
               'finishedAt': e['finished_at'],
-              'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
-              'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-              'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+              'providerAvatarUrl':
+                  e['provider_avatar_url'] ??
+                  e['provider_image_url'] ??
+                  e['avatar_url'] ??
+                  e['profile_image_url'] ??
+                  user['profile_image_url'],
+              'expertGroupIcon':
+                  e['expert_group_icon'] ??
+                  e['category_icon'] ??
+                  e['group_icon'] ??
+                  e['icon'],
+              'availabilityStatus':
+                  user['availability_status'] as String? ?? 'offline',
             };
           }).toList();
         }
@@ -1023,9 +1150,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 'joinedAt': e['joined_at'],
                 'leftAt': e['left_at'],
                 'finishedAt': e['finished_at'],
-                'providerAvatarUrl': e['provider_avatar_url'] ?? e['provider_image_url'] ?? e['avatar_url'] ?? e['profile_image_url'] ?? user['profile_image_url'],
-                'expertGroupIcon': e['expert_group_icon'] ?? e['category_icon'] ?? e['group_icon'] ?? e['icon'],
-                'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+                'providerAvatarUrl':
+                    e['provider_avatar_url'] ??
+                    e['provider_image_url'] ??
+                    e['avatar_url'] ??
+                    e['profile_image_url'] ??
+                    user['profile_image_url'],
+                'expertGroupIcon':
+                    e['expert_group_icon'] ??
+                    e['category_icon'] ??
+                    e['group_icon'] ??
+                    e['icon'],
+                'availabilityStatus':
+                    user['availability_status'] as String? ?? 'offline',
               };
             }).toList();
           }
@@ -1037,7 +1174,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final roomId = 'consult_$consultationId';
         final members = await Supabase.instance.client
             .from('chat_room_members')
-            .select('user_id, role, joined_at, users!inner(first_name, last_name, profile_image_url)')
+            .select(
+              'user_id, role, joined_at, users!inner(first_name, last_name, profile_image_url)',
+            )
             .eq('room_id', roomId)
             .eq('role', 'doctor');
 
@@ -1049,7 +1188,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           final user = e['users'] as Map<String, dynamic>? ?? {};
           final firstName = user['first_name'] as String? ?? '';
           final lastName = user['last_name'] as String? ?? '';
-          final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+          final name = '$firstName $lastName'.trim().isEmpty
+              ? 'ผู้ให้คำปรึกษา'
+              : '$firstName $lastName'.trim();
           return {
             'role': e['role'] ?? 'doctor',
             'name': name,
@@ -1059,7 +1200,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             'joinedAt': e['joined_at'],
             'providerAvatarUrl': user['profile_image_url'],
             'expertGroupIcon': null,
-            'availabilityStatus': user['availability_status'] as String? ?? 'offline',
+            'availabilityStatus':
+                user['availability_status'] as String? ?? 'offline',
           };
         }).toList();
 
@@ -1071,14 +1213,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final providerId = _consultationData!['provider_id'] as String;
         final user = await Supabase.instance.client
             .from('users')
-            .select('first_name, last_name, profile_image_url, profession_id, availability_status')
+            .select(
+              'first_name, last_name, profile_image_url, profession_id, availability_status',
+            )
             .eq('id', providerId)
             .maybeSingle();
 
         if (user != null) {
           final firstName = user['first_name'] as String? ?? '';
           final lastName = user['last_name'] as String? ?? '';
-          final name = '$firstName $lastName'.trim().isEmpty ? 'ผู้ให้คำปรึกษา' : '$firstName $lastName'.trim();
+          final name = '$firstName $lastName'.trim().isEmpty
+              ? 'ผู้ให้คำปรึกษา'
+              : '$firstName $lastName'.trim();
 
           // หา profession เพื่อใช้ role ที่ตรงกับ package expert groups
           final professionId = user['profession_id'] as String?;
@@ -1089,29 +1235,37 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 .catchError((e) => null);
             if (prof != null) {
               final profName = prof.name.toLowerCase();
-              if (profName.contains('เภสัช') || profName.contains('pharmacist')) {
+              if (profName.contains('เภสัช') ||
+                  profName.contains('pharmacist')) {
                 role = 'pharmacist';
-              } else if (profName.contains('เฉพาะทาง') || profName.contains('specialist')) {
+              } else if (profName.contains('เฉพาะทาง') ||
+                  profName.contains('specialist')) {
                 role = 'specialist';
-              } else if (profName.contains('อาจารย์') || profName.contains('professor')) {
+              } else if (profName.contains('อาจารย์') ||
+                  profName.contains('professor')) {
                 role = 'professor';
-              } else if (profName.contains('หมอ') || profName.contains('แพทย์') || profName.contains('doctor')) {
+              } else if (profName.contains('หมอ') ||
+                  profName.contains('แพทย์') ||
+                  profName.contains('doctor')) {
                 role = 'doctor';
               }
             }
           }
 
-          mapped = [{
-            'role': role,
-            'name': name,
-            'status': 'joined',
-            'providerId': providerId,
-            'isRequired': true,
-            'joinedAt': _consultationData!['updated_at'],
-            'providerAvatarUrl': user['profile_image_url'],
-            'expertGroupIcon': null,
-            'availabilityStatus': user['availability_status'] as String? ?? 'offline',
-          }];
+          mapped = [
+            {
+              'role': role,
+              'name': name,
+              'status': 'joined',
+              'providerId': providerId,
+              'isRequired': true,
+              'joinedAt': _consultationData!['updated_at'],
+              'providerAvatarUrl': user['profile_image_url'],
+              'expertGroupIcon': null,
+              'availabilityStatus':
+                  user['availability_status'] as String? ?? 'offline',
+            },
+          ];
         }
       }
 
@@ -1124,7 +1278,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           for (final expert in mapped) {
             if (expert['providerId'] == providerId) {
               expert['status'] = 'joined';
-              expert['joinedAt'] = _consultationData!['updated_at'] ?? DateTime.now().toIso8601String();
+              expert['joinedAt'] =
+                  _consultationData!['updated_at'] ??
+                  DateTime.now().toIso8601String();
               found = true;
               break;
             }
@@ -1133,7 +1289,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             // ไม่เจอ provider ใน mapped → อัปเดตแถว waiting แรกให้เป็น joined
             mapped.first['status'] = 'joined';
             mapped.first['providerId'] = providerId;
-            mapped.first['joinedAt'] = _consultationData!['updated_at'] ?? DateTime.now().toIso8601String();
+            mapped.first['joinedAt'] =
+                _consultationData!['updated_at'] ??
+                DateTime.now().toIso8601String();
           }
         }
       }
@@ -1154,7 +1312,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               .where((id) => id != null)
               .toSet();
           for (final expert in mapped) {
-            expert['hasPrescription'] = prescriberIds.contains(expert['providerId']);
+            expert['hasPrescription'] = prescriberIds.contains(
+              expert['providerId'],
+            );
           }
         } catch (e) {
           debugPrint('[ChartBoard] prescription query error: $e');
@@ -1164,8 +1324,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // Phase 6.8: Fetch can_finish status for ALL experts to show in banner
       try {
         final repo = ServiceLocator.instance.consultationRepository;
-        final canFinishResult = await repo.getAllExpertsCanFinish(consultationId);
-        final canFinishExperts = (canFinishResult['experts'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+        final canFinishResult = await repo.getAllExpertsCanFinish(
+          consultationId,
+        );
+        final canFinishExperts =
+            (canFinishResult['experts'] as List?)
+                ?.cast<Map<String, dynamic>>() ??
+            const [];
         final canFinishMap = <String, bool>{};
         for (final cf in canFinishExperts) {
           final pid = cf['provider_id']?.toString();
@@ -1191,13 +1356,23 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Start timer only when ALL required experts have joined (per improvement plan)
       // ✅ ใช้ _expertStatuses (merged กับ package groups) ไม่ใช่ mapped (raw joined)
-      final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
-      final allRequiredJoined = requiredExperts.isNotEmpty &&
-          requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+      final requiredExperts = _expertStatuses
+          .where((e) => e['isRequired'] == true)
+          .toList();
+      final allRequiredJoined =
+          requiredExperts.isNotEmpty &&
+          requiredExperts.every(
+            (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+          );
       // Fallback: if no required experts defined yet, start when ANY expert joins
-      final anyJoined = _expertStatuses.any((e) => e['status'] == 'joined' || e['joinedAt'] != null);
-      final shouldStart = allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
-      if (shouldStart && !_timerController.isRunning.value && _timerController.remainingSeconds.value > 0) {
+      final anyJoined = _expertStatuses.any(
+        (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+      );
+      final shouldStart =
+          allRequiredJoined || (requiredExperts.isEmpty && anyJoined);
+      if (shouldStart &&
+          !_timerController.isRunning.value &&
+          _timerController.remainingSeconds.value > 0) {
         _startTimer();
       }
     } catch (e, st) {
@@ -1209,9 +1384,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   /// Ensure the consultation chat room exists in chat_rooms table
   Future<void> _ensureConsultationRoom(
     String roomId,
-    String currentUserId,
-    {String? consultationId, String? title}
-  ) async {
+    String currentUserId, {
+    String? consultationId,
+    String? title,
+  }) async {
     try {
       final supabase = Supabase.instance.client;
       // Check if room already exists
@@ -1238,7 +1414,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             })
             .timeout(const Duration(seconds: 5));
       } else {
-        final participants = List<String>.from(existing['participant_ids'] ?? []);
+        final participants = List<String>.from(
+          existing['participant_ids'] ?? [],
+        );
         var shouldUpdate = false;
         if (!participants.contains(currentUserId)) {
           participants.add(currentUserId);
@@ -1254,7 +1432,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         if (title != null && title.isNotEmpty) updates['title'] = title;
         if (shouldUpdate) updates['participant_ids'] = participants;
 
-        if (shouldUpdate || (existing['room_type'] ?? existing['roomType']) != 'consultation') {
+        if (shouldUpdate ||
+            (existing['room_type'] ?? existing['roomType']) != 'consultation') {
           await supabase
               .from('chat_rooms')
               .update(updates)
@@ -1280,8 +1459,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     });
   }
 
-
-
   Future<void> _sendMessage() async {
     final text = _msgController.text.trim();
     if (text.isEmpty || _isSendingNotifier.value) return;
@@ -1289,6 +1466,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _isSendingNotifier.value = true;
 
     final roomId = _consultationRoomId ?? 'consultation_demo';
+
+    // ─── Expert: Closed-ended Question (Phase 6.14) ────────────
+    if (_isProvider && _pendingClosedEndedConfig != null) {
+      await _sendClosedEndedQuestion(text, roomId);
+      if (mounted) _isSendingNotifier.value = false;
+      return;
+    }
 
     // ─── Expert: Required Question ─────────────────────────────
     if (_isProvider && _isRequiredToggle) {
@@ -1331,7 +1515,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _scrollToBottom();
 
     try {
-      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
+      await _chatRepository.sendMessage(
+        message,
+        callerId: _currentUser?.id ?? '',
+      );
     } catch (e) {
       debugPrint('Send error: $e');
       // Keep message shown even if send fails (offline mode)
@@ -1364,7 +1551,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _scrollToBottom();
 
     try {
-      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
+      await _chatRepository.sendMessage(
+        message,
+        callerId: _currentUser?.id ?? '',
+      );
       if (mounted) {
         setState(() {
           _isRequiredToggle = false;
@@ -1373,6 +1563,46 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
     } catch (e) {
       debugPrint('Send required question error: $e');
+    }
+  }
+
+  /// Expert sends a closed-ended question via the trusted RPC.
+  /// On failure the pending config and typed text are kept for retry.
+  Future<void> _sendClosedEndedQuestion(String text, String roomId) async {
+    final config = _pendingClosedEndedConfig;
+    if (config == null) return;
+
+    final result = await _chatRepository.sendClosedEndedQuestion(
+      roomId: roomId,
+      content: text,
+      config: config,
+      bodyPart: _bodyMapChatController.activeBodyPart,
+      callerId: _currentUser?.id ?? '',
+    );
+
+    if (!mounted) return;
+    if (result.isSuccess) {
+      _msgController.clear();
+      final sent = result.message;
+      if (sent != null) {
+        _messagesNotifier.value = [..._messagesNotifier.value, sent];
+        _scrollToBottom();
+      }
+      setState(() => _pendingClosedEndedConfig = null);
+      _loadExpertCompletionStatus();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(switch (result.code) {
+            ClosedEndedRpcCode.forbidden ||
+            ClosedEndedRpcCode.unauthorized => 'ไม่มีสิทธิ์ส่งคำถามปลายปิด',
+            ClosedEndedRpcCode.invalidConfig ||
+            ClosedEndedRpcCode.invalidContent => 'รูปแบบคำถามไม่ถูกต้อง',
+            _ => 'ส่งคำถามปลายปิดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+          }),
+          backgroundColor: Colors.red.shade400,
+        ),
+      );
     }
   }
 
@@ -1405,7 +1635,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     // Otherwise edit in-place
     try {
-      await _chatRepository.editRequiredQuestion(_editingQuestionId!, text, _currentUser?.id ?? '');
+      await _chatRepository.editRequiredQuestion(
+        _editingQuestionId!,
+        text,
+        _currentUser?.id ?? '',
+      );
       _msgController.clear();
       if (mounted) {
         setState(() => _editingQuestionId = null);
@@ -1431,8 +1665,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
 
     try {
-      await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
-      if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
+      await _chatRepository.sendMessage(
+        message,
+        callerId: _currentUser?.id ?? '',
+      );
+      if (mounted)
+        _messagesNotifier.value = [..._messagesNotifier.value, message];
       _scrollToBottom();
     } catch (e) {
       debugPrint('Special send error: $e');
@@ -1625,7 +1863,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           attachmentType: 'image/png',
           status: MessageStatus.sent,
         );
-        await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
+        await _chatRepository.sendMessage(
+          message,
+          callerId: _currentUser?.id ?? '',
+        );
         if (mounted) {
           _messagesNotifier.value = [..._messagesNotifier.value, message];
           if (_isProvider) _loadExpertCompletionStatus();
@@ -1639,8 +1880,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     try {
       if (await _audioRecorder.hasPermission()) {
         // record_web ignores `path` and returns a blob URL from stop()
-        final fileName =
-            'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         final String path;
         if (kIsWeb) {
           path = fileName;
@@ -1681,8 +1921,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             attachmentUrl: url,
             status: MessageStatus.sent,
           );
-          await _chatRepository.sendMessage(message, callerId: _currentUser?.id ?? '');
-          if (mounted) _messagesNotifier.value = [..._messagesNotifier.value, message];
+          await _chatRepository.sendMessage(
+            message,
+            callerId: _currentUser?.id ?? '',
+          );
+          if (mounted)
+            _messagesNotifier.value = [..._messagesNotifier.value, message];
           _scrollToBottom();
         }
       }
@@ -1725,6 +1969,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _floatingButtonsScrollController?.dispose();
     _requiredAnswerController.dispose();
     _requiredAnswerFocus.dispose();
+    _msgFocusNode.dispose();
     _typingTimer?.cancel();
     _canFinishRefreshTimer?.cancel();
     _messagesSub?.cancel();
@@ -1744,7 +1989,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   @override
   Widget build(BuildContext context) {
-    final isProviderActive = _isProvider && (_consultationData?['status'] == 'in_progress');
+    final isProviderActive =
+        _isProvider && (_consultationData?['status'] == 'in_progress');
 
     return PopScope(
       canPop: !_hasSubmitted && !isProviderActive,
@@ -1756,7 +2002,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             context,
             '/profile',
             (route) => route.isFirst,
-            arguments: {'tab': 'history'}, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
+            arguments: {
+              'tab': 'history',
+            }, // แถบ "ประวัติปรึกษา" (สำหรับ consumer ทั่วไป)
           );
         }
         if (isProviderActive && !didPop) {
@@ -1777,213 +2025,244 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
           child: Scaffold(
             backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            centerTitle: false,
-            titleSpacing: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A4D10), size: 20),
-              onPressed: () async {
-                if (_hasSubmitted) {
-                  // หลังส่งคำรักษาแล้ว → ไปหน้า profile/history แทน analyze-body
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/profile',
-                    (route) => route.isFirst,
-                    arguments: {'tab': 'history'},
-                  );
-                  return;
-                }
+            appBar: AppBar(
+              backgroundColor: Colors.white,
+              elevation: 0,
+              centerTitle: false,
+              titleSpacing: 0,
+              leading: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Color(0xFF1A4D10),
+                  size: 20,
+                ),
+                onPressed: () async {
+                  if (_hasSubmitted) {
+                    // หลังส่งคำรักษาแล้ว → ไปหน้า profile/history แทน analyze-body
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/profile',
+                      (route) => route.isFirst,
+                      arguments: {'tab': 'history'},
+                    );
+                    return;
+                  }
 
-                // Provider ใน consultation ที่กำลังดำเนินอยู่ → ยืนยันก่อนออก
-                final isActive = _isProvider && (_consultationData?['status'] == 'in_progress');
-                if (isActive) {
-                  final shouldLeave = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('ยืนยันการออกจากห้องแชท'),
-                      content: const Text(
-                        'การปรึกษายังดำเนินอยู่ หากออกไปตอนนี้ สามารถกลับเข้ามาห้องแชทนี้ได้ผ่านเมนู "ประวัติการปรึกษา"\n\n'
-                        'คำแนะนำ: หากต้องการอัปโหลดเอกสารเพิ่มเติม กรุณาใช้ปุ่มใน dialog แจ้งเตือนแทนการออกจากหน้านี้',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('อยู่ต่อ'),
+                  // Provider ใน consultation ที่กำลังดำเนินอยู่ → ยืนยันก่อนออก
+                  final isActive =
+                      _isProvider &&
+                      (_consultationData?['status'] == 'in_progress');
+                  if (isActive) {
+                    final shouldLeave = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('ยืนยันการออกจากห้องแชท'),
+                        content: const Text(
+                          'การปรึกษายังดำเนินอยู่ หากออกไปตอนนี้ สามารถกลับเข้ามาห้องแชทนี้ได้ผ่านเมนู "ประวัติการปรึกษา"\n\n'
+                          'คำแนะนำ: หากต้องการอัปโหลดเอกสารเพิ่มเติม กรุณาใช้ปุ่มใน dialog แจ้งเตือนแทนการออกจากหน้านี้',
                         ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('อยู่ต่อ'),
                           ),
-                          child: const Text('ออกจากห้องแชท'),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('ออกจากห้องแชท'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (shouldLeave != true) return;
+                  }
+
+                  if (mounted) Navigator.pop(context);
+                },
+              ),
+              title: Row(
+                children: [
+                  // Patient avatar
+                  if (widget.entry?.patientAvatar != null &&
+                      widget.entry!.patientAvatar!.isNotEmpty)
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundImage: NetworkImage(
+                        widget.entry!.patientAvatar!,
+                      ),
+                      backgroundColor: Colors.grey.shade200,
+                    )
+                  else
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(
+                        0xFF4A8B2C,
+                      ).withOpacity(0.15),
+                      child: Text(
+                        (widget.entry?.patientName ?? 'U').substring(0, 1),
+                        style: const TextStyle(
+                          color: Color(0xFF4A8B2C),
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  // Name + subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.entry?.patientName ?? "ปรึกษาผู้เชี่ยวชาญ",
+                          style: const TextStyle(
+                            color: Color(0xFF1A4D10),
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          widget.readOnly
+                              ? 'ห้องปรึกษา (โหมดดูอย่างเดียว)'
+                              : (_isProvider
+                                    ? "ห้องปรึกษา (มุมมองแพทย์)"
+                                    : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม"),
+                          style: TextStyle(
+                            color: widget.readOnly
+                                ? Colors.grey.shade600
+                                : Colors.grey.shade500,
+                            fontSize: 10,
+                            fontWeight: widget.readOnly
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
                         ),
                       ],
                     ),
-                  );
-                  if (shouldLeave != true) return;
-                }
-
-                if (mounted) Navigator.pop(context);
-              },
-            ),
-          title: Row(
-            children: [
-              // Patient avatar
-              if (widget.entry?.patientAvatar != null && widget.entry!.patientAvatar!.isNotEmpty)
-                CircleAvatar(
-                  radius: 16,
-                  backgroundImage: NetworkImage(widget.entry!.patientAvatar!),
-                  backgroundColor: Colors.grey.shade200,
-                )
-              else
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: const Color(0xFF4A8B2C).withOpacity(0.15),
-                  child: Text(
-                    (widget.entry?.patientName ?? 'U').substring(0, 1),
-                    style: const TextStyle(
-                      color: Color(0xFF4A8B2C),
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 10),
-              // Name + subtitle
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.entry?.patientName ?? "ปรึกษาผู้เชี่ยวชาญ",
-                      style: const TextStyle(
-                        color: Color(0xFF1A4D10),
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      widget.readOnly
-                          ? 'ห้องปรึกษา (โหมดดูอย่างเดียว)'
-                          : (_isProvider
-                              ? "ห้องปรึกษา (มุมมองแพทย์)"
-                              : "กลุ่มผู้เชี่ยวชาญที่เข้าร่วม"),
-                      style: TextStyle(
-                        color: widget.readOnly
-                            ? Colors.grey.shade600
-                            : Colors.grey.shade500,
-                        fontSize: 10,
-                        fontWeight: widget.readOnly ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            _buildActionButtons(),
-          ],
-        ),
-        body: Column(
-          children: [
-            AnimatedOpacity(
-              opacity: _isKeyboardVisible ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 200),
-              child: _isKeyboardVisible ? const SizedBox.shrink() : Align(
-                alignment: Alignment.centerRight,
-                child: ExpertStatusBanner(
-                  expertStatuses: _expertStatuses,
-                  professions: _professions,
-                  timerBadge: _buildTimerBadge(),
-                  onAvatarTap: (providerId) {
-                    if (_isProvider && _currentUser?.id == providerId && _expertCompletionStatus != null) {
-                      _showCompletionChecklistDialog();
-                    }
-                  },
-                ),
-              ),
-            ),
-            // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว + ซ่อนเมื่อเปิดแป้นพิมพ์)
-            if (_isProvider && !widget.readOnly && permissionRequest != null)
-              AnimatedOpacity(
-                opacity: _isKeyboardVisible ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                child: _isKeyboardVisible ? const SizedBox.shrink() : HealthPermissionStatusBanner(
-                  request: permissionRequest!,
-                  onViewData: openGrantedDataSheet,
-                ),
-              ),
-            Expanded(
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9FBF8),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(30),
-                    topRight: Radius.circular(30),
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    // 1. Messages list (always at bottom)
-                    _buildMessagesList(),
-
-                    // 2. Blur overlay on top of messages when blocked
-                    if (_isBlocked && !_isProvider)
-                      Positioned.fill(
-                        child: ClipRect(
-                          child: BackdropFilter(
-                            filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-                            child: Container(
-                              color: Colors.white.withOpacity(0.25),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // 3. Floating required question buttons (above blur)
-                    if (_requiredQuestions.isNotEmpty)
-                      _buildRequiredQuestionFloatingButtons(),
-
-                    // 4. Required question answer overlay (topmost)
-                    if (!_isProvider)
-                      _buildRequiredQuestionOverlay(),
-                  ],
-                ),
-              ),
-            ),
-            // Pain level selector + Payment card for patients before payment/activation
-            if (!_isProvider && !_hasSubmitted && (_consultationData?['status'] ?? 'pending') == 'pending')
-              Column(
-                children: [
-                  PainLevelSelector(
-                    selectedPain: _selectedPain,
-                    onSelected: (pain) => setState(() => _selectedPain = pain),
-                  ),
-                  const SizedBox(height: 8),
-                  PaymentCard(
-                    isReady: _selectedPain != null,
-                    price: (widget.entry?.price ?? widget.request?.price ?? 0).toInt(),
-                    onSubmit: _submitConsultationRequest,
                   ),
                 ],
               ),
-            _buildBodyMapSummary(),
-            if (_isBlocked && !_isProvider)
-              _buildBlockedInput()
-            else
-              _buildChatInput(),
-          ],
+              actions: [_buildActionButtons()],
+            ),
+            body: Column(
+              children: [
+                AnimatedOpacity(
+                  opacity: _isKeyboardVisible ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: _isKeyboardVisible
+                      ? const SizedBox.shrink()
+                      : Align(
+                          alignment: Alignment.centerRight,
+                          child: ExpertStatusBanner(
+                            expertStatuses: _expertStatuses,
+                            professions: _professions,
+                            timerBadge: _buildTimerBadge(),
+                            onAvatarTap: (providerId) {
+                              if (_isProvider &&
+                                  _currentUser?.id == providerId &&
+                                  _expertCompletionStatus != null) {
+                                _showCompletionChecklistDialog();
+                              }
+                            },
+                          ),
+                        ),
+                ),
+                // Health Data Permission Status Banner — Doctor side only (ซ่อนในโหมดดูอย่างเดียว + ซ่อนเมื่อเปิดแป้นพิมพ์)
+                if (_isProvider &&
+                    !widget.readOnly &&
+                    permissionRequest != null)
+                  AnimatedOpacity(
+                    opacity: _isKeyboardVisible ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: _isKeyboardVisible
+                        ? const SizedBox.shrink()
+                        : HealthPermissionStatusBanner(
+                            request: permissionRequest!,
+                            onViewData: openGrantedDataSheet,
+                          ),
+                  ),
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF9FBF8),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(30),
+                        topRight: Radius.circular(30),
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        // 1. Messages list (always at bottom)
+                        _buildMessagesList(),
+
+                        // 2. Blur overlay on top of messages when blocked
+                        if (_isBlocked && !_isProvider)
+                          Positioned.fill(
+                            child: ClipRect(
+                              child: BackdropFilter(
+                                filter: ui.ImageFilter.blur(
+                                  sigmaX: 3,
+                                  sigmaY: 3,
+                                ),
+                                child: Container(
+                                  color: Colors.white.withOpacity(0.25),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        // 3. Closed-ended question UI (Phase 6.14 — below the
+                        //    floating buttons so switching stays possible)
+                        if (!_isProvider) _buildClosedEndedOverlay(),
+
+                        // 4. Floating required question buttons (above blur)
+                        if (_requiredQuestions.isNotEmpty)
+                          _buildRequiredQuestionFloatingButtons(),
+
+                        // 5. Required question answer overlay (topmost)
+                        if (!_isProvider) _buildRequiredQuestionOverlay(),
+                      ],
+                    ),
+                  ),
+                ),
+                // Pain level selector + Payment card for patients before payment/activation
+                if (!_isProvider &&
+                    !_hasSubmitted &&
+                    (_consultationData?['status'] ?? 'pending') == 'pending')
+                  Column(
+                    children: [
+                      PainLevelSelector(
+                        selectedPain: _selectedPain,
+                        onSelected: (pain) =>
+                            setState(() => _selectedPain = pain),
+                      ),
+                      const SizedBox(height: 8),
+                      PaymentCard(
+                        isReady: _selectedPain != null,
+                        price:
+                            (widget.entry?.price ?? widget.request?.price ?? 0)
+                                .toInt(),
+                        onSubmit: _submitConsultationRequest,
+                      ),
+                    ],
+                  ),
+                _buildBodyMapSummary(),
+                // Closed-ended UI hides the text input while active (Phase 6.14)
+                if ((_isBlocked || _showClosedEndedOverlay) && !_isProvider)
+                  _buildBlockedInput()
+                else
+                  _buildChatInput(),
+              ],
+            ),
+          ),
         ),
       ),
-    ),
-    ),
     );
   }
 
@@ -1998,7 +2277,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
           // Auto-refresh every 2 seconds while dialog is open
-          final refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+          final refreshTimer = Timer.periodic(const Duration(seconds: 2), (
+            _,
+          ) async {
             await _loadExpertCompletionStatus();
             if (mounted && _expertCompletionStatus != null) {
               setDlgState(() {});
@@ -2011,8 +2292,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               return true;
             },
             child: Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
+              ),
               backgroundColor: Colors.white,
               child: Stack(
                 clipBehavior: Clip.none,
@@ -2049,7 +2335,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                        icon: const Icon(
+                          Icons.close,
+                          size: 18,
+                          color: Colors.grey,
+                        ),
                         padding: const EdgeInsets.all(4),
                         constraints: const BoxConstraints(),
                         onPressed: () {
@@ -2074,7 +2364,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       await _loadExpertCompletionStatus();
     }
 
-    if (_expertCompletionStatus != null && !_expertCompletionStatus!.canFinish) {
+    if (_expertCompletionStatus != null &&
+        !_expertCompletionStatus!.canFinish) {
       final override = await showDialog<bool>(
         context: context,
         builder: (ctx) => FinishJobWarningDialog(
@@ -2198,7 +2489,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         } else {
           // ถ้าใช้ข้อมูลจาก package (consultation_room_experts ว่าง) ให้นับเราเป็น 1 คนที่จบงานแล้ว
           // ถ้าใช้ข้อมูลจาก RPC ให้ใช้ค่าจาก RPC
-          final finishedCount = usedPackageFallback ? 1 : (result['finished_count'] as int? ?? 1);
+          final finishedCount = usedPackageFallback
+              ? 1
+              : (result['finished_count'] as int? ?? 1);
           final remainingCount = totalExperts - finishedCount;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2244,7 +2537,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               Navigator.pop(ctx);
               await _revertFinish();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF9800)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF9800),
+            ),
             child: const Text('ยืนยัน'),
           ),
         ],
@@ -2314,18 +2609,27 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final activePart = _bodyMapChatController.activeBodyPart;
         final allMessages = _messagesNotifier.value;
         // Sort: required questions with answers use answer time; others use creation time
-        final sortedMessages = [...allMessages]..sort((a, b) {
-          final aTime = a.type == 'required_question' && a.requiredAnsweredAt != null
-              ? a.requiredAnsweredAt!
-              : a.createdAt;
-          final bTime = b.type == 'required_question' && b.requiredAnsweredAt != null
-              ? b.requiredAnsweredAt!
-              : b.createdAt;
-          return aTime.compareTo(bTime);
-        });
+        final sortedMessages = [...allMessages]
+          ..sort((a, b) {
+            final aIsQuestion =
+                a.type == 'required_question' ||
+                a.type == 'closed_ended_question';
+            final bIsQuestion =
+                b.type == 'required_question' ||
+                b.type == 'closed_ended_question';
+            final aTime = aIsQuestion && a.requiredAnsweredAt != null
+                ? a.requiredAnsweredAt!
+                : a.createdAt;
+            final bTime = bIsQuestion && b.requiredAnsweredAt != null
+                ? b.requiredAnsweredAt!
+                : b.createdAt;
+            return aTime.compareTo(bTime);
+          });
         final messages = activePart == null
             ? sortedMessages
-            : sortedMessages.where((m) => m.bodyPart?.toLowerCase().trim() == activePart).toList();
+            : sortedMessages
+                  .where((m) => m.bodyPart?.toLowerCase().trim() == activePart)
+                  .toList();
         return FadeTransition(
           opacity: _fadeAnimation,
           child: SlideTransition(
@@ -2344,14 +2648,26 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       orElse: () => {},
                     )['providerAvatarUrl']
                     ?.toString();
+                // Patient can tap a pending closed-ended bubble to (re)open
+                // the answer UI — equivalent to tapping the floating button.
+                final isPendingClosedEnded =
+                    !_isProvider &&
+                    msg.type == 'closed_ended_question' &&
+                    (msg.requiredStatus == RequiredStatus.unread ||
+                        msg.requiredStatus == RequiredStatus.reading);
                 return MessageBubble(
                   message: msg,
                   isMe: isMe,
                   hideBodyPart: activePart != null,
-                  bodyPartIconName: _bodyMapChatController.resolveBodyPartIconName(msg.bodyPart),
+                  bodyPartIconName: _bodyMapChatController
+                      .resolveBodyPartIconName(msg.bodyPart),
                   senderAvatarUrl: senderAvatarUrl,
-                  onViewPrescription: () => _viewPrescriptionDetails(msg.attachmentUrl),
+                  onViewPrescription: () =>
+                      _viewPrescriptionDetails(msg.attachmentUrl),
                   onViewSummary: () => _viewSummaryDetails(msg.attachmentUrl),
+                  onTap: isPendingClosedEnded
+                      ? () => _onPatientTapRequiredQuestion(msg)
+                      : null,
                 );
               },
             ),
@@ -2405,7 +2721,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                           Navigator.pop(context);
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => ManageQuickRepliesPage()),
+                            MaterialPageRoute(
+                              builder: (_) => ManageQuickRepliesPage(),
+                            ),
                           );
                         },
                         icon: const Icon(Icons.edit, size: 16),
@@ -2428,7 +2746,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: replies.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final reply = replies[index];
                         return ListTile(
@@ -2439,9 +2758,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                           ),
                           onTap: () {
                             Navigator.pop(context);
-                            _msgController.text = reply['content']?.toString() ?? '';
+                            _msgController.text =
+                                reply['content']?.toString() ?? '';
                             // Move cursor to the end
-                            _msgController.selection = TextSelection.fromPosition(
+                            _msgController
+                                .selection = TextSelection.fromPosition(
                               TextPosition(offset: _msgController.text.length),
                             );
                           },
@@ -2459,7 +2780,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   Widget _buildChatInput() {
     final status = _consultationData?['status'] as String? ?? 'pending';
-    final isChatActive = _isProvider || _hasSubmitted || status == 'in_progress';
+    final isChatActive =
+        _isProvider || _hasSubmitted || status == 'in_progress';
     final readOnly = widget.readOnly || _hasFinished;
     final safeBottom = MediaQuery.of(context).padding.bottom;
     return Padding(
@@ -2467,8 +2789,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Expert: Required question toggle
-          if (_isProvider && _editingQuestionId == null) ...[
+          // Expert: Required question toggle (hidden while a closed-ended
+          // config is pending — that type is always required)
+          if (_isProvider &&
+              _editingQuestionId == null &&
+              _pendingClosedEndedConfig == null) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 6, left: 12, right: 12),
               child: Row(
@@ -2482,13 +2807,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     'คำถามบังคับ',
                     style: TextStyle(
                       fontSize: 12,
-                      color: _isRequiredToggle ? AppColors.primary : Colors.grey,
+                      color: _isRequiredToggle
+                          ? AppColors.primary
+                          : Colors.grey,
                     ),
                   ),
                   if (_isRequiredToggle)
                     Container(
                       margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.shade100,
                         borderRadius: BorderRadius.circular(8),
@@ -2534,21 +2864,72 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       _editingQuestionId = null;
                       _msgController.clear();
                     }),
-                    child: Icon(Icons.close, size: 16, color: Colors.orange.shade700),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Expert: pending closed-ended config chip (Phase 6.14)
+          if (_isProvider && _pendingClosedEndedConfig != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 6, left: 12, right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.deepPurple.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.quiz_outlined,
+                    size: 16,
+                    color: Colors.deepPurple.shade400,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'คำถามปลายปิด · บังคับ '
+                      '(${_pendingClosedEndedConfig!.type == ClosedEndedType.quantitative ? 'เชิงปริมาณ' : 'เชิงคุณภาพ'} · '
+                      '${_pendingClosedEndedConfig!.answerCount} ตัวเลือก)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.deepPurple.shade400,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _pendingClosedEndedConfig = null),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: Colors.deepPurple.shade400,
+                    ),
                   ),
                 ],
               ),
             ),
           ],
           ChatInputBarWidget(
-            key: ValueKey('chat-input-${widget.readOnly}-$readOnly-$_hasFinished'),
+            key: ValueKey(
+              'chat-input-${widget.readOnly}-$readOnly-$_hasFinished',
+            ),
             controller: _msgController,
+            focusNode: _msgFocusNode,
             isProvider: _isProvider,
             isChatActive: isChatActive,
             isSending: _isSendingNotifier,
             isRecording: _isRecordingNotifier,
             readOnly: readOnly,
-            readOnlyLabel: _hasFinished ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ' : null,
+            readOnlyLabel: _hasFinished
+                ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ'
+                : null,
             onSend: _sendMessage,
             onStartRecording: _startRecording,
             onStopRecording: _stopRecording,
@@ -2556,12 +2937,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             onShowAttachmentMenu: _showAttachmentMenu,
             onShowQuickReplies: _showQuickRepliesBottomSheet,
             onTextChanged: (_) => setState(() {}),
-            activeBodyPartIconName: _bodyMapChatController.activeBodyPartIconName,
+            activeBodyPartIconName:
+                _bodyMapChatController.activeBodyPartIconName,
             onClearBodyPart: () {
               setState(() => _bodyMapChatController.clearBodyPart());
             },
             isRequiredMode: _isProvider && _isRequiredToggle,
             isEditingMode: _isProvider && _editingQuestionId != null,
+            isClosedEndedMode: _isProvider && _pendingClosedEndedConfig != null,
           ),
         ],
       ),
@@ -2638,13 +3021,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             backgroundColor: Color(0xFF4A8B2C),
           ),
         );
-        
+
         // Transition to Chat Mode
         setState(() {
           _activeConsultationId = consultationId;
           _isConsultationActive = true;
           _isHeaderExpanded = false;
-          _hasSubmitted = true; // ป้องกันกลับไปหน้า analyze-body → back ไป profile/history
+          _hasSubmitted =
+              true; // ป้องกันกลับไปหน้า analyze-body → back ไป profile/history
           // Update local _consultationData immediately so UI unlocks without
           // waiting for _initChat async re-fetch (avoids stale-data flicker).
           if (_consultationData != null) {
@@ -2656,7 +3040,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             };
           }
         });
-        
+
         // Re-init chat to ensure room is fully synced
         _initChat();
       }
@@ -2707,7 +3091,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     if (noteId == null) return;
     final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
     final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2721,9 +3105,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   bool _hasAllRequiredExpertsJoined() {
     // Check if ALL required experts have joined (per improvement plan)
-    final requiredExperts = _expertStatuses.where((e) => e['isRequired'] == true).toList();
+    final requiredExperts = _expertStatuses
+        .where((e) => e['isRequired'] == true)
+        .toList();
     if (requiredExperts.isNotEmpty) {
-      return requiredExperts.every((e) => e['status'] == 'joined' || e['joinedAt'] != null);
+      return requiredExperts.every(
+        (e) => e['status'] == 'joined' || e['joinedAt'] != null,
+      );
     }
     // Fallback: if no required experts defined, check if ANY expert joined
     final anyJoined = _expertStatuses.any(
@@ -2781,7 +3169,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ListTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.primary.withOpacity(0.1),
-                  child: const Icon(Icons.image_outlined, color: AppColors.primary),
+                  child: const Icon(
+                    Icons.image_outlined,
+                    color: AppColors.primary,
+                  ),
                 ),
                 title: const Text('ส่งรูปภาพ'),
                 onTap: () {
@@ -2793,13 +3184,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(Icons.medication_outlined, color: AppColors.primary),
+                    child: const Icon(
+                      Icons.medication_outlined,
+                      color: AppColors.primary,
+                    ),
                   ),
                   title: const Text('ออกใบสั่งยา'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    final consultationId = widget.entry?.id ?? widget.request?.id ?? '';
-                    final patientId = widget.entry?.patientId ?? widget.request?.userId ?? '';
+                    final consultationId =
+                        widget.entry?.id ?? widget.request?.id ?? '';
+                    final patientId =
+                        widget.entry?.patientId ?? widget.request?.userId ?? '';
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -2811,20 +3207,39 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                     );
                   },
                 ),
-                    // Health Data Permission Request (added to attachment menu)
-    ListTile(
-      leading: CircleAvatar(
-        backgroundColor: AppColors.primary.withOpacity(0.1),
-        child: const Icon(Icons.lock_open, color: AppColors.primary),
-      ),
-      title: const Text('ขอสิทธิ์ดูข้อมูลสุขภาพ'),
-      onTap: () {
-        Navigator.pop(ctx);
-        requestPermission();
-      },
-    ),
-    // Existing items continue below
+                // Health Data Permission Request (added to attachment menu)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: const Icon(
+                      Icons.lock_open,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  title: const Text('ขอสิทธิ์ดูข้อมูลสุขภาพ'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    requestPermission();
+                  },
+                ),
+                // Existing items continue below
 
+                // Phase 6.14: closed-ended question (always required)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                    child: const Icon(
+                      Icons.quiz_outlined,
+                      color: Colors.deepPurple,
+                    ),
+                  ),
+                  title: const Text('คำถามปลายปิด'),
+                  subtitle: const Text('คำถามบังคับพร้อมตัวเลือก'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openClosedEndedConfigDialog();
+                  },
+                ),
               ],
               const SizedBox(height: 20),
             ],
@@ -2834,7 +3249,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
+  /// Opens the closed-ended question builder. The returned config stays
+  /// pending while the expert types the question text in the chat input.
+  Future<void> _openClosedEndedConfigDialog() async {
+    final config = await ClosedEndedConfigDialog.show(context);
+    if (!mounted || config == null) return;
 
+    setState(() {
+      _pendingClosedEndedConfig = config;
+      // Closed-ended questions are always required; the open-ended
+      // toggle/edit session must not interfere.
+      _isRequiredToggle = false;
+      _editingQuestionId = null;
+    });
+    FocusScope.of(context).requestFocus(_msgFocusNode);
+  }
 
   Future<void> _startVideoCall() async {
     final roomId = widget.entry?.roomId ?? 'consult_${widget.request?.id}';
@@ -2888,7 +3317,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
           const SizedBox(height: 16),
           _buildDetailRow('ผู้ป่วย', widget.entry?.patientName ?? 'ไม่ระบุ'),
-          _buildDetailRow('แพ็คเกจ', widget.entry?.packageName ?? widget.request?.packageName ?? 'ไม่ระบุ'),
+          _buildDetailRow(
+            'แพ็คเกจ',
+            widget.entry?.packageName ??
+                widget.request?.packageName ??
+                'ไม่ระบุ',
+          ),
           _buildDetailRow(
             'อาการเบื้องต้น',
             resolveBodyAreaText(
@@ -2908,9 +3342,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          Expanded(
-            child: _buildSymptomsList(),
-          ),
+          Expanded(child: _buildSymptomsList()),
         ],
       ),
     );
@@ -2966,7 +3398,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   entrySymptomsChart: widget.entry?.symptomsChart,
                   consultDataSymptoms: _consultationData?['symptoms'],
                   consultDataBodyArea: _consultationData?['body_area'],
-                  consultDataSymptomsChart: _consultationData?['symptoms_chart'],
+                  consultDataSymptomsChart:
+                      _consultationData?['symptoms_chart'],
                 ),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
@@ -2991,7 +3424,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     for (final group in package.expertGroups) {
       // Find the corresponding profession for this group to get its icon/color fallback.
-      final prof = findProfessionByNameOrRole(_professions, group.name, group.role);
+      final prof = findProfessionByNameOrRole(
+        _professions,
+        group.name,
+        group.role,
+      );
 
       final groupMatchKey = _consultationMatchKey(group.name, group.role);
       final groupNameLower = group.name.toLowerCase().trim();
@@ -3001,18 +3438,25 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         if (assignedExpertIndexes.contains(i)) continue;
 
         final expert = merged[i];
-        if (expert['status'] == 'waiting') continue; // only check joined experts
+        if (expert['status'] == 'waiting')
+          continue; // only check joined experts
 
-        final expertNameLower = (expert['name'] as String? ?? '').toLowerCase().trim();
-        final expertGroupNameLower = (expert['expertGroupName'] as String? ?? '').toLowerCase().trim();
+        final expertNameLower = (expert['name'] as String? ?? '')
+            .toLowerCase()
+            .trim();
+        final expertGroupNameLower =
+            (expert['expertGroupName'] as String? ?? '').toLowerCase().trim();
         final expertMatchKey = _consultationMatchKey(
           expert['name'] as String?,
           expert['role']?.toString(),
         );
 
-        final matchesByRole = groupMatchKey.isNotEmpty && expertMatchKey == groupMatchKey;
-        final matchesByName = groupNameLower.isNotEmpty &&
-            (expertNameLower == groupNameLower || expertGroupNameLower == groupNameLower);
+        final matchesByRole =
+            groupMatchKey.isNotEmpty && expertMatchKey == groupMatchKey;
+        final matchesByName =
+            groupNameLower.isNotEmpty &&
+            (expertNameLower == groupNameLower ||
+                expertGroupNameLower == groupNameLower);
 
         if (matchesByRole || matchesByName) {
           matchedIndex = i;
@@ -3025,11 +3469,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         final expert = merged[matchedIndex];
         // Sync UI properties from the group to the joined expert
         expert['isRequired'] = expert['isRequired'] == true || group.isRequired;
-        expert['expertGroupIcon'] ??= prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
+        expert['expertGroupIcon'] ??=
+            prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
         expert['professionColorHex'] ??= prof?.colorHex;
         expert['expertGroupName'] ??= group.name;
       } else {
-        final iconName = prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
+        final iconName =
+            prof?.iconName ?? group.icon ?? iconNameFromRole(group.role);
         merged.add({
           'role': group.role,
           'name': group.name,
@@ -3062,7 +3508,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final currentCount = required.length;
     final hasNewQuestion = currentCount > previousCount;
 
-    final hasUnreadNow = required.any((q) => q.requiredStatus == RequiredStatus.unread);
+    final hasUnreadNow = required.any(
+      (q) => q.requiredStatus == RequiredStatus.unread,
+    );
     final isNewUnread = hasNewQuestion && hasUnreadNow;
 
     setState(() {
@@ -3072,9 +3520,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     // Scroll to latest unread button after rebuild.
     if (isNewUnread && _floatingButtonsScrollController != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _floatingButtonsScrollController?.hasClients != true) return;
+        if (!mounted || _floatingButtonsScrollController?.hasClients != true)
+          return;
 
-        final target = _floatingButtonsScrollController!.position.minScrollExtent;
+        final target =
+            _floatingButtonsScrollController!.position.minScrollExtent;
         if ((_floatingButtonsScrollController!.offset - target).abs() > 1.0) {
           _floatingButtonsScrollController!.animateTo(
             target,
@@ -3107,9 +3557,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   /// Track patient typing to delay block UI
   void _onPatientTyping() {
     if (_isProvider) return;
-    final pending = _requiredQuestions.where(
-      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
-    ).toList();
+    final pending = _requiredQuestions
+        .where(
+          (q) =>
+              q.requiredStatus == RequiredStatus.unread ||
+              q.requiredStatus == RequiredStatus.reading,
+        )
+        .toList();
     if (pending.isEmpty) return;
 
     // Patient is typing — temporarily unblock
@@ -3126,9 +3580,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   /// Check if patient should be blocked (has pending required questions)
   void _checkShouldBlock() {
-    final pending = _requiredQuestions.where(
-      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
-    ).toList();
+    final pending = _requiredQuestions
+        .where(
+          (q) =>
+              q.requiredStatus == RequiredStatus.unread ||
+              q.requiredStatus == RequiredStatus.reading,
+        )
+        .toList();
 
     if (pending.isEmpty) {
       if (mounted) setState(() => _isBlocked = false);
@@ -3154,7 +3612,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     // Auto-open overlay if only 1 pending question (patient side, not already open)
     // Phase 6.7: MUST NOT force overlay when patient is typing or keyboard is visible
-    final justClosed = _lastManualCloseTime != null &&
+    final justClosed =
+        _lastManualCloseTime != null &&
         DateTime.now().difference(_lastManualCloseTime!).inSeconds < 2;
     if (!_isProvider &&
         pending.length == 1 &&
@@ -3173,13 +3632,43 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   void _onPatientTapRequiredQuestion(ChatMessage question) async {
     if (_isProvider) return; // Only patient side
 
+    // Phase 6.14: closed-ended questions open the radial/adaptive UI.
+    if (question.type == 'closed_ended_question') {
+      if (question.closedEndedConfig == null ||
+          !question.closedEndedConfig!.isValid) {
+        // Unsupported/malformed config — keep chat usable instead of
+        // blocking on an unanswerable question.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('คำถามนี้ยังไม่พร้อมให้ตอบ')),
+        );
+        return;
+      }
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _activeRequiredQuestion = question;
+        _showClosedEndedOverlay = true;
+        _showRequiredOverlay = false;
+        _requiredAnswerController.clear();
+      });
+      await _chatRepository.markClosedEndedQuestionReading(
+        question.id,
+        callerId: _currentUser?.id ?? '',
+      );
+      return;
+    }
+
     setState(() {
       _activeRequiredQuestion = question;
       _showRequiredOverlay = true;
+      _showClosedEndedOverlay = false;
     });
 
     // Update status to reading
-    await _chatRepository.updateRequiredStatus(question.id, RequiredStatus.reading, callerId: _currentUser?.id ?? '');
+    await _chatRepository.updateRequiredStatus(
+      question.id,
+      RequiredStatus.reading,
+      callerId: _currentUser?.id ?? '',
+    );
 
     // Open keyboard
     Future.delayed(const Duration(milliseconds: 200), () {
@@ -3234,6 +3723,92 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
   }
 
+  /// Patient closes the closed-ended UI without confirming.
+  /// The server status stays 'reading' (Phase 6.14 requirement) so the
+  /// question can be reopened or switched to another pending question
+  /// while keeping the draft selection in [_closedEndedDrafts].
+  void _onClosedEndedClose() {
+    setState(() {
+      _showClosedEndedOverlay = false;
+      _activeRequiredQuestion = null;
+      _lastManualCloseTime = DateTime.now();
+    });
+  }
+
+  /// Persists a confirmed closed-ended answer via the trusted RPC.
+  /// Returns true only when the server confirmed the atomic write.
+  /// On failure the widget keeps the selection + reading status for retry.
+  Future<bool> _submitClosedEndedAnswer(ChatMessage question, int index) async {
+    final result = await _chatRepository.answerClosedEndedQuestion(
+      question.id,
+      index,
+      callerId: _currentUser?.id ?? '',
+    );
+    if (!mounted) return false;
+
+    if (result.isSuccess) {
+      _closedEndedDrafts.remove(question.id);
+      // Reflect the answered state immediately; realtime reconciles later.
+      final updated = question.copyWith(
+        requiredStatus: RequiredStatus.answered,
+        requiredAnswer: result.selectedValue ?? question.requiredAnswer,
+        requiredAnsweredAt: DateTime.now(),
+      );
+      _messagesNotifier.value = _messagesNotifier.value
+          .map((m) => m.id == question.id ? updated : m)
+          .toList();
+      setState(() {
+        _showClosedEndedOverlay = false;
+        _activeRequiredQuestion = null;
+        _lastManualCloseTime = DateTime.now();
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /// Phase 6.14: full-screen closed-ended answer UI on top of the chat.
+  /// The floating question buttons stay above it so the patient can
+  /// switch to another pending question without losing the draft.
+  Widget _buildClosedEndedOverlay() {
+    final question = _activeRequiredQuestion;
+    if (!_showClosedEndedOverlay ||
+        question == null ||
+        question.type != 'closed_ended_question') {
+      return const SizedBox.shrink();
+    }
+    final config = question.closedEndedConfig;
+    if (config == null) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black87,
+        // Clear the floating question button strip (top:8 + ~44px).
+        padding: const EdgeInsets.only(top: 76),
+        child: RadialQuestionView(
+          questionText: question.content,
+          config: config,
+          initialSelectedIndex: _closedEndedDrafts[question.id],
+          onDraftChanged: (i) {
+            if (i == null) {
+              _closedEndedDrafts.remove(question.id);
+            } else {
+              _closedEndedDrafts[question.id] = i;
+            }
+          },
+          onConfirmAnswer: (i, _) => _submitClosedEndedAnswer(question, i),
+          onClose: _onClosedEndedClose,
+          expertName: _expertStatuses.isNotEmpty
+              ? _expertStatuses.first['name'] as String?
+              : null,
+          expertAvatarUrl: _expertStatuses.isNotEmpty
+              ? _expertStatuses.first['providerAvatarUrl'] as String?
+              : null,
+        ),
+      ),
+    );
+  }
+
   /// Build floating required question buttons (above messages area)
   Widget _buildRequiredQuestionFloatingButtons() {
     return Positioned(
@@ -3249,86 +3824,88 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: _requiredQuestions.reversed.map((q) {
-          Color bgColor;
-          switch (q.requiredStatus) {
-            case RequiredStatus.unread:
-              bgColor = Colors.red.shade600;
-              break;
-            case RequiredStatus.reading:
-              bgColor = const Color(0xFFFFB300);
-              break;
-            case RequiredStatus.answered:
-              bgColor = Colors.green.shade600;
-              break;
-            default:
-              bgColor = Colors.grey.shade400;
-          }
-          final isUnread = q.requiredStatus == RequiredStatus.unread;
-          Widget button = GestureDetector(
-            onTap: () {
-              // Green (answered) buttons: scroll to question+answer in messages
-              if (q.requiredStatus == RequiredStatus.answered) {
-                _scrollToQuestion(q);
-                return;
+              Color bgColor;
+              switch (q.requiredStatus) {
+                case RequiredStatus.unread:
+                  bgColor = Colors.red.shade600;
+                  break;
+                case RequiredStatus.reading:
+                  bgColor = const Color(0xFFFFB300);
+                  break;
+                case RequiredStatus.answered:
+                  bgColor = Colors.green.shade600;
+                  break;
+                default:
+                  bgColor = Colors.grey.shade400;
               }
-              if (_isProvider) {
-                _onExpertTapQuestion(q);
-              } else {
-                _onPatientTapRequiredQuestion(q);
-              }
-            },
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: bgColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+              final isUnread = q.requiredStatus == RequiredStatus.unread;
+              Widget button = GestureDetector(
+                onTap: () {
+                  // Green (answered) buttons: scroll to question+answer in messages
+                  if (q.requiredStatus == RequiredStatus.answered) {
+                    _scrollToQuestion(q);
+                    return;
+                  }
+                  if (_isProvider) {
+                    _onExpertTapQuestion(q);
+                  } else {
+                    _onPatientTapRequiredQuestion(q);
+                  }
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Center(
-                child: isUnread
-                    // Red: expert profile image (who asked the question)
-                    ? _buildAvatar(
-                        imageUrl: _expertStatuses
-                            .firstWhere(
-                              (e) => e['providerId'] == q.requiredOwnerId,
-                              orElse: () => {},
-                            )['providerAvatarUrl']
-                            ?.toString(),
-                        fallbackIcon: Icons.warning_amber,
-                      )
-                    : (q.requiredStatus == RequiredStatus.reading
-                        // Amber: typing dots animation
-                        ? _TypingDots(color: Colors.white)
-                        // Green: patient profile image
-                        : _buildAvatar(
-                            imageUrl: widget.entry?.patientAvatar ?? _currentUser?.profileImageUrl,
-                            fallbackIcon: Icons.check,
-                          )),
-              ),
-            ),
-          );
+                  child: Center(
+                    child: isUnread
+                        // Red: expert profile image (who asked the question)
+                        ? _buildAvatar(
+                            imageUrl: _expertStatuses
+                                .firstWhere(
+                                  (e) => e['providerId'] == q.requiredOwnerId,
+                                  orElse: () => {},
+                                )['providerAvatarUrl']
+                                ?.toString(),
+                            fallbackIcon: Icons.warning_amber,
+                          )
+                        : (q.requiredStatus == RequiredStatus.reading
+                              // Amber: typing dots animation
+                              ? _TypingDots(color: Colors.white)
+                              // Green: patient profile image
+                              : _buildAvatar(
+                                  imageUrl:
+                                      widget.entry?.patientAvatar ??
+                                      _currentUser?.profileImageUrl,
+                                  fallbackIcon: Icons.check,
+                                )),
+                  ),
+                ),
+              );
 
-          // Ripple animation for unread (red) buttons
-          if (isUnread) {
-            button = _buildRippleWrapper(button);
-          }
+              // Ripple animation for unread (red) buttons
+              if (isUnread) {
+                button = _buildRippleWrapper(button);
+              }
 
-          return Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: button,
-          );
-        }).toList(),
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: button,
+              );
+            }).toList(),
+          ),
+        ),
       ),
-    ),
-  ),
-);
+    );
   }
 
   /// Water ripple effect behind a floating button
@@ -3366,12 +3943,15 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget _buildBlockedInput() {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     return Container(
-      padding: EdgeInsets.only(top: 16, bottom: 16 + safeBottom, left: 20, right: 20),
+      padding: EdgeInsets.only(
+        top: 16,
+        bottom: 16 + safeBottom,
+        left: 20,
+        right: 20,
+      ),
       decoration: BoxDecoration(
         color: Colors.red.shade50,
-        border: Border(
-          top: BorderSide(color: Colors.red.shade100),
-        ),
+        border: Border(top: BorderSide(color: Colors.red.shade100)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -3445,14 +4025,21 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                         const SizedBox(height: 4),
                         Text(
                           question.content,
-                          style: const TextStyle(fontSize: 15, color: Colors.black87),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   GestureDetector(
                     onTap: _onPatientCancelAnswer,
-                    child: const Icon(Icons.close, color: Colors.grey, size: 22),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.grey,
+                      size: 22,
+                    ),
                   ),
                 ],
               ),
@@ -3467,7 +4054,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                    const Icon(
+                      Icons.warning_amber,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
@@ -3475,7 +4066,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                         focusNode: _requiredAnswerFocus,
                         decoration: const InputDecoration(
                           hintText: 'พิมพ์คำตอบ...',
-                          hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+                          hintStyle: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 14,
+                          ),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(vertical: 12),
@@ -3565,12 +4159,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       return const SizedBox.shrink();
     }
     // Check if patient has pending required questions
-    final hasPendingRequired = !_isProvider && _requiredQuestions.any(
-      (q) => q.requiredStatus == RequiredStatus.unread || q.requiredStatus == RequiredStatus.reading,
-    );
+    final hasPendingRequired =
+        !_isProvider &&
+        _requiredQuestions.any(
+          (q) =>
+              q.requiredStatus == RequiredStatus.unread ||
+              q.requiredStatus == RequiredStatus.reading,
+        );
 
     // Hide pills if patient hasn't selected a floating button yet
-    if (hasPendingRequired && _activeRequiredQuestion == null && !_showRequiredOverlay) {
+    if (hasPendingRequired &&
+        _activeRequiredQuestion == null &&
+        !_showRequiredOverlay) {
       return const SizedBox.shrink();
     }
 
@@ -3609,7 +4209,11 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (iconNameToIconData(chip.iconName) != null) ...[
-                      Icon(iconNameToIconData(chip.iconName), size: 10, color: Colors.white),
+                      Icon(
+                        iconNameToIconData(chip.iconName),
+                        size: 10,
+                        color: Colors.white,
+                      ),
                       const SizedBox(width: 3),
                     ],
                     Text(
@@ -3683,7 +4287,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       },
     );
   }
-
 }
 
 /// Animated ripple ring for floating button water ripple effect
@@ -3799,7 +4402,9 @@ class _Dot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final phase = ((t + delay) % 1.0);
-    final opacity = phase < 0.5 ? 0.3 + (phase * 2 * 0.7) : 1.0 - ((phase - 0.5) * 2 * 0.7);
+    final opacity = phase < 0.5
+        ? 0.3 + (phase * 2 * 0.7)
+        : 1.0 - ((phase - 0.5) * 2 * 0.7);
     final scale = 0.6 + (opacity * 0.4);
     return Transform.scale(
       scale: scale,

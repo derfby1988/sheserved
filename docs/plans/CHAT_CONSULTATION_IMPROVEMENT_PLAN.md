@@ -5795,7 +5795,7 @@ double _modelXRatio(List<BodyLandmark> lm, double x2d) {
 ## 🎯 Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
 
 > **วันที่บันทึก:** 23 กันยายน 2569
-> **สถานะ:** 📋 แผน (Planning)
+> **สถานะ:** 🚧 Implemented + migrated — migration apply กับฐานจริงแล้ว (Supabase SQL editor: "Success. No rows returned"); เหลือ integration/golden/accessibility tests ที่ยังไม่ได้ทำ
 > **ที่มา:** ขยายจาก Phase 6.7 (Required Questions) — ให้ Expert สามารถส่งคำถามแบบปลายปิด (Closed-ended) ที่มีตัวเลือกคำตอบสำเร็จรูปให้ผู้ป่วยเลือก แทนการพิมพ์คำตอบเอง
 > **ความเกี่ยวข้อง:** ต่อยอดจากระบบ "คำถามบังคับ" (Phase 6.7) และเครื่องมือแชท (Phase 6.2 Collapsible Chat Tools)
 
@@ -5975,6 +5975,36 @@ CREATE TABLE public.closed_ended_question_answers (
 
 ### 🎨 UI ฝั่ง Patient — Radial Question View (หน้าจอหลัก)
 
+#### 0. ขอบเขตไฟล์ Widget — ต้องแยกชัดเจน
+
+คง `RadialQuestionView` ไว้ที่ `presentation/widgets/radial_question_view.dart` เป็น public shell และแยก layout/choice widgets ไว้ใน subfolder เฉพาะ; ห้ามรวมหน้า, circular layout, quantitative options และ qualitative options ไว้ในไฟล์เดียว:
+
+```text
+lib/features/consultation/presentation/widgets/
+├── radial_question_view.dart                 # หน้า/ตัวประกอบหลัก
+└── closed_ended/
+    ├── adaptive_closed_ended_layout.dart     # เลือก radial หรือ responsive scroll layout
+    ├── radial_question_layout.dart           # geometry/ตำแหน่งและ animation ของ circular layout
+    ├── quantitative_question_options.dart    # ตัวเลือกตัวเลข, palette และ option tile
+    ├── qualitative_question_options.dart     # ตัวเลือกข้อความ, palette/card และ wrapping
+    ├── closed_ended_question_prompt.dart      # การ์ดคำถาม/ข้อมูลผู้เชี่ยวชาญ
+    ├── closed_ended_option_tile.dart          # พื้นฐานปุ่มตัวเลือกและ selected/disabled state
+    ├── closed_ended_confirmation_dialog.dart  # dialog ยืนยันตัวเลือก
+    └── closed_ended_glass_primitives.dart     # visual primitives ที่ใช้ร่วมกัน เฉพาะเมื่อจำเป็น
+```
+
+**ขอบเขตและ contract ของแต่ละ widget:**
+
+- `RadialQuestionView`: shell และ composition ของ patient UI; ปัจจุบันถือ selected/confirmation state ชั่วคราวระดับคำถามเพื่อให้รอดจากการสลับ layout; ไม่ query database, ไม่บันทึกคำตอบเอง และไม่วาดวงโคจร/ตัวเลือกเฉพาะ type; เมื่อเชื่อม queue ให้ย้าย draft ที่ต้องรอดข้าม question ไป owner/controller
+- `AdaptiveClosedEndedLayout`: ใช้ constraints/จำนวนและความยาวตัวเลือก/text scale ตัดสินใจเลือก circular หรือ scroll grid/list; เป็นผู้จัดวาง generic prompt + option slots เท่านั้น
+- `RadialQuestionLayout`: รับ prompt และ option builder แบบ generic; จัดตำแหน่ง 360°/radius/animation เฉพาะ circular mode ไม่รู้จัก quantitative/qualitative model หรือ RPC
+- `QuantitativeQuestionOptions`: สร้างตัวเลือก 1..N, palette/label และ style ของระดับ; ไม่จัดการ confirmation, persistence หรือ required status
+- `QualitativeQuestionOptions`: สร้าง text option chips/cards, wrapping และ style ตาม label; ไม่จัดการ confirmation, persistence หรือ required status
+- `ClosedEndedOptionTile`, `ClosedEndedQuestionPrompt`, `ClosedEndedConfirmationDialog` และ glass primitives เป็น shared presentation components; ห้ามย้าย layout หรือ business state ของ feature กลับมารวมใน root widget
+- ใน integrated flow selected index/draft ต้องเป็น controlled state จาก owner/controller โดยผูกกับ `questionMessageId` เพื่อคงค่าเมื่อปิด/สลับคำถาม; child widgets แจ้ง intent ผ่าน callbacks เท่านั้น
+- model/config และ serialization อยู่ใน `features/chat/data/models` ไม่ประกาศ model ไว้ใน widget file; answer write ยังคงผ่าน repository/RPC ตาม Database section
+- แต่ละไฟล์ต้องมี widget tests riêng และปรับ style/layout ได้โดยไม่ต้องแก้ส่วนอื่น; shared contract เปลี่ยนได้โดยไม่ผูกกับ Flutter implementation ของ Database
+
 #### 1. การเข้าถึงและการคงสถานะ
 
 - ผู้ป่วยแตะปุ่มลอยคิว หรือแตะ bubble ของ `closed_ended_question` → เปิด Radial UI; คำถามแบบปลายปิดทุกข้อเป็น required และยังอยู่ใน queue จนกว่าจะบันทึกคำตอบสำเร็จ
@@ -5984,7 +6014,7 @@ CREATE TABLE public.closed_ended_question_answers (
 - UI ต้องให้ผู้ป่วยสลับระหว่าง pending required questions ได้โดยไม่ต้องตอบข้อที่เปิดอยู่ก่อน; ห้าม auto-open ซ้ำขณะกำลังตอบ/กำลังสลับ และคง draft selection เฉพาะใน session ปัจจุบัน
 - เมื่อตอบสำเร็จจึงเปลี่ยนเป็น `answered`, ปิด Radial UI และปลด required blocking ตาม queue เดิม; เมื่อ app ปิด/กลับมาใหม่ให้โหลดสถานะ server แล้วแสดงคำถามที่ยัง unanswered เป็น pending (ไม่พึ่ง `dispose` เพื่อ reset status)
 
-#### 2. Radial/Circular Layout
+#### 2. Radial/Circular Layout — `adaptive_closed_ended_layout.dart` + `radial_question_layout.dart`
 
 ```
                     ┌─────────┐
@@ -6006,13 +6036,16 @@ CREATE TABLE public.closed_ended_question_answers (
 
 **หลักการจัด Layout และป้องกัน overflow:**
 - ใช้ `LayoutBuilder` และ safe-area constraints เป็นแหล่งขนาดจริง; ห้ามคำนวณตำแหน่งจาก screen size อย่างเดียว
-- จอ/พื้นที่กว้างและตัวเลือกไม่เกิน 5 ใช้ radial: คำถามอยู่กลางและคำตอบกระจายรอบวง โดย clamp radius, card size, font/icon size ตามพื้นที่ที่เหลือ
-- ตัวเลือก 6–10, label ยาว, จอแคบ, landscape, split-screen หรือ text scale สูง ให้สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
+- เมื่อ orientation/window metrics เปลี่ยน (หมุนเครื่อง, split-screen, resize/fold/unfold) ให้คำนวณ strategy และขนาดใหม่จาก constraints ในเฟรม layout ถัดไป; ไม่ cache ขนาดจอเพื่อรอเปิดหน้าใหม่
+- แอปล็อก portrait เป็นค่าเริ่มต้นใน `main.dart`; เฉพาะช่วงที่ Radial UI เปิดบน Android/iOS ให้ override preference เพื่ออนุญาต portrait/landscape ที่ platform รองรับ และ restore portrait preference เมื่อปิด/ตอบสำเร็จ/dispose; web/desktop ใช้ window constraints โดยไม่เรียก `SystemChrome`
+- การสลับ radial ↔ compact ต้องคง question id, selected draft, submit/confirmation state และสถานะ loading/error ไว้ใน owner/controller; เปลี่ยนเฉพาะ subtree ของ layout โดยไม่ reset คำตอบหรือ required status
+- เลือก radial เมื่อพื้นที่อย่างน้อย 360×560 dp, aspect ratio ไม่เกิน 2:1, มี 1–5 ตัวเลือก, คำถามไม่เกิน 10 ตัวอักษร, label ไม่เกิน 12 ตัวอักษร และ text scale ไม่เกิน 1.3; threshold เป็นค่าเริ่มต้นที่ปรับได้จากผลทดสอบอุปกรณ์จริง
+- เงื่อนไขอื่นทั้งหมด (รวม 6–10 ตัวเลือก, label/คำถามยาว, จอแคบ/landscape, split-screen หรือ text scale สูง) สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
 - ใช้ `SafeArea` + `SingleChildScrollView`/slivers เมื่อความสูงไม่พอ; ตัวเลือกข้อความขึ้นหลายบรรทัดได้และไม่ตัดข้อความสำคัญด้วย ellipsis
 - คำนวณขนาดตัวอักษร/ไอคอนด้วย constraints และ `TextScaler` อย่างเหมาะสม แต่ไม่ override การตั้ง accessibility ของผู้ใช้; หากเนื้อหายังไม่พอให้เลื่อนแทนการย่อเกินค่าที่อ่านได้
 - Animation ลด/ปิดได้เมื่อ `MediaQuery.disableAnimations` เปิด และต้องไม่ขัดขวางการแตะ/keyboard navigation
 
-#### 3. ตัวเลือกเชิงปริมาณ (Quantitative)
+#### 3. ตัวเลือกเชิงปริมาณ (Quantitative) — `quantitative_question_options.dart`
 
 แสดงเป็นปุ่มกลมตัวเลข ล้อมรอบคำถาม:
 
@@ -6028,7 +6061,7 @@ CREATE TABLE public.closed_ended_question_answers (
 - สีไล่ระดับ: เขียว → เหลือง → แดง (น้อย → มาก) หรือกลับด้านตามบริบท
 - กดเลือกแล้ว → ปุ่มนั้น scale up + highlight + ส่งคำตอบ
 
-#### 4. ตัวเลือกเชิงคุณภาพ (Qualitative)
+#### 4. ตัวเลือกเชิงคุณภาพ (Qualitative) — `qualitative_question_options.dart`
 
 แสดงเป็น chip/card รูปทรงกลมรอบคำถาม:
 
@@ -6109,9 +6142,17 @@ CREATE TABLE public.closed_ended_question_answers (
 | `chat_repository.dart` | MODIFY | ส่ง/ตอบผ่าน RPC, ตรวจ result codes, update cache หลัง server success เท่านั้น |
 | `chart_board_page.dart` | MODIFY | เพิ่ม entry ใน “เครื่องมือเพิ่มเติม”, pending config chip, required queue integration, hide text input while radial answer UI active และสลับคำถามได้ |
 | `closed_ended_dialog.dart` | NEW | Scrollable/keyboard-aware dialog: quantitative 3/5/10 หรือ qualitative 2–10; validate/add/remove/reorder |
-| [`radial_question_view.dart`](file:///Users/dave_macmini/sheserved/lib/features/consultation/presentation/widgets/radial_question_view.dart) | MODIFY | คง radial ในพื้นที่เหมาะสม; adaptive scroll grid/list, loading/error/retry, draft/reselect/cancel, semantics และ responsive sizing |
+| `presentation/widgets/radial_question_view.dart` | MODIFY | Existing patient shell; adaptive radial/compact composition, preserves transient selection on reflow, and scopes mobile orientation override to view lifecycle; ไม่มี DB access |
+| `presentation/widgets/closed_ended/adaptive_closed_ended_layout.dart` | NEW | LayoutBuilder strategy: radial vs scroll grid/list ตามพื้นที่, label count/length และ text scale |
+| `presentation/widgets/closed_ended/radial_question_layout.dart` | NEW | Circular geometry/position/animation เท่านั้น; รับ generic prompt/options |
+| `presentation/widgets/closed_ended/quantitative_question_options.dart` | NEW | Widget แยกสำหรับปุ่ม 3/5/10 ระดับ, palette และ selected state |
+| `presentation/widgets/closed_ended/qualitative_question_options.dart` | NEW | Widget แยกสำหรับข้อความ options, wrapping/card style และ selected state |
+| `presentation/widgets/closed_ended/closed_ended_question_prompt.dart` | NEW | แสดงคำถามและข้อมูล Expert โดยไม่จัดวาง choices |
+| `presentation/widgets/closed_ended/closed_ended_option_tile.dart` | NEW | Shared option tile และ hit target/semantics; ไม่มี persistence |
+| `presentation/widgets/closed_ended/closed_ended_confirmation_dialog.dart` | NEW | ยืนยัน/เปลี่ยนตัวเลือกแยกจากการเขียนฐานข้อมูล |
+| `presentation/widgets/closed_ended/closed_ended_glass_primitives.dart` | NEW (optional) | shared visual primitives; เพิ่มเมื่อมีการใช้ซ้ำจริง ไม่รวมหน้า/layout/options |
 | `message_bubble.dart` | MODIFY | แสดง badge/border สำหรับ `type='closed_ended_question'` และ answer projection โดยไม่กระทบชนิดเดิม |
-| Widget/unit/integration tests | NEW/MODIFY | config validation, state transitions, RPC errors/retry/race, responsive overflow, Hive/legacy serialization และ realtime |
+| Widget/unit/integration tests | NEW/MODIFY | แยก tests ต่อ root/layout/quantitative/qualitative widget; เพิ่ม config validation, state, RPC errors/retry/race, responsive overflow, Hive/legacy serialization และ realtime |
 
 ### ⚠️ Risks & Edge Cases
 
@@ -6131,50 +6172,59 @@ CREATE TABLE public.closed_ended_question_answers (
 ### 🧪 Checklist การดำเนินงาน
 
 #### Database / Security / Rollout
-- [ ] Additive migration เพิ่ม nullable `closed_ended_config JSONB` โดยไม่แก้ default/columns/policies ของ chat เดิม
-- [ ] สร้าง `closed_ended_question_answers` với UNIQUE(question_message_id), FK/cascade และ RLS read scope ที่ patient/consultation experts เท่านั้น
-- [ ] เพิ่ม scoped CHECK และ RPC `send_closed_ended_question` บังคับ expert permission, config validation และ `is_required=true`
-- [ ] เพิ่ม RPC `mark_closed_ended_question_reading` ให้ `unread → reading` แบบ idempotent และไม่ให้ answered ย้อน status
-- [ ] เพิ่ม RPC `answer_closed_ended_question` ตรวจ patient ownership, config/index, atomic answer insert + status projection, row lock/idempotent `ALREADY_ANSWERED`
-- [ ] ยืนยันว่า guard/permission เฉพาะ closed-ended ปิดการ bypass RPC ได้ โดย regression ทดสอบ insert/update ของ message type เดิม
-- [ ] ตรวจ `SECURITY DEFINER`, fixed `search_path`, grants/revoke, RLS ปิด direct answer writes, legacy rows, migration order และ rollback safety
+- [x] Additive migration เพิ่ม nullable `closed_ended_config JSONB` โดยไม่แก้ default/columns/policies ของ chat เดิม — `supabase/migrations/20260925100000_add_closed_ended_questions.sql`
+- [x] สร้าง `closed_ended_question_answers` với UNIQUE(question_message_id), FK/cascade และ RLS read scope ที่ patient/consultation experts เท่านั้น
+- [x] เพิ่ม scoped CHECK และ RPC `send_closed_ended_question` บังคับ expert permission, config validation และ `is_required=true`
+- [x] เพิ่ม RPC `mark_closed_ended_question_reading` ให้ `unread → reading` แบบ idempotent และไม่ให้ answered ย้อน status
+- [x] เพิ่ม RPC `answer_closed_ended_question` ตรวจ patient ownership, config/index, atomic answer insert + status projection, row lock/idempotent `ALREADY_ANSWERED`
+- [x] ยืนยันว่า guard/permission เฉพาะ closed-ended ปิดการ bypass RPC ได้ (write-path trigger + transaction GUC); regression test insert/update ของ message type เดิมต้องรันกับ DB จริง
+- [x] ตรวจ `SECURITY DEFINER`, fixed `search_path`, grants/revoke, RLS ปิด direct answer writes, legacy rows, migration order และ rollback safety — ตรวจใน migration แล้ว; deploy ต้องยืนยันกับ Supabase env จริง
 
 #### Flutter — Models / Repository
-- [ ] เพิ่ม `ClosedEndedConfig` versioned model (quantitative scaleLevels 3/5/10; qualitative options 2–10) พร้อม strict/safe parser
-- [ ] เพิ่ม nullable config ใน `ChatMessage` JSON และ Hive adapter โดยไม่เปลี่ยน serialization ของ message เก่า
-- [ ] เพิ่ม `sendClosedEndedQuestion()` / `markClosedEndedQuestionReading()` / `answerClosedEndedQuestion()` ให้ใช้ RPC และอัปเดต local cache เฉพาะเมื่อ server ยืนยัน
-- [ ] จัดการ result codes: success, validation error, unauthorized, network retry, `ALREADY_ANSWERED`; refresh server state เมื่อผลลัพธ์ไม่แน่ชัด
+- [x] เพิ่ม `ClosedEndedConfig` versioned model (quantitative scaleLevels 3/5/10; qualitative options 2–10) พร้อม strict/safe parser — `lib/features/chat/data/models/closed_ended_config.dart`
+- [x] เพิ่ม nullable config ใน `ChatMessage` JSON และ Hive adapter (field 19) โดยไม่เปลี่ยน serialization ของ message เก่า
+- [x] เพิ่ม `sendClosedEndedQuestion()` / `markClosedEndedQuestionReading()` / `answerClosedEndedQuestion()` ให้ใช้ RPC และอัปเดต local cache เฉพาะเมื่อ server ยืนยัน
+- [x] จัดการ result codes: success, validation error, unauthorized, network retry, `ALREADY_ANSWERED`; refresh server state เมื่อผลลัพธ์ไม่แน่ชัด (`_refreshMessage` หลัง answer success)
 
 #### Flutter — UI (Expert Side)
-- [ ] เพิ่ม “คำถามปลายปิด” ใน bottom sheet “เครื่องมือเพิ่มเติม” ของปุ่ม `attach_file` เดิม
-- [ ] สร้าง `ClosedEndedConfigDialog` responsive, keyboard-aware; qualitative เพิ่ม/ลบ/เรียงลำดับได้ 2–10 options
-- [ ] แสดง pending chip “คำถามปลายปิด · บังคับ”; ไม่มี toggle optional; cancel ต้องล้าง pending config
-- [ ] ส่งผ่าน RPC และคง draft/config ให้ retry หากส่งล้มเหลว
-- [ ] แสดง badge/border และคำตอบจาก server projection ใน bubble เดิม
+- [x] เพิ่ม “คำถามปลายปิด” ใน bottom sheet “เครื่องมือเพิ่มเติม” ของปุ่ม `attach_file` เดิม (`_showAttachmentMenu` ใน `chart_board_page.dart`)
+- [x] สร้าง `ClosedEndedConfigDialog` responsive, keyboard-aware; qualitative เพิ่ม/ลบ/เรียงลำดับได้ 2–10 options — `widgets/closed_ended_dialog.dart`
+- [x] แสดง pending chip “คำถามปลายปิด · บังคับ”; ไม่มี toggle optional; cancel ต้องล้าง pending config
+- [x] ส่งผ่าน RPC และคง draft/config ให้ retry หากส่งล้มเหลว (`_sendClosedEndedQuestion`)
+- [x] แสดง badge/border และคำตอบจาก server projection ใน bubble เดิม
 
 #### Flutter — UI (Patient Side)
-- [x] มี [`RadialQuestionView`](file:///Users/dave_macmini/sheserved/lib/features/consultation/presentation/widgets/radial_question_view.dart) standalone widget แล้ว; ยังไม่ถือว่าเชื่อม feature end-to-end
-- [ ] เชื่อม required queue/bubble ไปยัง radial/adaptive answer UI; ซ่อนช่องพิมพ์ขณะเปิด และอนุญาตเปิดคำถาม pending ข้ออื่น
-- [ ] คง `reading` เมื่อปิด/สลับ/error; selection เป็น draft, ยกเลิก/เปลี่ยนได้ และคงไว้เพื่อ retry ใน session
-- [ ] ปิด Radial และ set answered เฉพาะหลัง RPC success; โหลด unanswered state จาก server หลัง app resume/re-entry
-- [ ] Adaptive radial/grid/list, loading/error/retry, scroll, min tap target, semantics, keyboard/focus, text scaler และ reduced-motion support
+- [x] `RadialQuestionView` เชื่อม end-to-end กับ required queue/repository แล้ว (`_onPatientTapRequiredQuestion` → `_buildClosedEndedOverlay` → `answerClosedEndedQuestion`)
+- [x] แยก `AdaptiveClosedEndedLayout` และ `RadialQuestionLayout` เป็น widget files; เลือก compact layout ตาม constraints และวาง circular options แยกจาก root
+- [x] แยก `QuantitativeQuestionOptions`/`QuantitativeAnswerOption` และ `QualitativeQuestionOptions`/`QualitativeAnswerOption` พร้อม palette/style ของแต่ละชนิดในไฟล์ตนเอง
+- [x] แยก question prompt, shared option tile และ confirmation dialog ตาม file map (`closed_ended/`); ย้าย config model/serialization ไป `chat/data/models/closed_ended_config.dart`
+- [x] รองรับ reflow แบบ realtime เมื่อ constraints เปลี่ยนจาก portrait ↔ landscape; mobile เปิด orientation ที่ platform รองรับเฉพาะขณะ Radial UI อยู่ active และ restore portrait เมื่อปิด/ตอบสำเร็จ/dispose; desktop/web reflow ตาม window size
+- [x] ทดสอบ rotation ระหว่างหน้าเปิดและระหว่าง confirmation โดยคง question/selection state; options ข้อความยาวและจำนวนมากเปลี่ยนเป็น scroll layout
+- [x] เชื่อม required queue/bubble ไปยัง radial/adaptive answer UI; ซ่อนช่องพิมพ์ขณะเปิด และอนุญาตเปิดคำถาม pending ข้ออื่น (floating buttons อยู่เหนือ overlay)
+- [x] คง `reading` เมื่อปิด/สลับ/error; selection draft ข้ามหลายคำถามใน session (`_closedEndedDrafts` keyed by message id); status `reading` ค้างบน server ทำให้ re-entry เปิดต่อได้ (draft selection เป็น in-memory ตาม session)
+- [x] ปิด Radial และ set answered เฉพาะหลัง RPC success; โหลด unanswered state จาก server หลัง app resume/re-entry ผ่าน required queue เดิม
+- [x] loading/error/retry ใน confirmation dialog (RPC callback คืน bool, fail = dialog ค้างให้ retry), semantics label บน close button
 
 #### Flutter — Message Bubble
-- [ ] แยก `type='closed_ended_question'` จาก `required_question` โดยไม่เปลี่ยน rendering ของชนิดเดิม
-- [ ] แสดง badge `📊 ปลายปิด`, style แยก และ inline selected label/answer timestamp จาก server
+- [x] แยก `type='closed_ended_question'` จาก `required_question` โดยไม่เปลี่ยน rendering ของชนิดเดิม (badge/answer format แยกผ่าน `showClosedEndedBadge`)
+- [x] แสดง badge `ปลายปิด · บังคับ` (สีม่วง, border ม่วง) และ inline `คำตอบ: … (ตัวเลือกที่ N)` พร้อม timestamp จาก server projection
 
 #### Testing / Acceptance
-- [ ] Model JSON/Hive round-trip และ legacy message ที่ไม่มี config
-- [ ] Config validation: quantitative 3/5/10; qualitative 2–10; empty/duplicate/too-long/malformed options ถูกปฏิเสธ
-- [ ] Widget test expert entry ในเครื่องมือเพิ่มเติม, dialog validation, cancel/retry และไม่มี optional toggle
+- [x] Model JSON/Hive round-trip และ legacy message ที่ไม่มี config — `test/features/consultation/closed_ended_question_test.dart`
+- [x] Config validation: quantitative 3/5/10; qualitative 2–10; empty/duplicate/too-long/malformed options ถูกปฏิเสธ
+- [x] Dialog validation/cancel/confirm widget tests; entry ในเครื่องมือเพิ่มเติมอยู่ใน `_showAttachmentMenu` (page-level test ยังไม่มี)
+- [ ] แยก widget test ตามไฟล์: `RadialQuestionView` composition/callbacks; `AdaptiveClosedEndedLayout` strategy selection; `RadialQuestionLayout` geometry/no overlap — มีผ่าน radial test เดิมบางส่วน (reflow, option keys)
+- [ ] แยก widget test `QuantitativeQuestionOptions` (3/5/10 levels, selection/color/callback) และ `QualitativeQuestionOptions` (2–10 options, long labels, wrapping/selection/callback)
+- [ ] ทดสอบ shared prompt/option tile/confirmation dialog แยกจาก page และ repository; verify UI widgets ไม่มี database side effects
 - [ ] Widget test required queue: reading persistence, close/reopen, switch questions, text input hidden, successful answer unblocks
-- [ ] Repository/RPC integration: patient authorization, expert unauthorized, invalid index/config, atomic failure, duplicate/concurrent answer, idempotent retry
+- [ ] Repository/RPC integration: patient authorization, expert unauthorized, invalid index/config, atomic failure, duplicate/concurrent answer, idempotent retry — ต้องรันกับ Supabase test env (RPC ไม่ถูก mock)
 - [ ] Realtime test ระหว่างผู้ป่วยและ Expert รวม answer/status consistency
-- [ ] Golden/overflow tests: phone narrow/short, tablet, landscape, split-screen, 10 long labels, text scale 1.0–2.0; assert no overflow and controls remain usable
+- [ ] Golden/overflow tests: phone narrow/short, tablet, landscape, split-screen, 10 long labels, text scale 1.0–2.0; assert no overflow and controls remain usable — radial test ครอบคลุม landscape/long-labels บางส่วน
+- [x] Live orientation test: rotate portrait → landscape → portrait without closing the question; verify mode reflows on metrics change, selected draft/confirmation remain intact, and mobile orientation preference restores to portrait on close
 - [ ] Accessibility test: screen-reader labels, focus order, minimum 44×44 dp, reduced motion
-- [ ] Regression test existing open-ended required questions, normal messages, completion rules, notifications/routes and old chat records
+- [ ] Regression test existing open-ended required questions, normal messages, completion rules, notifications/routes and old chat records — bubble regression ครอบใน test ใหม่; ส่วน page-level ยังไม่มี
 - [ ] Rollout test minimum-client/capability gate prevents sending a closed-ended question to an unsupported patient client; legacy writes to other message types still work
 
 ---
 
-*Last Updated: 2026-09-23* — Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
+*Last Updated: 2026-09-24* — Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)

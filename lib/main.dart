@@ -26,6 +26,11 @@ import 'features/health/presentation/pages/health_article_page.dart';
 import 'features/health/data/models/health_article_models.dart';
 import 'features/articles/presentation/pages/articles_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sports_hub_page.dart';
+import 'package:sheserved/features/sport_club/book_court/data/book_court_repository.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/pages/admin_court_owner_review_page.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/pages/court_owner_dashboard.dart';
+import 'package:sheserved/features/sport_club/find_coach/data/find_coach_repository.dart';
+import 'package:sheserved/features/sport_club/find_coach/presentation/pages/admin_coach_review_page.dart';
 import 'features/admin/presentation/pages/profession_admin_page.dart';
 import 'features/admin/presentation/pages/registration_field_admin_page.dart';
 import 'features/admin/presentation/pages/body_region_admin_page.dart';
@@ -313,6 +318,36 @@ class SheservedApp extends StatelessWidget {
             ),
         '/community/sport-club/my-groups': (context) => const MyGroupsPage(),
 
+        // Phase 21 — Sports Hub domain entry points. `/community/sports`
+        // lands on the hub's default page; courts/coaches land on their
+        // own page while the legacy `/community/sport-club` route keeps
+        // opening Find Buddies at index 1.
+        '/community/sports': (context) => const SportsHubPage(),
+        '/community/sports/courts': (context) =>
+            const SportsHubPage(initialPage: 0),
+        '/community/sports/coaches': (context) =>
+            const SportsHubPage(initialPage: 2),
+        '/community/sports/courts/owner/dashboard': (context) =>
+            AuthGuardWidget(
+              child: CourtOwnerDashboard(
+                repo: BookCourtRepository(Supabase.instance.client),
+              ),
+            ),
+        '/community/sports/courts/owner/applications': (context) =>
+            AuthGuardWidget(
+              requiredRole: 'admin',
+              child: AdminCourtOwnerReviewPage(
+                repo: BookCourtRepository(Supabase.instance.client),
+              ),
+            ),
+        '/community/sports/coaches/admin/review': (context) =>
+            AuthGuardWidget(
+              requiredRole: 'admin',
+              child: AdminCoachReviewPage(
+                repo: FindCoachRepository(Supabase.instance.client),
+              ),
+            ),
+
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),
         '/rescue-map': (context) => const RescuePage(),
@@ -340,6 +375,24 @@ class SheservedApp extends StatelessWidget {
               builder: (context) => const SportsHubPage(),
             );
           }
+        }
+
+        // Sports Hub venue detail/booking deep links resolve to the Book
+        // Court page of the hub; they never mix with group/session ids.
+        if (settings.name?.startsWith('/community/sports/courts/') == true &&
+            settings.name != '/community/sports/courts/owner/dashboard' &&
+            settings.name != '/community/sports/courts/owner/applications') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const SportsHubPage(initialPage: 0),
+          );
+        }
+        if (settings.name?.startsWith('/community/sports/coaches/') == true &&
+            settings.name != '/community/sports/coaches/admin/review') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const SportsHubPage(initialPage: 2),
+          );
         }
 
         // Community: Sport Club booking details (with legacy alias)

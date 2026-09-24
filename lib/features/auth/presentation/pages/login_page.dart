@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/services/social_auth_service.dart';
+import '../../data/services/social_provider_policy.dart';
 import '../widgets/social_login_button.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../shared/widgets/widgets.dart';
@@ -464,9 +465,15 @@ class _LoginPageState extends State<LoginPage>
     }
 
     final isLoadingThis = _isLoading && _loadingProvider == provider;
+    // W3.3: บน web provider ที่ backend ยังไม่รองรับ render เดิมแต่ disabled
+    final enabled = SocialProviderPolicy.isEnabled(provider);
 
-    return GestureDetector(
-      onTap: _isLoading ? null : onPressed,
+    return Tooltip(
+      message: enabled ? '' : SocialProviderPolicy.disabledReason(provider),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.45,
+        child: GestureDetector(
+          onTap: (_isLoading || !enabled) ? null : onPressed,
       child: Container(
         width: 50,
         height: 50,
@@ -495,6 +502,8 @@ class _LoginPageState extends State<LoginPage>
                     )
                   : iconWidget,
             ),
+          ),
+        ),
           ),
         ),
       ),

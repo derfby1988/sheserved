@@ -27,6 +27,13 @@ class AuthenticatedHttpClient {
   // Single-flight refresh: parallel 401s share one refresh attempt.
   Completer<bool>? _refreshCompleter;
 
+  /// W3.6 — token lifecycle broadcast: emits the new access token on every
+  /// login/refresh, and `null` when tokens are cleared (logout/revoke).
+  /// WebSocketService listens to reconnect with the fresh token or stop
+  /// retrying — the socket must never keep using a replaced/revoked token.
+  final _tokenChangeController = StreamController<String?>.broadcast();
+  Stream<String?> get tokenChanges => _tokenChangeController.stream;
+
   AuthenticatedHttpClient._internal();
 
   /// Headers ที่ต้องส่งทุก backend call — Content-Type + app version
@@ -53,6 +60,7 @@ class AuthenticatedHttpClient {
     _refreshToken = refreshToken;
     await _storage.write(key: 'access_token', value: accessToken);
     await _storage.write(key: 'refresh_token', value: refreshToken);
+    _tokenChangeController.add(accessToken);
   }
 
   /// Clear tokens on logout.
@@ -61,6 +69,15 @@ class AuthenticatedHttpClient {
     _refreshToken = null;
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
+    _tokenChangeController.add(null);
+  }
+
+  /// W3.6 — refresh outside the HTTP-401 path (e.g. socket handshake rejected
+  /// an expired access token). Single-flight shared with the HTTP path.
+  /// Returns false when there is no refresh token or the session is revoked.
+  Future<bool> refreshTokens() async {
+    if (_refreshToken == null) return false;
+    return _refreshOnce();
   }
 
   String? get accessToken => _accessToken;

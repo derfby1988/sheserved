@@ -22,11 +22,11 @@ class _SportsHubPageIndicatorState extends State<SportsHubPageIndicator> {
   static const _destinations = [
     _SportsHubDestination(
       shortTitle: 'สนาม',
-      title: 'จองสนามกีฬา',
+      title: 'จองสนามเล่นกีฬา',
       icon: Icons.sports_tennis_rounded,
     ),
     _SportsHubDestination(
-      shortTitle: 'เพื่อน',
+      shortTitle: 'ก๊วน',
       title: 'หาเพื่อนออกกำลังกาย',
       icon: Icons.groups_rounded,
     ),

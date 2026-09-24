@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sheserved/features/sport_club/book_court/presentation/pages/book_court_page.dart';
-import 'package:sheserved/features/sport_club/find_coach/presentation/pages/find_coach_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sports_hub_page.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/sports_hub_page_indicator.dart';
 
@@ -52,18 +50,22 @@ void main() {
       expect(changedPages, containsAll([2, 1, 0]));
     });
 
-    testWidgets('placeholder pages preserve horizontal PageView swipes', (
+    testWidgets('lightweight pages preserve horizontal PageView swipes', (
       tester,
     ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: SportsHubPager(
-              bookCourtPage: const BookCourtPage(),
+              bookCourtPage: const Center(
+                child: Text('Book Court content'),
+              ),
               findBuddiesPage: const Center(
                 child: Text('Find Buddies content'),
               ),
-              findCoachPage: const FindCoachPage(),
+              findCoachPage: const Center(
+                child: Text('Find Coach content'),
+              ),
             ),
           ),
         ),
@@ -77,10 +79,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey<int>(2)), findsOneWidget);
-      expect(
-        find.text('พื้นที่สำหรับฟีเจอร์นี้กำลังอยู่ระหว่างการพัฒนา'),
-        findsOneWidget,
-      );
+      expect(find.text('Find Coach content'), findsOneWidget);
+      expect(find.text('หาโค้ช/เทรนเนอร์'), findsOneWidget);
 
       await tester.drag(pageView, const Offset(520, 0));
       await tester.pumpAndSettle();
@@ -140,7 +140,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Find Coach content'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('จองสนามกีฬา'));
+      await tester.tap(find.byTooltip('จองสนามเล่นกีฬา'));
       await tester.pumpAndSettle();
       expect(find.text('Book Court content'), findsOneWidget);
     });
@@ -206,7 +206,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('จองสนามกีฬา'), findsOneWidget);
+      expect(find.byTooltip('จองสนามเล่นกีฬา'), findsOneWidget);
       expect(find.byTooltip('หาเพื่อนออกกำลังกาย'), findsOneWidget);
       expect(find.byTooltip('หาโค้ช/เทรนเนอร์'), findsOneWidget);
       expect(find.byType(SingleChildScrollView), findsNothing);
@@ -237,7 +237,7 @@ void main() {
       );
 
       for (final tooltip in [
-        'จองสนามกีฬา',
+        'จองสนามเล่นกีฬา',
         'หาเพื่อนออกกำลังกาย',
         'หาโค้ช/เทรนเนอร์',
         'ลากเพื่อเปลี่ยนหน้า',

@@ -21,6 +21,9 @@ class ChatInputBarWidget extends StatelessWidget {
   final VoidCallback? onClearBodyPart;
   final bool isRequiredMode;
   final bool isEditingMode;
+  // Phase 6.14: expert is composing a closed-ended question (chip pending).
+  final bool isClosedEndedMode;
+  final FocusNode? focusNode;
 
   const ChatInputBarWidget({
     super.key,
@@ -42,6 +45,8 @@ class ChatInputBarWidget extends StatelessWidget {
     this.onClearBodyPart,
     this.isRequiredMode = false,
     this.isEditingMode = false,
+    this.isClosedEndedMode = false,
+    this.focusNode,
   });
 
   @override
@@ -112,18 +117,32 @@ class ChatInputBarWidget extends StatelessWidget {
     // Determine colors and hint based on mode
     final inputBorderColor = isEditingMode
         ? Colors.orange.shade200
+        : isClosedEndedMode
+        ? Colors.deepPurple.shade200
         : isRequiredMode
-            ? Colors.red.shade200
-            : const Color(0xFF4A8B2C).withOpacity(0.3);
+        ? Colors.red.shade200
+        : const Color(0xFF4A8B2C).withOpacity(0.3);
     final inputBgColor = isEditingMode ? Colors.grey.shade100 : Colors.white;
-    final inputTextColor = isEditingMode ? Colors.grey.shade500 : Colors.black87;
+    final inputTextColor = isEditingMode
+        ? Colors.grey.shade500
+        : Colors.black87;
     final hintText = isEditingMode
         ? 'แก้ไขคำถาม...'
+        : isClosedEndedMode
+        ? 'พิมพ์คำถามปลายปิด...'
         : isRequiredMode
-            ? 'พิมพ์คำถามบังคับ...'
-            : 'ถามผู้เชี่ยวชาญ...';
-    final sendIcon = isRequiredMode ? Icons.warning_amber : Icons.send_rounded;
-    final sendBgColor = isRequiredMode ? Colors.red.shade600 : const Color(0xFF4A8B2C);
+        ? 'พิมพ์คำถามบังคับ...'
+        : 'ถามผู้เชี่ยวชาญ...';
+    final sendIcon = isClosedEndedMode
+        ? Icons.quiz_outlined
+        : isRequiredMode
+        ? Icons.warning_amber
+        : Icons.send_rounded;
+    final sendBgColor = isClosedEndedMode
+        ? Colors.deepPurple.shade400
+        : isRequiredMode
+        ? Colors.red.shade600
+        : const Color(0xFF4A8B2C);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -163,10 +182,7 @@ class ChatInputBarWidget extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: inputBgColor,
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: inputBorderColor,
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: inputBorderColor, width: 1.5),
                     ),
                     child: Row(
                       children: [
@@ -175,15 +191,23 @@ class ChatInputBarWidget extends StatelessWidget {
                           const SizedBox(width: 4),
                           GestureDetector(
                             onTap: onClearBodyPart,
-                            child: Icon(Icons.close, size: 14, color: Colors.orange.shade700),
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.orange.shade700,
+                            ),
                           ),
                           const SizedBox(width: 6),
                         ],
                         Expanded(
                           child: TextField(
                             controller: controller,
+                            focusNode: focusNode,
                             enabled: !isEditingMode,
-                            style: TextStyle(color: inputTextColor, fontSize: 14),
+                            style: TextStyle(
+                              color: inputTextColor,
+                              fontSize: 14,
+                            ),
                             decoration: InputDecoration(
                               hintText: hintText,
                               hintStyle: TextStyle(
@@ -198,7 +222,9 @@ class ChatInputBarWidget extends StatelessWidget {
                               filled: true,
                               fillColor: Colors.transparent,
                               isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
                             ),
                             onChanged: onTextChanged,
                             onSubmitted: (_) => onSend(),
@@ -216,7 +242,8 @@ class ChatInputBarWidget extends StatelessWidget {
                     final recording = isRecording.value;
                     return AnimatedSwitcher(
                       duration: const Duration(milliseconds: 200),
-                      transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                      transitionBuilder: (child, anim) =>
+                          ScaleTransition(scale: anim, child: child),
                       child: hasText
                           ? buildActionButton(
                               key: const ValueKey('send'),
@@ -241,10 +268,11 @@ class ChatInputBarWidget extends StatelessWidget {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: (recording
-                                              ? Colors.redAccent
-                                              : const Color(0xFF4A8B2C))
-                                          .withOpacity(0.3),
+                                      color:
+                                          (recording
+                                                  ? Colors.redAccent
+                                                  : const Color(0xFF4A8B2C))
+                                              .withOpacity(0.3),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     ),
@@ -282,7 +310,11 @@ class ChatInputBarWidget extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.lock_outline, size: 14, color: Colors.orange.shade800),
+                      Icon(
+                        Icons.lock_outline,
+                        size: 14,
+                        color: Colors.orange.shade800,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'กดยืนยันเพื่อเริ่มต้นการแชท',
@@ -316,11 +348,15 @@ class ChatInputBarWidget extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.visibility_outlined,
-                          size: 18, color: Colors.grey.shade600),
+                      Icon(
+                        Icons.visibility_outlined,
+                        size: 18,
+                        color: Colors.grey.shade600,
+                      ),
                       const SizedBox(width: 8),
                       Text(
-                        readOnlyLabel ?? 'โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม',
+                        readOnlyLabel ??
+                            'โหมดดูอย่างเดียว — กดรับงานเพื่อเข้าร่วม',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey.shade700,
@@ -341,33 +377,87 @@ class ChatInputBarWidget extends StatelessWidget {
   Widget _bodyPartIcon(String iconName) {
     IconData? iconData;
     switch (iconName) {
-      case 'face': iconData = Icons.face; break;
-      case 'face_retouching_natural': iconData = Icons.face_retouching_natural; break;
-      case 'remove_red_eye_outlined': iconData = Icons.remove_red_eye_outlined; break;
-      case 'hearing_outlined': iconData = Icons.hearing_outlined; break;
-      case 'record_voice_over_outlined': iconData = Icons.record_voice_over_outlined; break;
-      case 'compress': iconData = Icons.compress; break;
-      case 'accessibility_new': iconData = Icons.accessibility_new; break;
-      case 'horizontal_rule': iconData = Icons.horizontal_rule; break;
-      case 'monitor_heart_outlined': iconData = Icons.monitor_heart_outlined; break;
-      case 'fitness_center': iconData = Icons.fitness_center; break;
-      case 'favorite_border': iconData = Icons.favorite_border; break;
-      case 'restaurant_menu': iconData = Icons.restaurant_menu; break;
-      case 'adjust': iconData = Icons.adjust; break;
-      case 'radio_button_checked': iconData = Icons.radio_button_checked; break;
-      case 'pan_tool_alt_outlined': iconData = Icons.pan_tool_alt_outlined; break;
-      case 'water_drop_outlined': iconData = Icons.water_drop_outlined; break;
-      case 'watch_outlined': iconData = Icons.watch_outlined; break;
-      case 'trip_origin': iconData = Icons.trip_origin; break;
-      case 'back_hand_outlined': iconData = Icons.back_hand_outlined; break;
-      case 'directions_walk': iconData = Icons.directions_walk; break;
-      case 'directions_run': iconData = Icons.directions_run; break;
-      case 'lens_outlined': iconData = Icons.lens_outlined; break;
-      case 'linear_scale': iconData = Icons.linear_scale; break;
-      case 'align_vertical_bottom': iconData = Icons.align_vertical_bottom; break;
-      case 'radio_button_unchecked': iconData = Icons.radio_button_unchecked; break;
-      case 'run_circle_outlined': iconData = Icons.run_circle_outlined; break;
-      case 'linear_scale_outlined': iconData = Icons.linear_scale_outlined; break;
+      case 'face':
+        iconData = Icons.face;
+        break;
+      case 'face_retouching_natural':
+        iconData = Icons.face_retouching_natural;
+        break;
+      case 'remove_red_eye_outlined':
+        iconData = Icons.remove_red_eye_outlined;
+        break;
+      case 'hearing_outlined':
+        iconData = Icons.hearing_outlined;
+        break;
+      case 'record_voice_over_outlined':
+        iconData = Icons.record_voice_over_outlined;
+        break;
+      case 'compress':
+        iconData = Icons.compress;
+        break;
+      case 'accessibility_new':
+        iconData = Icons.accessibility_new;
+        break;
+      case 'horizontal_rule':
+        iconData = Icons.horizontal_rule;
+        break;
+      case 'monitor_heart_outlined':
+        iconData = Icons.monitor_heart_outlined;
+        break;
+      case 'fitness_center':
+        iconData = Icons.fitness_center;
+        break;
+      case 'favorite_border':
+        iconData = Icons.favorite_border;
+        break;
+      case 'restaurant_menu':
+        iconData = Icons.restaurant_menu;
+        break;
+      case 'adjust':
+        iconData = Icons.adjust;
+        break;
+      case 'radio_button_checked':
+        iconData = Icons.radio_button_checked;
+        break;
+      case 'pan_tool_alt_outlined':
+        iconData = Icons.pan_tool_alt_outlined;
+        break;
+      case 'water_drop_outlined':
+        iconData = Icons.water_drop_outlined;
+        break;
+      case 'watch_outlined':
+        iconData = Icons.watch_outlined;
+        break;
+      case 'trip_origin':
+        iconData = Icons.trip_origin;
+        break;
+      case 'back_hand_outlined':
+        iconData = Icons.back_hand_outlined;
+        break;
+      case 'directions_walk':
+        iconData = Icons.directions_walk;
+        break;
+      case 'directions_run':
+        iconData = Icons.directions_run;
+        break;
+      case 'lens_outlined':
+        iconData = Icons.lens_outlined;
+        break;
+      case 'linear_scale':
+        iconData = Icons.linear_scale;
+        break;
+      case 'align_vertical_bottom':
+        iconData = Icons.align_vertical_bottom;
+        break;
+      case 'radio_button_unchecked':
+        iconData = Icons.radio_button_unchecked;
+        break;
+      case 'run_circle_outlined':
+        iconData = Icons.run_circle_outlined;
+        break;
+      case 'linear_scale_outlined':
+        iconData = Icons.linear_scale_outlined;
+        break;
     }
     if (iconData == null) return const SizedBox.shrink();
     return Icon(iconData, size: 18, color: Colors.orange.shade700);

@@ -27,6 +27,17 @@
   <meta name="apple-mobile-web-app-title" content="Sheserved">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
+  <!--
+    Google Sign-In for Web (W3.1) — Web OAuth client ID (ตัวเดียวกับ
+    GOOGLE_CLIENT_ID ใน websocket-server/.env; backend verify `aud`
+    เทียบกับค่านี้). Client ID เป็น public identifier ไม่ใช่ secret.
+    ค่าใช้จ่าย: ฟรี — Google OAuth ไม่มีค่าใช้จ่าย
+    ⚠️ ต้องเพิ่ม origin ของ web app (เช่น http://localhost:7357 dev,
+    https://<web-domain> prod) ใน Authorized JavaScript origins ของ
+    client นี้ใน GCP Console มิฉะนั้น sign-in จะล้มที่ origin mismatch
+  -->
+  <meta name="google-signin-client_id" content="1075504521633-7ri50tfm4fvhg95r4vqth07ihha6058b.apps.googleusercontent.com">
+
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png" />
 
@@ -39,10 +50,22 @@
       display: block;
     }
   </style>
+  <!--
+    model-viewer (3D viewer) จาก unpkg CDN — ฟรี (MIT)
+    ⚠️ W4.4 CSP ต้อง whitelist https://unpkg.com ใน script-src ไม่งั้นตัวนี้พัง
+  -->
   <script type="module" src="https://unpkg.com/@google/model-viewer@3.1.1/dist/model-viewer.min.js"></script>
 </head>
 
 <body>
+  <!--
+    Corbado passkeys bundle — WEB CAPABILITY เท่านั้น ไม่ใช่ auth path ที่เปิดใช้
+    (W3.9): ยังไม่มี Flutter/backend flow ที่อนุมัติ และ Corbado เป็นบริการเสียเงิน
+    เมื่อเปิดใช้จริง (free tier จำกัด → คิดตาม MAU). คง bundle ไว้เพื่อรองรับ
+    อนาคต แต่ห้ามประกาศ/ใช้เป็น login path จนกว่าจะมี decision + budget approval.
+    วิธีเปิดในอนาคต: อนุมัติ Corbado plan → ตั้ง CORBADO_PROJECT_ID → เพิ่ม
+    endpoint verify ฝั่ง backend → ขยาย CSP connect-src ให้ corbado.io
+  -->
   <script src="corbado-passkeys-2.4.0.bundle.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

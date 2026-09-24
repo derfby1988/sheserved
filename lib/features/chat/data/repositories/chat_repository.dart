@@ -352,17 +352,16 @@ class ChatRepository {
   /// Accepts [XFile] — on web `path` is a blob URL, so bytes are uploaded instead.
   Future<String?> uploadFile(XFile file, String path) async {
     try {
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
       final fullPath = '$path/$fileName';
 
       if (kIsWeb) {
-        await _supabase.storage.from('chat_attachments').uploadBinary(
+        await _supabase.storage
+            .from('chat_attachments')
+            .uploadBinary(
               fullPath,
               await file.readAsBytes(),
-              fileOptions: FileOptions(
-                contentType: contentTypeFor(file.name),
-              ),
+              fileOptions: FileOptions(contentType: contentTypeFor(file.name)),
             );
       } else {
         await _supabase.storage
@@ -676,4 +675,210 @@ class ChatRepository {
       return [];
     }
   }
+
+  // =====================================================
+  // CLOSED-ENDED QUESTIONS (Phase 6.14)
+  //
+  // All writes go through trusted RPCs; the DB guard trigger rejects
+  // direct inserts/status/answer/config changes for this message type.
+  // Local cache is only updated after the server confirms.
+  // =====================================================
+
+  static ClosedEndedRpcCode _closedEndedCode(Object? result) {
+    final code = result is Map ? result['code']?.toString() : null;
+    return ClosedEndedRpcCode.values.firstWhere(
+      (c) => c.name == _codeToName(code),
+      orElse: () => ClosedEndedRpcCode.failed,
+    );
+  }
+
+  static String _codeToName(String? code) {
+    switch (code) {
+      case 'OK':
+        return 'ok';
+      case 'ALREADY_ANSWERED':
+        return 'alreadyAnswered';
+      case 'INVALID_CONFIG':
+        return 'invalidConfig';
+      case 'INVALID_INDEX':
+        return 'invalidIndex';
+      case 'INVALID_CONTENT':
+        return 'invalidContent';
+      case 'FORBIDDEN':
+        return 'forbidden';
+      case 'UNAUTHORIZED':
+        return 'unauthorized';
+      case 'NOT_FOUND':
+        return 'notFound';
+      default:
+        return 'failed';
+    }
+  }
+
+  /// Refresh a single message row into the local cache.
+  Future<void> _refreshMessage(String messageId) async {
+    try {
+      final row = await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('id', messageId)
+          .single();
+      await _messageBox.put(messageId, ChatMessage.fromJson(row));
+    } catch (e) {
+      debugPrint('ChatRepository: Error refreshing message $messageId: $e');
+    }
+  }
+
+  /// Expert: send a closed-ended question (always required) via RPC.
+  Future<ClosedEndedSendResult> sendClosedEndedQuestion({
+    required String roomId,
+    required String content,
+    required ClosedEndedConfig config,
+    String? bodyPart,
+    required String callerId,
+  }) async {
+    try {
+      await _verifyParticipant(roomId, callerId);
+      final validationError = config.validate();
+      if (validationError != null) {
+        return const ClosedEndedSendResult(
+          code: ClosedEndedRpcCode.invalidConfig,
+        );
+      }
+      final result = await _supabase.rpc(
+        'send_closed_ended_question',
+        params: {
+          'p_room_id': roomId,
+          'p_content': content,
+          'p_config': config.toJson(),
+          'p_body_part': bodyPart,
+        },
+      );
+      final code = _closedEndedCode(result);
+      if (code != ClosedEndedRpcCode.ok) {
+        return ClosedEndedSendResult(code: code);
+      }
+      ChatMessage? message;
+      final messageId = result is Map ? result['message_id']?.toString() : null;
+      if (messageId != null) {
+        try {
+          final row = await _supabase
+              .from('chat_messages')
+              .select()
+              .eq('id', messageId)
+              .single();
+          message = ChatMessage.fromJson(row);
+          await _messageBox.put(message.id, message);
+        } catch (e) {
+          debugPrint(
+            'ChatRepository: sent but failed to cache message $messageId: $e',
+          );
+        }
+      }
+      return ClosedEndedSendResult(code: code, message: message);
+    } catch (e) {
+      debugPrint('ChatRepository: Error sending closed-ended question: $e');
+      return ClosedEndedSendResult(
+        code: e.toString().contains('Access denied')
+            ? ClosedEndedRpcCode.forbidden
+            : ClosedEndedRpcCode.failed,
+      );
+    }
+  }
+
+  /// Patient: mark a closed-ended question as `reading` (unread → reading,
+  /// idempotent). Closing or switching questions keeps `reading`.
+  Future<ClosedEndedRpcCode> markClosedEndedQuestionReading(
+    String messageId, {
+    required String callerId,
+  }) async {
+    try {
+      final currentMsg = _messageBox.get(messageId);
+      if (currentMsg != null) {
+        await _verifyParticipant(currentMsg.roomId, callerId);
+      }
+      final result = await _supabase.rpc(
+        'mark_closed_ended_question_reading',
+        params: {'p_question_message_id': messageId},
+      );
+      return _closedEndedCode(result);
+    } catch (e) {
+      debugPrint('ChatRepository: Error marking closed-ended reading: $e');
+      return e.toString().contains('Access denied')
+          ? ClosedEndedRpcCode.forbidden
+          : ClosedEndedRpcCode.failed;
+    }
+  }
+
+  /// Patient: confirm the selected option via the atomic answer RPC.
+  /// Refreshes the message row so the queue/bubble reflect server state.
+  Future<ClosedEndedAnswerResult> answerClosedEndedQuestion(
+    String messageId,
+    int selectedIndex, {
+    required String callerId,
+  }) async {
+    try {
+      final currentMsg = _messageBox.get(messageId);
+      if (currentMsg != null) {
+        await _verifyParticipant(currentMsg.roomId, callerId);
+      }
+      final result = await _supabase.rpc(
+        'answer_closed_ended_question',
+        params: {
+          'p_question_message_id': messageId,
+          'p_selected_index': selectedIndex,
+        },
+      );
+      final code = _closedEndedCode(result);
+      final selectedValue = result is Map
+          ? result['selected_value']?.toString()
+          : null;
+      if (code == ClosedEndedRpcCode.ok ||
+          code == ClosedEndedRpcCode.alreadyAnswered) {
+        // Sync server truth (answer projection + status) into the cache.
+        await _refreshMessage(messageId);
+      }
+      return ClosedEndedAnswerResult(code: code, selectedValue: selectedValue);
+    } catch (e) {
+      debugPrint('ChatRepository: Error answering closed-ended question: $e');
+      return ClosedEndedAnswerResult(
+        code: e.toString().contains('Access denied')
+            ? ClosedEndedRpcCode.forbidden
+            : ClosedEndedRpcCode.failed,
+      );
+    }
+  }
+}
+
+/// Result code from the Phase 6.14 closed-ended RPCs.
+enum ClosedEndedRpcCode {
+  ok,
+  alreadyAnswered,
+  invalidConfig,
+  invalidIndex,
+  invalidContent,
+  forbidden,
+  unauthorized,
+  notFound,
+  failed,
+}
+
+class ClosedEndedSendResult {
+  final ClosedEndedRpcCode code;
+  final ChatMessage? message;
+
+  const ClosedEndedSendResult({required this.code, this.message});
+
+  bool get isSuccess => code == ClosedEndedRpcCode.ok;
+}
+
+class ClosedEndedAnswerResult {
+  final ClosedEndedRpcCode code;
+  final String? selectedValue;
+
+  const ClosedEndedAnswerResult({required this.code, this.selectedValue});
+
+  bool get isSuccess =>
+      code == ClosedEndedRpcCode.ok ||
+      code == ClosedEndedRpcCode.alreadyAnswered;
 }
