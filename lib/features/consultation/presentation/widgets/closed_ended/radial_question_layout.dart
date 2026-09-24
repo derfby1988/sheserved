@@ -6,6 +6,9 @@ class RadialQuestionLayout extends StatelessWidget {
   final Widget question;
   final int optionCount;
   final double optionSizeFactor;
+  final double Function(BuildContext context, int index, double side)?
+  optionWidthBuilder;
+  final double startAngle;
   final Animation<double> entranceAnimation;
   final Widget? orbitRing;
   final Widget Function(BuildContext context, int index, double optionSize)
@@ -16,6 +19,8 @@ class RadialQuestionLayout extends StatelessWidget {
     required this.question,
     required this.optionCount,
     required this.optionSizeFactor,
+    this.optionWidthBuilder,
+    this.startAngle = -math.pi / 2,
     required this.entranceAnimation,
     required this.optionBuilder,
     this.orbitRing,
@@ -31,8 +36,19 @@ class RadialQuestionLayout extends StatelessWidget {
         final optionSize = (side * optionSizeFactor)
             .clamp(48.0, 112.0)
             .toDouble();
+        final optionWidths = List<double>.generate(
+          optionCount,
+          (index) =>
+              (optionWidthBuilder?.call(context, index, side) ?? optionSize)
+                  .clamp(48.0, 112.0)
+                  .toDouble(),
+        );
+        final maxOptionWidth = optionWidths.fold<double>(
+          optionSize,
+          (largest, width) => math.max(largest, width).toDouble(),
+        );
         final radius = math
-            .min(side * 0.32, side / 2 - optionSize / 2 - 4)
+            .min(side * 0.36, side / 2 - maxOptionWidth / 2 - 4)
             .clamp(0.0, side / 2)
             .toDouble();
 
@@ -47,7 +63,7 @@ class RadialQuestionLayout extends StatelessWidget {
                 ...List.generate(optionCount, (index) {
                   // เริ่มจากด้านบน (-π/2) และกระจายรอบวง
                   final angle =
-                      -math.pi / 2 + (2 * math.pi * index / optionCount);
+                      startAngle + (2 * math.pi * index / optionCount);
                   final offset = Offset(
                     radius * math.cos(angle),
                     radius * math.sin(angle),
@@ -84,8 +100,8 @@ class RadialQuestionLayout extends StatelessWidget {
                       );
                     },
                     child: SizedBox.square(
-                      dimension: optionSize,
-                      child: optionBuilder(context, index, optionSize),
+                      dimension: optionWidths[index],
+                      child: optionBuilder(context, index, optionWidths[index]),
                     ),
                   );
                 }),

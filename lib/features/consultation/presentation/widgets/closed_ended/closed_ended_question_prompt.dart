@@ -38,6 +38,8 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (circular) {
+      final compact = size < 80;
+      final showIcon = size >= 96;
       final card = GlassCircleCard(
         size: size,
         glassOpacity: 0.10,
@@ -49,27 +51,29 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
         shadowColor: const Color(0xFF00BCD4).withValues(alpha: 0.08),
         shadowBlur: 40,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(compact ? 8 : (size < 112 ? 10 : 16)),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.quiz_rounded,
-                size: 22,
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
-              const SizedBox(height: 8),
+              if (showIcon) ...[
+                Icon(
+                  Icons.quiz_rounded,
+                  size: size < 112 ? 18 : 22,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+                SizedBox(height: size < 112 ? 4 : 8),
+              ],
               Text(
                 questionText,
                 textAlign: TextAlign.center,
-                maxLines: 4,
+                maxLines: compact ? 2 : (size < 112 ? 3 : 4),
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'SukhumvitSet',
-                  fontSize: 14,
+                  fontSize: compact ? 11 : (size < 112 ? 12 : 14),
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
-                  height: 1.4,
+                  height: compact ? 1.25 : 1.4,
                 ),
               ),
             ],

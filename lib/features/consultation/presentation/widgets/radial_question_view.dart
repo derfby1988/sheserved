@@ -266,40 +266,62 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
               child: AdaptiveClosedEndedLayout(
                 questionText: widget.questionText,
                 options: options,
+                radialTopInset: media.padding.top + 64,
+                radialBottomInset: media.padding.bottom + 16,
                 builder: (context, constraints, mode) {
-                  final side = math.min(
-                    constraints.maxWidth,
-                    constraints.maxHeight,
-                  );
+                  final isQuantitative =
+                      widget.config.type == ClosedEndedType.quantitative;
                   if (mode == ClosedEndedLayoutMode.radial) {
-                    final centerRadius = side * 0.14;
-                    final orbitRadius = side * 0.32;
                     return Stack(
                       children: [
                         Positioned.fill(
-                          child: RadialQuestionLayout(
-                            question: ClosedEndedQuestionPrompt.circular(
-                              questionText: widget.questionText,
-                              size: centerRadius * 2,
-                              pulseAnimation: _pulseController,
-                            ),
-                            optionCount: _optionCount,
-                            optionSizeFactor:
-                                widget.config.type ==
-                                    ClosedEndedType.quantitative
-                                ? 0.14
-                                : 0.18,
-                            entranceAnimation: _flyInController,
-                            orbitRing: _buildOrbitRing(orbitRadius),
-                            optionBuilder: (context, index, size) =>
-                                _buildOptionButton(index: index, size: size),
+                          top: media.padding.top + 64,
+                          bottom: media.padding.bottom + 16,
+                          child: LayoutBuilder(
+                            builder: (context, radialConstraints) {
+                              final radialSide = math.min(
+                                radialConstraints.maxWidth,
+                                radialConstraints.maxHeight,
+                              );
+                              final orbitRadius = radialSide * 0.32;
+                              return RadialQuestionLayout(
+                                question: ClosedEndedQuestionPrompt.circular(
+                                  questionText: widget.questionText,
+                                  key: const ValueKey(
+                                    'closed-ended-question-center',
+                                  ),
+                                  size: radialSide * 0.28,
+                                  pulseAnimation: _pulseController,
+                                ),
+                                optionCount: _optionCount,
+                                optionSizeFactor: isQuantitative ? 0.14 : 0.24,
+                                optionWidthBuilder: isQuantitative
+                                    ? null
+                                    : (context, index, side) {
+                                        final maxWidth = math.min(
+                                          112.0,
+                                          side * 0.28,
+                                        );
+                                        return _qualitativeOptionWidth(
+                                          context,
+                                          options[index],
+                                          maxWidth,
+                                          minWidth: math.min(64.0, maxWidth),
+                                        );
+                                      },
+                                startAngle: isQuantitative
+                                    ? -math.pi / 2
+                                    : -math.pi / 2 - math.pi / _optionCount,
+                                entranceAnimation: _flyInController,
+                                orbitRing: _buildOrbitRing(orbitRadius),
+                                optionBuilder: (context, index, size) =>
+                                    _buildOptionButton(
+                                      index: index,
+                                      size: size,
+                                    ),
+                              );
+                            },
                           ),
-                        ),
-                        Positioned(
-                          bottom: media.padding.bottom + 24,
-                          left: 32,
-                          right: 32,
-                          child: _buildHintText(),
                         ),
                       ],
                     );
@@ -309,23 +331,17 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                       .min(constraints.maxWidth - 32, 640.0)
                       .clamp(0.0, 640.0)
                       .toDouble();
-                  final isQuantitative =
-                      widget.config.type == ClosedEndedType.quantitative;
-                  final optionSize =
-                      (isQuantitative
-                              ? ((contentWidth - 36) / 4).clamp(48.0, 72.0)
-                              : (contentWidth < 352
-                                    ? contentWidth
-                                    : (contentWidth - 12) / 2))
-                          .toDouble();
-                  final optionWidgets = List.generate(
-                    _optionCount,
-                    (index) => _buildOptionButton(
+                  final optionWidgets = List.generate(_optionCount, (index) {
+                    final label = options[index];
+                    final optionSize = isQuantitative
+                        ? ((contentWidth - 36) / 4).clamp(48.0, 72.0).toDouble()
+                        : _qualitativeOptionWidth(context, label, contentWidth);
+                    return _buildOptionButton(
                       index: index,
                       size: optionSize,
                       compact: true,
-                    ),
-                  );
+                    );
+                  });
                   final optionGroup = isQuantitative
                       ? QuantitativeQuestionOptions(options: optionWidgets)
                       : QualitativeQuestionOptions(options: optionWidgets);
@@ -411,6 +427,33 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
     );
   }
 
+  double _qualitativeOptionWidth(
+    BuildContext context,
+    String label,
+    double maxWidth, {
+    double minWidth = 112,
+  }) {
+    if (maxWidth <= 0) return maxWidth;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          fontFamily: 'SukhumvitSet',
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          height: 1.3,
+        ),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final width = (painter.width + 32)
+        .clamp(math.min(minWidth, maxWidth), maxWidth)
+        .toDouble();
+    painter.dispose();
+    return width;
+  }
+
   /// ── Single option button (orbiting) ──
   Widget _buildOptionButton({
     required int index,
@@ -440,7 +483,7 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
               label: label,
               color: color,
               width: size,
-              minHeight: math.max(44.0, size * 0.55),
+              minHeight: compact ? 52 : math.max(44.0, size * 0.55),
               isSelected: isSelected,
               compact: compact,
               glowAnimation: _glowController,

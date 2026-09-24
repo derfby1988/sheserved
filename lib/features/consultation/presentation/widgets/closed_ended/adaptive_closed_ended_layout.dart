@@ -12,12 +12,16 @@ typedef AdaptiveClosedEndedLayoutBuilder =
 class AdaptiveClosedEndedLayout extends StatelessWidget {
   final String questionText;
   final List<String> options;
+  final double radialTopInset;
+  final double radialBottomInset;
   final AdaptiveClosedEndedLayoutBuilder builder;
 
   const AdaptiveClosedEndedLayout({
     super.key,
     required this.questionText,
     required this.options,
+    this.radialTopInset = 0,
+    this.radialBottomInset = 0,
     required this.builder,
   });
 
@@ -26,15 +30,27 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
     required String questionText,
     required List<String> options,
     required double textScale,
+    double radialTopInset = 0,
+    double radialBottomInset = 0,
   }) {
     if (!size.width.isFinite || !size.height.isFinite) return false;
-    if (size.width < 360 || size.height < 560) return false;
-    if (size.width / size.height > 2) return false;
-    if (options.isEmpty || options.length > 5) return false;
-    if (questionText.length > 10 ||
-        options.any((option) => option.length > 12)) {
+    final radialHeight = size.height - radialTopInset - radialBottomInset;
+    if (!radialHeight.isFinite || size.width < 360 || radialHeight < 200) {
       return false;
     }
+    if (size.width / radialHeight > 2) return false;
+    if (options.isEmpty || options.length > 5) return false;
+    if (questionText.characters.length > 10 ||
+        options.any((option) => option.characters.length > 12)) {
+      return false;
+    }
+    final minimumRadialHeight =
+        options.any((option) => option.characters.length > 8)
+        ? 320
+        : options.any((option) => option.characters.length > 3)
+        ? 240
+        : 200;
+    if (radialHeight < minimumRadialHeight) return false;
     return textScale <= 1.3;
   }
 
@@ -49,6 +65,8 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
               questionText: questionText,
               options: options,
               textScale: textScale,
+              radialTopInset: radialTopInset,
+              radialBottomInset: radialBottomInset,
             )
             ? ClosedEndedLayoutMode.radial
             : ClosedEndedLayoutMode.compact;
