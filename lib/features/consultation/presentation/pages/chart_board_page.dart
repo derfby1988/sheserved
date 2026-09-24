@@ -3869,7 +3869,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     return Positioned.fill(
       child: Container(
-        color: Colors.black87,
+        color: Colors.transparent,
         // Clear the floating question button strip (top:8 + ~44px).
         padding: const EdgeInsets.only(top: 76),
         child: RadialQuestionView(

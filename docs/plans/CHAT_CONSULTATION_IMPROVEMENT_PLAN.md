@@ -6229,4 +6229,94 @@ lib/features/consultation/presentation/widgets/
 
 ---
 
-*Last Updated: 2026-09-24* — Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
+## 🖥️ Server Dependency — Flow เปิดห้องแชทฝั่งผู้ป่วย (บันทึก 2026-09-24)
+
+> **คำถาม:** Flow เปิดห้องแชทฝั่งผู้ป่วย จำเป็นต้องสตาร์ท `websocket-server` ก่อนใช่หรือไม่
+>
+> **คำตอบสั้น:** ขึ้นกับเคส — เปิดห้อง "เดิม" **ไม่ต้อง** (ทุกอย่างผ่าน Supabase Cloud โดยตรง) แต่ "สร้างคำขอปรึกษาใหม่" (จุดที่ห้องถูกสร้าง) **ต้อง** สตาร์ท `websocket-server` + Redis
+
+### Flow ฝั่งผู้ป่วย (ตามโค้ดจริง)
+
+```
+[Home Page] HomeConsultationWidget.onTap              home_page.dart:2411
+  → ConsultationGuard.startConsultation()             consultation_guard.dart:13
+      ├─ ยังไม่ login            → /login
+      ├─ เป็น provider           → /health-program-requests
+      ├─ ไม่มี health info       → /health-data-entry
+      ├─ มี consultation active  → /chart-board (เปิดห้องเดิม)   ← ไม่ต้อง server
+      │   (findActiveConsultation: เลือก in_progress ก่อน pending)
+      └─ ไม่มี                   → /package-healthcare → body map
+                                   → ChartBoardPage._submitConsultationRequest()  ← ต้อง server
+```
+
+### เคสที่ "ไม่ต้อง" สตาร์ท server — เปิดห้องเดิม / แชทปกติ
+
+คุยกับ **Supabase Cloud โดยตรง** ทั้งหมด ไม่ผ่าน server ของเรา:
+
+| Action | Path | ที่ตั้ง |
+|---|---|---|
+| หา consultation ที่เปิดอยู่ | `findActiveConsultation` → `consultation_requests` | `consultation_guard.dart:106` |
+| เปิด/สร้างห้องใน DB | `_ensureConsultationRoom` → select/insert `chat_rooms` | `chart_board_page.dart:1421` |
+| โหลด/stream ข้อความ | `getMessages` / `streamMessages` → `chat_messages` | `chat_repository.dart:301, 439` |
+| ส่งข้อความธรรมดา | `sendMessage` → insert `chat_messages` | `chat_repository.dart:337` |
+| อัปเดต consultation เดิม (entry path) | `updateRequest` → `consultation_requests` | `consultation_repository.dart:117` |
+
+### เคสที่ "ต้อง" สตาร์ท server
+
+| จุดใน flow | Endpoint / Channel | ที่ตั้ง |
+|---|---|---|
+| **สร้าง consultation ใหม่** (patient กดส่งคำขอ → ห้องถูกสร้างฝั่งนี้) | `POST /api/consultations/requests` | `consultation_repository.dart:64` → `websocket-server/routes/consultation.js` |
+| คำถามปลายปิด (closed-ended) — หมอส่ง / ผู้ป่วยอ่าน / ผู้ป่วยตอบ | `POST /api/chat/closed-ended/*` | `chat_repository.dart:752` → `websocket-server/routes/chat-api.js` |
+| Typing indicator / ส่งสัญญาณวิดีโอคอล | socket.io `websocketUrl` | `websocket_service.dart` (optional — degrade เงียบถ้า server ดับ) |
+
+ฝั่ง server: `POST /api/consultations/requests` → `submitConsultationRequest` (`services/consultation-queue.js`) ซึ่ง insert `consultation_requests` → เรียก RPC `repair_consultation_chat_room` (สร้าง `chat_rooms`) → enqueue BullMQ job `finalize-consultation-request` (`ensure_room_experts` + cache invalidation)
+
+ถ้า server ไม่รัน → `createRequest` timeout 10 วินาที → error snackbar "การเชื่อมต่อใช้เวลานานเกินไป" → **ไม่มี consultation สร้าง → ไม่มีห้องแชท**
+
+> ⚠️ **Edge case:** server insert `consultation_requests` **ก่อน** `consultationQueue.add` — ถ้า Redis ดับระหว่างนั้น row ถูกสร้างแล้วแต่ API ตอบ 500 → เกิด orphan `pending` request ค้างใน DB (ต้นเหตุ bug #16: pending ซ้ำซ้อน — ยังไม่มี unique constraint กัน)
+
+### เหตุผลการออกแบบ — ระบบบังคับ ไม่ใช่ประหยัดค่าใช้จ่าย
+
+**ไม่ใช่เพื่อประหยัด** — server เป็น self-hosted (เครื่องหลักใน LAN) ไม่มีค่า cloud เพิ่ม และ read ส่วนใหญ่ยังยิง Supabase ตรงอยู่แล้ว เป็น **security mandate** จาก Phase 13.x:
+
+1. **Custom Auth ทำให้ Supabase RLS ใช้ไม่ได้จริง** — โปรเจกต์ใช้ `AuthService` เอง Supabase Auth session เป็น `null` → `auth.uid()` ใช้ไม่ได้ → audit พบ **23 ตารางมี RLS แต่ `USING(true)`** รวม `chat_rooms`, `chat_messages`, `consultation_requests` (`rls_audit_report.md`, อ้างใน Match_Sport_PLAN บรรทัด 1211) → client ยิงตรง = ไม่มีใคร verify identity จริง (`x-user-id` ปลอมได้)
+2. **Decision Q7 = C** (Match_Sport_PLAN บรรทัด 1431, 1830): public read → anon+VIEW ตรง; private read → Backend-issued PostgREST token (TTL ≤5 นาที); **mutation → Gateway เท่านั้น** (server verify JWT → bind `trustedUserId` → เขียนด้วย service role)
+3. **Bounded Gateway** (`docs/secure/bounded_gateway_design.md`): server เก็บ P2/P3 secrets (service_role, JWT secret, payment credentials) — client เห็นแค่ anon key
+4. **Consultation = pilot wave แรก** เพราะ "เสี่ยงสูงและใหญ่สุด" (33 จุดเรียก Supabase ตรง) + ต้องการ idempotency/rate-limit/duplicate-check ที่ทำฝั่ง client ไม่ได้ + งานหลังบ้าน (`ensure_room_experts`, room repair) ต้องใช้ service_role → BullMQ worker (retry 3 ครั้ง)
+5. **Closed-ended: DB บังคับจริงๆ** — guard trigger ปฏิเสธ direct insert/update สำหรับ `type='closed_ended_question'`; เขียนได้เฉพาะผ่าน `SECURITY DEFINER` RPC ที่รับ `p_caller_id` — ซึ่ง client ส่งเองไม่ได้ (ปลอมได้) จึงต้องมี endpoint ที่ verify JWT แล้วส่ง `req.userId` เข้า RPC (ดู Section Phase 6.14 "Trusted write path")
+6. **WebSocket signaling** — reuse infra เดิม (location/emergency/notification) ไม่ใช่การตัดสินใจใหม่; ทำงานไม่ได้แค่ฟีเจอร์เสริม ไม่ block แชท
+
+### Prerequisites เมื่อต้องรัน server
+
+```bash
+cd websocket-server && npm install && npm run dev   # หรือ npm start
+```
+
+ต้องมี `.env`:
+- `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` — ขาดแล้ว log FATAL (dev เตือน / prod exit)
+- `REDIS_URL` (default `redis://localhost:6379`) — BullMQ ต้องการ Redis รันอยู่
+- `DB_*` / `SUPABASE_DB_*` สำหรับ direct pool (บังคับ staging/prod, dev ข้ามได้)
+- `PORT` — server default ตาม env (QUICK_START ใช้ 3000) แต่ app ชี้ `:8080` → ตั้ง `PORT=8080` หรือรันผ่าน Caddy
+
+### ⚠️ Gotchas ที่พบระหว่างตรวจ (2026-09-24)
+
+| # | ประเด็น | รายละเอียด |
+|---|---|---|
+| 1 | **IP mismatch ใน config** | `app_config.dart` hardcode `mainMachineIp = '192.168.1.111:8080'` แต่ `config/dev.json` ชี้ `192.168.0.114:8080`; ที่สำคัญ `dev.json` **ไม่มี key `BACKEND_API_URL`** และ `websocketUrl`/`mainMachineIp` เป็น const ไม่ได้อ่าน dart-define → `--dart-define-from-file=config/dev.json` ไม่เปลี่ยน endpoint — ต้องแก้ const หรือส่ง `--dart-define=BACKEND_API_URL=...` |
+| 2 | **USE_BACKEND_AUTH=false** เป็น compat window สำหรับ dev | login ผ่าน Supabase ตรงไม่ต้อง server แต่ `createRequest` ยังต้อง server อยู่ดี (ไม่มี fallback) — ดู `PHASE_13_2_TEMPORARY_DIRECT_AUTH_DEVELOPMENT_PLAN.md` |
+| 3 | **Redis ดับ = orphan request** | insert `consultation_requests` สำเร็จแล้วแต่ queue.add ล้ม → 500 → เคส pending ค้างใน DB |
+| 4 | **Typing/call degrade เงียบ** | `streamTypingStatus` คืน empty stream ถ้า ws ไม่มี; `joinRoom` return เร็วถ้าไม่ connected — ไม่มี error ให้เห็นใน UI |
+
+### สรุปสำหรับการทดสอบ
+
+| สิ่งที่จะเทส | ต้องรัน server? |
+|---|---|
+| เปิดห้องแชทเดิมที่เคยสร้างไว้ / อ่าน-ส่งข้อความธรรมดา | ❌ ไม่ต้อง (Supabase ตรง) |
+| Flow ตั้งแต่เลือกแพ็คเกจ → ส่งคำขอ → เข้าห้อง | ✅ ต้อง (`websocket-server` + Redis + `.env`) |
+| คำถามปลายปิด (ทั้งสองฝั่ง) | ✅ ต้อง (DB trigger บังคับผ่าน RPC) |
+| Typing indicator / วิดีโอคอล | ✅ ต้อง (socket.io) |
+| Login (default `USE_BACKEND_AUTH=false`) | ❌ ไม่ต้อง |
+
+---
+
+*Last Updated: 2026-09-24* — Phase 6.14: Closed-ended Question System + Server Dependency Notes (ผู้ป่วยเปิดห้องแชท)

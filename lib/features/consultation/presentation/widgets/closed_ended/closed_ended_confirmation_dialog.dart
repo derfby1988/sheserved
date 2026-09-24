@@ -110,70 +110,24 @@ class _ClosedEndedConfirmationDialogState
   @override
   Widget build(BuildContext context) {
     final optionColor = widget.optionColor;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
+    return LitGlassSurface(
+      borderRadius: 24,
+      blurSigma: 18,
+      fillOpacity: 0.10,
+      accentColor: optionColor,
+      accentStrength: 0.12,
+      glowOpacity: 0.14,
+      shadowOpacity: 0.30,
+      rimWidth: 2.4,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 320,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Padding(
           padding: const EdgeInsets.all(24),
-          constraints: BoxConstraints(
-            maxWidth: 320,
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.10),
-                Colors.white.withValues(alpha: 0.07),
-                Colors.white.withValues(alpha: 0.04),
-              ],
-              stops: const [0.0, 0.5, 1.0],
-            ),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.18),
-              width: 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 30,
-                spreadRadius: 2,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: optionColor.withValues(alpha: 0.10),
-                blurRadius: 40,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
           child: Stack(
             children: [
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 60,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      topRight: Radius.circular(24),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.10),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
               SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -200,11 +154,22 @@ class _ClosedEndedConfirmationDialogState
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: optionColor.withValues(alpha: 0.20),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white.withValues(alpha: 0.14),
+                            Colors.white.withValues(alpha: 0.05),
+                          ],
+                        ),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: optionColor.withValues(alpha: 0.40),
-                          width: 1,
+                          color: Color.lerp(
+                            Colors.white,
+                            optionColor,
+                            0.4,
+                          )!.withValues(alpha: 0.60),
+                          width: 1.4,
                         ),
                       ),
                       child: Row(
@@ -212,18 +177,22 @@ class _ClosedEndedConfirmationDialogState
                         children: [
                           if (widget.isQuantitative) ...[
                             Container(
-                              width: 28,
-                              height: 28,
+                              width: 30,
+                              height: 30,
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: optionColor.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(8),
+                                color: optionColor.withValues(alpha: 0.35),
+                                border: Border.all(
+                                  color: optionColor.withValues(alpha: 0.8),
+                                  width: 1,
+                                ),
                               ),
                               child: Center(
                                 child: Text(
                                   widget.selectedLabel,
                                   style: const TextStyle(
                                     fontFamily: 'SukhumvitSet',
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w800,
                                     color: Colors.white,
                                   ),

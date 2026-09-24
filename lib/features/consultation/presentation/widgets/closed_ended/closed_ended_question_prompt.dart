@@ -40,43 +40,51 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
     if (circular) {
       final compact = size < 80;
       final showIcon = size >= 96;
-      final card = GlassCircleCard(
-        size: size,
-        glassOpacity: 0.10,
-        blurSigma: 24,
-        borderOpacity: 0.18,
-        innerShineOpacity: 0.10,
-        borderColor: Colors.white.withValues(alpha: 0.18),
-        tintColor: const Color(0xFF00BCD4).withValues(alpha: 0.05),
-        shadowColor: const Color(0xFF00BCD4).withValues(alpha: 0.08),
-        shadowBlur: 40,
-        child: Padding(
-          padding: EdgeInsets.all(compact ? 8 : (size < 112 ? 10 : 16)),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (showIcon) ...[
-                Icon(
-                  Icons.quiz_rounded,
-                  size: size < 112 ? 18 : 22,
-                  color: Colors.white.withValues(alpha: 0.7),
+      final card = SizedBox(
+        width: size,
+        height: size,
+        child: GlassRoundedCard(
+          width: size,
+          minHeight: size,
+          borderRadius: size * 0.24,
+          glassOpacity: 0.09,
+          blurSigma: 24,
+          shadowOpacity: 0.24,
+          child: Padding(
+            padding: EdgeInsets.all(compact ? 8 : (size < 112 ? 10 : 16)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (showIcon) ...[
+                  Icon(
+                    Icons.quiz_rounded,
+                    size: size < 112 ? 18 : 22,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                  SizedBox(height: size < 112 ? 4 : 8),
+                ],
+                Text(
+                  questionText,
+                  textAlign: TextAlign.center,
+                  maxLines: compact ? 2 : (size < 112 ? 3 : 4),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'SukhumvitSet',
+                    fontSize: compact ? 11 : (size < 112 ? 12 : 14),
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: compact ? 1.25 : 1.4,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withValues(alpha: 0.40),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
-                SizedBox(height: size < 112 ? 4 : 8),
               ],
-              Text(
-                questionText,
-                textAlign: TextAlign.center,
-                maxLines: compact ? 2 : (size < 112 ? 3 : 4),
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'SukhumvitSet',
-                  fontSize: compact ? 11 : (size < 112 ? 12 : 14),
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  height: compact ? 1.25 : 1.4,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -95,15 +103,12 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
     return GlassRoundedCard(
       width: width,
       minHeight: 112,
-      glassOpacity: 0.12,
+      glassOpacity: 0.08,
       blurSigma: 20,
-      borderOpacity: 0.18,
-      innerShineOpacity: 0.10,
       borderRadius: 20,
-      borderColor: Colors.white.withValues(alpha: 0.18),
-      tintColor: const Color(0xFF00BCD4).withValues(alpha: 0.05),
-      shadowColor: const Color(0xFF00BCD4).withValues(alpha: 0.08),
-      shadowBlur: 24,
+      tintColor: const Color(0xFF00BCD4),
+      tintStrength: 0.08,
+      shadowOpacity: 0.16,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

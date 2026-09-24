@@ -10,7 +10,6 @@ class RadialQuestionLayout extends StatelessWidget {
   optionWidthBuilder;
   final double startAngle;
   final Animation<double> entranceAnimation;
-  final Widget? orbitRing;
   final Widget Function(BuildContext context, int index, double optionSize)
   optionBuilder;
 
@@ -23,7 +22,6 @@ class RadialQuestionLayout extends StatelessWidget {
     this.startAngle = -math.pi / 2,
     required this.entranceAnimation,
     required this.optionBuilder,
-    this.orbitRing,
   });
 
   @override
@@ -58,7 +56,6 @@ class RadialQuestionLayout extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                ?orbitRing,
                 question,
                 ...List.generate(optionCount, (index) {
                   // เริ่มจากด้านบน (-π/2) และกระจายรอบวง

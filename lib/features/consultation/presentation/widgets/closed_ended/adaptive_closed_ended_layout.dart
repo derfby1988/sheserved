@@ -35,7 +35,7 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
   }) {
     if (!size.width.isFinite || !size.height.isFinite) return false;
     final radialHeight = size.height - radialTopInset - radialBottomInset;
-    if (!radialHeight.isFinite || size.width < 360 || radialHeight < 200) {
+    if (!radialHeight.isFinite || size.width < 320 || radialHeight < 200) {
       return false;
     }
     if (size.width / radialHeight > 2) return false;

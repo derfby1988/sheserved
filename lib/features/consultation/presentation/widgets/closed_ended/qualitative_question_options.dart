@@ -1,6 +1,6 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
+
+import 'closed_ended_glass_primitives.dart';
 
 class QualitativeQuestionOptions extends StatelessWidget {
   final List<Widget> options;
@@ -63,90 +63,55 @@ class QualitativeAnswerOption extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: glowAnimation,
-      builder: (context, child) {
-        final scale = isSelected ? 1 + glowAnimation.value * 0.15 : 1.0;
-        final glowOpacity = isSelected ? 0.25 + glowAnimation.value * 0.3 : 0.0;
-        return Transform.scale(
-          scale: scale,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Glow behind selected option
-              if (isSelected)
-                Container(
-                  width: width + 16,
-                  height: compact ? minHeight + 16 : width + 16,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: glowOpacity),
-                        blurRadius: 24,
-                        spreadRadius: 8,
-                      ),
-                    ],
-                  ),
-                ),
-              // Glass option card
-              Container(
-                width: width,
-                constraints: BoxConstraints(minHeight: minHeight),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(alpha: isSelected ? 0.16 : 0.07),
-                      color.withValues(alpha: isSelected ? 0.16 : 0.07),
-                      Colors.white.withValues(alpha: isSelected ? 0.12 : 0.05),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: color.withValues(alpha: isSelected ? 0.42 : 0.18),
-                    width: 0.8,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.06),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 3),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: minHeight),
+        child: SizedBox(
+          width: width,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Center(
+              heightFactor: 1,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                softWrap: true,
+                maxLines: compact ? null : 3,
+                overflow: compact
+                    ? TextOverflow.visible
+                    : TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  fontSize: compact ? 14 : 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  height: 1.3,
+                  shadows: [
+                    Shadow(
+                      color: const Color(0xFF0A1433).withValues(alpha: 0.45),
+                      blurRadius: 5,
+                      offset: const Offset(0, 1),
                     ),
                   ],
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      child: Center(
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          softWrap: true,
-                          maxLines: compact ? null : 3,
-                          overflow: compact
-                              ? TextOverflow.visible
-                              : TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: 'SukhumvitSet',
-                            fontSize: compact ? 14 : 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
               ),
-            ],
+            ),
+          ),
+        ),
+      ),
+      builder: (context, child) {
+        final t = glowAnimation.value;
+        return Transform.scale(
+          scale: isSelected ? 1 + t * 0.15 : 1.0,
+          child: LitGlassSurface(
+            borderRadius: 18,
+            blurSigma: 22,
+            fillOpacity: isSelected ? 0.14 : 0.07,
+            accentColor: color,
+            accentStrength: isSelected ? 0.34 : 0.12,
+            glowOpacity: isSelected ? 0.25 + t * 0.3 : 0,
+            rimWidth: 2.0,
+            selected: isSelected,
+            child: child!,
           ),
         );
       },

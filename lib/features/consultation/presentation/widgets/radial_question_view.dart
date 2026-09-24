@@ -63,6 +63,10 @@ class RadialQuestionView extends StatefulWidget {
   /// ชื่อ Expert
   final String? expertName;
 
+  /// วาดพื้นหลัง twilight เต็มจอหรือไม่ — ปิดเมื่อใช้เป็น overlay ในห้องแชท
+  /// เพื่อให้เห็นเนื้อหาแชทด้านหลังผ่าน blur ของการ์ดกระจก
+  final bool showBackground;
+
   const RadialQuestionView({
     super.key,
     required this.questionText,
@@ -74,6 +78,7 @@ class RadialQuestionView extends StatefulWidget {
     this.onClose,
     this.expertAvatarUrl,
     this.expertName,
+    this.showBackground = false,
   });
 
   @override
@@ -116,8 +121,8 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
 
     _allowDeviceRotation();
 
-    // เริ่ม fly-in
-    Future.delayed(const Duration(milliseconds: 100), () {
+    // เริ่ม fly-in ทันทีหลัง build แรก
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _flyInController.forward();
     });
   }
@@ -252,78 +257,91 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
       child: LayoutBuilder(
         builder: (context, _) => Stack(
           children: [
-            // ── Background: บรรยากาศทไวไลท์/ภูเขาและทะเลสาบตามแบบภาพตัวอย่าง (Step 1) ──
+            // ── Tap-outside-to-close layer (โปร่งใสเมื่อไม่วาดพื้นหลัง) ──
             Positioned.fill(
               child: GestureDetector(
                 onTap: _close,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // 1. ไล่เฉดสีลึก ฟ้าเข้ม-ม่วง-คราม (Mountain & Lake Sunset Tone)
-                    Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFF0A1128), // Deep twilight navy
-                            Color(0xFF161B3A), // Twilight mountain purple
-                            Color(0xFF261D3B), // Horizon dusk magenta
-                            Color(0xFF18233C), // Reflective lake deep blue
-                            Color(0xFF090E1F), // Dark base
-                          ],
-                          stops: [0.0, 0.25, 0.55, 0.80, 1.0],
-                        ),
-                      ),
-                    ),
-
-                    // 2. แสงเรืองบรรยากาศ (Ambient Sunset Lake Glows) เพื่อให้กระจกมีแสงสะท้อนจริง
-                    Positioned(
-                      top: media.size.height * 0.18,
-                      right: -media.size.width * 0.15,
-                      child: Container(
-                        width: media.size.width * 0.75,
-                        height: media.size.width * 0.75,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              const Color(0xFF38BDF8).withValues(alpha: 0.16),
-                              const Color(0xFF818CF8).withValues(alpha: 0.08),
-                              Colors.transparent,
-                            ],
+                child: widget.showBackground
+                    // บรรยากาศทไวไลท์/ภูเขาและทะเลสาบตามแบบภาพตัวอย่าง (Step 1)
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // 1. ไล่เฉดสีลึก ฟ้าเข้ม-ม่วง-คราม (Mountain & Lake Sunset Tone)
+                          Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Color(0xFF0A1128), // Deep twilight navy
+                                  Color(0xFF161B3A), // Twilight mountain purple
+                                  Color(0xFF261D3B), // Horizon dusk magenta
+                                  Color(0xFF18233C), // Reflective lake deep blue
+                                  Color(0xFF090E1F), // Dark base
+                                ],
+                                stops: [0.0, 0.25, 0.55, 0.80, 1.0],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: media.size.height * 0.22,
-                      left: -media.size.width * 0.20,
-                      child: Container(
-                        width: media.size.width * 0.85,
-                        height: media.size.width * 0.85,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              const Color(0xFFE27D60).withValues(alpha: 0.18),
-                              const Color(0xFFC084FC).withValues(alpha: 0.08),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
 
-                    // 3. ฟิลเตอร์ Gaussian Blur บางๆ ทั่วทั้งพื้นหลังให้เนียนตา
-                    BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.15),
+                          // 2. แสงเรืองบรรยากาศ (Ambient Sunset Lake Glows) เพื่อให้กระจกมีแสงสะท้อนจริง
+                          Positioned(
+                            top: media.size.height * 0.18,
+                            right: -media.size.width * 0.15,
+                            child: Container(
+                              width: media.size.width * 0.75,
+                              height: media.size.width * 0.75,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    const Color(
+                                      0xFF38BDF8,
+                                    ).withValues(alpha: 0.16),
+                                    const Color(
+                                      0xFF818CF8,
+                                    ).withValues(alpha: 0.08),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: media.size.height * 0.22,
+                            left: -media.size.width * 0.20,
+                            child: Container(
+                              width: media.size.width * 0.85,
+                              height: media.size.width * 0.85,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    const Color(
+                                      0xFFE27D60,
+                                    ).withValues(alpha: 0.18),
+                                    const Color(
+                                      0xFFC084FC,
+                                    ).withValues(alpha: 0.08),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // 3. ฟิลเตอร์ Gaussian Blur บางๆ ทั่วทั้งพื้นหลังให้เนียนตา
+                          BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.15),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Container(
+                        color: Colors.transparent,
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
 
@@ -397,7 +415,6 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                                         ? -math.pi / 2
                                         : -math.pi / 2 - math.pi / _optionCount,
                                     entranceAnimation: _flyInController,
-                                    orbitRing: _buildOrbitRing(orbitRadius),
                                     optionBuilder: (context, index, size) =>
                                         _buildOptionButton(
                                           index: index,
@@ -527,36 +544,6 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
     );
   }
 
-  /// ── 2. Decorative orbit ring ──
-  Widget _buildOrbitRing(double radius) {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final pulseScale = 1.0 + (_pulseController.value * 0.015);
-        return Transform.scale(
-          scale: pulseScale,
-          child: Container(
-            width: radius * 2,
-            height: radius * 2,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.04),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   double _qualitativeOptionWidth(
     BuildContext context,

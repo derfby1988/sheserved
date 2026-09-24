@@ -1,6 +1,6 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
+
+import 'closed_ended_glass_primitives.dart';
 
 class QuantitativeQuestionOptions extends StatelessWidget {
   final List<Widget> options;
@@ -64,87 +64,48 @@ class QuantitativeAnswerOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final labelText = Text(
+      label,
+      style: TextStyle(
+        fontFamily: 'SukhumvitSet',
+        fontSize: size * 0.38,
+        fontWeight: FontWeight.w800,
+        color: Colors.white,
+        shadows: [
+          Shadow(
+            color: const Color(0xFF0A1433).withValues(alpha: 0.45),
+            blurRadius: 6,
+            offset: const Offset(0, 1.5),
+          ),
+          Shadow(
+            color: color.withValues(alpha: isSelected ? 0.9 : 0.45),
+            blurRadius: isSelected ? 14 : 10,
+          ),
+        ],
+      ),
+    );
+
     return AnimatedBuilder(
       animation: glowAnimation,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Center(child: labelText),
+      ),
       builder: (context, child) {
-        final scale = isSelected ? 1 + glowAnimation.value * 0.15 : 1.0;
-        final glowOpacity = isSelected ? 0.25 + glowAnimation.value * 0.3 : 0.0;
+        final t = glowAnimation.value;
         return Transform.scale(
-          scale: scale,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Glow behind selected option
-              if (isSelected)
-                Container(
-                  width: size + 16,
-                  height: size + 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: glowOpacity),
-                        blurRadius: 24,
-                        spreadRadius: 8,
-                      ),
-                    ],
-                  ),
-                ),
-              // Glass option card
-              ClipOval(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                  child: Container(
-                    width: size,
-                    height: size,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.white.withValues(
-                            alpha: isSelected ? 0.18 : 0.08,
-                          ),
-                          color.withValues(alpha: isSelected ? 0.18 : 0.08),
-                          Colors.white.withValues(
-                            alpha: isSelected ? 0.12 : 0.05,
-                          ),
-                        ],
-                      ),
-                      border: Border.all(
-                        color: color.withValues(alpha: isSelected ? 0.5 : 0.25),
-                        width: 0.8,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: color.withValues(alpha: 0.08),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: 'SukhumvitSet',
-                          fontSize: size * 0.32,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          shadows: [
-                            Shadow(
-                              color: color.withValues(alpha: 0.6),
-                              blurRadius: 8,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          scale: isSelected ? 1 + t * 0.15 : 1.0,
+          child: LitGlassSurface(
+            borderRadius: size * 0.26,
+            blurSigma: 20,
+            fillOpacity: isSelected ? 0.14 : 0.07,
+            accentColor: color,
+            accentStrength: isSelected ? 0.36 : 0.16,
+            glowOpacity: isSelected ? 0.35 + t * 0.35 : 0,
+            rimWidth: (size * 0.03).clamp(1.6, 3.0),
+            selected: isSelected,
+            child: child!,
           ),
         );
       },
