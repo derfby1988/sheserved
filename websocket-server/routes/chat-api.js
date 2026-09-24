@@ -13,12 +13,170 @@
 const express = require('express');
 const { cacheAside, TTL, strictRateLimiter, duplicateCheckMiddleware } = require('../middleware');
 const { archiveChatMessages } = require('../services/chat-archive-service');
+const { requireVerifiedIdentity } = require('../middleware/auth');
 
 /**
- * @param {{pool: object|null}} deps
+ * @param {{pool: object|null, supabaseForSync: object|null, verifyTokenMw: Function}} deps
  */
-function chatApiRoutes({ pool }) {
+function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
   const router = express.Router();
+  const closedEndedAuth = verifyTokenMw
+    ? [verifyTokenMw, requireVerifiedIdentity()]
+    : [(req, res) => res.status(503).json({ code: 'FAILED' })];
+  const isUuid = (value) =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const statusForCode = (code) => ({
+    OK: 200,
+    ALREADY_ANSWERED: 200,
+    INVALID_CONFIG: 400,
+    INVALID_CONTENT: 400,
+    INVALID_INDEX: 400,
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+  })[code] || 502;
+  const sendRpcResult = (res, result) => {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      return res.status(502).json({ code: 'FAILED' });
+    }
+    return res.status(statusForCode(result.code)).json(result);
+  };
+  const attachMessage = async (result, messageId) => {
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      !messageId ||
+      !['OK', 'ALREADY_ANSWERED'].includes(result.code)
+    ) {
+      return result;
+    }
+    try {
+      const { data, error } = await supabaseForSync
+        .from('chat_messages')
+        .select('*')
+        .eq('id', messageId)
+        .maybeSingle();
+      if (!error && data) return { ...result, message: data };
+    } catch (error) {
+      console.error('[Closed-ended API] Message refresh failed:', error.message);
+    }
+    return result;
+  };
+
+  router.post('/chat/closed-ended/send', ...closedEndedAuth, async (req, res) => {
+    if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+    if (!isUuid(req.userId)) return res.status(401).json({ code: 'UNAUTHORIZED' });
+
+    const { roomId, content, config, bodyPart } = req.body || {};
+    if (
+      typeof roomId !== 'string' ||
+      roomId.trim().length === 0 ||
+      typeof content !== 'string' ||
+      content.trim().length === 0
+    ) {
+      return sendRpcResult(res, { code: 'INVALID_CONTENT' });
+    }
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return sendRpcResult(res, { code: 'INVALID_CONFIG' });
+    }
+    if (bodyPart != null && typeof bodyPart !== 'string') {
+      return sendRpcResult(res, { code: 'INVALID_CONTENT' });
+    }
+
+    try {
+      const { data, error } = await supabaseForSync.rpc(
+        'send_closed_ended_question_backend',
+        {
+          p_room_id: roomId,
+          p_content: content,
+          p_config: config,
+          p_body_part: bodyPart ?? null,
+          p_caller_id: req.userId,
+        },
+      );
+      if (error) {
+        console.error('[Closed-ended API] Send RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+      const result = await attachMessage(data, data?.message_id?.toString());
+      return sendRpcResult(res, result);
+    } catch (error) {
+      console.error('[Closed-ended API] Send RPC failed:', error.message);
+      return res.status(502).json({ code: 'FAILED' });
+    }
+  });
+
+  router.post(
+    '/chat/closed-ended/:questionMessageId/reading',
+    ...closedEndedAuth,
+    async (req, res) => {
+      if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+      if (!isUuid(req.userId)) {
+        return res.status(401).json({ code: 'UNAUTHORIZED' });
+      }
+      const { questionMessageId } = req.params;
+      if (!isUuid(questionMessageId)) {
+        return sendRpcResult(res, { code: 'NOT_FOUND' });
+      }
+
+      try {
+        const { data, error } = await supabaseForSync.rpc(
+          'mark_closed_ended_question_reading_backend',
+          {
+            p_question_message_id: questionMessageId,
+            p_caller_id: req.userId,
+          },
+        );
+        if (error) {
+          console.error('[Closed-ended API] Reading RPC failed:', error.message);
+          return res.status(502).json({ code: 'FAILED' });
+        }
+        return sendRpcResult(res, await attachMessage(data, questionMessageId));
+      } catch (error) {
+        console.error('[Closed-ended API] Reading RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+    },
+  );
+
+  router.post(
+    '/chat/closed-ended/:questionMessageId/answer',
+    ...closedEndedAuth,
+    async (req, res) => {
+      if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+      if (!isUuid(req.userId)) {
+        return res.status(401).json({ code: 'UNAUTHORIZED' });
+      }
+      const { questionMessageId } = req.params;
+      const { selectedIndex } = req.body || {};
+      if (!isUuid(questionMessageId)) {
+        return sendRpcResult(res, { code: 'NOT_FOUND' });
+      }
+      if (!Number.isInteger(selectedIndex)) {
+        return sendRpcResult(res, { code: 'INVALID_INDEX' });
+      }
+
+      try {
+        const { data, error } = await supabaseForSync.rpc(
+          'answer_closed_ended_question_backend',
+          {
+            p_question_message_id: questionMessageId,
+            p_selected_index: selectedIndex,
+            p_caller_id: req.userId,
+          },
+        );
+        if (error) {
+          console.error('[Closed-ended API] Answer RPC failed:', error.message);
+          return res.status(502).json({ code: 'FAILED' });
+        }
+        return sendRpcResult(res, await attachMessage(data, questionMessageId));
+      } catch (error) {
+        console.error('[Closed-ended API] Answer RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+    },
+  );
 
   router.get('/videos/:videoId/chat', async (req, res) => {
     const { videoId } = req.params;

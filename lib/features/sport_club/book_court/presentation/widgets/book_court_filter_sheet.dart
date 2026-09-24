@@ -3,14 +3,20 @@ import 'package:sheserved/core/constants/app_colors.dart';
 
 import '../../domain/book_court_filter.dart';
 
+class BookCourtFilterSheetResult {
+  const BookCourtFilterSheetResult({required this.filter, required this.query});
+
+  final BookCourtFilter filter;
+  final String query;
+}
+
 /// Advanced filter bottom sheet for Book Court.
 ///
-/// Edits the domain filter only: booking date/time, duration, price range,
-/// minimum rating, court type, amenities, indoor/open-now. Returns the
-/// applied [BookCourtFilter] or null when cancelled. Follows the
-/// interaction pattern of `advanced_filter_sheet.dart` but uses the Book
-/// Court model exclusively — shared sport/location values are not edited
-/// here.
+/// Edits Book Court filters and the shared keyword query. Booking date/time,
+/// duration, price range, minimum rating, court type, amenities, and
+/// indoor/open-now remain domain-specific; shared sport/location values are
+/// not edited here. Follows the interaction pattern of
+/// `advanced_filter_sheet.dart`.
 class BookCourtFilterSheet {
   /// Amenity keys the venue supply schema supports.
   static const amenityOptions = <String, String>{
@@ -26,23 +32,31 @@ class BookCourtFilterSheet {
     'first_aid': 'ปฐมพยาบาล',
   };
 
-  static Future<BookCourtFilter?> show(
+  static Future<BookCourtFilterSheetResult?> show(
     BuildContext context, {
     required BookCourtFilter current,
+    required String currentQuery,
   }) {
-    return showModalBottomSheet<BookCourtFilter>(
+    return showModalBottomSheet<BookCourtFilterSheetResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (sheetContext) =>
-          _BookCourtFilterSheetBody(current: current),
+      builder: (sheetContext) => _BookCourtFilterSheetBody(
+        current: current,
+        currentQuery: currentQuery,
+      ),
     );
   }
 }
 
 class _BookCourtFilterSheetBody extends StatefulWidget {
   final BookCourtFilter current;
-  const _BookCourtFilterSheetBody({required this.current});
+  final String currentQuery;
+
+  const _BookCourtFilterSheetBody({
+    required this.current,
+    required this.currentQuery,
+  });
 
   @override
   State<_BookCourtFilterSheetBody> createState() =>
@@ -51,6 +65,7 @@ class _BookCourtFilterSheetBody extends StatefulWidget {
 
 class _BookCourtFilterSheetBodyState
     extends State<_BookCourtFilterSheetBody> {
+  late final TextEditingController _queryController;
   late DateTime? _date = widget.current.date;
   late TimeOfDay? _startTime = widget.current.startTime;
   late Duration? _duration = widget.current.duration;
@@ -83,7 +98,14 @@ class _BookCourtFilterSheetBodyState
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _queryController = TextEditingController(text: widget.currentQuery);
+  }
+
+  @override
   void dispose() {
+    _queryController.dispose();
     _minPrice.dispose();
     _maxPrice.dispose();
     super.dispose();
@@ -113,21 +135,24 @@ class _BookCourtFilterSheetBodyState
     return '${_date!.day}/${_date!.month}/${_date!.year + 543}';
   }
 
-  BookCourtFilter _buildResult() {
-    return BookCourtFilter(
-      date: _date,
-      startTime: _startTime,
-      duration: _duration,
-      minPrice: double.tryParse(_minPrice.text.trim()),
-      maxPrice: double.tryParse(_maxPrice.text.trim()),
-      minRating: _minRating,
-      availableOnly: widget.current.availableOnly,
-      bookedByMeOnly: widget.current.bookedByMeOnly,
-      ownerOnly: widget.current.ownerOnly,
-      amenityIds: _amenityIds,
-      courtType: _courtType,
-      indoorOnly: _indoorOnly,
-      openNowOnly: _openNowOnly,
+  BookCourtFilterSheetResult _buildResult() {
+    return BookCourtFilterSheetResult(
+      query: _queryController.text.trim(),
+      filter: BookCourtFilter(
+        date: _date,
+        startTime: _startTime,
+        duration: _duration,
+        minPrice: double.tryParse(_minPrice.text.trim()),
+        maxPrice: double.tryParse(_maxPrice.text.trim()),
+        minRating: _minRating,
+        availableOnly: widget.current.availableOnly,
+        bookedByMeOnly: widget.current.bookedByMeOnly,
+        ownerOnly: widget.current.ownerOnly,
+        amenityIds: _amenityIds,
+        courtType: _courtType,
+        indoorOnly: _indoorOnly,
+        openNowOnly: _openNowOnly,
+      ),
     );
   }
 
@@ -155,11 +180,35 @@ class _BookCourtFilterSheetBodyState
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'ตัวกรองสนาม',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'ตัวกรองสนาม',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'ปิด',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
+              TextField(
+                key: const ValueKey('book_court_search_query'),
+                controller: _queryController,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  labelText: 'ค้นหาสนาม',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
 
               // Booking date/time
               Row(
@@ -311,6 +360,7 @@ class _BookCourtFilterSheetBodyState
                   TextButton(
                     onPressed: () {
                       setState(() {
+                        _queryController.clear();
                         _date = null;
                         _startTime = null;
                         _duration = null;

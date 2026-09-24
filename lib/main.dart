@@ -186,10 +186,7 @@ void main() async {
 
   // Initialize Hive
   await Hive.initFlutter();
-  Hive.registerAdapter(ChatRoomAdapter());
-  Hive.registerAdapter(MessageStatusAdapter());
-  Hive.registerAdapter(ChatMessageAdapter());
-  Hive.registerAdapter(ChatParticipantAdapter());
+  registerChatHiveAdapters();
 
   // Open Boxes (with fallback: delete corrupt boxes from schema changes)
   await _openBoxSafe<ChatRoom>('chat_rooms');
@@ -340,13 +337,12 @@ class SheservedApp extends StatelessWidget {
                 repo: BookCourtRepository(Supabase.instance.client),
               ),
             ),
-        '/community/sports/coaches/admin/review': (context) =>
-            AuthGuardWidget(
-              requiredRole: 'admin',
-              child: AdminCoachReviewPage(
-                repo: FindCoachRepository(Supabase.instance.client),
-              ),
-            ),
+        '/community/sports/coaches/admin/review': (context) => AuthGuardWidget(
+          requiredRole: 'admin',
+          child: AdminCoachReviewPage(
+            repo: FindCoachRepository(Supabase.instance.client),
+          ),
+        ),
 
         '/profile': (context) => const ProfilePage(),
         '/emergency-live': (context) => const EmergencyLivePage(),

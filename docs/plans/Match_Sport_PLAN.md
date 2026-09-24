@@ -2942,7 +2942,7 @@ ALTER TABLE public.fitness_group_bookings
 >
 > สรุป: ขยายหน้า `SportClubPage` ให้เป็น Sports Hub ที่ผู้ใช้ปัดซ้าย/ขวาระหว่าง 3 ประสบการณ์หลัก โดยให้ **หาเพื่อนออกกำลังกายอยู่ตรงกลาง** เป็นหน้าหลักเดิม และมีหน้าจองสนามกีฬาอยู่ด้านหนึ่งกับหน้าค้นหาโค้ช/เทรนเนอร์อยู่อีกด้านหนึ่ง ใช้ตัวกรองกีฬา/พื้นที่ร่วมกันเฉพาะส่วนที่มีความหมายร่วมกัน แต่แยกตัวกรองเฉพาะ domain และแยกโฟลเดอร์โค้ดเพื่อให้ค้นหา แก้ไข และทดสอบได้ง่าย
 
-> **สถานะปัจจุบัน:** Phase 21.7.1–21.7.9 implement แล้วใน repository — shared filter contract (persistence/restore/logout), venue supply + owner onboarding/admin review (migration `20260924100000`), discovery + instant booking + owner approval + reviews (migration `20260924110000`, `book_court/`), coach discovery + request lifecycle (migration `20260924120000`, `find_coach/`) พร้อม route wiring ใน `main.dart` และ unit/widget tests เหลือ 21.7.10 release hardening: ยังไม่ได้ apply migration กับฐานข้อมูลจริง, ยังไม่ได้ทดสอบ integration/concurrency ฝั่ง server และ device QA
+> **สถานะปัจจุบัน:** Phase 21.7.1–21.7.9 implement แล้วใน repository — shared filter contract (persistence/restore/logout), venue supply + owner onboarding/admin review (migration `20260924100000`), discovery + instant booking + owner approval + reviews (migration `20260924110000`, `book_court/`), coach discovery + request lifecycle (migration `20260924120000`, `find_coach/`) พร้อม route wiring ใน `main.dart` และ unit/widget tests; migrations ทั้งสาม apply กับ Supabase จริงแล้ว (SQL Editor: "Success. No rows returned") และผ่าน RPC smoke test 32 checks บน scratch Postgres เหลือ 21.7.10 บางส่วน: end-to-end test ผ่าน app กับฐานจริง และ device QA
 
 ### 21.1 ข้อเสนอหลักและมติด้าน UX
 

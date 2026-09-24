@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -50,8 +48,6 @@ class _BookCourtPageState extends State<BookCourtPage> {
   late final BookCourtBookingService _booking;
 
   final _scrollController = ScrollController();
-  final _searchController = TextEditingController();
-  Timer? _searchDebounce;
 
   List<Map<String, dynamic>> _sports = [];
   List<VenueSummary> _venues = [];
@@ -90,7 +86,6 @@ class _BookCourtPageState extends State<BookCourtPage> {
     );
     _scrollController.addListener(_onScroll);
     _hub?.addListener(_onHubChanged);
-    _searchController.text = _hub?.shared.query ?? '';
     _init();
   }
 
@@ -106,8 +101,6 @@ class _BookCourtPageState extends State<BookCourtPage> {
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
-    _searchController.dispose();
     _scrollController.dispose();
     _hub?.removeListener(_onHubChanged);
     super.dispose();
@@ -117,10 +110,6 @@ class _BookCourtPageState extends State<BookCourtPage> {
   /// new request id so superseded responses are discarded.
   void _onHubChanged() {
     if (!mounted) return;
-    final shared = _hub?.shared;
-    if (shared != null && _searchController.text != shared.query) {
-      _searchController.text = shared.query;
-    }
     _reload();
   }
 
@@ -211,16 +200,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
   void _onSportSelected(String? id, bool selected) {
     final hub = _hub;
     if (hub == null) return;
-    hub.updateShared(
-      hub.shared.copyWith(sportId: selected ? id : null, clearSportId: true),
-    );
-  }
-
-  void _onSearchChanged(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-      _hub?.updateShared(_hub!.shared.copyWith(query: value));
-    });
+    hub.updateShared(hub.shared.withSportId(selected ? id : null));
   }
 
   Future<bool> _requestLocation() async {
@@ -289,8 +269,14 @@ class _BookCourtPageState extends State<BookCourtPage> {
   Future<void> _showAdvancedFilter() async {
     final hub = _hub;
     if (hub == null) return;
-    final next = await BookCourtFilterSheet.show(context, current: _filter);
-    if (next != null) hub.updateCourts(next);
+    final result = await BookCourtFilterSheet.show(
+      context,
+      current: _filter,
+      currentQuery: hub.shared.query,
+    );
+    if (result == null || !mounted) return;
+    hub.updateShared(hub.shared.copyWith(query: result.query));
+    hub.updateCourts(result.filter);
   }
 
   // =============== Detail + booking flow ===============
@@ -435,6 +421,8 @@ class _BookCourtPageState extends State<BookCourtPage> {
     final parts = <String>[];
     final shared = _hub?.shared;
     final f = _filter;
+    final query = shared?.query.trim() ?? '';
+    if (query.isNotEmpty) parts.add('ค้นหา: $query');
     if (shared?.province?.isNotEmpty == true) parts.add(shared!.province!);
     if (shared?.district?.isNotEmpty == true) parts.add(shared!.district!);
     if (f.date != null) parts.add('${f.date!.day}/${f.date!.month}');
@@ -453,7 +441,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
         if (filter.ownerOnly)
           Positioned(
             right: 16,
-            bottom: 24,
+            bottom: 120,
             child: FloatingActionButton.extended(
               heroTag: 'book_court_register_venue',
               tooltip: 'ลงทะเบียนสนาม',
@@ -477,37 +465,6 @@ class _BookCourtPageState extends State<BookCourtPage> {
                 sports: _sports,
                 selectedSportId: shared?.sportId,
                 onSportSelected: _onSportSelected,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'การจองของฉัน',
-                      icon: const Icon(Icons.event_note_rounded),
-                      onPressed: _openMyBookings,
-                    ),
-                    IconButton(
-                      tooltip: 'จัดการสนามของฉัน',
-                      icon: const Icon(Icons.storefront_rounded),
-                      onPressed: _openOwnerDashboard,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'ค้นหาสนาม…',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  isDense: true,
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
               ),
               const SizedBox(height: 8),
               BookCourtQuickFilterRow(
@@ -522,6 +479,27 @@ class _BookCourtPageState extends State<BookCourtPage> {
                 onToggleFilter: _toggleQuickFilter,
                 onShowAdvancedFilter: _showAdvancedFilter,
               ),
+              if (filter.ownerOnly) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'การจองของฉัน',
+                        icon: const Icon(Icons.event_note_rounded),
+                        onPressed: _openMyBookings,
+                      ),
+                      IconButton(
+                        tooltip: 'จัดการสนามของฉัน',
+                        icon: const Icon(Icons.storefront_rounded),
+                        onPressed: _openOwnerDashboard,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

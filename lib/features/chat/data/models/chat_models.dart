@@ -6,6 +6,24 @@ export 'closed_ended_config.dart';
 
 part 'chat_models.g.dart';
 
+void registerChatHiveAdapters() {
+  if (!Hive.isAdapterRegistered(0)) {
+    Hive.registerAdapter(ChatRoomAdapter());
+  }
+  if (!Hive.isAdapterRegistered(1)) {
+    Hive.registerAdapter(MessageStatusAdapter());
+  }
+  if (!Hive.isAdapterRegistered(4)) {
+    Hive.registerAdapter(RequiredStatusAdapter());
+  }
+  if (!Hive.isAdapterRegistered(2)) {
+    Hive.registerAdapter(ChatMessageAdapter());
+  }
+  if (!Hive.isAdapterRegistered(3)) {
+    Hive.registerAdapter(ChatParticipantAdapter());
+  }
+}
+
 @HiveType(typeId: 0)
 class ChatRoom {
   @HiveField(0)

@@ -54,6 +54,10 @@ class SportsDiscoveryFilter {
     );
   }
 
+  SportsDiscoveryFilter withSportId(String? nextSportId) {
+    return copyWith(sportId: nextSportId, clearSportId: nextSportId == null);
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'sportId': sportId,
@@ -89,6 +93,12 @@ class SportsDiscoveryFilter {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(sportId, query, province, district, locationEnabled, radiusKm);
+  int get hashCode => Object.hash(
+    sportId,
+    query,
+    province,
+    district,
+    locationEnabled,
+    radiusKm,
+  );
 }

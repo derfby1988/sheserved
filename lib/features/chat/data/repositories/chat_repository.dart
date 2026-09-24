@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/network/authenticated_http_client.dart';
 import '../../../../core/utils/file_ops.dart';
 import '../models/chat_models.dart';
 import '../../../../services/websocket_service.dart';
@@ -37,6 +39,17 @@ class ChatRepository {
         .maybeSingle();
     if (result == null) {
       throw Exception('Access denied: user is not a participant in this room');
+    }
+  }
+
+  Future<void> _cacheMessageSafely(
+    String messageId,
+    ChatMessage message,
+  ) async {
+    try {
+      await _messageBox.put(messageId, message);
+    } catch (e) {
+      debugPrint('ChatRepository: Error caching message $messageId: $e');
     }
   }
 
@@ -305,9 +318,13 @@ class ChatRepository {
       final dbMessages = (response as List)
           .map((json) => ChatMessage.fromJson(json))
           .toList();
+      debugPrint(
+        'ChatRepository: getMessages room=$roomId caller=$callerId '
+        'rows=${dbMessages.length} cached=${localMessages.length}',
+      );
 
       for (var message in dbMessages) {
-        await _messageBox.put(message.id, message);
+        await _cacheMessageSafely(message.id, message);
       }
 
       return dbMessages;
@@ -330,7 +347,7 @@ class ChatRepository {
           .single();
       final sentMessage = ChatMessage.fromJson(response);
 
-      await _messageBox.put(sentMessage.id, sentMessage);
+      await _cacheMessageSafely(sentMessage.id, sentMessage);
 
       // Update room's last message
       await _supabase
@@ -405,7 +422,10 @@ class ChatRepository {
 
       // 3. Update Local Cache
       if (currentMsg != null) {
-        await _messageBox.put(messageId, currentMsg.copyWith(readBy: readBy));
+        await _cacheMessageSafely(
+          messageId,
+          currentMsg.copyWith(readBy: readBy),
+        );
       }
     } catch (e) {
       debugPrint('ChatRepository: Error marking message as read: $e');
@@ -427,12 +447,12 @@ class ChatRepository {
         .stream(primaryKey: ['id'])
         .eq('room_id', roomId)
         .order('created_at', ascending: true)
-        .map((data) {
+        .asyncMap((data) async {
           final messages = data
               .map((json) => ChatMessage.fromJson(json))
               .toList();
-          for (var m in messages) {
-            _messageBox.put(m.id, m);
+          for (final message in messages) {
+            await _cacheMessageSafely(message.id, message);
           }
           return messages;
         });
@@ -561,7 +581,7 @@ class ChatRepository {
           .single();
 
       final updated = ChatMessage.fromJson(response);
-      await _messageBox.put(messageId, updated);
+      await _cacheMessageSafely(messageId, updated);
 
       return true;
     } catch (e) {
@@ -603,7 +623,7 @@ class ChatRepository {
           .single();
 
       final updated = ChatMessage.fromJson(response);
-      await _messageBox.put(messageId, updated);
+      await _cacheMessageSafely(messageId, updated);
 
       return true;
     } catch (e) {
@@ -647,7 +667,7 @@ class ChatRepository {
           .select()
           .single();
       final sentMessage = ChatMessage.fromJson(response);
-      await _messageBox.put(sentMessage.id, sentMessage);
+      await _cacheMessageSafely(sentMessage.id, sentMessage);
 
       return sentMessage;
     } catch (e) {
@@ -723,10 +743,65 @@ class ChatRepository {
           .select()
           .eq('id', messageId)
           .single();
-      await _messageBox.put(messageId, ChatMessage.fromJson(row));
+      await _cacheMessageSafely(messageId, ChatMessage.fromJson(row));
     } catch (e) {
       debugPrint('ChatRepository: Error refreshing message $messageId: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> _closedEndedRequest(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await AuthenticatedHttpClient.instance.request(
+      'POST',
+      path,
+      body: jsonEncode(body),
+    );
+    try {
+      final decoded = jsonDecode(response.body);
+      final result = decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : <String, dynamic>{};
+      result.putIfAbsent(
+        'code',
+        () => switch (response.statusCode) {
+          401 => 'UNAUTHORIZED',
+          403 => 'FORBIDDEN',
+          404 => 'NOT_FOUND',
+          _ => 'FAILED',
+        },
+      );
+      return result;
+    } on FormatException {
+      return {
+        'code': switch (response.statusCode) {
+          401 => 'UNAUTHORIZED',
+          403 => 'FORBIDDEN',
+          404 => 'NOT_FOUND',
+          _ => 'FAILED',
+        },
+      };
+    }
+  }
+
+  Future<ChatMessage?> _cacheClosedEndedMessage(
+    Map<String, dynamic> result, {
+    String? messageId,
+  }) async {
+    final messageData = result['message'];
+    if (messageData is Map) {
+      final message = ChatMessage.fromJson(
+        Map<String, dynamic>.from(messageData),
+      );
+      await _cacheMessageSafely(message.id, message);
+      return message;
+    }
+
+    final id = messageId ?? result['message_id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    await _refreshMessage(id);
+    return _messageBox.get(id);
   }
 
   /// Expert: send a closed-ended question (always required) via RPC.
@@ -735,78 +810,51 @@ class ChatRepository {
     required String content,
     required ClosedEndedConfig config,
     String? bodyPart,
-    required String callerId,
   }) async {
     try {
-      await _verifyParticipant(roomId, callerId);
       final validationError = config.validate();
       if (validationError != null) {
         return const ClosedEndedSendResult(
           code: ClosedEndedRpcCode.invalidConfig,
         );
       }
-      final result = await _supabase.rpc(
-        'send_closed_ended_question',
-        params: {
-          'p_room_id': roomId,
-          'p_content': content,
-          'p_config': config.toJson(),
-          'p_body_part': bodyPart,
-        },
-      );
+      final result = await _closedEndedRequest('/api/chat/closed-ended/send', {
+        'roomId': roomId,
+        'content': content,
+        'config': config.toJson(),
+        'bodyPart': bodyPart,
+      });
       final code = _closedEndedCode(result);
       if (code != ClosedEndedRpcCode.ok) {
         return ClosedEndedSendResult(code: code);
       }
-      ChatMessage? message;
-      final messageId = result is Map ? result['message_id']?.toString() : null;
-      if (messageId != null) {
-        try {
-          final row = await _supabase
-              .from('chat_messages')
-              .select()
-              .eq('id', messageId)
-              .single();
-          message = ChatMessage.fromJson(row);
-          await _messageBox.put(message.id, message);
-        } catch (e) {
-          debugPrint(
-            'ChatRepository: sent but failed to cache message $messageId: $e',
-          );
-        }
-      }
+      final message = await _cacheClosedEndedMessage(result);
       return ClosedEndedSendResult(code: code, message: message);
     } catch (e) {
       debugPrint('ChatRepository: Error sending closed-ended question: $e');
-      return ClosedEndedSendResult(
-        code: e.toString().contains('Access denied')
-            ? ClosedEndedRpcCode.forbidden
-            : ClosedEndedRpcCode.failed,
-      );
+      return const ClosedEndedSendResult(code: ClosedEndedRpcCode.failed);
     }
   }
 
   /// Patient: mark a closed-ended question as `reading` (unread → reading,
   /// idempotent). Closing or switching questions keeps `reading`.
   Future<ClosedEndedRpcCode> markClosedEndedQuestionReading(
-    String messageId, {
-    required String callerId,
-  }) async {
+    String messageId,
+  ) async {
     try {
-      final currentMsg = _messageBox.get(messageId);
-      if (currentMsg != null) {
-        await _verifyParticipant(currentMsg.roomId, callerId);
-      }
-      final result = await _supabase.rpc(
-        'mark_closed_ended_question_reading',
-        params: {'p_question_message_id': messageId},
+      final result = await _closedEndedRequest(
+        '/api/chat/closed-ended/$messageId/reading',
+        const {},
       );
-      return _closedEndedCode(result);
+      final code = _closedEndedCode(result);
+      if (code == ClosedEndedRpcCode.ok ||
+          code == ClosedEndedRpcCode.alreadyAnswered) {
+        await _cacheClosedEndedMessage(result, messageId: messageId);
+      }
+      return code;
     } catch (e) {
       debugPrint('ChatRepository: Error marking closed-ended reading: $e');
-      return e.toString().contains('Access denied')
-          ? ClosedEndedRpcCode.forbidden
-          : ClosedEndedRpcCode.failed;
+      return ClosedEndedRpcCode.failed;
     }
   }
 
@@ -814,38 +862,23 @@ class ChatRepository {
   /// Refreshes the message row so the queue/bubble reflect server state.
   Future<ClosedEndedAnswerResult> answerClosedEndedQuestion(
     String messageId,
-    int selectedIndex, {
-    required String callerId,
-  }) async {
+    int selectedIndex,
+  ) async {
     try {
-      final currentMsg = _messageBox.get(messageId);
-      if (currentMsg != null) {
-        await _verifyParticipant(currentMsg.roomId, callerId);
-      }
-      final result = await _supabase.rpc(
-        'answer_closed_ended_question',
-        params: {
-          'p_question_message_id': messageId,
-          'p_selected_index': selectedIndex,
-        },
+      final result = await _closedEndedRequest(
+        '/api/chat/closed-ended/$messageId/answer',
+        {'selectedIndex': selectedIndex},
       );
       final code = _closedEndedCode(result);
-      final selectedValue = result is Map
-          ? result['selected_value']?.toString()
-          : null;
+      final selectedValue = result['selected_value']?.toString();
       if (code == ClosedEndedRpcCode.ok ||
           code == ClosedEndedRpcCode.alreadyAnswered) {
-        // Sync server truth (answer projection + status) into the cache.
-        await _refreshMessage(messageId);
+        await _cacheClosedEndedMessage(result, messageId: messageId);
       }
       return ClosedEndedAnswerResult(code: code, selectedValue: selectedValue);
     } catch (e) {
       debugPrint('ChatRepository: Error answering closed-ended question: $e');
-      return ClosedEndedAnswerResult(
-        code: e.toString().contains('Access denied')
-            ? ClosedEndedRpcCode.forbidden
-            : ClosedEndedRpcCode.failed,
-      );
+      return const ClosedEndedAnswerResult(code: ClosedEndedRpcCode.failed);
     }
   }
 }

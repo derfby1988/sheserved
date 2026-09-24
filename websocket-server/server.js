@@ -347,7 +347,14 @@ app.use(
 // PDPA face blur for clients without on-device ML Kit (Flutter Web).
 // Reuses services/face-blur-service.js (deface/CenterFace) — fail-closed.
 app.use('/api/media', verifyToken(pool), mediaRoutes());
-app.use('/api', chatApiRoutes({ pool }));
+app.use(
+  '/api',
+  chatApiRoutes({
+    pool,
+    supabaseForSync,
+    verifyTokenMw: verifyToken(pool),
+  }),
+);
 app.use('/api/emergency-health', emergencyHealthRoutes({ verifyTokenMw: verifyToken(pool) }));
 app.use('/api/professions', professionsRoutes({ pool }));
 app.use('/api/users', usersRoutes({ pool, verifyTokenMw: verifyToken(pool) }));

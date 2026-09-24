@@ -148,20 +148,16 @@ void main() {
     setUpAll(() async {
       dir = await Directory.systemTemp.createTemp('hive_closed_ended_test');
       Hive.init(dir.path);
-      if (!Hive.isAdapterRegistered(2)) {
-        Hive.registerAdapter(ChatMessageAdapter());
-      }
-      if (!Hive.isAdapterRegistered(1)) {
-        Hive.registerAdapter(MessageStatusAdapter());
-      }
-      if (!Hive.isAdapterRegistered(4)) {
-        Hive.registerAdapter(RequiredStatusAdapter());
-      }
+      registerChatHiveAdapters();
     });
 
     tearDownAll(() async {
       await Hive.close();
       await dir.delete(recursive: true);
+    });
+
+    test('registers RequiredStatusAdapter for message persistence', () {
+      expect(Hive.isAdapterRegistered(4), isTrue);
     });
 
     test('closed-ended config survives a Hive write/read', () async {

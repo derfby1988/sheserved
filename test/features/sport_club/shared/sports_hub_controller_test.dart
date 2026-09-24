@@ -32,6 +32,21 @@ void main() {
       expect(controller.coaches.verifiedOnly, isTrue);
     });
 
+    test(
+      'shared sport selection replaces the current sport and can clear it',
+      () {
+        const current = SportsDiscoveryFilter(
+          sportId: 'sport-1',
+          query: 'court',
+        );
+
+        final selected = current.withSportId('sport-2');
+        expect(selected.sportId, 'sport-2');
+        expect(selected.query, 'court');
+        expect(selected.withSportId(null).sportId, isNull);
+      },
+    );
+
     test('domain filter edits never leak into other domains', () {
       final controller = SportsHubController(userIdProvider: () => 'u1');
       controller.updateCourts(
@@ -64,9 +79,7 @@ void main() {
         const SportBuddiesFilter(joinedOnly: true, noFeesOnly: true),
       );
       controller.updateCourts(const BookCourtFilter(minPrice: 999));
-      controller.updateCoaches(
-        const FindCoachFilter(maxHourlyRate: 500),
-      );
+      controller.updateCoaches(const FindCoachFilter(maxHourlyRate: 500));
 
       final legacy = controller.toSportClubFilter();
       expect(legacy.sportId, 's1');
@@ -102,8 +115,7 @@ void main() {
       expect(controller.courts, const BookCourtFilter());
     });
 
-    test('seedFromSportClubFilter applies once and only on fresh state',
-        () {
+    test('seedFromSportClubFilter applies once and only on fresh state', () {
       final controller = SportsHubController(userIdProvider: () => 'u1');
       controller.seedFromSportClubFilter(
         const SportClubFilter(sportId: 's1', province: 'p1'),
@@ -120,9 +132,7 @@ void main() {
 
     test('seed is ignored when hub already has persisted state', () {
       final controller = SportsHubController(userIdProvider: () => 'u1');
-      controller.updateShared(
-        const SportsDiscoveryFilter(sportId: 'existing'),
-      );
+      controller.updateShared(const SportsDiscoveryFilter(sportId: 'existing'));
       controller.seedFromSportClubFilter(
         const SportClubFilter(sportId: 'legacy'),
       );

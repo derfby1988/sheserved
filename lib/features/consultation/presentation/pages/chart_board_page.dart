@@ -98,6 +98,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
   String? _consultationRoomId;
   String? _activeConsultationId;
+  String? _chatInitError;
 
   late final ValueNotifier<List<ChatMessage>> _messagesNotifier;
   late final ValueNotifier<bool> _isChatLoadingNotifier;
@@ -733,6 +734,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       final supabase = Supabase.instance.client;
 
       if (currentUserId == null) {
+        debugPrint('ChartBoardPage: initChat aborted — no current user');
         _isChatLoadingNotifier.value = false;
         return;
       }
@@ -748,12 +750,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       }
 
       if (consultationId == null || consultationId.isEmpty) {
+        debugPrint('ChartBoardPage: initChat aborted — no consultation id');
         _isChatLoadingNotifier.value = false;
         setState(() => _isConsultationActive = false);
         return;
       }
 
       final roomId = 'consult_$consultationId';
+      debugPrint(
+        'ChartBoardPage: initChat room=$roomId user=$currentUserId '
+        'consultation=$consultationId isProvider=$_isProvider',
+      );
       setState(() {
         _consultationRoomId = roomId;
         _activeConsultationId = consultationId;
@@ -1005,10 +1012,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         roomId,
         callerId: currentUserId,
       );
+      debugPrint('ChartBoardPage: loaded ${messages.length} messages');
 
       if (mounted) {
         _messagesNotifier.value = messages;
         _isChatLoadingNotifier.value = false;
+        if (_chatInitError != null) setState(() => _chatInitError = null);
 
         // Load body part message counts (Phase 6.6)
         await _bodyMapChatController.loadMessageCounts(
@@ -1035,9 +1044,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _slideController.forward();
         _scrollToBottom();
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('ChartBoardPage: Init error: $e');
-      if (mounted) _isChatLoadingNotifier.value = false;
+      debugPrint('$st');
+      if (mounted) {
+        _isChatLoadingNotifier.value = false;
+        setState(() => _chatInitError = e.toString());
+      }
     }
   }
 
@@ -1577,7 +1590,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       content: text,
       config: config,
       bodyPart: _bodyMapChatController.activeBodyPart,
-      callerId: _currentUser?.id ?? '',
     );
 
     if (!mounted) return;
@@ -1991,6 +2003,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget build(BuildContext context) {
     final isProviderActive =
         _isProvider && (_consultationData?['status'] == 'in_progress');
+    // Pain level + payment card belong to the pre-submission flow only. An
+    // existing consultation keeps status 'pending' until an expert accepts it,
+    // so gating on status alone asked the patient to confirm pain level (and
+    // re-submit) on every re-entry.
+    final isPreSubmissionFlow =
+        widget.entry == null && (widget.request?.id ?? '').isEmpty;
 
     return PopScope(
       canPop: !_hasSubmitted && !isProviderActive,
@@ -2234,6 +2252,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 // Pain level selector + Payment card for patients before payment/activation
                 if (!_isProvider &&
                     !_hasSubmitted &&
+                    isPreSubmissionFlow &&
                     (_consultationData?['status'] ?? 'pending') == 'pending')
                   Column(
                     children: [
@@ -2606,6 +2625,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           );
         }
 
+        if (_chatInitError != null) {
+          return _buildChatStatusHint(
+            icon: Icons.error_outline_rounded,
+            color: AppColors.error,
+            text: 'โหลดแชทไม่สำเร็จ: $_chatInitError',
+          );
+        }
+
         final activePart = _bodyMapChatController.activeBodyPart;
         final allMessages = _messagesNotifier.value;
         // Sort: required questions with answers use answer time; others use creation time
@@ -2630,6 +2657,17 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             : sortedMessages
                   .where((m) => m.bodyPart?.toLowerCase().trim() == activePart)
                   .toList();
+        if (messages.isEmpty) {
+          return _buildChatStatusHint(
+            icon: activePart == null
+                ? Icons.forum_outlined
+                : Icons.filter_alt_off_outlined,
+            color: Colors.grey.shade600,
+            text: activePart == null
+                ? 'ยังไม่มีข้อความในห้องนี้'
+                : 'ไม่มีข้อความในส่วนที่เลือกไว้',
+          );
+        }
         return FadeTransition(
           opacity: _fadeAnimation,
           child: SlideTransition(
@@ -2674,6 +2712,30 @@ class _ChartBoardPageState extends State<ChartBoardPage>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildChatStatusHint({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 10),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: color, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3650,10 +3712,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         _showRequiredOverlay = false;
         _requiredAnswerController.clear();
       });
-      await _chatRepository.markClosedEndedQuestionReading(
-        question.id,
-        callerId: _currentUser?.id ?? '',
-      );
+      await _chatRepository.markClosedEndedQuestionReading(question.id);
       return;
     }
 
@@ -3742,7 +3801,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     final result = await _chatRepository.answerClosedEndedQuestion(
       question.id,
       index,
-      callerId: _currentUser?.id ?? '',
     );
     if (!mounted) return false;
 

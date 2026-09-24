@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/service_locator.dart';
 import '../../../admin/data/repositories/profession_repository.dart';
+import '../../data/models/consultation_request_model.dart';
 
 class ConsultationGuard {
   static bool _isNavigating = false; // Guard: ป้องกัน double-tap ระหว่างตรวจสอบ
-  static bool _isNavigatingPatient = false; // Guard: ป้องกัน double-tap สำหรับ patient flow
+  static bool _isNavigatingPatient =
+      false; // Guard: ป้องกัน double-tap สำหรับ patient flow
 
   /// Entry point to start consultation — navigate ทันทีโดยไม่แสดง loading dialog
   static Future<void> startConsultation(BuildContext context) async {
@@ -70,7 +72,21 @@ class ConsultationGuard {
         return;
       }
 
-      // 5. ข้อมูลครบถ้วน -> ไปหน้า Package Selection
+      // 5. มีคำปรึกษาที่เปิดอยู่แล้ว -> เปิดห้องแชทเดิม ไม่ต้องซื้อใหม่
+      final activeConsultation = await findActiveConsultation(user.id);
+      if (activeConsultation != null) {
+        if (context.mounted) {
+          Navigator.pushNamed(
+            context,
+            '/chart-board',
+            arguments: {'request': activeConsultation},
+          );
+        }
+        _isNavigating = false;
+        return;
+      }
+
+      // 6. ข้อมูลครบถ้วน -> ไปหน้า Package Selection
       if (context.mounted) {
         Navigator.pushNamed(context, '/package-healthcare');
       }
@@ -83,6 +99,27 @@ class ConsultationGuard {
     } finally {
       _isNavigating = false;
     }
+  }
+
+  /// Latest consultation that is still open for the patient (pending = waiting
+  /// for an expert, in_progress = chat running). Re-entering the consultation
+  /// entry point should reopen that room instead of starting a new purchase,
+  /// which otherwise re-asks the pain level and creates duplicate requests.
+  static Future<ConsultationRequestModel?> findActiveConsultation(
+    String userId,
+  ) async {
+    try {
+      final repo = ServiceLocator.instance.consultationRepository;
+      final requests = await repo.getUserRequests(userId);
+      for (final request in requests) {
+        if (request.status == 'pending' || request.status == 'in_progress') {
+          return request;
+        }
+      }
+    } catch (e) {
+      debugPrint('ConsultationGuard: active consultation lookup failed: $e');
+    }
+    return null;
   }
 
   /// Entry point for patient consultation — skip provider check, always treat as consumer
@@ -130,7 +167,21 @@ class ConsultationGuard {
         return;
       }
 
-      // 3. ข้อมูลครบถ้วน -> ไปหน้า Package Selection
+      // 3. มีคำปรึกษาที่เปิดอยู่แล้ว -> เปิดห้องแชทเดิม ไม่ต้องซื้อใหม่
+      final activeConsultation = await findActiveConsultation(user.id);
+      if (activeConsultation != null) {
+        if (context.mounted) {
+          Navigator.pushNamed(
+            context,
+            '/chart-board',
+            arguments: {'request': activeConsultation},
+          );
+        }
+        _isNavigatingPatient = false;
+        return;
+      }
+
+      // 4. ข้อมูลครบถ้วน -> ไปหน้า Package Selection
       if (context.mounted) {
         Navigator.pushNamed(
           context,
