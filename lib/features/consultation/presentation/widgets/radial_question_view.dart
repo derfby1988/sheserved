@@ -21,12 +21,13 @@ export '../../../chat/data/models/closed_ended_config.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 6.14 — Radial Question View (Closed-ended Question, Patient Side)
 //
-// Public shell/composition for the patient answer UI. It owns only transient
-// presentation state (entrance/glow animations, confirmation dialog, and the
-// scoped mobile orientation override). It never queries the database and
-// never persists answers — confirm intents are delegated to the owner via
-// [onConfirmAnswer], and draft selection is reported through
-// [onDraftChanged] so the owner can keep drafts keyed by question id.
+// Glass Morphism UI ตามหลักการ Photoshop Glass Morphism Effect:
+//   1. Atmospheric Background — ไล่เฉดสีทไวไลท์/ภูเขาและทะเลสาบ พร้อมแสงเรืองรอบข้าง
+//   2. Rounded Shape / Circular Prompt — การ์ดตรงกลางพร้อมแสงเงาสะท้อนสมจริง
+//   3. Gaussian Blur — BackdropFilter + ImageFilter.blur (sigma 18-24)
+//   4. Gradient Overlay & Transparency — สีขาวโปร่งใส 50-70%
+//   5. Highlights & Shadows — แสงสะท้อนขอบบน (Inner Shine) + ขอบเส้นคมขาวโปร่งใส 40%
+//   6. Translucent Lines — เส้นเชื่อมโยง (Spokes) และเส้นวงโคจรโปร่งแสง
 // ─────────────────────────────────────────────────────────────────────────────
 
 class RadialQuestionView extends StatefulWidget {
@@ -49,6 +50,9 @@ class RadialQuestionView extends StatefulWidget {
   /// confirming resolves immediately.
   final Future<bool> Function(int index, String label)? onConfirmAnswer;
 
+  /// Callback เมื่อเลือกคำตอบ (สำหรับ backward compatibility)
+  final void Function(int index, String label)? onAnswerSelected;
+
   /// Called when the view should close — either the patient dismissed it
   /// (question keeps `reading` status) or the answer was saved (`answered`).
   final VoidCallback? onClose;
@@ -66,6 +70,7 @@ class RadialQuestionView extends StatefulWidget {
     this.initialSelectedIndex,
     this.onDraftChanged,
     this.onConfirmAnswer,
+    this.onAnswerSelected,
     this.onClose,
     this.expertAvatarUrl,
     this.expertName,
@@ -210,8 +215,17 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
       optionColor: _optionColor(index),
       isQuantitative: widget.config.type == ClosedEndedType.quantitative,
       onConfirm: widget.onConfirmAnswer == null
-          ? null
-          : () => widget.onConfirmAnswer!(index, label),
+          ? () async {
+              widget.onAnswerSelected?.call(index, label);
+              return true;
+            }
+          : () async {
+              final result = await widget.onConfirmAnswer!(index, label);
+              if (result) {
+                widget.onAnswerSelected?.call(index, label);
+              }
+              return result;
+            },
     );
 
     if (!mounted) return;
@@ -238,30 +252,81 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
       child: LayoutBuilder(
         builder: (context, _) => Stack(
           children: [
-            // ── Background blur overlay ──
+            // ── Background: บรรยากาศทไวไลท์/ภูเขาและทะเลสาบตามแบบภาพตัวอย่าง (Step 1) ──
             Positioned.fill(
               child: GestureDetector(
                 onTap: _close,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Container(
-                      decoration: BoxDecoration(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // 1. ไล่เฉดสีลึก ฟ้าเข้ม-ม่วง-คราม (Mountain & Lake Sunset Tone)
+                    Container(
+                      decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            const Color(0xFF0D1B2A).withValues(alpha: 0.65),
-                            const Color(0xFF1B2838).withValues(alpha: 0.75),
-                            const Color(0xFF0D1B2A).withValues(alpha: 0.85),
+                            Color(0xFF0A1128), // Deep twilight navy
+                            Color(0xFF161B3A), // Twilight mountain purple
+                            Color(0xFF261D3B), // Horizon dusk magenta
+                            Color(0xFF18233C), // Reflective lake deep blue
+                            Color(0xFF090E1F), // Dark base
                           ],
+                          stops: [0.0, 0.25, 0.55, 0.80, 1.0],
                         ),
                       ),
                     ),
-                  ),
+
+                    // 2. แสงเรืองบรรยากาศ (Ambient Sunset Lake Glows) เพื่อให้กระจกมีแสงสะท้อนจริง
+                    Positioned(
+                      top: media.size.height * 0.18,
+                      right: -media.size.width * 0.15,
+                      child: Container(
+                        width: media.size.width * 0.75,
+                        height: media.size.width * 0.75,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              const Color(0xFF38BDF8).withValues(alpha: 0.16),
+                              const Color(0xFF818CF8).withValues(alpha: 0.08),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: media.size.height * 0.22,
+                      left: -media.size.width * 0.20,
+                      child: Container(
+                        width: media.size.width * 0.85,
+                        height: media.size.width * 0.85,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              const Color(0xFFE27D60).withValues(alpha: 0.18),
+                              const Color(0xFFC084FC).withValues(alpha: 0.08),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // 3. ฟิลเตอร์ Gaussian Blur บางๆ ทั่วทั้งพื้นหลังให้เนียนตา
+                    BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.15),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+
             Positioned.fill(
               child: AdaptiveClosedEndedLayout(
                 questionText: widget.questionText,
@@ -284,41 +349,62 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                                 radialConstraints.maxHeight,
                               );
                               final orbitRadius = radialSide * 0.32;
-                              return RadialQuestionLayout(
-                                question: ClosedEndedQuestionPrompt.circular(
-                                  questionText: widget.questionText,
-                                  key: const ValueKey(
-                                    'closed-ended-question-center',
+                              final centerRadius = radialSide * 0.14;
+
+                              return Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // ── เส้นเชื่อมต่อโปร่งแสง (Translucent Spokes) จาก Card กลางไปแต่ละตัวเลือก ──
+                                  _buildConnectingLines(
+                                    orbitRadius: orbitRadius,
+                                    centerRadius: centerRadius,
+                                    size: radialSide,
                                   ),
-                                  size: radialSide * 0.28,
-                                  pulseAnimation: _pulseController,
-                                ),
-                                optionCount: _optionCount,
-                                optionSizeFactor: isQuantitative ? 0.14 : 0.24,
-                                optionWidthBuilder: isQuantitative
-                                    ? null
-                                    : (context, index, side) {
-                                        final maxWidth = math.min(
-                                          112.0,
-                                          side * 0.28,
-                                        );
-                                        return _qualitativeOptionWidth(
-                                          context,
-                                          options[index],
-                                          maxWidth,
-                                          minWidth: math.min(64.0, maxWidth),
-                                        );
-                                      },
-                                startAngle: isQuantitative
-                                    ? -math.pi / 2
-                                    : -math.pi / 2 - math.pi / _optionCount,
-                                entranceAnimation: _flyInController,
-                                orbitRing: _buildOrbitRing(orbitRadius),
-                                optionBuilder: (context, index, size) =>
-                                    _buildOptionButton(
-                                      index: index,
-                                      size: size,
+
+                                  // ── Radial question layout (Center card + Orbit ring + Options) ──
+                                  RadialQuestionLayout(
+                                    question: ClosedEndedQuestionPrompt.circular(
+                                      questionText: widget.questionText,
+                                      key: const ValueKey(
+                                        'closed-ended-question-center',
+                                      ),
+                                      size: radialSide * 0.28,
+                                      pulseAnimation: _pulseController,
                                     ),
+                                    optionCount: _optionCount,
+                                    optionSizeFactor:
+                                        isQuantitative ? 0.14 : 0.24,
+                                    optionWidthBuilder: isQuantitative
+                                        ? null
+                                        : (context, index, side) {
+                                            final maxWidth = math
+                                                .max(
+                                                  64.0,
+                                                  (side / 2) -
+                                                      (side * 0.14) -
+                                                      24,
+                                                )
+                                                .toDouble();
+                                            return _qualitativeOptionWidth(
+                                              context,
+                                              options[index],
+                                              maxWidth,
+                                              minWidth:
+                                                  math.min(64.0, maxWidth),
+                                            );
+                                          },
+                                    startAngle: isQuantitative
+                                        ? -math.pi / 2
+                                        : -math.pi / 2 - math.pi / _optionCount,
+                                    entranceAnimation: _flyInController,
+                                    orbitRing: _buildOrbitRing(orbitRadius),
+                                    optionBuilder: (context, index, size) =>
+                                        _buildOptionButton(
+                                          index: index,
+                                          size: size,
+                                        ),
+                                  ),
+                                ],
                               );
                             },
                           ),
@@ -334,8 +420,14 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                   final optionWidgets = List.generate(_optionCount, (index) {
                     final label = options[index];
                     final optionSize = isQuantitative
-                        ? ((contentWidth - 36) / 4).clamp(48.0, 72.0).toDouble()
-                        : _qualitativeOptionWidth(context, label, contentWidth);
+                        ? ((contentWidth - 36) / 4)
+                            .clamp(48.0, 72.0)
+                            .toDouble()
+                        : _qualitativeOptionWidth(
+                            context,
+                            label,
+                            contentWidth,
+                          );
                     return _buildOptionButton(
                       index: index,
                       size: optionSize,
@@ -374,6 +466,7 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                 },
               ),
             ),
+
             // ── Back button (top-left) ──
             Positioned(
               top: media.padding.top + 12,
@@ -384,6 +477,7 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
                 semanticsLabel: 'ปิดคำถาม',
               ),
             ),
+
             // ── Expert info (top-center) ──
             if (widget.expertName != null)
               Positioned(
@@ -403,11 +497,41 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
     );
   }
 
-  /// ── Decorative orbit ring ──
+  /// ── 1. เส้นเชื่อมต่อโปร่งแสง (Translucent Spokes) จาก Card กลางไปแต่ละตัวเลือก ──
+  Widget _buildConnectingLines({
+    required double orbitRadius,
+    required double centerRadius,
+    required double size,
+  }) {
+    final isQuantitative = widget.config.type == ClosedEndedType.quantitative;
+    final startAngle = isQuantitative
+        ? -math.pi / 2
+        : -math.pi / 2 - math.pi / _optionCount;
+
+    return AnimatedBuilder(
+      animation: _flyInController,
+      builder: (context, child) {
+        return CustomPaint(
+          size: Size(size, size),
+          painter: _RadialConnectingLinesPainter(
+            optionCount: _optionCount,
+            centerRadius: centerRadius,
+            orbitRadius: orbitRadius,
+            startAngle: startAngle,
+            selectedIndex: _selectedIndex,
+            optionColor: _optionColor,
+            animationValue: _flyInController.value,
+          ),
+        );
+      },
+    );
+  }
+
+  /// ── 2. Decorative orbit ring ──
   Widget _buildOrbitRing(double radius) {
     return AnimatedBuilder(
       animation: _pulseController,
-      builder: (_, _) {
+      builder: (context, child) {
         final pulseScale = 1.0 + (_pulseController.value * 0.015);
         return Transform.scale(
           scale: pulseScale,
@@ -417,9 +541,16 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.05),
-                width: 0.8,
+                color: Colors.white.withValues(alpha: 0.18),
+                width: 1.0,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
           ),
         );
@@ -496,13 +627,22 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
+            color: Colors.white.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.35),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 16,
+              ),
+            ],
           ),
           child: Text(
             widget.config.type == ClosedEndedType.quantitative
@@ -513,12 +653,102 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
               fontFamily: 'SukhumvitSet',
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withValues(alpha: 0.85),
               height: 1.3,
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOM PAINTERS — รูปทรงเส้นโปร่งใสและสีตามภาพตัวอย่าง
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Painter วาดเส้นเชื่อมต่อโปร่งแสง (Radial Spokes) จากศูนย์กลางไปยังแต่ละตัวเลือก
+class _RadialConnectingLinesPainter extends CustomPainter {
+  final int optionCount;
+  final double centerRadius;
+  final double orbitRadius;
+  final double startAngle;
+  final int? selectedIndex;
+  final Color Function(int) optionColor;
+  final double animationValue;
+
+  _RadialConnectingLinesPainter({
+    required this.optionCount,
+    required this.centerRadius,
+    required this.orbitRadius,
+    required this.startAngle,
+    this.selectedIndex,
+    required this.optionColor,
+    required this.animationValue,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (optionCount <= 0 || animationValue <= 0) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+
+    for (int i = 0; i < optionCount; i++) {
+      final angle = startAngle + (2 * math.pi * i / optionCount);
+      final isSelected = selectedIndex == i;
+      final color = optionColor(i);
+
+      // เริ่มจากขอบ Card กลางไปยังปุ่มตัวเลือก
+      final startOffset = Offset(
+        center.dx + (centerRadius * 0.95) * math.cos(angle),
+        center.dy + (centerRadius * 0.95) * math.sin(angle),
+      );
+      final targetEnd = Offset(
+        center.dx + (orbitRadius * 0.86) * math.cos(angle),
+        center.dy + (orbitRadius * 0.86) * math.sin(angle),
+      );
+
+      final currentEnd = Offset.lerp(
+        startOffset,
+        targetEnd,
+        animationValue.clamp(0.0, 1.0),
+      )!;
+
+      // เรืองแสงนุ่มๆ ด้านหลังเส้นที่เลือก
+      if (isSelected) {
+        final glowPaint = Paint()
+          ..color = color.withValues(alpha: 0.45)
+          ..strokeWidth = 4.5
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+        canvas.drawLine(startOffset, currentEnd, glowPaint);
+      }
+
+      // เส้นกระจกโปร่งแสง (Translucent Glass Line สอดคล้องภาพตัวอย่าง)
+      final linePaint = Paint()
+        ..color = isSelected
+            ? color.withValues(alpha: 0.90)
+            : Colors.white.withValues(alpha: 0.22)
+        ..strokeWidth = isSelected ? 2.2 : 1.2
+        ..strokeCap = StrokeCap.round;
+
+      canvas.drawLine(startOffset, currentEnd, linePaint);
+
+      // จุดเชื่อมต่อกลมโปร่งแสงเล็กๆ (Connecting Node)
+      final nodePaint = Paint()
+        ..color = isSelected
+            ? color.withValues(alpha: 0.95)
+            : Colors.white.withValues(alpha: 0.35)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(startOffset, isSelected ? 3.0 : 2.0, nodePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadialConnectingLinesPainter oldDelegate) {
+    return oldDelegate.selectedIndex != selectedIndex ||
+        oldDelegate.animationValue != animationValue ||
+        oldDelegate.optionCount != optionCount ||
+        oldDelegate.startAngle != startAngle;
   }
 }
