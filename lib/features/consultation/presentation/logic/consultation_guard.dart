@@ -101,25 +101,48 @@ class ConsultationGuard {
     }
   }
 
-  /// Latest consultation that is still open for the patient (pending = waiting
-  /// for an expert, in_progress = chat running). Re-entering the consultation
-  /// entry point should reopen that room instead of starting a new purchase,
-  /// which otherwise re-asks the pain level and creates duplicate requests.
+  /// Latest active case takes precedence over a newer request still waiting
+  /// for an expert, so re-entry opens the room that is actually in progress.
   static Future<ConsultationRequestModel?> findActiveConsultation(
     String userId,
   ) async {
     try {
       final repo = ServiceLocator.instance.consultationRepository;
-      final requests = await repo.getUserRequests(userId);
-      for (final request in requests) {
-        if (request.status == 'pending' || request.status == 'in_progress') {
-          return request;
-        }
-      }
+      return selectActiveConsultation(await repo.getUserRequests(userId));
     } catch (e) {
       debugPrint('ConsultationGuard: active consultation lookup failed: $e');
+      return null;
+    }
+  }
+
+  static ConsultationRequestModel? selectActiveConsultation(
+    List<ConsultationRequestModel> requests,
+  ) {
+    for (final status in const ['in_progress', 'pending']) {
+      for (final request in requests) {
+        if (request.status == status) return request;
+      }
     }
     return null;
+  }
+
+  static List<ConsultationRequestModel> prioritizePatientHistory(
+    List<ConsultationRequestModel> requests,
+  ) {
+    int priority(String status) => switch (status) {
+      'in_progress' => 0,
+      'pending' => 1,
+      'awaiting_payment' => 2,
+      _ => 3,
+    };
+
+    final sorted = List<ConsultationRequestModel>.of(requests);
+    sorted.sort((a, b) {
+      final statusOrder = priority(a.status).compareTo(priority(b.status));
+      if (statusOrder != 0) return statusOrder;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return sorted;
   }
 
   /// Entry point for patient consultation — skip provider check, always treat as consumer

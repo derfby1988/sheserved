@@ -5,6 +5,7 @@ import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
 import 'health_program_request_dashboard.dart' show dashboardRouteObserver;
+import '../logic/consultation_guard.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 
 class MyConsultationsPage extends StatefulWidget {
@@ -53,7 +54,9 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
       if (userId == null) return;
 
       final repo = ServiceLocator.instance.consultationRepository;
-      final history = await repo.getUserRequests(userId);
+      final history = ConsultationGuard.prioritizePatientHistory(
+        await repo.getUserRequests(userId),
+      );
 
       if (mounted) {
         setState(() {
@@ -286,7 +289,9 @@ class MyConsultationsPageState extends State<MyConsultationsPage>
         onTap: () {
           final isFinished = req.status == 'completed';
           final isReadOnly =
-              req.status == 'completed' || req.status == 'cancelled';
+              req.status == 'completed' ||
+              req.status == 'cancelled' ||
+              req.status == 'expired';
           Navigator.pushNamed(
             context,
             '/chart-board',

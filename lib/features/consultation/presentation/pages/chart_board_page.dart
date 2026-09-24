@@ -726,6 +726,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     return '';
   }
 
+  /// Pain level + payment card belong to the pre-submission flow only. An
+  /// existing consultation keeps status 'pending' until an expert accepts it,
+  /// so gating on status alone asked the patient to confirm pain level (and
+  /// re-submit) on every re-entry.
+  bool get _isPreSubmissionFlow =>
+      widget.entry == null && (widget.request?.id ?? '').isEmpty;
+
   Future<void> _initChat() async {
     _isChatLoadingNotifier.value = true;
 
@@ -756,10 +763,18 @@ class _ChartBoardPageState extends State<ChartBoardPage>
         return;
       }
 
-      final roomId = 'consult_$consultationId';
+      // Prefer the room id stored with the consultation: repair/legacy data can
+      // map a consultation to a room that is not `consult_<id>`, and deriving
+      // it here would open (or even create) an empty duplicate room.
+      final derivedRoomId = 'consult_$consultationId';
+      final storedRoomId = widget.entry?.roomId ?? widget.request?.roomId;
+      final roomId = (storedRoomId != null && storedRoomId.isNotEmpty)
+          ? storedRoomId
+          : derivedRoomId;
       debugPrint(
         'ChartBoardPage: initChat room=$roomId user=$currentUserId '
-        'consultation=$consultationId isProvider=$_isProvider',
+        'consultation=$consultationId isProvider=$_isProvider'
+        '${roomId == derivedRoomId ? '' : ' (db room_id ≠ $derivedRoomId)'}',
       );
       setState(() {
         _consultationRoomId = roomId;
@@ -787,6 +802,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       final consultData = results[0];
       final roomData = results[1];
+
+      final dbRoomId = consultData?['room_id'] as String?;
+      if (dbRoomId != null && dbRoomId.isNotEmpty && dbRoomId != roomId) {
+        debugPrint(
+          'ChartBoardPage: room mismatch — opened=$roomId db=$dbRoomId '
+          'consultation=$consultationId',
+        );
+      }
 
       if (consultData != null) {
         if (mounted) {
@@ -1184,7 +1207,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       // Fallback 1: query chat_room_members + users
       if (mapped.isEmpty) {
-        final roomId = 'consult_$consultationId';
+        final roomId = _consultationRoomId ?? 'consult_$consultationId';
         final members = await Supabase.instance.client
             .from('chat_room_members')
             .select(
@@ -1413,6 +1436,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
       if (existing == null) {
         // Create room with the current user's ID as participant
+        debugPrint(
+          'ChartBoardPage: creating missing chat room $roomId '
+          'for consultation ${consultationId ?? '-'}',
+        );
         await supabase
             .from('chat_rooms')
             .insert({
@@ -2003,12 +2030,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   Widget build(BuildContext context) {
     final isProviderActive =
         _isProvider && (_consultationData?['status'] == 'in_progress');
-    // Pain level + payment card belong to the pre-submission flow only. An
-    // existing consultation keeps status 'pending' until an expert accepts it,
-    // so gating on status alone asked the patient to confirm pain level (and
-    // re-submit) on every re-entry.
-    final isPreSubmissionFlow =
-        widget.entry == null && (widget.request?.id ?? '').isEmpty;
 
     return PopScope(
       canPop: !_hasSubmitted && !isProviderActive,
@@ -2252,7 +2273,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 // Pain level selector + Payment card for patients before payment/activation
                 if (!_isProvider &&
                     !_hasSubmitted &&
-                    isPreSubmissionFlow &&
+                    _isPreSubmissionFlow &&
                     (_consultationData?['status'] ?? 'pending') == 'pending')
                   Column(
                     children: [
@@ -2991,7 +3012,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             readOnly: readOnly,
             readOnlyLabel: _hasFinished
                 ? 'คุณจบงานแล้ว — กดยกเลิกเพื่อแชทต่อ'
-                : null,
+                : (widget.readOnly && !_isProvider
+                      ? 'เคสนี้ปิดแล้ว — ดูประวัติได้อย่างเดียว'
+                      : null),
+            inactiveLabel: _isPreSubmissionFlow
+                ? null
+                : 'รอผู้เชี่ยวชาญรับเคสก่อนเริ่มแชท',
             onSend: _sendMessage,
             onStartRecording: _startRecording,
             onStopRecording: _stopRecording,
@@ -3328,7 +3354,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   Future<void> _startVideoCall() async {
-    final roomId = widget.entry?.roomId ?? 'consult_${widget.request?.id}';
+    final roomId =
+        _consultationRoomId ??
+        widget.entry?.roomId ??
+        'consult_${widget.request?.id}';
     await Navigator.pushNamed(
       context,
       '/live-vdo',

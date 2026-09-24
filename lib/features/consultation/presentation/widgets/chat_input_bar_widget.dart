@@ -10,6 +10,7 @@ class ChatInputBarWidget extends StatelessWidget {
   final ValueListenable<bool> isRecording;
   final bool readOnly;
   final String? readOnlyLabel;
+  final String? inactiveLabel;
   final VoidCallback onSend;
   final VoidCallback onStartRecording;
   final VoidCallback onStopRecording;
@@ -34,6 +35,7 @@ class ChatInputBarWidget extends StatelessWidget {
     required this.isRecording,
     required this.readOnly,
     this.readOnlyLabel,
+    this.inactiveLabel,
     required this.onSend,
     required this.onStartRecording,
     required this.onStopRecording,
@@ -317,7 +319,7 @@ class ChatInputBarWidget extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'กดยืนยันเพื่อเริ่มต้นการแชท',
+                        inactiveLabel ?? 'กดยืนยันเพื่อเริ่มต้นการแชท',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.orange.shade800,
