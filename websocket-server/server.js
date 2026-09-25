@@ -188,9 +188,11 @@ if (USE_DATABASE) {
         startFitnessBookingNotificationListener().catch(err => {
           console.error('[FitnessBuddies] Failed to start booking notification listener:', err.message);
         });
-        startSportsHubNotificationListener().catch(err => {
-          console.error('[SportsHub] Failed to start notification listener:', err.message);
-        });
+        if (!process.env.SUPABASE_DB_HOST) {
+          startSportsHubNotificationListener().catch(err => {
+            console.error('[SportsHub] Failed to start notification listener:', err.message);
+          });
+        }
         if (supabase) {
            syncQueueService.enqueueSync({ syncType: 'startup' }).catch(err => {
                console.error('[Sync] Startup sync enqueue failed:', err.message);

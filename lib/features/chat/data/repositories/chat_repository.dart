@@ -837,7 +837,8 @@ class ChatRepository {
   }
 
   /// Patient: mark a closed-ended question as `reading` (unread → reading,
-  /// idempotent). Closing or switching questions keeps `reading`.
+  /// idempotent). Callers must first return any other `reading` question to
+  /// `unread` so only one question is amber at a time.
   Future<ClosedEndedRpcCode> markClosedEndedQuestionReading(
     String messageId,
   ) async {
@@ -854,6 +855,28 @@ class ChatRepository {
       return code;
     } catch (e) {
       debugPrint('ChatRepository: Error marking closed-ended reading: $e');
+      return ClosedEndedRpcCode.failed;
+    }
+  }
+
+  /// Patient: return a closed-ended question from `reading` back to `unread`
+  /// (reading → unread, no-op when already answered). Used when the patient
+  /// switches to another required question or closes the answer UI.
+  Future<ClosedEndedRpcCode> markClosedEndedQuestionUnread(
+    String messageId,
+  ) async {
+    try {
+      final result = await _closedEndedRequest(
+        '/api/chat/closed-ended/$messageId/unread',
+        const {},
+      );
+      final code = _closedEndedCode(result);
+      if (code == ClosedEndedRpcCode.ok) {
+        await _cacheClosedEndedMessage(result, messageId: messageId);
+      }
+      return code;
+    } catch (e) {
+      debugPrint('ChatRepository: Error marking closed-ended unread: $e');
       return ClosedEndedRpcCode.failed;
     }
   }

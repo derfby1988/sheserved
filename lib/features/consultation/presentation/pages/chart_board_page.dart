@@ -59,6 +59,7 @@ import '../widgets/completion_checklist.dart';
 import '../widgets/finish_job_warning_dialog.dart';
 import '../widgets/closed_ended_dialog.dart';
 import '../widgets/radial_question_view.dart';
+import '../logic/required_question_status.dart';
 
 class ChartBoardPage extends StatefulWidget {
   final ConsultationRequestModel? request;
@@ -3727,9 +3728,49 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
   }
 
+  /// Patient: return every other `reading` required question to `unread`.
+  ///
+  /// Only one question may be amber ("กำลังตอบ") at a time — otherwise the
+  /// expert sees several typing indicators and thinks the patient is
+  /// answering multiple questions simultaneously.
+  Future<void> _revertReadingRequiredQuestions({String? keepId}) async {
+    if (_isProvider) return;
+
+    final stale = RequiredQuestionStatus.staleReadingQuestions(
+      _requiredQuestions,
+      keepId: keepId,
+    );
+    if (stale.isEmpty) return;
+
+    // Optimistic local update so the button colours flip immediately.
+    final staleIds = stale.map((q) => q.id).toSet();
+    _messagesNotifier.value = _messagesNotifier.value
+        .map(
+          (m) => staleIds.contains(m.id)
+              ? m.copyWith(requiredStatus: RequiredStatus.unread)
+              : m,
+        )
+        .toList();
+
+    for (final q in stale) {
+      if (q.type == 'closed_ended_question') {
+        await _chatRepository.markClosedEndedQuestionUnread(q.id);
+      } else {
+        await _chatRepository.updateRequiredStatus(
+          q.id,
+          RequiredStatus.unread,
+          callerId: _currentUser?.id ?? '',
+        );
+      }
+    }
+  }
+
   /// Patient taps a floating required question button
   void _onPatientTapRequiredQuestion(ChatMessage question) async {
     if (_isProvider) return; // Only patient side
+
+    // Switching questions: the previously opened one goes back to red.
+    await _revertReadingRequiredQuestions(keepId: question.id);
 
     // Phase 6.14: closed-ended questions open the radial/adaptive UI.
     if (question.type == 'closed_ended_question') {
@@ -3820,15 +3861,19 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   }
 
   /// Patient closes the closed-ended UI without confirming.
-  /// The server status stays 'reading' (Phase 6.14 requirement) so the
-  /// question can be reopened or switched to another pending question
-  /// while keeping the draft selection in [_closedEndedDrafts].
-  void _onClosedEndedClose() {
+  /// The question returns to `unread` (red) so the expert does not keep
+  /// seeing an "answering" indicator; the draft selection is still kept in
+  /// [_closedEndedDrafts] and restored when the patient reopens it.
+  void _onClosedEndedClose() async {
+    final question = _activeRequiredQuestion;
     setState(() {
       _showClosedEndedOverlay = false;
       _activeRequiredQuestion = null;
       _lastManualCloseTime = DateTime.now();
     });
+    if (question != null && question.type == 'closed_ended_question') {
+      await _revertReadingRequiredQuestions();
+    }
   }
 
   /// Persists a confirmed closed-ended answer via the trusted RPC.

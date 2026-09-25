@@ -141,6 +141,39 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
   );
 
   router.post(
+    '/chat/closed-ended/:questionMessageId/unread',
+    ...closedEndedAuth,
+    async (req, res) => {
+      if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+      if (!isUuid(req.userId)) {
+        return res.status(401).json({ code: 'UNAUTHORIZED' });
+      }
+      const { questionMessageId } = req.params;
+      if (!isUuid(questionMessageId)) {
+        return sendRpcResult(res, { code: 'NOT_FOUND' });
+      }
+
+      try {
+        const { data, error } = await supabaseForSync.rpc(
+          'mark_closed_ended_question_unread_backend',
+          {
+            p_question_message_id: questionMessageId,
+            p_caller_id: req.userId,
+          },
+        );
+        if (error) {
+          console.error('[Closed-ended API] Unread RPC failed:', error.message);
+          return res.status(502).json({ code: 'FAILED' });
+        }
+        return sendRpcResult(res, await attachMessage(data, questionMessageId));
+      } catch (error) {
+        console.error('[Closed-ended API] Unread RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+    },
+  );
+
+  router.post(
     '/chat/closed-ended/:questionMessageId/answer',
     ...closedEndedAuth,
     async (req, res) => {
