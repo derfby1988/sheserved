@@ -3,8 +3,14 @@ import 'package:sheserved/core/constants/app_colors.dart';
 
 import '../../data/book_court_models.dart';
 
-/// Owner editor for weekly operating hours. One row per day (Sunday-first,
-/// matching `day_of_week` 0–6) with a closed toggle and open/close pickers.
+/// Owner editor for weekly operating hours.
+///
+/// Every weekday must be specified explicitly — an open window or closed.
+/// Unset days are never auto-filled with a default window, and cross-
+/// midnight windows are rejected (bookings do not support cross-day slots).
+/// The explicit "เปิด 24 ชั่วโมงทุกวัน" toggle emits 00:00–23:59 for all
+/// days; without it, absence of rows is never treated as always-open.
+///
 /// Returns the `p_hours` list for `set_sports_venue_operating_hours`:
 /// `[{day, open, close, closed}]`.
 class VenueHoursEditorSheet {
@@ -24,10 +30,15 @@ class VenueHoursEditorSheet {
 class _DayHours {
   final int day;
   bool closed;
+
+  /// Explicitly chosen times — null until the owner picks them. A day is
+  /// specified only when [closed] is true or both times are set.
   TimeOfDay? open;
   TimeOfDay? close;
 
   _DayHours({required this.day, this.closed = false, this.open, this.close});
+
+  bool get specified => closed || (open != null && close != null);
 }
 
 class _VenueHoursEditorSheetBody extends StatefulWidget {
@@ -53,6 +64,7 @@ class _VenueHoursEditorSheetBodyState
   ];
 
   late final List<_DayHours> _days;
+  late bool _allDay;
 
   static TimeOfDay? _parse(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -64,9 +76,20 @@ class _VenueHoursEditorSheetBodyState
     return TimeOfDay(hour: h, minute: m);
   }
 
+  static bool _isAllDay(List<VenueOperatingHours> current) {
+    if (current.length != 7) return false;
+    return current.every(
+      (h) =>
+          !h.isClosed &&
+          _parse(h.openTime) == const TimeOfDay(hour: 0, minute: 0) &&
+          _parse(h.closeTime) == const TimeOfDay(hour: 23, minute: 59),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _allDay = _isAllDay(widget.current);
     _days = List.generate(7, (day) {
       final existing = widget.current
           .where((h) => h.dayOfWeek == day)
@@ -74,9 +97,8 @@ class _VenueHoursEditorSheetBodyState
       return _DayHours(
         day: day,
         closed: existing?.isClosed ?? false,
-        open: _parse(existing?.openTime) ?? const TimeOfDay(hour: 9, minute: 0),
-        close:
-            _parse(existing?.closeTime) ?? const TimeOfDay(hour: 21, minute: 0),
+        open: _parse(existing?.openTime),
+        close: _parse(existing?.closeTime),
       );
     });
   }
@@ -106,8 +128,20 @@ class _VenueHoursEditorSheetBodyState
     return close <= open;
   }
 
+  int get _unspecifiedCount => _days.where((d) => !d.specified).length;
+
+  bool get _valid =>
+      _allDay || (_unspecifiedCount == 0 && !_days.any(_invalidRange));
+
   void _submit() {
-    if (_days.any(_invalidRange)) return;
+    if (!_valid) return;
+    if (_allDay) {
+      Navigator.pop(context, [
+        for (var day = 0; day < 7; day++)
+          {'day': day, 'open': '00:00', 'close': '23:59', 'closed': false},
+      ]);
+      return;
+    }
     Navigator.pop(context, [
       for (final day in _days)
         {
@@ -136,56 +170,83 @@ class _VenueHoursEditorSheetBodyState
                 'เวลาเปิด–ปิด',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 12),
-              for (final day in _days)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 84,
-                        child: Text(
-                          _dayLabels[day.day],
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+              const SizedBox(height: 4),
+              Text(
+                'ระบุทุกวันว่าเปิดหรือปิด — ไม่รองรับช่วงเวลาข้ามเที่ยงคืน',
+                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('เปิด 24 ชั่วโมงทุกวัน'),
+                value: _allDay,
+                onChanged: (v) => setState(() => _allDay = v),
+              ),
+              if (!_allDay)
+                for (final day in _days)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 84,
+                          child: Text(
+                            _dayLabels[day.day],
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: day.closed
-                            ? Text(
-                                'ปิด',
-                                style: TextStyle(color: Colors.grey.shade500),
-                              )
-                            : Row(
-                                children: [
-                                  _TimeButton(
-                                    label: _fmt(day.open!),
-                                    onTap: () => _pick(day, isOpen: true),
-                                  ),
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 6,
+                        Expanded(
+                          child: day.closed
+                              ? Text(
+                                  'ปิด',
+                                  style: TextStyle(color: Colors.grey.shade500),
+                                )
+                              : Row(
+                                  children: [
+                                    _TimeButton(
+                                      label: day.open == null
+                                          ? '--:--'
+                                          : _fmt(day.open!),
+                                      onTap: () => _pick(day, isOpen: true),
                                     ),
-                                    child: Text('–'),
-                                  ),
-                                  _TimeButton(
-                                    label: _fmt(day.close!),
-                                    onTap: () => _pick(day, isOpen: false),
-                                  ),
-                                ],
-                              ),
-                      ),
-                      Switch(
-                        value: !day.closed,
-                        onChanged: (open) => setState(() => day.closed = !open),
-                      ),
-                    ],
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                      ),
+                                      child: Text('–'),
+                                    ),
+                                    _TimeButton(
+                                      label: day.close == null
+                                          ? '--:--'
+                                          : _fmt(day.close!),
+                                      onTap: () => _pick(day, isOpen: false),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                        Switch(
+                          value: !day.closed,
+                          onChanged: (open) =>
+                              setState(() => day.closed = !open),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              if (_days.any(_invalidRange))
+              if (!_allDay && _unspecifiedCount > 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'เวลาปิดต้องอยู่หลังเวลาเปิด',
+                    'ยังไม่ระบุ $_unspecifiedCount วัน — กรุณาเลือกเวลาหรือปิด',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                ),
+              if (!_allDay && _days.any(_invalidRange))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'เวลาปิดต้องอยู่หลังเวลาเปิด (ไม่รองรับข้ามเที่ยงคืน)',
                     style: TextStyle(fontSize: 12, color: Colors.red.shade700),
                   ),
                 ),
@@ -196,7 +257,7 @@ class _VenueHoursEditorSheetBodyState
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primaryDark,
                   ),
-                  onPressed: _days.any(_invalidRange) ? null : _submit,
+                  onPressed: _valid ? _submit : null,
                   child: const Text('บันทึก'),
                 ),
               ),

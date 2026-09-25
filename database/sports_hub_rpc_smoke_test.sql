@@ -4,8 +4,9 @@
 -- owner onboarding + admin authorization, approved-only public visibility,
 -- atomic overlap rejection, idempotency keys, terms-version snapshotting,
 -- booking/request lifecycle (pending -> confirmed -> completed), review
--- gating (completed-only, one review per booking) and durable
--- app_notifications rows.
+-- gating (completed-only, one review per booking), durable
+-- app_notifications rows and the 21.7.11 readiness gate (draft ->
+-- submit -> review, resubmission, sport/court consistency, manager scope).
 --
 -- Run against a SCRATCH database only — the script creates minimal stub
 -- tables for `sports`, `users`, `app_notifications` and `is_admin_role`
@@ -63,6 +64,7 @@ END $$;
 \ir ../supabase/migrations/20260924120000_sports_hub_coaches.sql
 \ir ../supabase/migrations/20260925100000_sports_hub_owner_contact_fix.sql
 \ir ../supabase/migrations/20260925110000_sports_hub_notification_delivery.sql
+\ir ../supabase/migrations/20260925130000_sports_hub_venue_review_readiness.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -71,13 +73,18 @@ BEGIN
   ELSE RAISE WARNING 'FAIL: %', label; END IF;
 END $$;
 
-CREATE OR REPLACE FUNCTION pg_temp.expect_raise(label text, sql text)
+CREATE OR REPLACE FUNCTION pg_temp.expect_raise(label text, sql text,
+                                                expected text DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
   EXECUTE sql;
   RAISE WARNING 'FAIL: % (no error raised)', label;
 EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'PASS: % (%)', label, SQLERRM;
+  IF expected IS NULL OR position(expected IN SQLERRM) > 0 THEN
+    RAISE NOTICE 'PASS: % (%)', label, SQLERRM;
+  ELSE
+    RAISE WARNING 'FAIL: % (got %, expected %)', label, SQLERRM, expected;
+  END IF;
 END $$;
 
 DO $smoke$
@@ -88,13 +95,15 @@ DECLARE
   v_cust2 uuid := 'dddddddd-0000-0000-0000-000000000004';
   v_sport uuid := 'eeeeeeee-0000-0000-0000-000000000005';
   v_mail  uuid := 'ffffffff-0000-0000-0000-000000000006';
-  v_app uuid; v_venue uuid; v_court uuid; v_terms int;
+  v_mgr   uuid := '99999999-0000-0000-0000-000000000007';
+  v_app uuid; v_venue uuid; v_venue2 uuid; v_court uuid; v_terms int;
   v_b1 uuid; v_b2 uuid; v_review uuid;
+  v_missing text[];
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
     (v_admin,'Admin','A','admin'), (v_owner,'Owner','O','user'),
     (v_cust,'Cust','C','user'), (v_cust2,'Cust2','C2','user'),
-    (v_mail,'Mail','M','user');
+    (v_mail,'Mail','M','user'), (v_mgr,'Mgr','M','user');
   INSERT INTO public.sports (id, name_en, status)
     VALUES (v_sport,'Badminton','approved');
 
@@ -122,23 +131,93 @@ BEGIN
     WHERE user_id = v_owner AND status = 'approved'),
     'owner profile approved');
 
-  -- supply: venue + court + terms
+  -- 21.7.11: new venues start as 'draft' and stay out of public surfaces
   v_venue := public.upsert_sports_venue(
     v_owner, NULL, 'Test Arena', NULL, 'Bangkok', 'Chatuchak',
     'addr', 13.8, 100.5, 'Asia/Bangkok');
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
+    WHERE id = v_venue) = 'draft', 'new venue starts as draft');
+  PERFORM pg_temp.expect(NOT EXISTS(
+    SELECT 1 FROM public.sports_venues_public WHERE id = v_venue),
+    'draft venue hidden from public view');
+
+  -- admin cannot approve a draft or an incomplete venue
+  PERFORM pg_temp.expect_raise('admin cannot approve a draft venue',
+    format('SELECT public.review_sports_venue(%L, %L, %L)',
+           v_admin, v_venue, 'approved'));
+  PERFORM pg_temp.expect_raise('submit before setup is rejected',
+    format('SELECT public.submit_sports_venue_for_review(%L, %L)',
+           v_owner, v_venue), 'VENUE_NOT_READY');
+  PERFORM pg_temp.expect_raise('non-manager cannot submit venue',
+    format('SELECT public.submit_sports_venue_for_review(%L, %L)',
+           v_cust, v_venue));
+
+  -- hours must cover all 7 days explicitly
+  PERFORM pg_temp.expect_raise('partial hours rejected',
+    format($s$SELECT public.set_sports_venue_operating_hours(%L, %L,
+      jsonb_build_array(jsonb_build_object(
+        'day', 1, 'open', '09:00', 'close', '18:00', 'closed', false)))$s$,
+      v_owner, v_venue));
+  PERFORM pg_temp.expect_raise('cross-midnight window rejected',
+    format($s$SELECT public.set_sports_venue_operating_hours(%L, %L, (
+      SELECT jsonb_agg(jsonb_build_object(
+        'day', d, 'open', '20:00', 'close', '02:00', 'closed', false))
+      FROM generate_series(0, 6) d))$s$, v_owner, v_venue));
+
+  -- complete setup: sports, full hours, amenities confirmation, terms,
+  -- one active court
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
+    jsonb_build_array(jsonb_build_object(
+      'sport_id', v_sport, 'unit_label_override', 'คอร์ท')));
+  PERFORM public.set_sports_venue_operating_hours(v_owner, v_venue, (
+    SELECT jsonb_agg(jsonb_build_object(
+      'day', d, 'open', '08:00', 'close', '22:00', 'closed', false))
+    FROM generate_series(0, 6) d));
+  PERFORM public.set_sports_venue_amenities(v_owner, v_venue, '{}');
+  PERFORM pg_temp.expect((SELECT amenities_confirmed
+    FROM public.sports_venues WHERE id = v_venue),
+    'saving empty amenities persists "confirmed none"');
+  v_terms := public.publish_sports_venue_terms(v_owner, v_venue, 'No smoking', 60);
+  PERFORM pg_temp.expect(v_terms = 1, 'terms v1 published');
+  v_court := public.upsert_sports_venue_court(
+    v_owner, NULL, v_venue, v_sport, 'Court 1',
+    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true);
+
+  v_missing := public.sports_venue_setup_missing(v_venue);
+  PERFORM pg_temp.expect(COALESCE(array_length(v_missing, 1), 0) = 0,
+    'setup complete after all items persisted');
+
+  -- sport/court consistency: bound sport cannot be removed
+  PERFORM pg_temp.expect_raise('sport with active court cannot be removed',
+    format($s$SELECT public.set_sports_venue_sports(%L, %L, '[]'::jsonb)$s$,
+      v_owner, v_venue));
+
+  -- submit -> pending -> approve
+  PERFORM public.submit_sports_venue_for_review(v_owner, v_venue);
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
+    WHERE id = v_venue) = 'pending', 'submit moves venue to pending');
   PERFORM public.review_sports_venue(v_admin, v_venue, 'approved');
   PERFORM pg_temp.expect(EXISTS(
     SELECT 1 FROM public.sports_venues_public WHERE id = v_venue),
     'approved venue appears in public view');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_status_events
+    WHERE venue_id = v_venue AND new_status = 'approved'),
+    'review transition audited');
 
-  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
-    jsonb_build_array(jsonb_build_object(
-      'sport_id', v_sport, 'unit_label_override', 'คอร์ท')));
-  v_court := public.upsert_sports_venue_court(
-    v_owner, NULL, v_venue, v_sport, 'Court 1',
-    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true);
-  v_terms := public.publish_sports_venue_terms(v_owner, v_venue, 'No smoking', 60);
-  PERFORM pg_temp.expect(v_terms = 1, 'terms v1 published');
+  -- manager scope: member without own owner profile manages the venue
+  PERFORM public.set_sports_venue_member(v_owner, v_venue, v_mgr, 'manager');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.list_my_sports_venues(v_mgr)
+    WHERE id = v_venue AND member_role = 'manager'),
+    'assigned manager sees venue in scope with manager role');
+  PERFORM pg_temp.expect(
+    (public.get_my_sports_venue_detail(v_mgr, v_venue)
+      ->> 'member_role') = 'manager',
+    'manager reads venue detail without owner profile');
+  PERFORM pg_temp.expect_raise('manager cannot create own venue',
+    format($s$SELECT public.upsert_sports_venue(
+      %L, NULL, 'Mgr Venue', NULL, NULL, NULL, NULL, NULL, NULL)$s$, v_mgr));
 
   -- 21.7.5 instant booking + atomicity
   v_b1 := public.create_sports_venue_booking(
@@ -212,6 +291,51 @@ BEGIN
     SELECT 1 FROM public.app_notifications
     WHERE recipient_id = v_cust2 AND category = 'venue_booking'),
     'venue_booking notification persisted');
+
+  -- rejected venue: fix + resubmit -> pending -> approve; suspended venue
+  -- cannot resubmit through the normal path.
+  v_venue2 := public.upsert_sports_venue(
+    v_owner, NULL, 'Second Arena', NULL, 'Bangkok', 'Sathon',
+    'addr2', 13.7, 100.5, 'Asia/Bangkok');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue2,
+    jsonb_build_array(jsonb_build_object('sport_id', v_sport)));
+  PERFORM public.set_sports_venue_operating_hours(v_owner, v_venue2, (
+    SELECT jsonb_agg(jsonb_build_object(
+      'day', d, 'open', '00:00', 'close', '23:59', 'closed', false))
+    FROM generate_series(0, 6) d));
+  PERFORM public.set_sports_venue_amenities(
+    v_owner, v_venue2, '{parking}');
+  PERFORM public.confirm_sports_venue_platform_terms(v_owner, v_venue2);
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, NULL, v_venue2, v_sport, 'Court A',
+    1, NULL, 'hour', NULL, NULL, 'instant', NULL, true);
+  PERFORM pg_temp.expect(
+    COALESCE(array_length(
+      public.sports_venue_setup_missing(v_venue2), 1), 0) = 0,
+    'platform terms + explicit 24/7 hours satisfy readiness');
+  PERFORM public.submit_sports_venue_for_review(v_owner, v_venue2);
+  PERFORM public.review_sports_venue(
+    v_admin, v_venue2, 'rejected', 'ข้อมูลไม่ครบ');
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
+    WHERE id = v_venue2) = 'rejected'
+    AND (SELECT rejection_reason FROM public.sports_venues
+      WHERE id = v_venue2) = 'ข้อมูลไม่ครบ',
+    'rejected keeps reason for owner correction');
+  PERFORM public.submit_sports_venue_for_review(v_owner, v_venue2);
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
+    WHERE id = v_venue2) = 'pending', 'rejected venue resubmits to pending');
+  PERFORM public.review_sports_venue(v_admin, v_venue2, 'approved');
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
+    WHERE id = v_venue2) = 'approved', 'resubmitted venue approved');
+
+  PERFORM public.review_sports_venue(
+    v_admin, v_venue2, 'suspended', 'ผิดนัดตรวจ');
+  PERFORM pg_temp.expect_raise('suspended venue cannot resubmit',
+    format('SELECT public.submit_sports_venue_for_review(%L, %L)',
+           v_owner, v_venue2));
+  PERFORM pg_temp.expect_raise('reject without reason rejected',
+    format($s$SELECT public.review_sports_venue(%L, %L, 'rejected')$s$,
+      v_admin, v_venue));
 
   RAISE NOTICE 'venue smoke test complete';
 END $smoke$;

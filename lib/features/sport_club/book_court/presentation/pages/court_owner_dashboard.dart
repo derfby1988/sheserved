@@ -52,14 +52,16 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     }
     setState(() => _loading = true);
     try {
-      final profile = await widget.repo.getMyOwnerProfile(userId);
-      final venues = profile?.status == VenueOwnerStatus.approved
-          ? await widget.repo.listMyVenues(userId)
-          : <VenueSummary>[];
+      // listMyVenues already scopes to venues the user manages — including
+      // assigned venue managers who have no owner profile of their own.
+      final results = await Future.wait([
+        widget.repo.getMyOwnerProfile(userId),
+        widget.repo.listMyVenues(userId),
+      ]);
       if (!mounted) return;
       setState(() {
-        _ownerProfile = profile;
-        _venues = venues;
+        _ownerProfile = results[0] as VenueOwnerProfile?;
+        _venues = results[1] as List<VenueSummary>;
         _loading = false;
       });
     } catch (_) {
@@ -94,7 +96,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     if (name == null) return;
     try {
       await _ownerService.upsertVenue(userId: userId, name: name);
-      _toast('สร้างสนามแล้ว — เพิ่มคอร์ทและรอการอนุมัติ');
+      _toast('สร้างสนามแล้ว — ตั้งค่าให้ครบแล้วกดส่งตรวจสอบ');
       await _load();
     } catch (e) {
       _toast(_mapError(e));
@@ -183,25 +185,31 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                 children: [
                   _buildOwnerStatusCard(),
                   const SizedBox(height: 8),
-                  if (_ownerProfile?.status == VenueOwnerStatus.approved) ...[
+                  // Venues the user manages are always listed — assigned
+                  // managers see their scope without owning a profile, but
+                  // only an approved owner may create a new venue.
+                  if (_venues.isNotEmpty ||
+                      _ownerProfile?.status == VenueOwnerStatus.approved) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
-                              'สนามของฉัน (${_venues.length})',
+                              'สนามที่จัดการ (${_venues.length})',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 15,
                               ),
                             ),
                           ),
-                          FilledButton.tonalIcon(
-                            onPressed: _addVenue,
-                            icon: const Icon(Icons.add_rounded, size: 18),
-                            label: const Text('เพิ่มสนาม'),
-                          ),
+                          if (_ownerProfile?.status ==
+                              VenueOwnerStatus.approved)
+                            FilledButton.tonalIcon(
+                              onPressed: _addVenue,
+                              icon: const Icon(Icons.add_rounded, size: 18),
+                              label: const Text('เพิ่มสนาม'),
+                            ),
                         ],
                       ),
                     ),
@@ -287,6 +295,23 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                       fontSize: 12.5,
                       color: Colors.grey.shade700,
                     ),
+                  ),
+                ),
+              if (status == VenueOwnerStatus.rejected)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: FilledButton.tonalIcon(
+                    onPressed: _applyAsOwner,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('แก้ไขและส่งคำขอใหม่'),
+                  ),
+                ),
+              if (status == VenueOwnerStatus.suspended)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'หากต้องการอุทธรณ์ กรุณาติดต่อทีมงาน Sheserved',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ),
             ],

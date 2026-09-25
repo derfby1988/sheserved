@@ -478,6 +478,40 @@ class BookCourtRepository {
     );
   }
 
+  /// Submit a draft (or rejected) venue for admin review. The server
+  /// refuses with VENUE_NOT_READY while mandatory setup items are missing.
+  Future<void> submitVenueForReview(String userId, String venueId) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'submit_sports_venue_for_review',
+      params: {'p_user_id': userId, 'p_venue_id': venueId},
+    );
+  }
+
+  /// Confirm the platform base terms (version 0) for a venue instead of
+  /// publishing custom terms.
+  Future<void> confirmPlatformTerms(String userId, String venueId) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'confirm_sports_venue_platform_terms',
+      params: {'p_user_id': userId, 'p_venue_id': venueId},
+    );
+  }
+
+  /// Admin-side readiness snapshot for one venue under review: the venue
+  /// row, missing setup items, counts and status history.
+  Future<Map<String, dynamic>> getVenueAdminReviewDetail(
+    String adminId,
+    String venueId,
+  ) async {
+    _assertCurrentUser(adminId);
+    final res = await _client.rpc(
+      'get_sports_venue_admin_review_detail',
+      params: {'p_admin_id': adminId, 'p_venue_id': venueId},
+    );
+    return Map<String, dynamic>.from(res as Map);
+  }
+
   Future<int> publishVenueTerms(
     String userId,
     String venueId,

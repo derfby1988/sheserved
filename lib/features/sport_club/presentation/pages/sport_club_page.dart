@@ -105,12 +105,14 @@ class SportClubPage extends StatefulWidget {
   /// the hub so the same values apply on the Book Court and Find Coach
   /// pages, and edits made here propagate back to the hub.
   final SportsHubController? hubController;
+  final FitnessBuddiesRepository? repository;
 
   const SportClubPage({
     super.key,
     this.embeddedInSportsHub = false,
     this.controller,
     this.hubController,
+    this.repository,
   });
 
   @override
@@ -131,6 +133,7 @@ class _SportClubPageState extends State<SportClubPage> {
   SportClubFilter _filter = const SportClubFilter();
   bool _loading = true;
   bool _reloadingGroups = false;
+  bool _hubFilterSyncReady = false;
   Set<String> _myAdminGroups = {};
   Set<String> _myJoinedGroupIds = {};
   Set<String> _myPendingGroupIds = {};
@@ -140,6 +143,7 @@ class _SportClubPageState extends State<SportClubPage> {
   double? _userLat;
   double? _userLng;
   int _filterRequestId = 0;
+  int _sportsRequestId = 0;
   DateTime? _lastSuccessfulFetchAt;
   bool _backgroundRefreshInFlight = false;
   final _listScrollController = ScrollController();
@@ -177,7 +181,8 @@ class _SportClubPageState extends State<SportClubPage> {
   @override
   void initState() {
     super.initState();
-    _repo = FitnessBuddiesRepository(Supabase.instance.client);
+    _repo =
+        widget.repository ?? FitnessBuddiesRepository(Supabase.instance.client);
     _groupQuery = SportClubGroupQuery(
       listGroups: _repo.listGroups,
       idsWithAnySessions: _repo.filterGroupIdsWithAnySessions,
@@ -207,7 +212,7 @@ class _SportClubPageState extends State<SportClubPage> {
   /// notification loop can occur.
   void _onHubFilterChanged() {
     final hub = widget.hubController;
-    if (hub == null) return;
+    if (hub == null || !_hubFilterSyncReady) return;
     final next = hub.toSportClubFilter();
     if (next == _filter) return;
     unawaited(_applyFilter(next));
@@ -434,16 +439,20 @@ class _SportClubPageState extends State<SportClubPage> {
     }
 
     final hub = widget.hubController;
-    if (hub == null) return;
-    if (!hub.isLoaded) await hub.load();
-    if (hub.state == const SportsHubFilterState()) {
-      // Fresh hub namespace: seed it from the legacy persisted filter so
-      // existing users keep their sport/location choices (21.7.2 migration
-      // path). A hub that already has its own saved state wins instead.
-      hub.seedFromSportClubFilter(_filter);
+    if (hub != null) {
+      try {
+        if (!hub.isLoaded) await hub.load();
+        if (hub.state == const SportsHubFilterState()) {
+          // Fresh hub namespace: seed it from the legacy persisted filter so
+          // existing users keep their sport/location choices (21.7.2 migration
+          // path). A hub that already has its own saved state wins instead.
+          hub.seedFromSportClubFilter(_filter);
+        }
+        final hubFilter = hub.toSportClubFilter();
+        if (hubFilter != _filter) _filter = hubFilter;
+      } catch (_) {}
     }
-    final hubFilter = hub.toSportClubFilter();
-    if (hubFilter != _filter) _filter = hubFilter;
+    _hubFilterSyncReady = true;
   }
 
   Future<void> _persistFilterState() =>
@@ -484,13 +493,22 @@ class _SportClubPageState extends State<SportClubPage> {
     );
   }
 
+  Future<void> _loadApprovedSports(String? userId) async {
+    final requestId = ++_sportsRequestId;
+    try {
+      final sports = await _repo.getApprovedSports(userId: userId);
+      if (!mounted || requestId != _sportsRequestId) return;
+      setState(() => _sports = sports);
+    } catch (_) {}
+  }
+
   Future<void> _init() async {
     final requestId = ++_filterRequestId;
     try {
       final userId = AuthService.instance.currentUser?.id;
+      unawaited(_loadApprovedSports(userId));
       await _restoreFilterState(userId);
       if (requestId != _filterRequestId) return;
-      final sports = await _repo.getApprovedSports(userId: userId);
       final membership = await _membershipSnapshot(userId);
       final page = await _fetchGroupPage(
         offset: 0,
@@ -503,10 +521,8 @@ class _SportClubPageState extends State<SportClubPage> {
 
       if (!mounted || requestId != _filterRequestId) return;
       setState(() {
-        _sports = sports;
         _groups = page.groups;
         _cardDataByGroupId = cardData;
-        _loading = false;
         _currentOffset = page.nextOffset;
         _hasMore = page.hasMore;
         _myAdminGroups = membership.admin;
@@ -523,8 +539,13 @@ class _SportClubPageState extends State<SportClubPage> {
       // Phase 20: handle pending deep link
       _handlePendingDeepLink();
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+    } finally {
+      if (mounted && requestId == _filterRequestId) {
+        setState(() {
+          _loading = false;
+          _reloadingGroups = false;
+        });
+      }
     }
   }
 
@@ -635,7 +656,10 @@ class _SportClubPageState extends State<SportClubPage> {
       if (error.message != 'STALE_FILTER_REQUEST') rethrow;
     } finally {
       if (mounted && requestId == _filterRequestId) {
-        setState(() => _reloadingGroups = false);
+        setState(() {
+          _reloadingGroups = false;
+          _loading = false;
+        });
       }
     }
   }

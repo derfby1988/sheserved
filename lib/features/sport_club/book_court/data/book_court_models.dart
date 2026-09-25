@@ -5,7 +5,7 @@
 /// prices or unit labels never rewrite an existing booking.
 library;
 
-enum VenueStatus { pending, approved, rejected, suspended }
+enum VenueStatus { draft, pending, approved, rejected, suspended }
 
 enum VenueOwnerStatus { pending, approved, rejected, suspended }
 
@@ -21,10 +21,12 @@ enum VenueBookingStatus {
 }
 
 VenueStatus venueStatusFrom(String? raw) => switch (raw) {
+  'draft' => VenueStatus.draft,
   'approved' => VenueStatus.approved,
   'rejected' => VenueStatus.rejected,
   'suspended' => VenueStatus.suspended,
-  _ => VenueStatus.pending,
+  'pending' => VenueStatus.pending,
+  _ => VenueStatus.draft,
 };
 
 VenueOwnerStatus venueOwnerStatusFrom(String? raw) => switch (raw) {
@@ -36,8 +38,8 @@ VenueOwnerStatus venueOwnerStatusFrom(String? raw) => switch (raw) {
 
 BookingApprovalMode bookingApprovalModeFrom(String? raw) =>
     raw == 'owner_approval'
-        ? BookingApprovalMode.ownerApproval
-        : BookingApprovalMode.instant;
+    ? BookingApprovalMode.ownerApproval
+    : BookingApprovalMode.instant;
 
 VenueBookingStatus venueBookingStatusFrom(String? raw) => switch (raw) {
   'confirmed' => VenueBookingStatus.confirmed,
@@ -105,6 +107,10 @@ class VenueSummary {
   final List<String> photoUrls;
   final Set<String> sportIds;
 
+  /// Caller's management role on this venue ('owner' or 'manager'), as
+  /// reported by `list_my_sports_venues`. Null on public surfaces.
+  final String? memberRole;
+
   const VenueSummary({
     required this.id,
     required this.name,
@@ -123,6 +129,7 @@ class VenueSummary {
     this.amenityIds = const {},
     this.photoUrls = const [],
     this.sportIds = const {},
+    this.memberRole,
   });
 
   factory VenueSummary.fromJson(Map<String, dynamic> j) => VenueSummary(
@@ -140,6 +147,7 @@ class VenueSummary {
         : venueStatusFrom(j['status']?.toString()),
     courtCount: (j['court_count'] as num?)?.toInt() ?? 0,
     rejectionReason: j['rejection_reason']?.toString(),
+    memberRole: j['member_role']?.toString(),
   );
 
   VenueSummary copyWith({
@@ -167,6 +175,7 @@ class VenueSummary {
     amenityIds: amenityIds ?? this.amenityIds,
     photoUrls: photoUrls ?? this.photoUrls,
     sportIds: sportIds ?? this.sportIds,
+    memberRole: memberRole,
   );
 }
 
@@ -259,8 +268,7 @@ class VenueTerms {
   /// Platform base terms used when a venue has not published its own.
   static const int baseVersion = 0;
   static const int baseCutoffMinutes = 60;
-  static const String baseTermsText =
-      'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม';
+  static const String baseTermsText = 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม';
 
   factory VenueTerms.fromJson(Map<String, dynamic> j) => VenueTerms(
     id: j['id']?.toString() ?? '',
@@ -349,11 +357,9 @@ class VenueBooking {
     priceAmount:
         (j['priceAmount'] as num?)?.toDouble() ??
         (j['price_amount'] as num?)?.toDouble(),
-    pricingUnit:
-        j['pricingUnit']?.toString() ?? j['pricing_unit']?.toString(),
+    pricingUnit: j['pricingUnit']?.toString() ?? j['pricing_unit']?.toString(),
     approvalMode: bookingApprovalModeFrom(
-      j['approvalMode']?.toString() ??
-          j['booking_approval_mode']?.toString(),
+      j['approvalMode']?.toString() ?? j['booking_approval_mode']?.toString(),
     ),
     termsVersion:
         (j['termsVersion'] as num?)?.toInt() ??
@@ -455,9 +461,7 @@ class CourtAvailability {
                     ) ??
                     DateTime.fromMillisecondsSinceEpoch(0),
                 endsAt:
-                    DateTime.tryParse(
-                          e['endsAt']?.toString() ?? '',
-                        ) ??
+                    DateTime.tryParse(e['endsAt']?.toString() ?? '') ??
                     DateTime.fromMillisecondsSinceEpoch(0),
               ),
             )

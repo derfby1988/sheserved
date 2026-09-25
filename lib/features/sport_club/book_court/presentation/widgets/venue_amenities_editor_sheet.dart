@@ -48,6 +48,11 @@ class _VenueAmenitiesEditorSheetBodyState
               'สิ่งอำนวยความสะดวก',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
+            const SizedBox(height: 4),
+            Text(
+              'ถ้าสนามไม่มีสิ่งอำนวยความสะดวก กดบันทึกโดยไม่เลือก — ระบบจะบันทึกว่าคุณยืนยันแล้ว',
+              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,

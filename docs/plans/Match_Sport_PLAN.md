@@ -3332,7 +3332,7 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 | 7 | 21.7.8 Coach discovery | verified coach profile/search/availability |
 | 8 | 21.7.9 Coach requests | request lifecycle, snapshot และ notification |
 | 9 | 21.7.10 Release | security, concurrency, performance และ device/accessibility QA |
-| 10 | 21.7.11 Owner supply flow completion | per-venue setup + truthful 1–8 progress, review readiness, correction/resubmission, owner/manager access |
+| 10 (เสร็จ) | 21.7.11 Owner supply flow completion | per-venue setup + truthful 1–8 progress, review readiness, correction/resubmission, owner/manager access |
 
 #### เหตุผลของลำดับและการคุมผลกระทบ
 

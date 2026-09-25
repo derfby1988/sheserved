@@ -28,6 +28,10 @@ class OwnerCourtEditorSheet {
 
 class _OwnerCourtEditorSheetBody extends StatefulWidget {
   final VenueCourt? court;
+
+  /// Preferred sport — used only when it exists in [sportChoices] (or when
+  /// no choices are given). A sport missing from the venue's sport set is
+  /// never silently substituted; the owner must pick one explicitly.
   final String sportId;
 
   /// venue_sport choices (id → display name) shown as a dropdown when the
@@ -57,15 +61,16 @@ class _OwnerCourtEditorSheetBodyState
   late final _capacity = TextEditingController(
     text: (widget.court?.capacity ?? 1).toString(),
   );
-  late String _sportId = _initialSportId();
 
-  String _initialSportId() {
+  /// Null until a valid sport is selected — submitting requires one
+  /// whenever the venue offers sport choices.
+  late String? _sportId = _initialSportId();
+
+  String? _initialSportId() {
     final preferred = widget.court?.sportId ?? widget.sportId;
     final choices = widget.sportChoices;
-    if (choices != null &&
-        choices.isNotEmpty &&
-        !choices.containsKey(preferred)) {
-      return choices.keys.first;
+    if (choices != null && choices.isNotEmpty) {
+      return choices.containsKey(preferred) ? preferred : null;
     }
     return preferred;
   }
@@ -76,6 +81,7 @@ class _OwnerCourtEditorSheetBodyState
       ? 'owner_approval'
       : 'instant';
   late bool _indoor = widget.court?.indoor ?? true;
+  late bool _isActive = widget.court?.isActive ?? true;
   late String? _courtType = widget.court?.courtType;
 
   @override
@@ -87,7 +93,29 @@ class _OwnerCourtEditorSheetBodyState
     super.dispose();
   }
 
-  bool get _valid => _name.text.trim().isNotEmpty;
+  int? get _capacityValue {
+    final raw = _capacity.text.trim();
+    if (raw.isEmpty) return null;
+    final parsed = int.tryParse(raw);
+    // DB constraint: capacity BETWEEN 1 AND 100.
+    if (parsed == null || parsed < 1 || parsed > 100) return null;
+    return parsed;
+  }
+
+  /// Null = valid empty price; -1 = malformed; otherwise the price.
+  double? get _priceValue {
+    final raw = _price.text.trim();
+    if (raw.isEmpty) return null;
+    final parsed = double.tryParse(raw);
+    if (parsed == null || parsed < 0) return -1;
+    return parsed;
+  }
+
+  bool get _valid =>
+      _name.text.trim().isNotEmpty &&
+      _capacityValue != null &&
+      _priceValue != -1 &&
+      _sportId != null;
 
   @override
   Widget build(BuildContext context) {
@@ -123,9 +151,11 @@ class _OwnerCourtEditorSheetBodyState
               ),
               const SizedBox(height: 16),
               if (widget.sportChoices != null &&
-                  widget.sportChoices!.length > 1) ...[
+                  widget.sportChoices!.isNotEmpty) ...[
                 DropdownButtonFormField<String>(
-                  initialValue: widget.sportChoices!.containsKey(_sportId)
+                  initialValue:
+                      _sportId != null &&
+                          widget.sportChoices!.containsKey(_sportId)
                       ? _sportId
                       : null,
                   decoration: const InputDecoration(
@@ -143,6 +173,17 @@ class _OwnerCourtEditorSheetBodyState
                     if (v != null) setState(() => _sportId = v);
                   },
                 ),
+                if (_sportId == null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'กีฬาเดิมถูกเอาออกจากสนามแล้ว — กรุณาเลือกกีฬาใหม่',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 12),
               ],
               TextField(
@@ -171,10 +212,12 @@ class _OwnerCourtEditorSheetBodyState
                     child: TextField(
                       controller: _price,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'ราคา (บาท)',
-                        border: OutlineInputBorder(),
+                        errorText: _priceValue == -1 ? 'ราคาไม่ถูกต้อง' : null,
+                        border: const OutlineInputBorder(),
                       ),
+                      onChanged: (_) => setState(() {}),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -204,11 +247,17 @@ class _OwnerCourtEditorSheetBodyState
                     child: TextField(
                       controller: _capacity,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'จำนวนการจองซ้ำได้',
                         helperText: 'ปกติ = 1',
-                        border: OutlineInputBorder(),
+                        errorText:
+                            _capacity.text.trim().isNotEmpty &&
+                                _capacityValue == null
+                            ? '1–100'
+                            : null,
+                        border: const OutlineInputBorder(),
                       ),
+                      onChanged: (_) => setState(() {}),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -245,6 +294,14 @@ class _OwnerCourtEditorSheetBodyState
                 value: _indoor,
                 onChanged: (v) => setState(() => _indoor = v),
               ),
+              if (editing)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('เปิดใช้งานคอร์ท'),
+                  subtitle: const Text('คอร์ทที่ปิดจะไม่รับการจองใหม่'),
+                  value: _isActive,
+                  onChanged: (v) => setState(() => _isActive = v),
+                ),
               const SizedBox(height: 4),
               const Text(
                 'รูปแบบการจอง',
@@ -281,11 +338,14 @@ class _OwnerCourtEditorSheetBodyState
                           'name': _name.text.trim(),
                           'unit_label': _unitLabel.text.trim(),
                           'sport_id': _sportId,
-                          'price_amount': double.tryParse(_price.text.trim()),
+                          'price_amount': _priceValue == -1
+                              ? null
+                              : _priceValue,
                           'pricing_unit': _pricingUnit,
-                          'capacity': int.tryParse(_capacity.text.trim()) ?? 1,
+                          'capacity': _capacityValue ?? 1,
                           'court_type': _courtType,
                           'indoor': _indoor,
+                          'is_active': _isActive,
                           'approval_mode': _approvalMode,
                           if (widget.court != null) 'id': widget.court!.id,
                         })

@@ -47,7 +47,27 @@ class _AdminCourtOwnerReviewPanelState
   List<VenueSummary> _venues = [];
   bool _loading = true;
 
+  /// Lazily loaded readiness details per venue id.
+  final Map<String, Map<String, dynamic>> _venueDetails = {};
+  final Set<String> _detailLoading = {};
+  final Set<String> _detailErrors = {};
+
   String? get _adminId => AuthService.instance.currentUser?.id;
+
+  static const _missingLabels = {
+    'owner_not_approved': 'บัญชีเจ้าของยังไม่อนุมัติ',
+    'name': 'ชื่อสนาม',
+    'province': 'จังหวัด',
+    'district': 'อำเภอ/เขต',
+    'address': 'ที่อยู่',
+    'location': 'พิกัดละติจูด/ลองจิจูด',
+    'timezone': 'เขตเวลา',
+    'sports': 'กีฬาของสนาม',
+    'hours': 'เวลาเปิด–ปิดครบ 7 วัน',
+    'amenities': 'ยืนยันสิ่งอำนวยความสะดวก',
+    'terms': 'เลือกเงื่อนไขการใช้สนาม',
+    'courts': 'คอร์ทที่เปิดใช้งาน',
+  };
 
   @override
   void initState() {
@@ -71,6 +91,8 @@ class _AdminCourtOwnerReviewPanelState
       setState(() {
         _applications = results[0] as List<VenueOwnerProfile>;
         _venues = results[1] as List<VenueSummary>;
+        _venueDetails.clear();
+        _detailErrors.clear();
         _loading = false;
       });
     } catch (_) {
@@ -113,6 +135,27 @@ class _AdminCourtOwnerReviewPanelState
       await _load();
     } catch (e) {
       _toast(_mapError(e));
+    }
+  }
+
+  Future<void> _loadVenueDetail(String venueId) async {
+    final adminId = _adminId;
+    if (adminId == null || _detailLoading.contains(venueId)) return;
+    setState(() {
+      _detailLoading.add(venueId);
+      _detailErrors.remove(venueId);
+    });
+    try {
+      final detail = await widget.repo.getVenueAdminReviewDetail(
+        adminId,
+        venueId,
+      );
+      if (!mounted) return;
+      setState(() => _venueDetails[venueId] = detail);
+    } catch (_) {
+      if (mounted) setState(() => _detailErrors.add(venueId));
+    } finally {
+      if (mounted) setState(() => _detailLoading.remove(venueId));
     }
   }
 
@@ -244,7 +287,32 @@ class _AdminCourtOwnerReviewPanelState
               [venue.district, venue.province].whereType<String>().join(', '),
               style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
-            const SizedBox(height: 8),
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                dense: true,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 4),
+                title: Text(
+                  'ความพร้อมก่อนอนุมัติ',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.primaryDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onExpansionChanged: (expanded) {
+                  if (expanded &&
+                      !_venueDetails.containsKey(venue.id) &&
+                      !_detailErrors.contains(venue.id)) {
+                    _loadVenueDetail(venue.id);
+                  }
+                },
+                children: [_buildVenueReadiness(venue)],
+              ),
+            ),
             Row(
               children: [
                 TextButton(
@@ -270,6 +338,99 @@ class _AdminCourtOwnerReviewPanelState
     );
   }
 
+  Widget _buildVenueReadiness(VenueSummary venue) {
+    if (_detailLoading.contains(venue.id)) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (_detailErrors.contains(venue.id)) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              'โหลดความพร้อมไม่สำเร็จ',
+              style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _loadVenueDetail(venue.id),
+            child: const Text('ลองใหม่'),
+          ),
+        ],
+      );
+    }
+    final detail = _venueDetails[venue.id];
+    if (detail == null) return const SizedBox.shrink();
+
+    final missing = (detail['setup_missing'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    final business = detail['owner_business_name']?.toString() ?? '';
+    final courtCount = (detail['court_count'] as num?)?.toInt() ?? 0;
+    final activeCourts = (detail['active_court_count'] as num?)?.toInt() ?? 0;
+    final hoursCount = (detail['hours_count'] as num?)?.toInt() ?? 0;
+    final amenitiesConfirmed = detail['amenities_confirmed'] == true;
+    final platformTerms = detail['uses_platform_terms'] == true;
+    final termsVersion = (detail['terms_version'] as num?)?.toInt();
+    final sportsCount = (detail['sports'] as List? ?? const []).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (business.isNotEmpty)
+          Text(
+            'เจ้าของ: $business',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          'กีฬา $sportsCount · คอร์ท $activeCourts/$courtCount เปิดใช้งาน · '
+          'เวลา $hoursCount/7 วัน · '
+          'สิ่งอำนวยความสะดวก${amenitiesConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'} · '
+          'เงื่อนไข${termsVersion != null
+              ? ' v$termsVersion'
+              : platformTerms
+              ? 'แพลตฟอร์ม'
+              : '-'}',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
+        const SizedBox(height: 4),
+        if (missing.isEmpty)
+          Row(
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                size: 16,
+                color: Colors.green.shade700,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'ตั้งค่าครบ พร้อมอนุมัติ',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          )
+        else
+          Text(
+            'ยังขาด: ${missing.map((m) => _missingLabels[m] ?? m).join(', ')}',
+            style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+          ),
+      ],
+    );
+  }
+
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Text(
@@ -289,6 +450,15 @@ class _AdminCourtOwnerReviewPanelState
     final raw = e.toString();
     if (raw.contains('UNAUTHORIZED') || raw.contains('NOT_ADMIN')) {
       return 'เฉพาะผู้ดูแลระบบเท่านั้น';
+    }
+    if (raw.contains('VENUE_NOT_READY')) {
+      return 'สนามยังตั้งค่าไม่ครบ — ตรวจรายการความพร้อมก่อนอนุมัติ';
+    }
+    if (raw.contains('REASON_REQUIRED')) {
+      return 'กรุณาระบุเหตุผล';
+    }
+    if (raw.contains('INVALID_STATUS')) {
+      return 'สถานะสนามไม่อนุญาตให้ทำรายการนี้';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

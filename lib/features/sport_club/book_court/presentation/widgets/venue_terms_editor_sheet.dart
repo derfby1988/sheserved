@@ -51,14 +51,22 @@ class _VenueTermsEditorSheetBodyState
     super.dispose();
   }
 
-  bool get _valid => _terms.text.trim().isNotEmpty;
+  /// Cutoff must be an explicit non-negative integer — a malformed or
+  /// empty value blocks submission instead of silently falling back.
+  int? get _cutoffValue {
+    final raw = _cutoff.text.trim();
+    if (raw.isEmpty) return null;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 0) return null;
+    return parsed;
+  }
+
+  bool get _valid => _terms.text.trim().isNotEmpty && _cutoffValue != null;
 
   void _submit() {
-    if (!_valid) return;
-    Navigator.pop(context, (
-      text: _terms.text.trim(),
-      cutoffMinutes: int.tryParse(_cutoff.text.trim()) ?? 60,
-    ));
+    final cutoff = _cutoffValue;
+    if (!_valid || cutoff == null) return;
+    Navigator.pop(context, (text: _terms.text.trim(), cutoffMinutes: cutoff));
   }
 
   @override
@@ -104,7 +112,16 @@ class _VenueTermsEditorSheetBodyState
                   labelText: 'ยกเลิกล่วงหน้าได้ไม่เกิน (นาที)',
                   border: OutlineInputBorder(),
                 ),
+                onChanged: (_) => setState(() {}),
               ),
+              if (_cutoff.text.trim().isNotEmpty && _cutoffValue == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'กรุณากรอกจำนวนนาทีเป็นตัวเลขจำนวนเต็มที่ไม่ติดลบ',
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                  ),
+                ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,

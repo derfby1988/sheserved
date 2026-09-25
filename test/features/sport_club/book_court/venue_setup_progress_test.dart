@@ -6,19 +6,19 @@ List<VenueSetupStep> _steps({
   bool ownerApproved = true,
   bool venueCreated = true,
   bool hasSports = false,
-  bool hasHours = false,
-  bool hasAmenities = false,
-  bool hasTerms = false,
-  bool hasCourts = false,
-  VenueStatus? venueStatus = VenueStatus.pending,
+  bool hoursComplete = false,
+  bool amenitiesDone = false,
+  bool termsDone = false,
+  bool hasActiveCourts = false,
+  VenueStatus? venueStatus = VenueStatus.draft,
 }) => computeVenueSetupSteps(
   ownerApproved: ownerApproved,
   venueCreated: venueCreated,
   hasSports: hasSports,
-  hasHours: hasHours,
-  hasAmenities: hasAmenities,
-  hasTerms: hasTerms,
-  hasCourts: hasCourts,
+  hoursComplete: hoursComplete,
+  amenitiesDone: amenitiesDone,
+  termsDone: termsDone,
+  hasActiveCourts: hasActiveCourts,
   venueStatus: venueStatus,
 );
 
@@ -54,43 +54,139 @@ void main() {
       expect(_step(steps, VenueSetupStepId.courts).done, isFalse);
     });
 
-    test(
-      'admin review step is done for approved venue and never actionable',
-      () {
-        final pending = _steps();
-        expect(_step(pending, VenueSetupStepId.venueApproved).done, isFalse);
-        expect(
-          _step(pending, VenueSetupStepId.venueApproved).actionable,
-          isFalse,
-        );
+    test('steps 1-2 are read-only and never actionable on this page', () {
+      final steps = _steps(ownerApproved: false, venueCreated: false);
+      expect(_step(steps, VenueSetupStepId.ownerApproved).actionable, isFalse);
+      expect(_step(steps, VenueSetupStepId.venueCreated).actionable, isFalse);
+      // and explain instead of showing a tap affordance
+      expect(_step(steps, VenueSetupStepId.ownerApproved).note, isNotNull);
+      expect(_step(steps, VenueSetupStepId.venueCreated).note, isNotNull);
+    });
 
-        final approved = _steps(venueStatus: VenueStatus.approved);
-        expect(_step(approved, VenueSetupStepId.venueApproved).done, isTrue);
+    test('optional steps done by explicit confirmation, not by empty rows', () {
+      // amenitiesDone/termsDone reflect the persisted confirmations
+      // ("ยืนยันว่าไม่มี", platform base terms) — not the presence of rows.
+      final steps = _steps(amenitiesDone: true, termsDone: true);
+      expect(_step(steps, VenueSetupStepId.amenities).done, isTrue);
+      expect(_step(steps, VenueSetupStepId.terms).done, isTrue);
+    });
+
+    test('partial hours do not complete the hours step', () {
+      // hoursComplete is only true when all 7 days are specified upstream.
+      final steps = _steps();
+      expect(_step(steps, VenueSetupStepId.hours).done, isFalse);
+      final done = _steps(hoursComplete: true);
+      expect(_step(done, VenueSetupStepId.hours).done, isTrue);
+    });
+
+    test('inactive-only courts do not complete the courts step', () {
+      final steps = _steps(hasSports: true);
+      expect(_step(steps, VenueSetupStepId.courts).done, isFalse);
+      final withActive = _steps(hasSports: true, hasActiveCourts: true);
+      expect(_step(withActive, VenueSetupStepId.courts).done, isTrue);
+    });
+
+    group('venueApproved step reports the real review status', () {
+      for (final status in VenueStatus.values) {
+        test('$status', () {
+          final steps = _steps(venueStatus: status);
+          final step = _step(steps, VenueSetupStepId.venueApproved);
+          expect(step.actionable, isFalse);
+          expect(step.done, status == VenueStatus.approved);
+          if (status == VenueStatus.approved) {
+            expect(step.note, isNull);
+          } else {
+            expect(step.note, isNotNull);
+          }
+        });
+      }
+
+      test('draft invites submission; pending waits; rejected resubmits', () {
         expect(
-          _step(approved, VenueSetupStepId.venueApproved).actionable,
-          isFalse,
+          _step(
+            _steps(venueStatus: VenueStatus.draft),
+            VenueSetupStepId.venueApproved,
+          ).note,
+          contains('ส่งตรวจสอบ'),
         );
-      },
-    );
+        expect(
+          _step(
+            _steps(venueStatus: VenueStatus.pending),
+            VenueSetupStepId.venueApproved,
+          ).note,
+          contains('รอทีมงาน'),
+        );
+        expect(
+          _step(
+            _steps(venueStatus: VenueStatus.rejected),
+            VenueSetupStepId.venueApproved,
+          ).note,
+          contains('ส่งตรวจใหม่'),
+        );
+        expect(
+          _step(
+            _steps(venueStatus: VenueStatus.suspended),
+            VenueSetupStepId.venueApproved,
+          ).note,
+          contains('อุทธรณ์'),
+        );
+      });
+    });
 
     test('fully configured approved venue completes the checklist', () {
       final steps = _steps(
         hasSports: true,
-        hasHours: true,
-        hasAmenities: true,
-        hasTerms: true,
-        hasCourts: true,
+        hoursComplete: true,
+        amenitiesDone: true,
+        termsDone: true,
+        hasActiveCourts: true,
         venueStatus: VenueStatus.approved,
       );
       expect(steps.every((s) => s.done), isTrue);
       expect(steps.where((s) => s.actionable).isEmpty, isTrue);
+      expect(venueSetupStepsComplete(steps), isTrue);
+    });
+  });
+
+  group('venueSetupStepsComplete', () {
+    test('true when owner-owned steps done even before admin approval', () {
+      final steps = _steps(
+        hasSports: true,
+        hoursComplete: true,
+        amenitiesDone: true,
+        termsDone: true,
+        hasActiveCourts: true,
+        venueStatus: VenueStatus.draft,
+      );
+      expect(venueSetupStepsComplete(steps), isTrue);
     });
 
-    test('owner not yet approved blocks venue creation and setup steps', () {
-      final steps = _steps(ownerApproved: false, venueCreated: false);
-      expect(_step(steps, VenueSetupStepId.ownerApproved).actionable, isTrue);
-      expect(_step(steps, VenueSetupStepId.venueCreated).actionable, isFalse);
-      expect(_step(steps, VenueSetupStepId.sports).actionable, isFalse);
+    test('false when any required step is missing', () {
+      expect(
+        venueSetupStepsComplete(
+          _steps(
+            hasSports: true,
+            hoursComplete: true,
+            amenitiesDone: true,
+            termsDone: true,
+            // no active courts
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        venueSetupStepsComplete(
+          _steps(
+            hasSports: true,
+            hoursComplete: true,
+            amenitiesDone: true,
+            termsDone: true,
+            hasActiveCourts: true,
+            ownerApproved: false,
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 }

@@ -39,15 +39,23 @@ class CourtOwnerVenueCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (venue.memberRole == 'manager')
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      'ผู้จัดการ',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
                 _statusChip(venue.status),
               ],
             ),
             const SizedBox(height: 4),
             Text(
-              [
-                venue.district,
-                venue.province,
-              ].whereType<String>().join(', '),
+              [venue.district, venue.province].whereType<String>().join(', '),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 8),
@@ -61,10 +69,7 @@ class CourtOwnerVenueCard extends StatelessWidget {
                 if (venue.averageRating != null)
                   Text(
                     '⭐ ${venue.averageRating!.toStringAsFixed(1)} (${venue.reviewCount})',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade700,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 const Spacer(),
                 TextButton(
@@ -89,6 +94,7 @@ class CourtOwnerVenueCard extends StatelessWidget {
 
   static Widget _statusChip(VenueStatus? status) {
     final (label, color) = switch (status) {
+      VenueStatus.draft => ('แบบร่าง', Colors.blueGrey),
       VenueStatus.approved => ('อนุมัติแล้ว', Colors.green),
       VenueStatus.pending => ('รอตรวจสอบ', Colors.orange),
       VenueStatus.suspended => ('ถูกระงับ', Colors.red),
