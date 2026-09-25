@@ -1,8 +1,5 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-
-import 'closed_ended_glass_primitives.dart';
+import 'package:sheserved/shared/widgets/glass/glass_confirm_dialog.dart';
 
 /// Phase 6.14 — confirmation dialog for a drafted answer.
 ///
@@ -11,27 +8,7 @@ import 'closed_ended_glass_primitives.dart';
 /// on failure it stays open with an inline error so the patient can retry
 /// or pick another option. The question keeps `reading` status — no answer
 /// is persisted until the RPC succeeds.
-class ClosedEndedConfirmationDialog extends StatefulWidget {
-  final String questionText;
-  final String selectedLabel;
-  final int selectedIndex;
-  final Color optionColor;
-  final bool isQuantitative;
-
-  /// Persist the draft. Return true when saved; false to keep the dialog
-  /// open with an error so the patient can retry.
-  final Future<bool> Function()? onConfirm;
-
-  const ClosedEndedConfirmationDialog({
-    super.key,
-    required this.questionText,
-    required this.selectedLabel,
-    required this.selectedIndex,
-    required this.optionColor,
-    required this.isQuantitative,
-    this.onConfirm,
-  });
-
+class ClosedEndedConfirmationDialog {
   /// Shows the dialog; resolves `true` when the answer was confirmed and
   /// saved (or confirmed in standalone mode without [onConfirm]).
   static Future<bool?> show(
@@ -43,257 +20,124 @@ class ClosedEndedConfirmationDialog extends StatefulWidget {
     required bool isQuantitative,
     Future<bool> Function()? onConfirm,
   }) {
-    return showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: ClosedEndedConfirmationDialog(
-            questionText: questionText,
-            selectedLabel: selectedLabel,
-            selectedIndex: selectedIndex,
-            optionColor: optionColor,
-            isQuantitative: isQuantitative,
-            onConfirm: onConfirm,
-          ),
-        ),
+    return GlassConfirmDialog.show(
+      context,
+      icon: Icons.check_circle_outline_rounded,
+      title: 'ยืนยันคำตอบ',
+      content: _ClosedEndedAnswerPreview(
+        questionText: questionText,
+        selectedLabel: selectedLabel,
+        selectedIndex: selectedIndex,
+        optionColor: optionColor,
+        isQuantitative: isQuantitative,
       ),
+      accentColor: optionColor,
+      cancelLabel: 'เปลี่ยน',
+      confirmLabel: 'ยืนยัน',
+      errorMessage: 'บันทึกคำตอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+      onConfirm: onConfirm,
     );
   }
-
-  @override
-  State<ClosedEndedConfirmationDialog> createState() =>
-      _ClosedEndedConfirmationDialogState();
 }
 
-class _ClosedEndedConfirmationDialogState
-    extends State<ClosedEndedConfirmationDialog> {
-  bool _submitting = false;
-  String? _errorText;
+class _ClosedEndedAnswerPreview extends StatelessWidget {
+  final String questionText;
+  final String selectedLabel;
+  final int selectedIndex;
+  final Color optionColor;
+  final bool isQuantitative;
 
-  Future<void> _confirm() async {
-    if (_submitting) return;
-    final persist = widget.onConfirm;
-    if (persist == null) {
-      Navigator.of(context).pop(true);
-      return;
-    }
-    setState(() {
-      _submitting = true;
-      _errorText = null;
-    });
-    bool saved = false;
-    try {
-      saved = await persist();
-    } catch (_) {
-      saved = false;
-    }
-    if (!mounted) return;
-    if (saved) {
-      Navigator.of(context).pop(true);
-    } else {
-      setState(() {
-        _submitting = false;
-        _errorText = 'บันทึกคำตอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
-      });
-    }
-  }
-
-  void _cancel() {
-    if (_submitting) return;
-    Navigator.of(context).pop(false);
-  }
+  const _ClosedEndedAnswerPreview({
+    required this.questionText,
+    required this.selectedLabel,
+    required this.selectedIndex,
+    required this.optionColor,
+    required this.isQuantitative,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final optionColor = widget.optionColor;
-    return LitGlassSurface(
-      borderRadius: 24,
-      blurSigma: 18,
-      fillOpacity: 0.10,
-      accentColor: optionColor,
-      accentStrength: 0.12,
-      glowOpacity: 0.14,
-      shadowOpacity: 0.30,
-      rimWidth: 2.4,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 320,
-          maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Stack(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withValues(alpha: 0.14),
+                Colors.white.withValues(alpha: 0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Color.lerp(
+                Colors.white,
+                optionColor,
+                0.4,
+              )!.withValues(alpha: 0.60),
+              width: 1.4,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.check_circle_outline_rounded,
-                      size: 36,
-                      color: optionColor.withValues(alpha: 0.9),
+              if (isQuantitative) ...[
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: optionColor.withValues(alpha: 0.35),
+                    border: Border.all(
+                      color: optionColor.withValues(alpha: 0.8),
+                      width: 1,
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'ยืนยันคำตอบ',
-                      style: TextStyle(
+                  ),
+                  child: Center(
+                    child: Text(
+                      selectedLabel,
+                      style: const TextStyle(
                         fontFamily: 'SukhumvitSet',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.white.withValues(alpha: 0.14),
-                            Colors.white.withValues(alpha: 0.05),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: Color.lerp(
-                            Colors.white,
-                            optionColor,
-                            0.4,
-                          )!.withValues(alpha: 0.60),
-                          width: 1.4,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (widget.isQuantitative) ...[
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                color: optionColor.withValues(alpha: 0.35),
-                                border: Border.all(
-                                  color: optionColor.withValues(alpha: 0.8),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  widget.selectedLabel,
-                                  style: const TextStyle(
-                                    fontFamily: 'SukhumvitSet',
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          Flexible(
-                            child: Text(
-                              widget.isQuantitative
-                                  ? 'ระดับ ${widget.selectedLabel}'
-                                  : widget.selectedLabel,
-                              style: const TextStyle(
-                                fontFamily: 'SukhumvitSet',
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.questionText,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'SukhumvitSet',
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.55),
-                        height: 1.3,
-                      ),
-                    ),
-                    if (_errorText != null) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            size: 16,
-                            color: Colors.red.shade300,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              _errorText!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: 'SukhumvitSet',
-                                fontSize: 12,
-                                color: Colors.red.shade300,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GlassActionButton(
-                            label: 'เปลี่ยน',
-                            onTap: _submitting ? null : _cancel,
-                            isFilled: false,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GlassActionButton(
-                            label: 'ยืนยัน',
-                            onTap: _submitting ? null : _confirm,
-                            isFilled: true,
-                            fillColor: optionColor,
-                            child: _submitting
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Flexible(
+                child: Text(
+                  isQuantitative ? 'ระดับ $selectedLabel' : selectedLabel,
+                  style: const TextStyle(
+                    fontFamily: 'SukhumvitSet',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          questionText,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'SukhumvitSet',
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.55),
+            height: 1.3,
+          ),
+        ),
+      ],
     );
   }
 }

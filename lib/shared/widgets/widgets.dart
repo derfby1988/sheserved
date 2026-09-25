@@ -22,5 +22,10 @@ export 'neumorphic/neumorphic.dart';
 // Bookmark Widgets
 export 'ribbon_bookmark.dart';
 
+// Glass UI
+export 'glass/glass_primitives.dart';
+export 'glass/glass_dialog.dart';
+export 'glass/glass_confirm_dialog.dart';
+
 // Sections & Cards
 export 'recommended_article_section.dart';

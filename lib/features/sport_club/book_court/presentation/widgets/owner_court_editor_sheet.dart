@@ -11,6 +11,7 @@ class OwnerCourtEditorSheet {
     BuildContext context, {
     VenueCourt? court,
     required String sportId,
+    Map<String, String>? sportChoices,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -19,6 +20,7 @@ class OwnerCourtEditorSheet {
       builder: (sheetContext) => _OwnerCourtEditorSheetBody(
         court: court,
         sportId: sportId,
+        sportChoices: sportChoices,
       ),
     );
   }
@@ -28,7 +30,15 @@ class _OwnerCourtEditorSheetBody extends StatefulWidget {
   final VenueCourt? court;
   final String sportId;
 
-  const _OwnerCourtEditorSheetBody({this.court, required this.sportId});
+  /// venue_sport choices (id → display name) shown as a dropdown when the
+  /// venue offers more than one sport. Null = fixed [sportId].
+  final Map<String, String>? sportChoices;
+
+  const _OwnerCourtEditorSheetBody({
+    this.court,
+    required this.sportId,
+    this.sportChoices,
+  });
 
   @override
   State<_OwnerCourtEditorSheetBody> createState() =>
@@ -47,6 +57,19 @@ class _OwnerCourtEditorSheetBodyState
   late final _capacity = TextEditingController(
     text: (widget.court?.capacity ?? 1).toString(),
   );
+  late String _sportId = _initialSportId();
+
+  String _initialSportId() {
+    final preferred = widget.court?.sportId ?? widget.sportId;
+    final choices = widget.sportChoices;
+    if (choices != null &&
+        choices.isNotEmpty &&
+        !choices.containsKey(preferred)) {
+      return choices.keys.first;
+    }
+    return preferred;
+  }
+
   late String _pricingUnit = widget.court?.pricingUnit ?? 'hour';
   late String _approvalMode =
       widget.court?.approvalMode == BookingApprovalMode.ownerApproval
@@ -99,6 +122,29 @@ class _OwnerCourtEditorSheetBodyState
                 ),
               ),
               const SizedBox(height: 16),
+              if (widget.sportChoices != null &&
+                  widget.sportChoices!.length > 1) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: widget.sportChoices!.containsKey(_sportId)
+                      ? _sportId
+                      : null,
+                  decoration: const InputDecoration(
+                    labelText: 'กีฬา',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final entry in widget.sportChoices!.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _sportId = v);
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _name,
                 decoration: const InputDecoration(
@@ -140,10 +186,7 @@ class _OwnerCourtEditorSheetBodyState
                         border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem(
-                          value: 'hour',
-                          child: Text('ชั่วโมง'),
-                        ),
+                        DropdownMenuItem(value: 'hour', child: Text('ชั่วโมง')),
                         DropdownMenuItem(value: 'session', child: Text('รอบ')),
                         DropdownMenuItem(value: 'match', child: Text('แมตช์')),
                         DropdownMenuItem(value: 'day', child: Text('วัน')),
@@ -237,12 +280,10 @@ class _OwnerCourtEditorSheetBodyState
                       ? () => Navigator.pop(context, {
                           'name': _name.text.trim(),
                           'unit_label': _unitLabel.text.trim(),
-                          'sport_id': widget.sportId,
-                          'price_amount':
-                              double.tryParse(_price.text.trim()),
+                          'sport_id': _sportId,
+                          'price_amount': double.tryParse(_price.text.trim()),
                           'pricing_unit': _pricingUnit,
-                          'capacity':
-                              int.tryParse(_capacity.text.trim()) ?? 1,
+                          'capacity': int.tryParse(_capacity.text.trim()) ?? 1,
                           'court_type': _courtType,
                           'indoor': _indoor,
                           'approval_mode': _approvalMode,

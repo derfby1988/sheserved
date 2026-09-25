@@ -466,7 +466,7 @@ bool shouldStartTimer(List<Map<String, dynamic>> expertStatuses) {
 > | 14 | `_mergeWithPackageGroups` + `_normalizeConsultationRole` | อิงแค่ hardcoded built-in UUIDs (`00000000-...`) และ legacy string matching → ไม่ match กับ profession UUIDs จริงจาก DB (`0a8e...`, `5d81...`, `191e...`) | แก้ match logic ให้ใช้ `findProfessionByNameOrRole` กับ `_professions` ที่โหลดจาก DB จริง สร้าง `_consultationMatchKey` ที่ resolve เป็น `profession:<uuid>` ก่อน fallback ไป role/name string |
 > | 15 | `chart_board_page` + `health_program_request_dashboard` — กดจบงานแล้ว navigate ออก-เข้าใหม่ ปุ่มกลับมาเป็น "จบงาน" แทน "ยกเลิกปิดงาน" | `consultation_room_experts` มี rows จาก `ensureRoomExperts` แต่ `provider_id = NULL` (consultation เก่าที่สร้างก่อน trigger fix) → `markExpertFinished` ไม่เจอ row ที่ update → `finished_at` ไม่ถูก set → Dashboard `getFinishedConsultationIds` ส่งกลับ `{}` → กลับเข้าห้องแชท `widget.hasFinished = false` | `_finishJobMultiExpert`: ถ้า `markExpertFinished` return `total_count=0` → เรียก `syncProviderToRoomExperts` ก่อน → retry `markExpertFinished`; `_fetchExpertStatuses`: ถ้า `ensureRoomExperts` แล้ว re-query ยังว่าง → เรียก `syncProviderToRoomExperts` ต่อ; `_expertStatusSub` stream: sync `_hasFinished` เมื่อ `finishedAt` ของ current user เปลี่ยน |
 > | 16 | `consultation_guard` + `my_consultations_page` + `chart_board_page` — ผู้ป่วยเปิดเคส `pending` ซ้ำแทนเคส `in_progress` เห็นห้องว่าง + ปุ่ม "รอผู้เชี่ยวชาญรับเคส" ทั้งที่แพทย์รับเคสอื่นแล้ว | ผู้ป่วยมี consultation ซ้ำ 2 รายการ (`in_progress` + `pending` ใหม่กว่า, ทั้งคู่ `room_id = NULL`); `findActiveConsultation` อิงลำดับจาก `getUserRequests` (เรียงใหม่สุด) และประวัติใน Profile เรียงใหม่สุดก่อน → การ์ด pending บดเคส active; ประกอบกับ `_initChat` derive `consult_<id>` เสมอ ทำให้เสี่ยงเปิด/สร้างห้อง duplicate ว่างเมื่อ `room_id` ใน DB ไม่ตรง convention | `ConsultationGuard.selectActiveConsultation` เลือก `in_progress` ก่อน `pending`; `prioritizePatientHistory` เรียง active → pending → awaiting_payment → อื่นๆ (tie-break `createdAt` ใหม่สุด); `_initChat` prefer `entry/request.roomId` ก่อน fallback `consult_<id>` + log room mismatch; `ChatInputBarWidget.inactiveLabel` แยกข้อความตาม lifecycle (ก่อนส่ง / รอรับเคส / read-only); regression tests ใน `consultation_guard_test.dart`. **หมายเหตุ:** เคส pending ซ้ำยังค้างใน DB — ยังไม่มี unique constraint กัน `pending`/`in_progress` ซ้ำต่อ patient |
-> | 17 | `radial_question_view` + `adaptive_closed_ended_layout` — บนอุปกรณ์จริงคำถามปลายปิดแสดง prompt สี่เหลี่ยมและปุ่มตัวเลข 1–3 เรียงแนวนอน แทน radial/circular; qualitative options เป็น grid ที่กว้างเท่ากัน | threshold เดิมต้องการพื้นที่ `360×560dp`; chat overlay เสียความสูงไปกับ required-question strip และ controls จึงเข้า compact mode; นอกจากนี้ `String.length` นับ UTF-16 code units ทำให้ข้อความไทยสั้นอย่าง `ไม่ระบุปัญหา` เกินเกณฑ์ 10 ตัวอักษรแม้จำนวน grapheme ไม่เกินเกณฑ์; radial area ไม่กันตำแหน่ง controls และ hint อาจชนกับ option ล่าง; qualitative compact ใช้ width คงที่ | เลือก radial จาก usable area หลังหัก top controls/safe inset (กว้าง ≥360dp; สูงขั้นต่ำ 200dp สำหรับตัวเลข, 240dp สำหรับข้อความสั้น และ 320dp เมื่อ label เกิน 8 grapheme; ยังคงเงื่อนไขจำนวน/ความยาว/text scale); นับความยาวด้วย `characters.length`; กันพื้นที่ controls รอบวงและใช้ center prompt + options รอบวง, radial qualitative หมุน 3 ตัวเลือกเป็นซ้ายบน/ขวาบน/ล่าง; qualitative cards ทั้ง radial/compact วัดความกว้างตาม label และ compact คง scroll fallback; เพิ่ม widget tests สำหรับข้อความไทย, ขนาด chat viewport, radial placement, no-overlap และขนาด card |
+> | 17 | `radial_question_view` + `adaptive_closed_ended_layout` — บนอุปกรณ์จริงคำถามปลายปิดแสดง prompt สี่เหลี่ยมและปุ่มตัวเลข 1–3 เรียงแนวนอน แทน radial/circular; qualitative options เป็น grid ที่กว้างเท่ากัน | threshold เดิมต้องการพื้นที่ `360×560dp`; chat overlay เสียความสูงไปกับ required-question strip และ controls จึงเข้า compact mode; นอกจากนี้ `String.length` นับ UTF-16 code units ทำให้ข้อความไทยสั้นอย่าง `ไม่ระบุปัญหา` เกินเกณฑ์ 10 ตัวอักษรแม้จำนวน grapheme ไม่เกินเกณฑ์; radial area ไม่กันตำแหน่ง controls และ hint อาจชนกับ option ล่าง; qualitative compact ใช้ width คงที่ | เลือก radial จาก usable area หลังหัก top controls/safe inset (กว้าง ≥320dp; สูงขั้นต่ำ 200dp สำหรับตัวเลข, 240dp สำหรับข้อความสั้น และ 320dp เมื่อ label เกิน 8 grapheme; ยังคงเงื่อนไขจำนวน/ความยาว/text scale); นับความยาวด้วย `characters.length`; กันพื้นที่ controls รอบวงและใช้ center prompt + options รอบวง, radial qualitative หมุน 3 ตัวเลือกเป็นซ้ายบน/ขวาบน/ล่าง; qualitative cards ทั้ง radial/compact วัดความกว้างตาม label และ compact คง scroll fallback; เพิ่ม widget tests สำหรับข้อความไทย, ขนาด chat viewport, radial placement, no-overlap และขนาด card |
 > | 18 | `closed_ended_dialog.dart` — ไอคอนประเภทคำตอบของตัวเลือกที่ถูกเลือกหายไป/กลายเป็นเครื่องหมายถูก ทำให้แยกเชิงปริมาณกับเชิงคุณภาพได้ยาก | `SegmentedButton` มี `showSelectedIcon=true` เป็นค่าเริ่มต้น จึงแทนที่ `ButtonSegment.icon` ของ segment ที่เลือกด้วย check icon; screenshot แสดงเครื่องหมายถูกแทน `format_list_numbered` | ตั้ง `showSelectedIcon: false` เพื่อคง icon ของแต่ละประเภททั้งสถานะ selected/unselected; เพิ่ม widget regression test ตรวจ icon ทั้งสองก่อนและหลังสลับประเภท |
 > | 19 | `chat_input_bar_widget.dart` — ปุ่มส่งคำถามปลายปิดสีม่วงดูเหมือนไม่มี/ไม่รู้ว่าเป็นปุ่มส่ง | โหมด closed-ended ใช้ `quiz_outlined` ขนาด 20dp แทนสัญลักษณ์ส่ง ทำให้ glyph แบบเส้นบางไม่ชัดในปุ่ม 44dp แม้มี pending chip บอกชนิดคำถาม | ใช้ `send_rounded` ขนาด 24dp ในโหมด closed-ended โดยคงพื้นหลังสีม่วง; โหมด required ยังคง warning icon และโหมดปกติคง send icon; เพิ่ม widget test ตรวจ icon และขนาดในสถานะ closed-ended |
 > | 20 | `closed_ended_dialog.dart` + `chart_board_page.dart` + `message_bubble.dart` + `closed_ended_question_prompt.dart` — ผู้ใช้รายงานว่า "ไอคอนระบบคำถามปลายปิดไม่แสดง" ทั้งใน dialog, bottom sheet, bubble และปุ่มส่ง แม้จะซูมภาพอุปกรณ์แล้วเห็น glyph ถูกวาดจริง | glyph ไม่ได้หายจาก MaterialIcons (ตรวจ cmap + md5 ของ font ที่ bundle แล้วตรงกับ SDK) แต่ไอคอนที่เลือกคือ `Icons.quiz` ซึ่งเป็น **กล่องสี่เหลี่ยมมีเครื่องหมาย "?"** — ผู้ใช้อ่านเป็น placeholder "โหลดไอคอนไม่ขึ้น" จึงรายงานว่าไม่แสดง; ซ้ำด้วยปัญหาเดิมคือเมนูใช้ mint สว่างบนพื้น mint จาง, badge ใช้ 11dp/ข้อความ 10dp, selector ใช้ glyph บาง และโหมด closed-ended เคยใช้ `quiz_outlined` ในปุ่มส่งแทนลูกศร | เปลี่ยนไอคอนประจำคำถามปลายปิดเป็น `Icons.checklist_rtl` (รายการติ๊ก = "เลือกคำตอบ") ทุกจุด (dialog header 28dp, เมนู 26dp, pending chip 20dp, bubble badge 16dp, patient prompt); segment ใช้ `format_list_numbered` และ `text_fields` ขนาด 22dp ให้แยกปริมาณ/คุณภาพชัด; ปุ่มส่ง closed-ended ใช้ `send_rounded` 24dp; เพิ่มคอนทราสต์ (teal.shade800/deepPurple.shade700) และคง `showSelectedIcon: false`; เพิ่ม regression assertions สำหรับชนิดไอคอนและขนาด |
@@ -5836,7 +5836,7 @@ double _modelXRatio(List<BodyLandmark> lm, double x2d) {
 [Expert] เห็นคำถามและคำตอบที่บันทึกแล้วใน bubble เดิม
 ```
 
-ผู้ป่วยยังสามารถปิด Radial UI ชั่วคราวหรือเลือกคำถามบังคับรายการอื่นได้ โดยคำถามปลายปิดที่ยังไม่สำเร็จคง `required_status=reading`, ไม่มีคำตอบที่ยืนยันแล้ว และกลับมาเปิดเพื่อเลือก/ยืนยันใหม่ได้ โดยไม่บังคับให้ตอบคำถาม pending ทุกข้อเรียงตามลำดับ
+ผู้ป่วยยังสามารถปิด Radial UI ชั่วคราวหรือเลือกคำถามบังคับรายการอื่นได้ โดยคำถามปลายปิดที่ยังไม่สำเร็จจะถูกย้อนกลับเป็น `required_status=unread` (มี `reading` ได้ครั้งละ 1 ข้อ — ดู bug #22), ไม่มีคำตอบที่ยืนยันแล้ว, draft selection ยังคงอยู่ใน session และกลับมาเปิดเพื่อเลือก/ยืนยันใหม่ได้ โดยไม่บังคับให้ตอบคำถาม pending ทุกข้อเรียงตามลำดับ
 
 ### 🗄️ Database Schema
 
@@ -5883,6 +5883,7 @@ CREATE TABLE public.closed_ended_question_answers (
 - เพิ่ม RPC `send_closed_ended_question(room_id, content, config, body_part)` สำหรับชนิดใหม่นี้: ตรวจสิทธิ์ Expert ของ consultation, validate config, สร้าง message ด้วย `type='closed_ended_question'`, `is_required=true`, `required_status='unread'`; client ห้ามเลือกส่งแบบ optional
 - เพิ่ม `CHECK` แบบ scoped เฉพาะ `type='closed_ended_question'` ให้ `is_required=true` และ config ไม่เป็น null/ผ่านโครงสร้างขั้นต่ำ; message type อื่นผ่าน constraint เดิมโดยไม่เปลี่ยน behavior
 - เพิ่ม RPC `mark_closed_ended_question_reading(question_message_id)` ให้ผู้ป่วยที่ได้รับมอบหมายเปิดคำถามได้; idempotent สำหรับ `reading`, อนุญาต `unread → reading`, และไม่ยอมให้ `answered` ย้อนสถานะ
+- เพิ่ม RPC `mark_closed_ended_question_unread_backend(question_message_id)` ให้ผู้ป่วยย้อน `reading → unread` เมื่อปิด overlay หรือสลับไปข้ออื่น (single-active-reading, bug #22); idempotent เมื่อเป็น `unread` อยู่แล้วและคืน `ALREADY_ANSWERED` เมื่อตอบแล้ว — เรียกผ่าน backend route `POST /api/chat/closed-ended/:id/unread` เพราะ guard trigger ห้าม client update `required_status` ของ closed-ended โดยตรง
 - เพิ่ม RPC `answer_closed_ended_question(question_message_id, selected_index)` เป็นเส้นทางเขียนคำตอบเดียว: ตรวจ `auth.uid()`, ผู้ตอบเป็น patient ที่ผูกกับ consultation/room นั้น (ไม่พอเพียงเป็น participant ทั่วไป), message เป็น `closed_ended_question`, `is_required=true`, config ถูกต้อง, index อยู่ในขอบเขต, และยังไม่มี answer
 - RPC ทำ insert answer และ update `chat_messages.required_answer`, `required_answered_at`, `required_status` ใน transaction เดียว; ใช้ row lock/conditional update และ unique constraint กัน double tap, concurrent request และ replay; ถ้าตอบแล้วให้คืนผล `ALREADY_ANSWERED` โดยไม่เปลี่ยนคำตอบเดิม
 - เนื่องจาก policy เดิมของ `chat_messages` อาจเปิด write ให้ feature อื่น ห้ามเปลี่ยน policy กว้างทั้งตาราง; เพิ่ม guard/permission เฉพาะ `type='closed_ended_question'` เพื่อให้ create/answer/status/config เปลี่ยนผ่าน RPC ที่กำหนดเท่านั้น ส่วนชนิดข้อความเดิมต้องผ่านโดยไม่เปลี่ยน behavior
@@ -5897,7 +5898,7 @@ CREATE TABLE public.closed_ended_question_answers (
 | ฟิลด์ Phase 6.7 | พฤติกรรมใน Phase 6.14 |
 |---|---|
 | `is_required` | ต้องเป็น `true` เสมอสำหรับ `closed_ended_question`; ไม่มี toggle ให้ปิด |
-| `required_status` | `unread → reading → answered`; ปิด/สลับหน้าระหว่างยังไม่ตอบคง `reading` และยัง pending |
+| `required_status` | `unread → reading → answered`; ปิด/สลับข้อระหว่างยังไม่ตอบให้ย้อนกลับเป็น `unread` (มี `reading` ได้ครั้งละ 1 ข้อ — bug #22) และยัง pending |
 | `required_answer` | compatibility projection ของ label ที่บันทึกสำเร็จ; ไม่เขียนจาก client โดยตรง |
 | `required_answered_at` | compatibility projection ของเวลาที่บันทึกสำเร็จ |
 | `type` | ใช้ค่าใหม่ `'closed_ended_question'`; ชนิดเดิมไม่เปลี่ยน |
@@ -5989,21 +5990,21 @@ CREATE TABLE public.closed_ended_question_answers (
 
 ```text
 lib/features/consultation/presentation/widgets/
-├── radial_question_view.dart                 # หน้า/ตัวประกอบหลัก
+├── radial_question_view.dart                 # หน้า/ตัวประกอบหลัก + translucent spokes painter + twilight background
 └── closed_ended/
     ├── adaptive_closed_ended_layout.dart     # เลือก radial หรือ responsive scroll layout
-    ├── radial_question_layout.dart           # geometry/ตำแหน่งและ animation ของ circular layout
-    ├── quantitative_question_options.dart    # ตัวเลือกตัวเลข, palette และ option tile
-    ├── qualitative_question_options.dart     # ตัวเลือกข้อความ, palette/card และ wrapping
-    ├── closed_ended_question_prompt.dart      # การ์ดคำถาม/ข้อมูลผู้เชี่ยวชาญ
-    ├── closed_ended_option_tile.dart          # พื้นฐานปุ่มตัวเลือกและ selected/disabled state
+    ├── radial_question_layout.dart           # geometry/ตำแหน่งและ fly-in animation ของ circular layout
+    ├── quantitative_question_options.dart    # ตัวเลือกตัวเลข (glass tile), palette และ selected glow
+    ├── qualitative_question_options.dart     # ตัวเลือกข้อความ (glass card), palette/card และ wrapping
+    ├── closed_ended_question_prompt.dart      # การ์ดคำถาม (radial center / compact header)
+    ├── closed_ended_option_tile.dart          # semantics label + hit target ≥44×44 ของ option
     ├── closed_ended_confirmation_dialog.dart  # dialog ยืนยันตัวเลือก
-    └── closed_ended_glass_primitives.dart     # visual primitives ที่ใช้ร่วมกัน เฉพาะเมื่อจำเป็น
+    └── closed_ended_glass_primitives.dart     # เลเยอร์ภาพหลัก: LitGlassSurface (halo/body/rim painters), GlassRoundedCard, GlassBadge, GlassIconButton, GlassActionButton
 ```
 
 **ขอบเขตและ contract ของแต่ละ widget:**
 
-- `RadialQuestionView`: shell และ composition ของ patient UI; ปัจจุบันถือ selected/confirmation state ชั่วคราวระดับคำถามเพื่อให้รอดจากการสลับ layout; ไม่ query database, ไม่บันทึกคำตอบเอง และไม่วาดวงโคจร/ตัวเลือกเฉพาะ type; เมื่อเชื่อม queue ให้ย้าย draft ที่ต้องรอดข้าม question ไป owner/controller
+- `RadialQuestionView`: shell และ composition ของ patient UI; ถือ selected/confirmation state ชั่วคราวระดับคำถามเพื่อให้รอดจากการสลับ layout; ไม่ query database และไม่บันทึกคำตอบเอง (เขียนผ่าน `onConfirmAnswer` callback); เป็นเจ้าของ fly-in/pulse/glow controllers, วาด translucent spokes (`_RadialConnectingLinesPainter`) และ twilight background (`showBackground`) และเลือก palette/geometry ตามชนิดคำถาม; draft ที่ต้องรอดข้าม question ถูกย้ายไป owner/controller (`onDraftChanged` + `initialSelectedIndex`) แล้ว
 - `AdaptiveClosedEndedLayout`: ใช้ constraints/จำนวนและความยาวตัวเลือก/text scale ตัดสินใจเลือก circular หรือ scroll grid/list; เป็นผู้จัดวาง generic prompt + option slots เท่านั้น
 - `RadialQuestionLayout`: รับ prompt และ option builder แบบ generic; จัดตำแหน่ง 360°/radius/animation เฉพาะ circular mode ไม่รู้จัก quantitative/qualitative model หรือ RPC
 - `QuantitativeQuestionOptions`: สร้างตัวเลือก 1..N, palette/label และ style ของระดับ; ไม่จัดการ confirmation, persistence หรือ required status
@@ -6017,7 +6018,7 @@ lib/features/consultation/presentation/widgets/
 
 - ผู้ป่วยแตะปุ่มลอยคิว หรือแตะ bubble ของ `closed_ended_question` → เปิด Radial UI; คำถามแบบปลายปิดทุกข้อเป็น required และยังอยู่ใน queue จนกว่าจะบันทึกคำตอบสำเร็จ
 - ขณะ Radial UI เปิด ให้ซ่อน/ปิดช่องพิมพ์คำตอบและ keyboard; ไม่รับข้อความ free-text มาแทนคำตอบที่กำหนด
-- สถานะเปลี่ยนเป็น `reading` เมื่อเริ่มเปิดคำถาม และคง `reading` เมื่อปิด UI, สลับไปตอบคำถามบังคับข้ออื่น หรือเกิด network error; กลับมาเปิดข้อเดิมได้
+- สถานะเปลี่ยนเป็น `reading` เมื่อเริ่มเปิดคำถาม และมี `reading` ได้**ครั้งละ 1 ข้อเท่านั้น** — เมื่อปิด UI หรือสลับไปตอบคำถามบังคับข้ออื่น ข้อเดิมต้องถูกย้อนกลับเป็น `unread` (`_revertReadingRequiredQuestions`, bug #22) ไม่เช่นนั้นผู้เชี่ยวชาญเห็นจุด "กำลังตอบ" หลายปุ่ม; network error ระหว่างยืนยันคำตอบคง `reading` ตราบใดที่ confirmation dialog ยังเปิดให้ retry; กลับมาเปิดข้อเดิมได้และ draft selection ยังอยู่ใน session
 - ยกเลิก selection ใน confirmation กลับไปเลือก option ใหม่ได้ โดยไม่เขียน answer record และไม่เปลี่ยนคำถามเป็น `unread`
 - UI ต้องให้ผู้ป่วยสลับระหว่าง pending required questions ได้โดยไม่ต้องตอบข้อที่เปิดอยู่ก่อน; ห้าม auto-open ซ้ำขณะกำลังตอบ/กำลังสลับ และคง draft selection เฉพาะใน session ปัจจุบัน
 - เมื่อตอบสำเร็จจึงเปลี่ยนเป็น `answered`, ปิด Radial UI และปลด required blocking ตาม queue เดิม; เมื่อ app ปิด/กลับมาใหม่ให้โหลดสถานะ server แล้วแสดงคำถามที่ยัง unanswered เป็น pending (ไม่พึ่ง `dispose` เพื่อ reset status)
@@ -6047,15 +6048,22 @@ lib/features/consultation/presentation/widgets/
 - เมื่อ orieเครื่อง, split-screen, resize/fold/unfold) ให้คำนวณ strategy และขนาดใหม่จาก constraints ในเฟรม layout ถัดไป; ไม่ cache ขนาดจอเพื่อรอเปิดหน้าใหม่
 - แอปล็อก portrait เป็นค่าเริ่มต้นใน `main.dart`; เฉพาะช่วงที่ Radial UI เปิดบน Android/iOS ให้ override preference เพื่ออนุญาต portrait/landscape ที่ platform รองรับ และ restore portrait preference เมื่อปิด/ตอบสำเร็จ/dispose; web/desktop ใช้ window constraints โดยไม่เรียก `SystemChrome`
 - การสลับ radial ↔ compact ต้องคง question id, selected draft, submit/confirmation state และสถานะ loading/error ไว้ใน owner/controller; เปลี่ยนเฉพาะ subtree ของ layout โดยไม่ reset คำตอบหรือ required status
-- เลือก radial เมื่อ usable area หลังหัก inset ของ controls/safe area กว้างอย่างน้อย 360 dp; ความสูงขั้นต่ำ 200 dp สำหรับตัวเลือกสั้น/ตัวเลข, 240 dp เมื่อมี label มากกว่า 3 grapheme clusters และ 320 dp เมื่อมี label มากกว่า 8 grapheme clusters; aspect ratio ไม่เกิน 2:1, มี 1–5 ตัวเลือก, คำถามไม่เกิน 10 grapheme clusters, label ไม่เกิน 12 grapheme clusters และ text scale ไม่เกิน 1.3; วัดด้วย `String.characters.length` ไม่ใช่ UTF-16 `String.length`; ปรับจากภาพทดสอบจริงที่ chat overlay สูงไม่ถึง 560 dp จึงถูกบังคับเป็น compact ทั้งที่วง radial ขนาดย่อยังวางได้; คง compact fallback เมื่อพื้นที่วงจริงไม่พอ
+- เลือก radial เมื่อ usable area หลังหัก inset ของ controls/safe area กว้างอย่างน้อย 320 dp; ความสูงขั้นต่ำ 200 dp สำหรับตัวเลือกสั้น/ตัวเลข, 240 dp เมื่อมี label มากกว่า 3 grapheme clusters และ 320 dp เมื่อมี label มากกว่า 8 grapheme clusters; aspect ratio ไม่เกิน 2:1, มี 1–5 ตัวเลือก, คำถามไม่เกิน 10 grapheme clusters, label ไม่เกิน 12 grapheme clusters และ text scale ไม่เกิน 1.3; วัดด้วย `String.characters.length` ไม่ใช่ UTF-16 `String.length`; ปรับจากภาพทดสอบจริงที่ chat overlay สูงไม่ถึง 560 dp จึงถูกบังคับเป็น compact ทั้งที่วง radial ขนาดย่อยังวางได้; คง compact fallback เมื่อพื้นที่วงจริงไม่พอ
 - เงื่อนไขอื่นทั้งหมด (รวม 6–10 ตัวเลือก, label/คำถามยาว, จอแคบ/landscape, split-screen ที่ usable radial area ต่ำกว่าเกณฑ์ หรือ text scale สูง) สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
 - ใช้ `SafeArea` + `SingleChildScrollView`/slivers เมื่อความสูงไม่พอ; ตัวเลือกข้อความขึ้นหลายบรรทัดได้และไม่ตัดข้อความสำคัญด้วย ellipsis
 - คำนวณขนาดตัวอักษร/ไอคอนด้วย constraints และ `TextScaler` อย่างเหมาะสม แต่ไม่ override การตั้ง accessibility ของผู้ใช้; หากเนื้อหายังไม่พอให้เลื่อนแทนการย่อเกินค่าที่อ่านได้
 - Animation ลด/ปิดได้เมื่อ `MediaQuery.disableAnimations` เปิด และต้องไม่ขัดขวางการแตะ/keyboard navigation
 
+**องค์ประกอบภาพจริง (ตาม implementation ปัจจุบัน):**
+- ภาษาภาพทั้งหมดเป็น **glass morphism** ผ่าน `LitGlassSurface` (halo/body/rim `CustomPainter`): พื้นโปร่งใส + backdrop blur, เส้นขอบเรืองแสง, inner shine และ accent tint ตามสีของ option — ไม่ใช่การ์ดทึบ
+- `RadialQuestionView` วาดเส้นเชื่อมโปร่งแสง (`_RadialConnectingLinesPainter`) จากขอบการ์ดกลางไปยังแต่ละตัวเลือก เติบตาม fly-in animation และเรืองแสงตามสีเมื่อตัวเลือกนั้นถูกเลือก
+- การ์ดคำถามตรงกลาง (`ClosedEndedQuestionPrompt.circular`) เป็น glass card มุมโค้ง (`borderRadius = size × 0.24`, ไม่ใช่วงกลม) แสดงไอคอน `checklist_rtl` + ข้อความคำถาม และ pulse เบาๆ รอบตัว
+- ปุ่มปิด `GlassIconButton` (close_rounded) มุมซ้ายบน, `GlassBadge` ชื่อ/รูป expert ด้านบนกลาง, hint text glass pill ด้านล่างของ compact layout
+- `showBackground=true` (standalone) วาดพื้นหลังไล่เฉด twilight + ambient glow; เมื่อใช้เป็น overlay ในห้องแชท (`showBackground=false`) พื้นหลังโปร่งใสให้เห็นแชทผ่าน blur ของการ์ด
+
 #### 3. ตัวเลือกเชิงปริมาณ (Quantitative) — `quantitative_question_options.dart`
 
-แสดงเป็นปุ่มกลมตัวเลข ล้อมรอบคำถาม:
+แสดงเป็น **glass tile สี่เหลี่ยมมุมโค้ง** (ไม่ใช่ปุ่มกลมทึบ) ตัวเลข `1..N` ล้อมรอบการ์ดคำถามตรงกลาง พร้อมเส้นเชื่อมโปร่งแสง (translucent spokes) จากการ์ดกลางไปยังแต่ละตัวเลือก:
 
 ```
          [1]    [2]    [3]
@@ -6065,13 +6073,18 @@ lib/features/consultation/presentation/widgets/
          [9]    [8]    ...
 ```
 
-- ปุ่มตัวเลข 1 ถึง N (3, 5, หรือ 10 ตามที่ expert เลือก)
-- สีไล่ระดับ: เขียว → เหลือง → แดง (น้อย → มาก) หรือกลับด้านตามบริบท
-- กดเลือกแล้ว → ปุ่มนั้น scale up + highlight + ส่งคำตอบ
+- Label เป็น `1..N` (3, 5 หรือ 10 ตาม `scale_levels`; ได้จาก `config.effectiveOptions`)
+- แต่ละตัวเลือกคือ `QuantitativeAnswerOption` บน `LitGlassSurface` (backdrop blur σ20, `borderRadius = size × 0.26`) — สีของตัวเลือกใช้เป็น **accent tint + rim glow** บนพื้นกระจกโปร่งใส ไม่ใช่พื้นทึบ
+- Palette 10 เฉด เขียว → เหลือง → แดง → ชมพู/ม่วง (`_colors` = `4CAF50, 8BC34A, CDDC39, FFEB3B, FFC107, FF9800, FF5722, F44336, E91E63, 9C27B0`); `colorForIndex(index, count)` map `index/(count−1)` เข้า palette — ทิศทางเดียวน้อย→มากเสมอ ไม่มีโหมดกลับด้าน
+- ตัวอักษร `SukhumvitSet` w800 สีขาว ขนาด `size × 0.38` พร้อมเงาดำและเงาสี accent (เข้มขึ้นเมื่อ selected)
+- **Radial mode:** ขนาด `side × 0.14` clamp 48–112 dp; วางครบ 360°/N เริ่มจากด้านบน (`startAngle = −π/2`) พร้อม fly-in แบบ stagger (`elasticOut`, delay ~80ms/ตัว)
+- **Compact mode:** `Wrap` จัดกึ่งกลาง spacing 12; ขนาด `(contentWidth − 36) / 4` clamp 48–72 dp (≈4 ตัว/แถว)
+- แตะตัวเลือก → `HapticFeedback.mediumImpact` + glow animation 400 ms: scale `1 + t×0.15`, `accentStrength` 0.16→0.36, `fillOpacity` 0.07→0.14, `glowOpacity` 0→`0.35 + t×0.35`; เส้น spoke ของตัวที่เลือกหนาเป็น 2.2 เรืองแสงตามสี option + node ปลายเส้นใหญ่ขึ้น
+- การเลือกเป็น **draft เท่านั้น** — แตะแล้วเปิด `ClosedEndedConfirmationDialog` (ปุ่ม `เปลี่ยน`/`ยืนยัน`); เขียนคำตอบลง DB เฉพาะเมื่อกดยืนยันและ RPC สำเร็จ ไม่ส่งคำตอบทันทีที่แตะ
 
 #### 4. ตัวเลือกเชิงคุณภาพ (Qualitative) — `qualitative_question_options.dart`
 
-แสดงเป็น chip/card รูปทรงกลมรอบคำถาม:
+แสดงเป็น **glass card มุมโค้ง** (`borderRadius 18`, blur σ22) ขนาดยืดตามความยาว label วางรอบการ์ดคำถาม พร้อมเส้นเชื่อมโปร่งแสงเช่นเดียวกับ quantitative:
 
 ```
       ┌──────────┐       ┌──────────┐
@@ -6086,9 +6099,14 @@ lib/features/consultation/presentation/widgets/
            └────────────────┘
 ```
 
-- Card/Chip ขนาดยืดหยุ่นตามความยาวข้อความ
-- สีพื้น: primary tone (Teal shades) + เงาอ่อนๆ
-- กดเลือกแล้ว → card นั้น glow + bounce animation → ส่งคำตอบ
+- แต่ละตัวเลือกคือ `QualitativeAnswerOption` บน `LitGlassSurface` — สีของตัวเลือกเป็น accent tint บนกระจก ไม่ใช่พื้นทึบ
+- Palette teal 10 เฉด (`_colors` = `00897B, 00796B, 00695C, 00BFA5, 1DE9B6, 64FFDA, 26A69A, 4DB6AC, 80CBC4, B2DFDB`); `colorForIndex(index)` วน `index % 10`
+- **ความกว้างวัดจริงจาก label** ด้วย `TextPainter` (`SukhumvitSet` 14 w700 + padding 32): radial clamp `min(64, maxWidth)…maxWidth` โดย `maxWidth = side/2 − centerRadius − 24` (ไม่ให้การ์ดชนการ์ดกลาง/ขอบจอ); compact clamp `112…contentWidth` — จึงไม่มีการ์ดกว้างเท่ากันหมดแบบ grid เดิม
+- ข้อความจัดกึ่งกลาง สีขาว w700 — radial: fontSize 12 สูงสุด 3 บรรทัด + ellipsis; compact: fontSize 14 ขึ้นบรรทัดไม่จำกัดและไม่ตัดคำ
+- `minHeight`: radial = `max(44, width × 0.55)`, compact = 52 — รักษาพื้นที่แตะขั้นต่ำ 44 dp
+- **Radial mode:** `optionSizeFactor 0.24`, `startAngle = −π/2 − π/N` (หมุนครึ่ง step เพื่อไม่ให้การ์ดกว้างชนกันแนวนอน — เช่น 3 ตัวเลือกจัดเป็น ซ้ายบน/ขวาบน/ล่าง ตามภาพ)
+- **Compact mode:** `Wrap` จัดกึ่งกลาง spacing 12 เหมือน quantitative
+- แตะตัวเลือก → haptic + glow scale `1 + t×0.15` (`accentStrength` 0.12→0.34, `glowOpacity` `0.25 + t×0.3`) → `ClosedEndedConfirmationDialog` เช่นเดียวกับ quantitative (draft → ยืนยัน → RPC เท่านั้น)
 
 #### 5. Interaction Flow
 
@@ -6097,9 +6115,11 @@ lib/features/consultation/presentation/widgets/
     ↓
 [ตั้ง required_status=reading; ซ่อนช่องพิมพ์คำตอบ]
     ↓
-[Patient แตะตัวเลือก] → [เลือกใหม่ได้ก่อนยืนยัน]
+[Patient แตะตัวเลือก] → [haptic + glow ที่ตัวเลือก; เลือกใหม่ได้ก่อนยืนยัน]
     ↓
-[Confirm: "คุณเลือก 'XXX' ใช่หรือไม่?"]
+[ClosedEndedConfirmationDialog "ยืนยันคำตอบ":
+ แสดง option ที่เลือก (swatch สี + label/"ระดับ N")
+ + ข้อความคำถาม + ปุ่ม เปลี่ยน/ยืนยัน]
     ├─ เปลี่ยน/ยกเลิก → กลับ UI เลือกคำตอบ; status ยัง reading; ไม่มีคำตอบที่ persist
     └─ ยืนยัน → เรียก answer_closed_ended_question RPC
                   ├─ สำเร็จ: answer row + compatibility fields + status=answered ใน transaction เดียว
@@ -6119,7 +6139,8 @@ lib/features/consultation/presentation/widgets/
 |---|---|---|
 | Expert ส่งคำถาม closed-ended สำเร็จ | bubble คำถามปลายปิด + badge | queue แสดง unread; config โหลดจาก message |
 | Patient เปิดคำถาม | สถานะ reading | Radial/adaptive UI เปิด, input ซ่อน, queue ยังคงรายการอื่น |
-| Patient ปิด/สลับคำถาม/เกิด network error | ยังไม่แสดงคำตอบ | สถานะ reading คงอยู่; คำถามยัง pending และเปิดใหม่ได้ |
+| Patient ปิด/สลับคำถาม | จุด typing ของข้อเดิมดับ — ปุ่มกลับเป็นแดง (มี `reading` ครั้งละ 1 ข้อ) | ข้อเดิมย้อนเป็น `unread`; คำถามยัง pending และเปิดใหม่ได้พร้อม draft เดิม |
+| RPC ตอบคำถามล้มเหลว/network error | ยังไม่แสดงคำตอบ | คง `reading` ขณะ confirmation dialog ยังเปิดให้ retry |
 | RPC บันทึกคำตอบสำเร็จ | realtime bubble แสดง label คำตอบและเวลาจาก answer projection | สถานะ answered, ปิด UI, queue sync |
 | RPC ล้มเหลวหรือคำตอบซ้ำ | ไม่มี partial/duplicate answer | แสดง retry หรือ refresh สถานะจาก server; ไม่แสดงเป็น answered จนยืนยันสำเร็จ |
 
@@ -6170,7 +6191,7 @@ lib/features/consultation/presentation/widgets/
 | ผู้ป่วยกดผิดหรือเปลี่ยนใจ | บันทึกคำตอบผิด | Confirm ทุกครั้ง; ก่อน RPC เป็น draft ยกเลิก/เลือกใหม่ได้ |
 | Double tap, retry หรือ concurrent write | duplicate/คำตอบไม่ตรง status | RPC transaction + unique(question_message_id) + lock/conditional write; `ALREADY_ANSWERED` ไม่ overwrite |
 | คำถามปลายปิดถูกส่งเป็น optional | ไม่เข้า required queue/จบงานผิดเงื่อนไข | บังคับ `is_required=true` ที่ write path; ไม่มี UI toggle |
-| Patient สลับข้อหรือปิดแอป | status ค้างหรือคำถามหายจาก queue | คง reading จนตอบสำเร็จ; pending query รวม unread/reading; โหลด server state เมื่อเปิดใหม่ ไม่พึ่ง dispose reset |
+| Patient สลับข้อหรือปิดแอป | status ค้างหรือคำถามหายจาก queue | สลับข้อ/ปิด overlay ย้อนข้อเดิมเป็น `unread` (bug #22); ปิดแอปขณะ `reading` อาจค้างบน server — pending query รวม unread/reading และโหลด server state เมื่อเปิดใหม่ ไม่พึ่ง dispose reset |
 | RPC/network ล้มเหลว | UI แสดง answered แต่ข้อมูลไม่ persist | คง reading, selection draft และเปิด retry; ปิด Radial เมื่อ server ยืนยันสำเร็จเท่านั้น |
 | legacy chat / migration compatibility | ข้อความเก่าพังหรือ policy กระทบ feature อื่น | nullable additive column + answer table/RPC ใหม่; ไม่แก้ defaults/policies/behavior เดิม; deploy DB ก่อน client |
 | invalid/malformed config | render crash หรือ option index ผิด | validate ที่ส่งและ RPC; client parse แบบ safe fallback; telemetry โดยไม่ logข้อมูลสุขภาพอ่อนไหว |
@@ -6210,7 +6231,7 @@ lib/features/consultation/presentation/widgets/
 - [x] รองรับ reflow แบบ realtime เมื่อ constraints เปลี่ยนจาก portrait ↔ landscape; mobile เปิด orientation ที่ platform รองรับเฉพาะขณะ Radial UI อยู่ active และ restore portrait เมื่อปิด/ตอบสำเร็จ/dispose; desktop/web reflow ตาม window size
 - [x] ทดสอบ rotation ระหว่างหน้าเปิดและระหว่าง confirmation โดยคง question/selection state; options ข้อความยาวและจำนวนมากเปลี่ยนเป็น scroll layout
 - [x] เชื่อม required queue/bubble ไปยัง radial/adaptive answer UI; ซ่อนช่องพิมพ์ขณะเปิด และอนุญาตเปิดคำถาม pending ข้ออื่น (floating buttons อยู่เหนือ overlay)
-- [x] คง `reading` เมื่อปิด/สลับ/error; selection draft ข้ามหลายคำถามใน session (`_closedEndedDrafts` keyed by message id); status `reading` ค้างบน server ทำให้ re-entry เปิดต่อได้ (draft selection เป็น in-memory ตาม session)
+- [x] มี `reading` ได้ครั้งละ 1 ข้อ — ปิด overlay หรือสลับข้อย้อนข้อเดิมเป็น `unread` (`_revertReadingRequiredQuestions` + `markClosedEndedQuestionUnread` RPC, bug #22); selection draft ข้ามหลายคำถามใน session (`_closedEndedDrafts` keyed by message id); re-entry โหลด server state เดิม (draft selection เป็น in-memory ตาม session)
 - [x] ปิด Radial และ set answered เฉพาะหลัง RPC success; โหลด unanswered state จาก server หลัง app resume/re-entry ผ่าน required queue เดิม
 - [x] loading/error/retry ใน confirmation dialog (RPC callback คืน bool, fail = dialog ค้างให้ retry), semantics label บน close button
 

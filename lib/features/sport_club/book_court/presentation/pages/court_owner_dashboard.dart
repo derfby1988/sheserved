@@ -7,8 +7,8 @@ import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../widgets/court_owner_register_sheet.dart';
 import '../widgets/court_owner_venue_card.dart';
-import '../widgets/owner_court_editor_sheet.dart';
 import 'court_owner_bookings_page.dart';
+import 'court_owner_venue_manage_page.dart';
 
 /// Owner dashboard: owner profile status, managed venues, and the entry
 /// points to register as an owner, create a venue, add courts, and manage
@@ -134,39 +134,17 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     );
   }
 
-  Future<void> _addCourt(VenueSummary venue) async {
-    final userId = _userId;
-    if (userId == null) return;
-    // Court sport: use the venue's first sport when known; the editor can
-    // only be opened once the venue has at least one sport configured.
-    final sportId = venue.sportIds.isNotEmpty ? venue.sportIds.first : null;
-    if (sportId == null) {
-      _toast('กรุณาตั้งค่ากีฬาของสนามก่อนเพิ่มคอร์ท');
-      return;
-    }
-    final draft = await OwnerCourtEditorSheet.show(context, sportId: sportId);
-    if (draft == null) return;
-    try {
-      await widget.repo.upsertCourt(
-        userId: userId,
-        venueId: venue.id,
-        sportId: draft['sport_id'] as String,
-        name: draft['name'] as String,
-        capacity: draft['capacity'] as int,
-        priceAmount: draft['price_amount'] as double?,
-        pricingUnit: draft['pricing_unit'] as String,
-        courtType: draft['court_type'] as String?,
-        indoor: draft['indoor'] as bool?,
-        approvalMode: draft['approval_mode'] as String,
-        unitLabel: (draft['unit_label'] as String?)?.trim().isEmpty == true
-            ? null
-            : draft['unit_label'] as String?,
-      );
-      _toast('เพิ่มสนามแล้ว');
-      await _load();
-    } catch (e) {
-      _toast(_mapError(e));
-    }
+  void _openManage(VenueSummary venue) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CourtOwnerVenueManagePage(
+          repo: widget.repo,
+          venue: venue,
+          ownerApproved: _ownerProfile?.status == VenueOwnerStatus.approved,
+        ),
+      ),
+    ).then((_) => _load());
   }
 
   void _openBookings(VenueSummary venue) {
@@ -241,7 +219,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                       for (final venue in _venues)
                         CourtOwnerVenueCard(
                           venue: venue,
-                          onManage: () => _addCourt(venue),
+                          onManage: () => _openManage(venue),
                           onViewBookings: () => _openBookings(venue),
                         ),
                   ],

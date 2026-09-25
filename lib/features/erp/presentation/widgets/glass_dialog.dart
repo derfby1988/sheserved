@@ -1,37 +1,31 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 
-import '../../data/models/dashboard_theme.dart';
 import '../providers/dashboard_theme_provider.dart';
-import 'glass_card.dart';
 
-/// แสดง Dialog แบบ Glassmorphism
 Future<T?> showGlassDialog<T>({
   required BuildContext context,
   required WidgetRef ref,
   required WidgetBuilder builder,
 }) {
   final theme = ref.read(dashboardThemeProvider).theme;
-  final opacity = theme?.glassOpacityDialog ?? 0.20;
+  final opacity = (theme?.glassOpacityDialog ?? 0.25)
+      .clamp(0.15, 0.50)
+      .toDouble();
   final blur = theme?.glassBlurLevel.toDouble() ?? 8.0;
   final isDark = theme?.isDarkMode ?? false;
 
-  return showDialog<T>(
+  return GlassDialog.show<T>(
     context: context,
-    barrierColor: Colors.black.withOpacity(isDark ? 0.6 : 0.4),
-    builder: (ctx) => BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: GlassCard(
-          section: GlassSection.dialog,
-          borderRadius: 20,
-          padding: const EdgeInsets.all(24),
-          child: builder(ctx),
-        ),
-      ),
-    ),
+    builder: builder,
+    barrierColor: Colors.black.withValues(alpha: isDark ? 0.6 : 0.4),
+    backdropBlur: blur,
+    panelBorderRadius: 20,
+    panelBlurSigma: theme?.glassBlurLevel.toDouble() ?? 12.0,
+    panelFillOpacity: opacity,
+    panelSurfaceColor: isDark ? Colors.black : Colors.white,
+    panelRimWidth: 1.5,
+    panelShadowOpacity: isDark ? 0.5 : 0.12,
   );
 }

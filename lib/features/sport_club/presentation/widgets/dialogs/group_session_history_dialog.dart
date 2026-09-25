@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/cost/session_cost_items_view.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 bool isSportClubSessionEnded(Map<String, dynamic> session, {DateTime? now}) {
   final endsAt = DateTime.tryParse(session['ends_at']?.toString() ?? '');
@@ -18,8 +20,18 @@ class GroupSessionHistoryDialog {
     required List<Map<String, dynamic>> sessions,
     required Map<String, List<Map<String, dynamic>>> confirmedMembersBySession,
   }) {
-    return showDialog<void>(
+    return GlassDialog.show<void>(
       context: context,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      panelBorderRadius: 24,
+      panelBlurSigma: 18,
+      panelFillOpacity: 0.10,
+      panelAccentColor: AppColors.primary,
+      panelAccentStrength: 0.12,
+      panelGlowOpacity: 0.14,
+      panelRimWidth: 2.4,
+      panelShadowOpacity: 0.30,
+      contentPadding: EdgeInsets.zero,
       builder: (_) => _GroupSessionHistoryDialog(
         groupName: groupName,
         groupOwnerId: groupOwnerId,
@@ -141,14 +153,8 @@ class _GroupSessionHistoryDialogState
     final sessionId = session['id']?.toString() ?? '';
     final participants =
         widget.confirmedMembersBySession[sessionId] ?? const [];
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: Colors.white.withValues(alpha: 0.88),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
+    return LitGlassSurface.frosted(
+      borderRadius: 16,
       child: Theme(
         data: ThemeData(
           dividerColor: Colors.transparent,
@@ -234,88 +240,94 @@ class _GroupSessionHistoryDialogState
         }
       });
     }
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                LitGlassSurface(
+                  borderRadius: 12,
+                  blurSigma: 8,
+                  fillOpacity: 0.12,
+                  rimWidth: 1.2,
+                  shadowOpacity: 0.10,
+                  child: const Padding(
+                    padding: EdgeInsets.all(9),
+                    child: Icon(
                       Icons.history_rounded,
-                      color: AppColors.primaryDark,
+                      color: AppColors.primary,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'ประวัติรอบนัดของก๊วน',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '${widget.groupName} · ${_sessions.length} รอบที่สิ้นสุดแล้ว',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'ปิด',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Divider(height: 1, color: Colors.grey.shade200),
-              const SizedBox(height: 10),
-              Flexible(
-                child: Scrollbar(
-                  controller: _scrollController,
-                  thumbVisibility: _sessions.length > _pageSize,
-                  child: ListView.separated(
-                    controller: _scrollController,
-                    shrinkWrap: true,
-                    itemCount: _visibleCount,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (_, index) => _sessionCard(_sessions[index]),
                   ),
                 ),
-              ),
-              if (hasMore) ...[
-                const SizedBox(height: 6),
-                Center(
-                  child: Text(
-                    'เลื่อนลงเพื่อดูรอบก่อนหน้า',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ประวัติรอบนัดของก๊วน',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        '${widget.groupName} · ${_sessions.length} รอบที่สิ้นสุดแล้ว',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'ปิด',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withValues(alpha: 0.85),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+            const SizedBox(height: 10),
+            Flexible(
+              child: Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: _sessions.length > _pageSize,
+                child: ListView.separated(
+                  controller: _scrollController,
+                  shrinkWrap: true,
+                  itemCount: _visibleCount,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, index) => _sessionCard(_sessions[index]),
+                ),
+              ),
+            ),
+            if (hasMore) ...[
+              const SizedBox(height: 6),
+              Center(
+                child: Text(
+                  'เลื่อนลงเพื่อดูรอบก่อนหน้า',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
