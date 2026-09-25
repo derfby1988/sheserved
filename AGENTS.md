@@ -44,3 +44,30 @@ resolved versions should stay identical.
 
 Note: the `CocoaPods did not set the base configuration of your project` warning
 is expected for Flutter projects and is not a failure.
+
+## Shared glass UI (`lib/shared/widgets/glass/`)
+
+Reusable glassmorphism layer — migrate dialogs gradually, do not restyle the
+whole app at once.
+
+- `glass_primitives.dart`: `LitGlassSurface` (dark translucent glass),
+  `LitGlassSurface.frosted` (light frosted tile preset), `GlassActionButton`,
+  `GlassBadge`, `GlassIconButton`
+- `glass_dialog.dart`: `GlassDialog.show` — bare glass panel shell
+- `glass_confirm_dialog.dart`: `GlassConfirmDialog.show` — 2-button
+  cancel/confirm with async loading + error retry
+- ERP pages keep using `showGlassDialog` (adapts dashboard theme to the shell)
+
+### Migration checklist (pick before converting a dialog)
+
+1. Simple text + buttons in one file → `GlassConfirmDialog.show`
+2. Custom content with self-owned (light) colours → `GlassDialog.show`
+   (default = dark translucent glass) + recolor the dialog's own chrome to
+   white/mint
+3. Content reuses shared widgets or hardcodes dark colours → `GlassDialog.show`
+   + wrap that content in `LitGlassSurface.frosted` (do not restyle the inner
+   widgets)
+
+Rule of thumb: the panel is always dark translucent glass (like the
+closed-ended confirm dialog). Light-themed inner content rides on frosted
+tiles — never raise `panelFillOpacity` to make the panel itself light/milky.
