@@ -31,10 +31,14 @@ CREATE TABLE IF NOT EXISTS public.users (
   first_name text, last_name text, profile_image_url text, role text,
   is_active boolean DEFAULT true
 );
+-- Stub mirrors the pre-20260921 production shape: profession_id NOT NULL so
+-- the notification-delivery migration's DROP NOT NULL is exercised for real.
 CREATE TABLE IF NOT EXISTS public.app_notifications (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  profession_id uuid NOT NULL DEFAULT gen_random_uuid(),
   recipient_id uuid, category text, event_type text,
   title text, body text, payload jsonb, is_read boolean DEFAULT false,
+  read_at timestamptz, dismissed_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 CREATE OR REPLACE FUNCTION public.is_admin_role(p_user_id uuid)
@@ -57,6 +61,8 @@ END $$;
 \ir ../supabase/migrations/20260924100000_sports_hub_venue_supply.sql
 \ir ../supabase/migrations/20260924110000_sports_hub_venue_bookings.sql
 \ir ../supabase/migrations/20260924120000_sports_hub_coaches.sql
+\ir ../supabase/migrations/20260925100000_sports_hub_owner_contact_fix.sql
+\ir ../supabase/migrations/20260925110000_sports_hub_notification_delivery.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -81,12 +87,14 @@ DECLARE
   v_cust  uuid := 'cccccccc-0000-0000-0000-000000000003';
   v_cust2 uuid := 'dddddddd-0000-0000-0000-000000000004';
   v_sport uuid := 'eeeeeeee-0000-0000-0000-000000000005';
+  v_mail  uuid := 'ffffffff-0000-0000-0000-000000000006';
   v_app uuid; v_venue uuid; v_court uuid; v_terms int;
   v_b1 uuid; v_b2 uuid; v_review uuid;
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
     (v_admin,'Admin','A','admin'), (v_owner,'Owner','O','user'),
-    (v_cust,'Cust','C','user'), (v_cust2,'Cust2','C2','user');
+    (v_cust,'Cust','C','user'), (v_cust2,'Cust2','C2','user'),
+    (v_mail,'Mail','M','user');
   INSERT INTO public.sports (id, name_en, status)
     VALUES (v_sport,'Badminton','approved');
 
@@ -94,6 +102,15 @@ BEGIN
   v_app := public.submit_sports_venue_owner_application(
     v_owner, 'Venue Co', 'Owner O', '0812345678');
   PERFORM pg_temp.expect(v_app IS NOT NULL, 'owner application submitted');
+
+  -- contact hotfix: e-mail-only contact accepted, no contact rejected
+  PERFORM pg_temp.expect(
+    public.submit_sports_venue_owner_application(
+      v_mail, 'Mail Co', 'Mail M', NULL, 'mail@example.com') IS NOT NULL,
+    'owner application accepted with e-mail-only contact');
+  PERFORM pg_temp.expect_raise('application without any contact rejected',
+    format('SELECT public.submit_sports_venue_owner_application(%L, %L, %L, %L)',
+           gen_random_uuid()::text, 'X', 'X', ''));
 
   PERFORM pg_temp.expect_raise('non-admin cannot review owner application',
     format('SELECT public.review_sports_venue_owner_application(%L, %L, %L)',
@@ -285,3 +302,40 @@ BEGIN
 
   RAISE NOTICE 'coach smoke test complete';
 END $coach$;
+
+-- ---------------------------------------------------------------------
+-- Notification delivery hotfix (20260925110000)
+-- ---------------------------------------------------------------------
+DO $notify$
+DECLARE
+  v_admin uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  v_cust  uuid := 'cccccccc-0000-0000-0000-000000000003';
+BEGIN
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'app_notifications'
+      AND column_name = 'profession_id' AND is_nullable = 'YES'),
+    'profession_id nullable after delivery migration');
+
+  PERFORM public.sports_hub_notify(
+    v_admin, 'venue_supply', 'probe.delivery', 't', 'b', '{}'::jsonb);
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.app_notifications
+    WHERE recipient_id = v_admin AND event_type = 'probe.delivery'),
+    'sports_hub_notify persists row without profession_id');
+
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.list_app_notifications(v_admin, 'venue_supply', 50, false)
+    WHERE event_type = 'probe.delivery'),
+    'list_app_notifications returns row for recipient');
+  PERFORM pg_temp.expect(NOT EXISTS(
+    SELECT 1 FROM public.list_app_notifications(v_cust, 'venue_supply', 50, false)
+    WHERE event_type = 'probe.delivery'),
+    'list_app_notifications isolates other recipients');
+  PERFORM pg_temp.expect(NOT EXISTS(
+    SELECT 1 FROM public.list_app_notifications(v_admin, 'coach_booking', 50, false)
+    WHERE event_type = 'probe.delivery'),
+    'list_app_notifications honors category filter');
+
+  RAISE NOTICE 'notification delivery smoke test complete';
+END $notify$;

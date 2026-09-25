@@ -3,13 +3,29 @@ import 'package:sheserved/core/constants/app_colors.dart';
 
 /// Owner onboarding sheet: registers a venue owner application.
 ///
-/// Returns `({String legalName, String? businessName, String contact})`
-/// when submitted — the caller invokes `submit_venue_owner_application`.
+/// Returns `({String legalName, String? businessName, String? contactPhone,
+/// String? contactEmail})` when submitted — a contact value containing '@'
+/// is routed to `contactEmail`, anything else to `contactPhone` (max 30
+/// chars, matching the `sports_venue_owner_profiles.contact_phone` column).
+/// The caller invokes `submit_sports_venue_owner_application`.
 class CourtOwnerRegisterSheet {
-  static Future<({String legalName, String? businessName, String contact})?>
-      show(BuildContext context) {
+  static Future<
+    ({
+      String legalName,
+      String? businessName,
+      String? contactPhone,
+      String? contactEmail,
+    })?
+  >
+  show(BuildContext context) {
     return showModalBottomSheet<
-        ({String legalName, String? businessName, String contact})>(
+      ({
+        String legalName,
+        String? businessName,
+        String? contactPhone,
+        String? contactEmail,
+      })
+    >(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -40,8 +56,17 @@ class _CourtOwnerRegisterSheetBodyState
     super.dispose();
   }
 
+  bool get _contactIsEmail => _contact.text.trim().contains('@');
+
+  /// `contact_phone` is VARCHAR(30) — longer contact strings must go through
+  /// `contact_email` instead.
+  bool get _contactTooLong =>
+      !_contactIsEmail && _contact.text.trim().length > 30;
+
   bool get _valid =>
-      _legalName.text.trim().isNotEmpty && _contact.text.trim().isNotEmpty;
+      _legalName.text.trim().isNotEmpty &&
+      _contact.text.trim().isNotEmpty &&
+      !_contactTooLong;
 
   @override
   Widget build(BuildContext context) {
@@ -96,9 +121,12 @@ class _CourtOwnerRegisterSheetBodyState
               const SizedBox(height: 12),
               TextField(
                 controller: _contact,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'เบอร์โทรหรืออีเมล *',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  errorText: _contactTooLong
+                      ? 'เบอร์โทรยาวเกินไป หากเป็นอีเมลให้ใส่ @ ให้ครบ'
+                      : null,
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -116,7 +144,12 @@ class _CourtOwnerRegisterSheetBodyState
                           businessName: _businessName.text.trim().isEmpty
                               ? null
                               : _businessName.text.trim(),
-                          contact: _contact.text.trim(),
+                          contactPhone: _contactIsEmail
+                              ? null
+                              : _contact.text.trim(),
+                          contactEmail: _contactIsEmail
+                              ? _contact.text.trim()
+                              : null,
                         ))
                       : null,
                   child: const Text('ส่งคำขอ'),

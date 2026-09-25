@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:sheserved/features/chat/data/models/chat_models.dart';
+import 'package:sheserved/features/consultation/presentation/widgets/chat_input_bar_widget.dart';
 import 'package:sheserved/features/consultation/presentation/widgets/closed_ended_dialog.dart';
 import 'package:sheserved/features/consultation/presentation/widgets/health_data/message_bubble.dart';
 
@@ -194,7 +195,152 @@ void main() {
     });
   });
 
+  group('ChatInputBarWidget closed-ended send', () {
+    testWidgets('shows a prominent send icon in closed-ended mode', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: 'test');
+      final isSending = ValueNotifier(false);
+      final isRecording = ValueNotifier(false);
+      addTearDown(controller.dispose);
+      addTearDown(isSending.dispose);
+      addTearDown(isRecording.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatInputBarWidget(
+              controller: controller,
+              isProvider: true,
+              isChatActive: true,
+              isSending: isSending,
+              isRecording: isRecording,
+              readOnly: false,
+              isClosedEndedMode: true,
+              onSend: () {},
+              onStartRecording: () {},
+              onStopRecording: () {},
+              onPickImage: () {},
+              onShowAttachmentMenu: () {},
+            ),
+          ),
+        ),
+      );
+
+      final sendButton = find.byKey(const ValueKey('send'));
+      final sendIcon = find.descendant(
+        of: sendButton,
+        matching: find.byIcon(Icons.send_rounded),
+      );
+      expect(sendIcon, findsOneWidget);
+      expect(tester.widget<Icon>(sendIcon).size, 24);
+    });
+  });
+
   group('ClosedEndedConfigDialog', () {
+    testWidgets('keeps prominent answer-type icons visible while selected', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => ClosedEndedConfigDialog.show(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final headerIcon = find.byIcon(Icons.checklist_rtl);
+      final quantitativeIcon = find.byIcon(Icons.format_list_numbered);
+      final qualitativeIcon = find.byIcon(Icons.text_fields);
+      expect(headerIcon, findsOneWidget);
+      expect(tester.widget<Icon>(headerIcon).size, 28);
+      expect(quantitativeIcon, findsOneWidget);
+      expect(tester.widget<Icon>(quantitativeIcon).size, 22);
+      expect(qualitativeIcon, findsOneWidget);
+      expect(tester.widget<Icon>(qualitativeIcon).size, 22);
+
+      await tester.tap(find.text('เชิงคุณภาพ'));
+      await tester.pumpAndSettle();
+
+      expect(quantitativeIcon, findsOneWidget);
+      expect(qualitativeIcon, findsOneWidget);
+    });
+
+    testWidgets('applies the keyboard inset once so content is not obscured', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => ClosedEndedConfigDialog.show(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final dialogRect = tester.getRect(find.byType(Dialog));
+      final scrollRect = tester.getRect(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.byType(SingleChildScrollView),
+        ),
+      );
+      // Dialog already offsets for the keyboard; the scroll view must fill the
+      // dialog instead of losing another keyboard-height at the bottom.
+      expect(scrollRect.bottom, closeTo(dialogRect.bottom, 2));
+      expect(dialogRect.bottom, lessThanOrEqualTo(844 - 300 + 0.5));
+    });
+
+    testWidgets('tapping empty dialog space hides the keyboard', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => ClosedEndedConfigDialog.show(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('เชิงคุณภาพ'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // แตะพื้นที่ว่างด้านล่างของ dialog (ใน padding) → ซ่อนแป้นพิมพ์
+      final dialogRect = tester.getRect(find.byType(Dialog));
+      await tester.tapAt(Offset(dialogRect.center.dx, dialogRect.bottom - 6));
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(find.text('คำถามปลายปิด'), findsOneWidget);
+    });
+
     testWidgets('confirm returns a validated quantitative config', (
       tester,
     ) async {
@@ -340,6 +486,9 @@ void main() {
     ) async {
       await tester.pumpWidget(wrap(closedEnded()));
       expect(find.text('ปลายปิด · บังคับ'), findsOneWidget);
+      final badgeIcon = find.byIcon(Icons.checklist_rtl);
+      expect(badgeIcon, findsOneWidget);
+      expect(tester.widget<Icon>(badgeIcon).size, 16);
       expect(
         find.textContaining('ระดับความปวดเป็นอย่างไร', findRichText: true),
         findsOneWidget,

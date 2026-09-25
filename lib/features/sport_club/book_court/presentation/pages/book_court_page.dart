@@ -242,9 +242,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
     final filter = _filter;
     switch (key) {
       case 'available':
-        hub.updateCourts(
-          filter.copyWith(availableOnly: !filter.availableOnly),
-        );
+        hub.updateCourts(filter.copyWith(availableOnly: !filter.availableOnly));
       case 'bookedByMe':
         if (!await _requireLogin()) return;
         hub.updateCourts(
@@ -356,9 +354,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => CourtMyBookingsPage(repo: _repo),
-      ),
+      MaterialPageRoute(builder: (_) => CourtMyBookingsPage(repo: _repo)),
     );
   }
 
@@ -401,13 +397,32 @@ class _BookCourtPageState extends State<BookCourtPage> {
         userId: userId,
         businessName: result.businessName ?? result.legalName,
         contactName: result.legalName,
-        contactPhone: result.contact,
+        contactPhone: result.contactPhone,
+        contactEmail: result.contactEmail,
       );
       if (!mounted) return;
       _toast('ส่งใบสมัครเจ้าของสนามแล้ว รอการอนุมัติ');
-    } catch (_) {
-      _toast('ส่งใบสมัครไม่สำเร็จ กรุณาลองใหม่');
+    } catch (e) {
+      _toast(_mapOwnerApplicationError(e));
     }
+  }
+
+  static String _mapOwnerApplicationError(Object e) {
+    final raw = e.toString();
+    if (raw.contains('APPLICATION_PENDING')) {
+      return 'มีใบสมัครที่รอการอนุมัติอยู่แล้ว';
+    }
+    if (raw.contains('ALREADY_APPROVED')) {
+      return 'บัญชีนี้เป็นเจ้าของสนามที่อนุมัติแล้ว';
+    }
+    if (raw.contains('OWNER_SUSPENDED')) {
+      return 'บัญชีเจ้าของถูกระงับ กรุณาติดต่อทีมงาน';
+    }
+    if (raw.contains('INVALID_APPLICATION')) {
+      return 'กรุณากรอกข้อมูลให้ครบถ้วน';
+    }
+    if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
+    return 'ส่งใบสมัครไม่สำเร็จ กรุณาลองใหม่';
   }
 
   void _toast(String message) {

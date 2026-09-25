@@ -5,23 +5,44 @@ import 'package:sheserved/services/auth_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 
-/// Admin review panel for venue owner applications and pending venues.
+/// Admin review page for venue owner applications and pending venues.
 ///
 /// Both lists are loaded through admin RPCs (`list_sports_venue_owner_
 /// applications`, `list_sports_venues_for_review`) that validate the caller
 /// is an admin server-side, so a non-admin sees an empty state.
-class AdminCourtOwnerReviewPage extends StatefulWidget {
+class AdminCourtOwnerReviewPage extends StatelessWidget {
   final BookCourtRepository repo;
 
   const AdminCourtOwnerReviewPage({super.key, required this.repo});
 
   @override
-  State<AdminCourtOwnerReviewPage> createState() =>
-      _AdminCourtOwnerReviewPageState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ตรวจสอบเจ้าของสนาม'),
+        backgroundColor: AppColors.primaryDark,
+        foregroundColor: Colors.white,
+      ),
+      body: AdminCourtOwnerReviewPanel(repo: repo),
+    );
+  }
 }
 
-class _AdminCourtOwnerReviewPageState
-    extends State<AdminCourtOwnerReviewPage> {
+/// Body-only review surface — same data and actions as the standalone page
+/// but without its own Scaffold/AppBar, so it can be embedded as a tab in
+/// the "จัดการกีฬา" admin page.
+class AdminCourtOwnerReviewPanel extends StatefulWidget {
+  final BookCourtRepository repo;
+
+  const AdminCourtOwnerReviewPanel({super.key, required this.repo});
+
+  @override
+  State<AdminCourtOwnerReviewPanel> createState() =>
+      _AdminCourtOwnerReviewPanelState();
+}
+
+class _AdminCourtOwnerReviewPanelState
+    extends State<AdminCourtOwnerReviewPanel> {
   List<VenueOwnerProfile> _applications = [];
   List<VenueSummary> _venues = [];
   bool _loading = true;
@@ -57,10 +78,7 @@ class _AdminCourtOwnerReviewPageState
     }
   }
 
-  Future<void> _reviewApplication(
-    VenueOwnerProfile app,
-    bool approve,
-  ) async {
+  Future<void> _reviewApplication(VenueOwnerProfile app, bool approve) async {
     final adminId = _adminId;
     if (adminId == null) return;
     final reason = approve ? null : await _askReason('เหตุผลที่ไม่อนุมัติ');
@@ -108,9 +126,7 @@ class _AdminCourtOwnerReviewPageState
           controller: controller,
           autofocus: true,
           maxLength: 300,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-          ),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(
@@ -139,35 +155,26 @@ class _AdminCourtOwnerReviewPageState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('ตรวจสอบเจ้าของสนาม'),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  _sectionHeader(
-                    'คำขอเป็นเจ้าของสนาม (${_applications.length})',
-                  ),
-                  if (_applications.isEmpty)
-                    _empty('ไม่มีคำขอรอตรวจสอบ')
-                  else
-                    for (final app in _applications) _buildAppCard(app),
-                  _sectionHeader('สนามรออนุมัติ (${_venues.length})'),
-                  if (_venues.isEmpty)
-                    _empty('ไม่มีสนามรออนุมัติ')
-                  else
-                    for (final venue in _venues) _buildVenueCard(venue),
-                ],
-              ),
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              children: [
+                _sectionHeader('คำขอเป็นเจ้าของสนาม (${_applications.length})'),
+                if (_applications.isEmpty)
+                  _empty('ไม่มีคำขอรอตรวจสอบ')
+                else
+                  for (final app in _applications) _buildAppCard(app),
+                _sectionHeader('สนามรออนุมัติ (${_venues.length})'),
+                if (_venues.isEmpty)
+                  _empty('ไม่มีสนามรออนุมัติ')
+                else
+                  for (final venue in _venues) _buildVenueCard(venue),
+              ],
             ),
-    );
+          );
   }
 
   Widget _buildAppCard(VenueOwnerProfile app) {
@@ -185,7 +192,7 @@ class _AdminCourtOwnerReviewPageState
             ),
             const SizedBox(height: 4),
             Text(
-              'ผู้ติดต่อ: ${app.contactName} • ${app.contactPhone}',
+              'ผู้ติดต่อ: ${[app.contactName, if (app.contactPhone.isNotEmpty) app.contactPhone].join(' • ')}',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
             if (app.contactEmail?.isNotEmpty == true)
@@ -234,10 +241,7 @@ class _AdminCourtOwnerReviewPageState
             ),
             const SizedBox(height: 4),
             Text(
-              [
-                venue.district,
-                venue.province,
-              ].whereType<String>().join(', '),
+              [venue.district, venue.province].whereType<String>().join(', '),
               style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 8),

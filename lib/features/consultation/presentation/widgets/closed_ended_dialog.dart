@@ -99,227 +99,225 @@ class _ClosedEndedConfigDialogState extends State<ClosedEndedConfigDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final viewInsets = MediaQuery.of(context).viewInsets;
+    // Dialog จัดการ keyboard inset ให้แล้ว (MediaQuery.viewInsetsOf + insetPadding)
+    // จึงไม่ต้องเติม padding ตามความสูงแป้นพิมพ์ซ้ำ — ถ้าเติมซ้ำเนื้อหาจะถูกบีบและบัง
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      // แตะพื้นที่ว่างใน dialog เพื่อซ่อนแป้นพิมพ์ (TextField/ปุ่มยังจัดการแตะของตัวเอง)
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
         child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Colors.deepPurple.shade50,
+                    child: Icon(
+                      Icons.checklist_rtl,
+                      size: 28,
+                      color: Colors.deepPurple.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'คำถามปลายปิด',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'ผู้ป่วยต้องเลือกคำตอบจากตัวเลือกที่กำหนด',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Answer type selector ──
+              SegmentedButton<ClosedEndedType>(
+                segments: const [
+                  ButtonSegment(
+                    value: ClosedEndedType.quantitative,
+                    label: Text('เชิงปริมาณ'),
+                    icon: Icon(Icons.format_list_numbered, size: 22),
+                  ),
+                  ButtonSegment(
+                    value: ClosedEndedType.qualitative,
+                    label: Text('เชิงคุณภาพ'),
+                    icon: Icon(Icons.text_fields, size: 22),
+                  ),
+                ],
+                showSelectedIcon: false,
+                selected: {_type},
+                onSelectionChanged: (selection) => setState(() {
+                  _type = selection.first;
+                  _errorText = null;
+                }),
+              ),
+              const SizedBox(height: 16),
+
+              if (_type == ClosedEndedType.quantitative) ...[
+                const Text(
+                  'จำนวนระดับคำตอบ',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: ClosedEndedConfig.allowedScaleLevels.map((n) {
+                    final selected = _scaleLevels == n;
+                    return ChoiceChip(
+                      label: Text('1–$n'),
+                      selected: selected,
+                      selectedColor: AppColors.primary.withValues(alpha: 0.15),
+                      onSelected: (_) => setState(() => _scaleLevels = n),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'ผู้ป่วยจะเห็นปุ่มตัวเลข 1 ถึง $_scaleLevels',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ] else ...[
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.deepPurple.withValues(alpha: 0.1),
-                      child: const Icon(
-                        Icons.quiz_outlined,
-                        color: Colors.deepPurple,
+                    const Text(
+                      'ตัวเลือกคำตอบ',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    Text(
+                      '${_optionControllers.length}/${ClosedEndedConfig.maxOptions}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  itemCount: _optionControllers.length,
+                  onReorder: _reorder,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      key: ObjectKey(_optionControllers[index]),
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
                         children: [
-                          Text(
-                            'คำถามปลายปิด',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: const Icon(
+                              Icons.drag_indicator,
+                              size: 20,
+                              color: Colors.grey,
                             ),
                           ),
-                          Text(
-                            'ผู้ป่วยต้องเลือกคำตอบจากตัวเลือกที่กำหนด',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: TextField(
+                              controller: _optionControllers[index],
+                              maxLength: ClosedEndedConfig.maxLabelLength,
+                              decoration: InputDecoration(
+                                hintText: 'ตัวเลือกที่ ${index + 1}',
+                                counterText: '',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onChanged: (_) {
+                                if (_errorText != null) {
+                                  setState(() => _errorText = null);
+                                }
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.remove_circle_outline,
+                              color: Colors.redAccent,
+                              size: 20,
+                            ),
+                            tooltip: 'ลบตัวเลือก',
+                            onPressed:
+                                _optionControllers.length >
+                                    ClosedEndedConfig.minOptions
+                                ? () => _removeOption(index)
+                                : null,
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-
-                // ── Answer type selector ──
-                SegmentedButton<ClosedEndedType>(
-                  segments: const [
-                    ButtonSegment(
-                      value: ClosedEndedType.quantitative,
-                      label: Text('เชิงปริมาณ'),
-                      icon: Icon(Icons.format_list_numbered),
-                    ),
-                    ButtonSegment(
-                      value: ClosedEndedType.qualitative,
-                      label: Text('เชิงคุณภาพ'),
-                      icon: Icon(Icons.short_text_rounded),
-                    ),
-                  ],
-                  selected: {_type},
-                  onSelectionChanged: (selection) => setState(() {
-                    _type = selection.first;
-                    _errorText = null;
-                  }),
-                ),
-                const SizedBox(height: 16),
-
-                if (_type == ClosedEndedType.quantitative) ...[
-                  const Text(
-                    'จำนวนระดับคำตอบ',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed:
+                        _optionControllers.length < ClosedEndedConfig.maxOptions
+                        ? _addOption
+                        : null,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('เพิ่มคำตอบ'),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: ClosedEndedConfig.allowedScaleLevels.map((n) {
-                      final selected = _scaleLevels == n;
-                      return ChoiceChip(
-                        label: Text('1–$n'),
-                        selected: selected,
-                        selectedColor: AppColors.primary.withValues(
-                          alpha: 0.15,
-                        ),
-                        onSelected: (_) => setState(() => _scaleLevels = n),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'ผู้ป่วยจะเห็นปุ่มตัวเลข 1 ถึง $_scaleLevels',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ] else ...[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'ตัวเลือกคำตอบ',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${_optionControllers.length}/${ClosedEndedConfig.maxOptions}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ReorderableListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    buildDefaultDragHandles: false,
-                    itemCount: _optionControllers.length,
-                    onReorder: _reorder,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        key: ObjectKey(_optionControllers[index]),
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: const Icon(
-                                Icons.drag_indicator,
-                                size: 20,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: TextField(
-                                controller: _optionControllers[index],
-                                maxLength: ClosedEndedConfig.maxLabelLength,
-                                decoration: InputDecoration(
-                                  hintText: 'ตัวเลือกที่ ${index + 1}',
-                                  counterText: '',
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                onChanged: (_) {
-                                  if (_errorText != null) {
-                                    setState(() => _errorText = null);
-                                  }
-                                },
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: Colors.redAccent,
-                                size: 20,
-                              ),
-                              tooltip: 'ลบตัวเลือก',
-                              onPressed:
-                                  _optionControllers.length >
-                                      ClosedEndedConfig.minOptions
-                                  ? () => _removeOption(index)
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed:
-                          _optionControllers.length <
-                              ClosedEndedConfig.maxOptions
-                          ? _addOption
-                          : null,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('เพิ่มคำตอบ'),
-                    ),
-                  ),
-                ],
-
-                if (_errorText != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    _errorText!,
-                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                  ),
-                ],
-                const SizedBox(height: 8),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('ยกเลิก'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _confirm,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('ยืนยัน'),
-                      ),
-                    ),
-                  ],
                 ),
               ],
-            ),
+
+              if (_errorText != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _errorText!,
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                ),
+              ],
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('ยกเลิก'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _confirm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('ยืนยัน'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/app_config.dart';
 import '../../../../core/network/authenticated_http_client.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../services/websocket_service.dart';
 import '../models/app_notification.dart';
 
 class NotificationRepository {
@@ -17,6 +19,22 @@ class NotificationRepository {
   NotificationRepository(this._client);
 
   bool get _useGateway => AppConfig.useBackendAuth;
+
+  /// ตัวตนผู้ใช้ในแอป (`public.users.id`) — โหมด custom auth ไม่มี Supabase
+  /// Auth session จึง `auth.currentUser` เป็น null เสมอ ส่วน RPC แจ้งเตือน
+  /// ทั้งหมดรับ `p_user_id` เป็น `public.users.id` โดยตรง
+  String? get _appUserId =>
+      AuthService.instance.userId ?? _client.auth.currentUser?.id;
+
+  /// อ่านครั้งแรกทันทีแล้ว re-fetch ทุกครั้งที่ websocket ส่ง
+  /// `application-notification` เข้ามา — โหมด legacy subscribe ตาราง
+  /// `app_notifications` ตรง ๆ ไม่ได้เพราะ RLS ใช้ `auth.uid()` ซึ่งเป็น null
+  Stream<T> _watchWithSocketRefresh<T>(Future<T> Function() fetch) async* {
+    yield await fetch();
+    await for (final _ in WebSocketService().applicationNotificationStream) {
+      yield await fetch();
+    }
+  }
 
   /// true = อ่าน/นับแจ้งเตือนผ่าน backend gateway ซึ่งมองเห็นทุกแถวใน
   /// `app_notifications` (รวมแถวที่ DB trigger สร้าง) — โหมด legacy
@@ -85,27 +103,23 @@ class NotificationRepository {
         return notifications;
       }
 
-      final userId = _client.auth.currentUser?.id;
+      final userId = _appUserId;
       if (userId == null) return [];
 
-      var query = _client
-          .from('app_notifications')
-          .select()
-          .eq('recipient_id', userId)
-          .isFilter('dismissed_at', null);
-
-      if (category != null) {
-        query = query.eq('category', category);
-      }
-      if (unreadOnly) {
-        query = query.eq('is_read', false);
-      }
-
-      final response = await query
-          .order('created_at', ascending: false)
-          .limit(limit);
+      final response = await _client.rpc(
+        'list_app_notifications',
+        params: {
+          'p_user_id': userId,
+          if (category != null) 'p_category': category,
+          'p_limit': limit,
+          if (unreadOnly) 'p_unread_only': true,
+        },
+      );
       return (response as List)
-          .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+          .map(
+            (e) =>
+                AppNotification.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList();
     } catch (e) {
       debugPrint('[NotificationRepo] getNotifications error: $e');
@@ -132,7 +146,7 @@ class NotificationRepository {
         return count;
       }
 
-      final userId = _client.auth.currentUser?.id;
+      final userId = _appUserId;
       if (userId == null) return 0;
 
       final result = await _client.rpc(
@@ -156,14 +170,9 @@ class NotificationRepository {
       return Stream.fromFuture(getUnreadCount(category: category));
     }
 
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return Stream.value(0);
+    if (_appUserId == null) return Stream.value(0);
 
-    return _client
-        .from('app_notifications')
-        .stream(primaryKey: ['id'])
-        .eq('recipient_id', userId)
-        .asyncMap((_) => getUnreadCount(category: category));
+    return _watchWithSocketRefresh(() => getUnreadCount(category: category));
   }
 
   Future<bool> markAsRead(String notificationId) async {
@@ -176,7 +185,7 @@ class NotificationRepository {
         return (data as Map<String, dynamic>)['success'] == true;
       }
 
-      final userId = _client.auth.currentUser?.id;
+      final userId = _appUserId;
       if (userId == null) return false;
 
       final result = await _client.rpc(
@@ -200,7 +209,7 @@ class NotificationRepository {
         return (data as Map<String, dynamic>)['success'] == true;
       }
 
-      final userId = _client.auth.currentUser?.id;
+      final userId = _appUserId;
       if (userId == null) return false;
 
       final result = await _client.rpc(
@@ -227,7 +236,7 @@ class NotificationRepository {
         return count;
       }
 
-      final userId = _client.auth.currentUser?.id;
+      final userId = _appUserId;
       if (userId == null) return 0;
 
       final result = await _client.rpc(
@@ -249,14 +258,10 @@ class NotificationRepository {
       return Stream.fromFuture(getNotifications(category: category));
     }
 
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) {
+    if (_appUserId == null) {
       return Stream.value([]);
     }
 
-    return _client
-        .from('app_notifications')
-        .stream(primaryKey: ['id'])
-        .asyncMap((_) => getNotifications(category: category));
+    return _watchWithSocketRefresh(() => getNotifications(category: category));
   }
 }

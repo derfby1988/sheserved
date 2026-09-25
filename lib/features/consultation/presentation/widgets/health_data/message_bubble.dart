@@ -239,27 +239,27 @@ class MessageBubble extends StatelessWidget {
       children: [
         if (showClosedEndedBadge) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.deepPurple.shade50,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.deepPurple.shade200),
+              border: Border.all(color: Colors.deepPurple.shade300),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.quiz_outlined,
-                  size: 11,
-                  color: Colors.deepPurple.shade400,
+                  Icons.checklist_rtl,
+                  size: 16,
+                  color: Colors.deepPurple.shade700,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
                 Text(
                   'ปลายปิด · บังคับ',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple.shade400,
+                    color: Colors.deepPurple.shade700,
                   ),
                 ),
               ],

@@ -77,7 +77,8 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
         userId: userId,
         businessName: draft.businessName ?? draft.legalName,
         contactName: draft.legalName,
-        contactPhone: draft.contact,
+        contactPhone: draft.contactPhone,
+        contactEmail: draft.contactEmail,
       );
       _toast('ส่งคำขอแล้ว รอทีมงานตรวจสอบ');
       await _load();
@@ -143,10 +144,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
       _toast('กรุณาตั้งค่ากีฬาของสนามก่อนเพิ่มคอร์ท');
       return;
     }
-    final draft = await OwnerCourtEditorSheet.show(
-      context,
-      sportId: sportId,
-    );
+    final draft = await OwnerCourtEditorSheet.show(context, sportId: sportId);
     if (draft == null) return;
     try {
       await widget.repo.upsertCourt(
@@ -175,10 +173,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CourtOwnerBookingsPage(
-          repo: widget.repo,
-          venue: venue,
-        ),
+        builder: (_) => CourtOwnerBookingsPage(repo: widget.repo, venue: venue),
       ),
     );
   }
@@ -288,8 +283,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
               ),
             ],
           ),
-          VenueOwnerStatus.rejected ||
-          VenueOwnerStatus.suspended => Column(
+          VenueOwnerStatus.rejected || VenueOwnerStatus.suspended => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -311,7 +305,10 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     _ownerProfile!.rejectionReason!,
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.grey.shade700,
+                    ),
                   ),
                 ),
             ],

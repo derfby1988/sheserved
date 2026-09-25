@@ -225,6 +225,19 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       notification.eventType == 'sport.proposal_approved' ||
       notification.eventType == 'sport.proposal_rejected';
 
+  /// การ์ดที่ client synthesize เอง (คำขอ/ผลเสนอกีฬา) ไม่มีแถวจริงให้ repo
+  /// นับ — รายการ realtime อื่นถูก persist ใน `app_notifications` ก่อนส่งสดเสมอ
+  /// เมื่อ repo อ่าน/นับแถวจริงได้แล้วต้องปล่อยทิ้ง ไม่งั้น badge เบิ้ลกับ
+  /// `unreadCount` ที่ repository ส่งกลับมา
+  bool _isClientSynthesized(AppNotification notification) =>
+      notification.id.startsWith('sport_proposal_');
+
+  void _dropPersistedLocalNotifications() {
+    _localNotifications.removeWhere(
+      (_, notification) => !_isClientSynthesized(notification),
+    );
+  }
+
   @override
   void dispose() {
     _applicationNotificationSubscription.cancel();
@@ -246,6 +259,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     final loadedIds = notifications
         .map((notification) => notification.id)
         .toSet();
+    _dropPersistedLocalNotifications();
     state = NotificationState(
       isLoading: false,
       notifications: [
@@ -261,6 +275,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   Future<void> refreshUnreadCount({String? category}) async {
     final count = await _repo.getUnreadCount(category: category);
+    _dropPersistedLocalNotifications();
     state = state.copyWith(
       unreadCount: count,
       localUnreadCount: _localUnreadCount,

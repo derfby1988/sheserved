@@ -57,7 +57,7 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
               children: [
                 if (showIcon) ...[
                   Icon(
-                    Icons.quiz_rounded,
+                    Icons.checklist_rtl,
                     size: size < 112 ? 18 : 22,
                     color: Colors.white.withValues(alpha: 0.9),
                   ),
@@ -115,7 +115,7 @@ class ClosedEndedQuestionPrompt extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.quiz_rounded,
+              Icons.checklist_rtl,
               size: width < 320 ? 18 : 22,
               color: Colors.white.withValues(alpha: 0.7),
             ),

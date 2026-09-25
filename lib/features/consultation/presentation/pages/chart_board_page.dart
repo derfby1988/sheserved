@@ -2970,9 +2970,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               child: Row(
                 children: [
                   Icon(
-                    Icons.quiz_outlined,
-                    size: 16,
-                    color: Colors.deepPurple.shade400,
+                    Icons.checklist_rtl,
+                    size: 20,
+                    color: Colors.deepPurple.shade700,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -2982,7 +2982,7 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                       '${_pendingClosedEndedConfig!.answerCount} ตัวเลือก)',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.deepPurple.shade400,
+                        color: Colors.deepPurple.shade700,
                       ),
                     ),
                   ),
@@ -2991,8 +2991,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                         setState(() => _pendingClosedEndedConfig = null),
                     child: Icon(
                       Icons.close,
-                      size: 16,
-                      color: Colors.deepPurple.shade400,
+                      size: 18,
+                      color: Colors.deepPurple.shade700,
                     ),
                   ),
                 ],
@@ -3256,10 +3256,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               ),
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  child: const Icon(
+                  radius: 22,
+                  backgroundColor: Colors.teal.shade50,
+                  child: Icon(
                     Icons.image_outlined,
-                    color: AppColors.primary,
+                    size: 26,
+                    color: Colors.teal.shade800,
                   ),
                 ),
                 title: const Text('ส่งรูปภาพ'),
@@ -3271,10 +3273,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               if (_isProvider) ...[
                 ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(
+                    radius: 22,
+                    backgroundColor: Colors.teal.shade50,
+                    child: Icon(
                       Icons.medication_outlined,
-                      color: AppColors.primary,
+                      size: 26,
+                      color: Colors.teal.shade800,
                     ),
                   ),
                   title: const Text('ออกใบสั่งยา'),
@@ -3298,10 +3302,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 // Health Data Permission Request (added to attachment menu)
                 ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(
+                    radius: 22,
+                    backgroundColor: Colors.teal.shade50,
+                    child: Icon(
                       Icons.lock_open,
-                      color: AppColors.primary,
+                      size: 26,
+                      color: Colors.teal.shade800,
                     ),
                   ),
                   title: const Text('ขอสิทธิ์ดูข้อมูลสุขภาพ'),
@@ -3315,10 +3321,12 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                 // Phase 6.14: closed-ended question (always required)
                 ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: Colors.deepPurple.withOpacity(0.1),
-                    child: const Icon(
-                      Icons.quiz_outlined,
-                      color: Colors.deepPurple,
+                    radius: 22,
+                    backgroundColor: Colors.deepPurple.shade50,
+                    child: Icon(
+                      Icons.checklist_rtl,
+                      size: 26,
+                      color: Colors.deepPurple.shade700,
                     ),
                   ),
                   title: const Text('คำถามปลายปิด'),

@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/constants/app_colors.dart';
 
 class ChatInputBarWidget extends StatelessWidget {
   final TextEditingController controller;
@@ -111,7 +110,7 @@ class ChatInputBarWidget extends StatelessWidget {
                     strokeWidth: 2,
                   ),
                 )
-              : Icon(icon, color: color, size: 20),
+              : Icon(icon, color: color, size: isClosedEndedMode ? 24 : 20),
         ),
       );
     }
@@ -135,9 +134,7 @@ class ChatInputBarWidget extends StatelessWidget {
         : isRequiredMode
         ? 'พิมพ์คำถามบังคับ...'
         : 'ถามผู้เชี่ยวชาญ...';
-    final sendIcon = isClosedEndedMode
-        ? Icons.quiz_outlined
-        : isRequiredMode
+    final sendIcon = isRequiredMode && !isClosedEndedMode
         ? Icons.warning_amber
         : Icons.send_rounded;
     final sendBgColor = isClosedEndedMode

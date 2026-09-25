@@ -23,7 +23,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { Pool, Client } = require('pg');
 const path = require('path');
 
 // =====================================================
@@ -154,6 +154,7 @@ io.use(
 let pool = null;
 let fitnessBookingNotificationListenerClient = null;
 let fitnessBookingNotificationListenerStarted = false;
+let sportsHubNotificationListenerStarted = false;
 const USE_DATABASE = process.env.USE_DATABASE !== 'false'; // Default to true
 
 if (USE_DATABASE) {
@@ -187,6 +188,9 @@ if (USE_DATABASE) {
         startFitnessBookingNotificationListener().catch(err => {
           console.error('[FitnessBuddies] Failed to start booking notification listener:', err.message);
         });
+        startSportsHubNotificationListener().catch(err => {
+          console.error('[SportsHub] Failed to start notification listener:', err.message);
+        });
         if (supabase) {
            syncQueueService.enqueueSync({ syncType: 'startup' }).catch(err => {
                console.error('[Sync] Startup sync enqueue failed:', err.message);
@@ -200,6 +204,15 @@ if (USE_DATABASE) {
   }
 } else {
   console.log('ℹ️  Database disabled (USE_DATABASE=false)');
+}
+
+// The notification channel lives on Supabase, not on the local DB pool, so the
+// listener can boot whenever its own SUPABASE_DB_* credentials are present —
+// including when the local pool is down or USE_DATABASE=false.
+if (!sportsHubNotificationListenerStarted && process.env.SUPABASE_DB_HOST) {
+  startSportsHubNotificationListener().catch(err => {
+    console.error('[SportsHub] Failed to start notification listener:', err.message);
+  });
 }
 
 // In-memory storage for locations (fallback when database is not available)
@@ -529,6 +542,72 @@ async function startFitnessBookingNotificationListener() {
   await client.query('LISTEN fitness_booking_status_updates');
   fitnessBookingNotificationListenerStarted = true;
   console.log('✅ Fitness booking notification listener initialized');
+}
+
+// Sports Hub (venue/coach) notifications: sports_hub_notify persists rows to
+// public.app_notifications on Supabase and publishes them via
+// pg_notify('sports_hub_notifications', <row json>). This listener bridges the
+// channel to the existing application-notification socket event.
+// LISTEN needs a session-mode connection — the Supavisor transaction pooler
+// (port 6543) does not preserve it, so pooler hosts are reached on port 5432.
+
+function buildSportsHubListenConfig() {
+  const host = process.env.SUPABASE_DB_HOST;
+  if (!host) return null;
+  const isPooler = /pooler\.supabase\.com$/i.test(host);
+  const port = parseInt(process.env.SUPABASE_DB_LISTEN_PORT, 10)
+    || (isPooler ? 5432 : parseInt(process.env.SUPABASE_DB_PORT, 10) || 5432);
+  const sslMode = (process.env.SUPABASE_DB_SSL || '').trim().toLowerCase();
+  return {
+    host,
+    port,
+    database: process.env.SUPABASE_DB_NAME || 'postgres',
+    user: process.env.SUPABASE_DB_USER || 'postgres',
+    password: process.env.SUPABASE_DB_PASSWORD || '',
+    ssl: sslMode && sslMode !== 'false' && sslMode !== '0'
+      ? { rejectUnauthorized: sslMode === 'true' || sslMode === '1' }
+      : false,
+  };
+}
+
+async function startSportsHubNotificationListener() {
+  if (sportsHubNotificationListenerStarted) return;
+
+  let client;
+  const config = buildSportsHubListenConfig();
+  if (config) {
+    client = new Client(config);
+    await client.connect();
+  } else if (pool) {
+    client = await pool.connect();
+  } else {
+    return;
+  }
+
+  client.on('error', (error) => {
+    console.error('[SportsHub] Notification listener error:', error.message);
+    sportsHubNotificationListenerStarted = false;
+  });
+
+  client.on('notification', (msg) => {
+    if (!msg || msg.channel !== 'sports_hub_notifications' || !msg.payload) return;
+
+    let row;
+    try {
+      row = JSON.parse(msg.payload);
+    } catch (error) {
+      console.warn('[SportsHub] Ignoring invalid notification payload:', error.message);
+      return;
+    }
+
+    const recipientId = row.recipient_id || row.recipientId;
+    if (!recipientId) return;
+    socketService.broadcastApplicationNotification([recipientId], row);
+  });
+
+  await client.query('LISTEN sports_hub_notifications');
+  sportsHubNotificationListenerStarted = true;
+  console.log('✅ Sports Hub notification listener initialized');
 }
 
 // WebSocket Connection Handler

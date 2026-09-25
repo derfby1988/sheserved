@@ -68,9 +68,7 @@ class BookCourtRepository {
       }
       venues = venues
           .where((v) => sportVenueIds.contains(v.id))
-          .map(
-            (v) => v.copyWith(sportIds: sportIdsByVenue[v.id] ?? const {}),
-          )
+          .map((v) => v.copyWith(sportIds: sportIdsByVenue[v.id] ?? const {}))
           .toList();
     }
     return venues;
@@ -183,9 +181,7 @@ class BookCourtRepository {
         .eq('venue_id', venueId)
         .order('day_of_week');
     return (res as List)
-        .map(
-          (e) => VenueOperatingHours.fromJson(Map<String, dynamic>.from(e)),
-        )
+        .map((e) => VenueOperatingHours.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
 
@@ -255,7 +251,7 @@ class BookCourtRepository {
     required String userId,
     required String businessName,
     required String contactName,
-    required String contactPhone,
+    String? contactPhone,
     String? contactEmail,
     List<Map<String, dynamic>> evidence = const [],
   }) async {
@@ -413,11 +409,7 @@ class BookCourtRepository {
     _assertCurrentUser(userId);
     await _client.rpc(
       'set_sports_venue_sports',
-      params: {
-        'p_user_id': userId,
-        'p_venue_id': venueId,
-        'p_sports': sports,
-      },
+      params: {'p_user_id': userId, 'p_venue_id': venueId, 'p_sports': sports},
     );
   }
 
@@ -466,11 +458,7 @@ class BookCourtRepository {
     _assertCurrentUser(userId);
     await _client.rpc(
       'set_sports_venue_operating_hours',
-      params: {
-        'p_user_id': userId,
-        'p_venue_id': venueId,
-        'p_hours': hours,
-      },
+      params: {'p_user_id': userId, 'p_venue_id': venueId, 'p_hours': hours},
     );
   }
 

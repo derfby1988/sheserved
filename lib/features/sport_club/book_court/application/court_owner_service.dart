@@ -5,7 +5,7 @@ typedef OwnerApplicationSubmit =
       required String userId,
       required String businessName,
       required String contactName,
-      required String contactPhone,
+      String? contactPhone,
       String? contactEmail,
       List<Map<String, dynamic>> evidence,
     });
@@ -67,7 +67,7 @@ class CourtOwnerService {
     required String? userId,
     required String businessName,
     required String contactName,
-    required String contactPhone,
+    String? contactPhone,
     String? contactEmail,
     List<Map<String, dynamic>> evidence = const [],
   }) {

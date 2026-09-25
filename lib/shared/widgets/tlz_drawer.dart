@@ -860,7 +860,7 @@ class _TlzDrawerState extends State<TlzDrawer>
                                       ),
                                       _buildMenuItem(
                                         context,
-                                        title: 'ตรวจคำขอเพิ่มกีฬา',
+                                        title: 'จัดการกีฬา',
                                         icon: Icons.fact_check_outlined,
                                         onTap: () => _navigateTo(
                                           context,

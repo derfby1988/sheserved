@@ -9,6 +9,8 @@ import '../../../../../../shared/widgets/tlz_bottom_navigation_bar.dart';
 import '../../../../erp/presentation/providers/notification_provider.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
+import '../../../../sport_club/book_court/data/book_court_repository.dart';
+import '../../../../sport_club/book_court/presentation/pages/admin_court_owner_review_page.dart';
 
 class ReviewProposedSportsPage extends ConsumerStatefulWidget {
   const ReviewProposedSportsPage({super.key});
@@ -22,6 +24,7 @@ class _ReviewProposedSportsPageState
     extends ConsumerState<ReviewProposedSportsPage>
     with TlzNavBarScrollMixin {
   late final FitnessBuddiesRepository _repo;
+  late final BookCourtRepository _courtRepo;
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = [];
@@ -30,6 +33,7 @@ class _ReviewProposedSportsPageState
   void initState() {
     super.initState();
     _repo = FitnessBuddiesRepository(Supabase.instance.client);
+    _courtRepo = BookCourtRepository(Supabase.instance.client);
     _load();
   }
 
@@ -267,78 +271,103 @@ class _ReviewProposedSportsPageState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.primary,
-      extendBody: true,
-      bottomNavigationBar: TlzBottomNavigationBar(
-        currentIndex: -1,
-        isVisible: isNavBarVisible,
-        onIndexChanged: _onNavIndexChanged,
-        onAddPressed: _onAddPressed,
-      ),
-      body: Column(
-        children: [
-          // Custom Header matching sport club page style
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(32),
-                bottomRight: Radius.circular(32),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: AppColors.primary,
+        extendBody: true,
+        bottomNavigationBar: TlzBottomNavigationBar(
+          currentIndex: -1,
+          isVisible: isNavBarVisible,
+          onIndexChanged: _onNavIndexChanged,
+          onAddPressed: _onAddPressed,
+        ),
+        body: Column(
+          children: [
+            // Custom Header matching sport club page style
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(32),
+                  bottomRight: Radius.circular(32),
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: TlzAppTopBar.onPrimary(
+                    leading: IconButton(
+                      tooltip: 'ย้อนกลับ',
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new,
+                        color: Colors.white,
+                      ),
+                      onPressed: _goBack,
+                    ),
+                    middle: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'จัดการกีฬา',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                      ),
+                    ),
+                    actions: [
+                      IconButton(
+                        tooltip: 'รีเฟรช',
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                        onPressed: _load,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: TlzAppTopBar.onPrimary(
-                  leading: IconButton(
-                    tooltip: 'ย้อนกลับ',
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new,
-                      color: Colors.white,
-                    ),
-                    onPressed: _goBack,
+            // Body content
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    topRight: Radius.circular(32),
                   ),
-                  middle: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'ตรวจคำขอเพิ่มประเภทกีฬา',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
+                ),
+                child: Column(
+                  children: [
+                    TabBar(
+                      labelColor: AppColors.primaryDark,
+                      unselectedLabelColor: Colors.grey.shade600,
+                      indicatorColor: AppColors.primaryDark,
+                      tabs: const [
+                        Tab(text: 'เพิ่มประเภทกีฬา'),
+                        Tab(text: 'ลงทะเบียนสนาม'),
+                      ],
+                    ),
+                    Expanded(
+                      child: wrapScrollNotification(
+                        child: TabBarView(
+                          children: [
+                            _buildBody(),
+                            AdminCourtOwnerReviewPanel(repo: _courtRepo),
+                          ],
+                        ),
                       ),
-                      maxLines: 1,
-                    ),
-                  ),
-                  actions: [
-                    IconButton(
-                      tooltip: 'รีเฟรช',
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      onPressed: _load,
                     ),
                   ],
                 ),
               ),
             ),
-          ),
-          // Body content
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-              ),
-              child: wrapScrollNotification(child: _buildBody()),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
