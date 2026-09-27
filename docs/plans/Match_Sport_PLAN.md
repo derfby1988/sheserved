@@ -3333,13 +3333,15 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 | 8 | 21.7.9 Coach requests | request lifecycle, snapshot และ notification |
 | 9 | 21.7.10 Release | security, concurrency, performance และ device/accessibility QA |
 | 10 (เสร็จ) | 21.7.11 Owner supply flow completion | per-venue setup + truthful 1–8 progress, review readiness, correction/resubmission, owner/manager access |
+| 11 | 21.7.12 Find Coach experience completion | complete coach profile/admin lifecycle, coach management, private favorites, 1:1/group/course schedules and enrollment |
+| 12 | 21.7.13 Sports Hub shared sport catalog | per-user selection stats, one shared sport order, cross-page chip-scroll continuity, equal real trailing-control dimensions without blank space |
 
 #### เหตุผลของลำดับและการคุมผลกระทบ
 
 - ทำ owner onboarding/admin approval ก่อน public venue discovery ช่วยให้ข้อมูลที่ผู้ใช้เห็นมีผู้รับผิดชอบและผ่านการตรวจสอบ; trade-off คือเริ่ม discovery ช้าลง จึงจำกัด Phase 21.7.3 ไว้ที่ onboarding, approval และเครื่องมือจัดการข้อมูลขั้นต่ำ ส่วน fixture ใช้เฉพาะ test/non-production
 - แยก read-only discovery ออกจาก booking ช่วยตรวจคุณภาพ search, filter, availability และ empty states โดยไม่มีการสร้าง booking จริง; UI ใน phase นี้ต้องไม่แสดง CTA ที่ทำให้เข้าใจว่าส่ง booking สำเร็จ
 - เปิด instant booking ก่อน owner-approval ช่วยจำกัด state machine และ concurrency risk; ระหว่างนั้น court ที่ต้อง owner approval ต้องแสดงว่า “ยังจองไม่ได้” ไม่ fallback ไป instant โดยเงียบ
-- แยก owner-approval, reviews และ Coach เป็น phase หลังจาก core ของ Court ผ่าน gate เพื่อลด blast radius; ระหว่างรอหน้า Coach คง placeholder และห้ามยิง query ข้าม domain
+- แยก owner-approval, reviews และ Coach domain หลัง core Court เพื่อลด blast radius; Coach MVP ใน 21.7.8–21.7.9 มีอยู่แล้ว, 21.7.12 เติม profile/course/enrollment ที่ยังขาด และ 21.7.13 เปิดใช้ ranking หลังมีข้อมูล Coach จริง โดยแต่ละ domain ยังเป็นเจ้าของ query ของตนเอง
 - Book Court อยู่ก่อน Coach ตามลำดับความสำคัญที่เลือก; shared contract ช่วยให้ Coach เพิ่มภายหลังได้โดยไม่คัดลอก query/filter logic
 
 - ห้ามเปิด public listing ของ venue/coach ก่อนผ่าน owner/coach approval และ server-side authorization
@@ -3451,6 +3453,44 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - ใช้ RPC เดิมได้เมื่อ contract รองรับ; อนุญาต additive migration/ปรับ trusted RPC เมื่อจำเป็นสำหรับ explicit readiness, resubmission, validation หรือข้อมูลยืนยัน optional steps และเพิ่ม smoke/regression tests สำหรับ migration เหล่านั้น
 - **Test/exit gate:** domain tests ครอบคลุม state matrix ของทั้ง 8 ขั้น, optional/standard/default/inactive cases และ pending/rejected/suspended/approved; widget tests ครบ editor validation, narrow layout, checklist tap/disabled states, loading/error/retry และ refresh หลัง save; integration/SQL tests ยืนยัน owner/manager scope, sport-court consistency, readiness gate, rejected resubmission, notification/route และไม่มี venue ที่ setup ไม่ครบเปิด public booking ได้; analyzer, test suite และ `git diff --check` ผ่านก่อนทำเครื่องหมาย phase complete
 
+#### 21.7.12 Find Coach — Coach Profile, Courses, Scheduling และ Enrollment
+
+- **Scope:** เป็น completion phase ต่อจาก Coach MVP ใน 21.7.8–21.7.9 ซึ่งมี directory, profile review และ 1:1 request พื้นฐานแล้ว; audit/reuse `find_coach/` และ RPC เดิม ไม่สร้าง profile/admin/request lifecycle ซ้ำ และไม่ใช้ตารางหรือ ID ของก๊วนปะปน
+- **Backend/security:** เพิ่ม migration/RPC แบบ additive สำหรับ profile fields/review, offerings/course sessions/enrollments และ favorites; mutation ทั้งหมดผ่าน trusted RPC และตรวจ actor/owner, public views ส่งเฉพาะ approved/safe fields, certification/contact data ใช้ private access path, enrollment มี unique/idempotency และ capacity transaction; ห้ามเขียนลง `fitness_group_*` เพื่อแทน Coach domain
+- **Coach registration/admin lifecycle:** มี bottom sheet สมัครและหน้า management ของผู้ฝึกสอน; ใช้สถานะ `pending/approved/rejected/suspended` ตาม venue flow, แจ้งเหตุผลเมื่อ rejected/suspended, เปิดแก้และ resubmit เมื่อ rejected, ไม่เปิด resubmit ปกติเมื่อ suspended; ส่ง persistent notification ถึง admin เมื่อมีใบสมัคร และแจ้งผู้สมัครเมื่อมีผล review; public directory แสดงเฉพาะ profile ที่ approved
+- **Verified แยกจาก approval:** โปรไฟล์ที่ approved แสดงได้แม้ยังไม่มี badge; `is_verified` แสดงได้ต่อเมื่อ admin ตรวจเอกสาร/ใบรับรองแล้ว; เอกสารต้นฉบับเก็บ private และ public view เปิดเผยเฉพาะข้อมูล credentials ที่อนุมัติให้แสดง
+- **ข้อมูลโปรไฟล์ตามภาพ:** cover/avatar, ชื่อและคำแนะนำตัว, ประสบการณ์/ผลงาน, ใบรับรอง, กีฬาและความถนัดแยกตามกีฬา, ระดับผู้เรียน, รูปแบบสอน, พื้นที่บริการ, สถานที่สอน, รายการราคา และข้อมูลติดต่อโทรศัพท์/LINE/Facebook; อนุญาตให้เลือกสนาม Book Court ที่ approved หรือกรอกสถานที่เอง; กำหนด required fields ก่อนส่ง review และ field changes ที่ต้อง re-review
+- **Directory/detail:** card แสดงภาพ, approval/verified badge, specialties/levels และราคาเริ่มต้นพร้อมหน่วย; detail bottom sheet ตาม reference แสดงประสบการณ์, ความเชี่ยวชาญ, ระดับ, รูปแบบราคา, สนาม/แผนที่, รีวิว และตาราง; ใช้ interaction layout เดียวกับ GroupDetailSheet โดย pin header และ bottom action bar แยกจาก scrollable detail body; coach/session rows ใช้ `endActionPane`/`ScrollMotion` ด้านท้ายแถวสำหรับปุ่ม booking/contact ที่มีสิทธิ์แสดง พร้อม responsive action extent ตามจำนวนปุ่ม; footer วาง contact buttons ฝั่งซ้ายและปุ่ม “สนใจ/จอง” ฝั่งขวาตาม reference; ก่อน enrollment/booking ยืนยันให้แสดงเฉพาะ request/booking actions และเปิด phone/LINE/chat ได้เมื่อสถานะของผู้ใช้นั้นเป็น `confirmed` หรือ `completed`; contact ต้องอ่านผ่าน authorized path ไม่ส่งไปใน public coach view
+- **บทความสุขภาพ:** เพิ่ม section ใน CoachDetailSheet โดยโหลดเฉพาะบทความ published ที่ `author_id` ตรงกับ `coach.userId`, เรียง `created_at DESC`; ถ้ายังไม่มีบทความแสดง empty state; title buttons ย่อเป็นหนึ่งบรรทัดและเติม `...` เมื่อยาว, จัดได้สูงสุด 3 บรรทัด และเมื่อมีรายการเกินพื้นที่ให้มีปุ่ม “บทความเพิ่มเติม” ในบรรทัดที่ 4
+- แตะ title button เปิด `/health/article` โดยส่ง article record ที่เลือก; “บทความเพิ่มเติม” เปิด ArticlesPage พร้อม author filter ของโค้ชและยังให้ผู้ใช้ล้าง filter กลับไป feed รวมได้ โดยไม่เปลี่ยนการทำงานเดิมของ category filter/route
+- **สร้างบทความ:** ปุ่มอยู่ใน section บทความและแสดงเมื่อผู้ใช้กำลังดูโปรไฟล์ของตนเอง (`currentUser.id == coach.userId`) และ `coach.status == approved`; `is_verified` ไม่ใช่เงื่อนไขเพิ่ม; เมื่อกดเปิด reusable dialog “เขียนบทความแบบบล็อก” ลอยเหนือ CoachDetailSheet โดยไม่ปิด sheet; ใช้ create/publish ทันทีตาม ArticlesPage ปัจจุบัน ไม่เพิ่ม paywall/draft; หลัง create คืน published article สำเร็จ ปิดเฉพาะ dialog, refresh บทความของ coach และแสดง title ล่าสุดใน sheet; ต้องป้องกัน double-submit และห้ามแสดง title/แจ้งเผยแพร่สำเร็จหาก save ล้มเหลว
+- **Private favorite:** ปุ่มถูกใจเป็น saved favorite รายบัญชี ต้อง login, toggle ซ้ำได้, ใช้กับ quick filter “ถูกใจ”, ไม่แสดงยอดสาธารณะและไม่แจ้งเตือนโค้ช
+- **Coach management/CTA:** มีหน้าจัดการโปรไฟล์ ตาราง/หลักสูตร roster และคำขอ; แสดง CTA “ลงทะเบียนผู้ฝึกสอน” เมื่อเปิด quick filter “ผู้ฝึกสอนของฉัน”; route ตามสถานะคือสมัครใหม่, ดู pending, แก้/resubmit rejected, จัดการเมื่อ approved, และอ่านเหตุผล/ช่องทางติดต่อเมื่อ suspended
+- **Quick filters:** “เปิดรับสอน” ต้องผ่านทั้ง `accepting_students` ที่โค้ชตั้งเองและมี slot/ที่นั่งในอนาคตที่จองได้จริง; “อยู่ใกล้ฉัน” ใช้ shared location/radius กับ service area/สถานที่; “ถูกใจ” ใช้ favorites ของผู้ใช้; “ผู้ฝึกสอนของฉัน” รวมเฉพาะประวัติ enrollment/booking สถานะ `confirmed` หรือ `completed` ไม่รวม pending/rejected/cancelled/expired
+- **Advanced filters:** ความถนัดต่อกีฬา, ระดับผู้เรียน, ช่วงราคาแบบ unit-aware, รูปแบบสอน, วัน/เวลาที่มี slot, verified, rating ขั้นต่ำ และประเภทคลาส/สถานที่; ห้ามเปรียบเทียบราคา `ต่อชั่วโมง`, `ต่อคน/ครั้ง`, `เหมาทั้งกลุ่ม` และ `แพ็กเกจหลักสูตร` เสมือนเป็นหน่วยเดียวกัน
+- **Schedule types:** รองรับ (1) นัด 1:1 (2) คลาสกลุ่มหนึ่ง session และ (3) หลักสูตรหลาย session; coach manager สร้าง/แก้/ยกเลิกด้วย bottom sheet ตาม `create_session_sheet.dart` โดยเก็บวันเวลา, sport, format, timezone, สถานที่/สนาม, capacity และราคาเป็น snapshot; session ของหลักสูตรผูกกับ course เดียว และ coach กำหนดได้ว่าผู้เรียนสมัครทั้งหลักสูตรหรือเลือกบาง session
+- **ราคาและจำนวนคน:** 1:1 คิดรายชั่วโมง; คลาสกลุ่มเลือกราคาต่อผู้เรียนหรือเหมาทั้งกลุ่มต่อครั้ง; หลักสูตรหลายรอบเลือกแพ็กเกจทั้งหลักสูตรหรือราคาต่อรอบ; แต่ละ offering เลือกเพดานอย่างเดียวหรือกำหนดขั้นต่ำ+สูงสุดได้ พร้อมแสดงราคา/จำนวนคน/หน่วยอย่างชัดเจน; ราคาเป็นข้อมูลและ booking snapshot เท่านั้น ไม่มี in-app payment/refund ใน phase นี้ตามข้อกำหนด 21.6
+- **Open/closed enrollment:** แสดงหลักสูตรปิดใน directory แต่คำขอเข้าร่วมทุกคนเป็น `pending` จนโค้ชอนุมัติ/ปฏิเสธ; offering อื่นให้โค้ชเลือกต่อรายการว่าจะ auto-confirm เมื่อ capacity ว่างหรือรออนุมัติ; capacity check/การสร้าง enrollment ต้อง atomic, idempotent และห้ามเกินจำนวนที่นั่ง; แยก enrollment ของคลาส/หลักสูตรจาก 1:1 booking request โดยคง snapshot ของเวลา, venue, format, ราคา, pricing unit และ course scope
+- **สถานะ/แจ้งเตือน:** แจ้งโค้ชเมื่อมี enrollment request และแจ้งผู้เรียนเมื่อยืนยัน/ปฏิเสธ/ยกเลิก/หมดอายุ; การยกเลิกหรือเปลี่ยนตารางต้องแจ้งผู้ที่ได้รับผลกระทบ; ใช้ durable/idempotent notification โดย notification failure ไม่ rollback การจอง
+- **Reviews และ Moderation (parity กับ 21.7.7):** ยกระดับ `coach_reviews`/`submit_coach_review`/`moderate_coach_review` เดิมให้เทียบรีวิวสนาม — review form เป็น bottom sheet ตาม `court_review_sheet.dart`/`court_review_tag_picker.dart`/`court_review_rating_card.dart` (เลือกดาว 1–5, comment 0–500, multi-select standard tags + custom tags รวมไม่เกิน 5 รายการ, แสดง eligibility state, draft คงอยู่เมื่อ submit ล้มเหลวและ retry ไม่เกิด duplicate); เพิ่มตารางแยกของ Coach domain คือ `coach_review_tag_catalog` (standard tags ที่ admin จัดการ พร้อม label/active/display_order และ seed เช่น สอนเข้าใจง่าย/ตรงเวลา/ใส่ใจผู้เรียน), `coach_review_tags` (join, unique `(review_id, tag_id)`) และ `coach_review_custom_tags` (ผูก review เดียว ไม่เข้า catalog กลาง) โดยห้าม reuse ตาราง tag ของ venue; ขยาย `submit_coach_review` ให้รับ standard/custom tags และบันทึก review+tags แบบ atomic คง validation เดิม (request ของผู้ใช้, สถานะ `completed` จาก trusted transition เท่านั้น, ห้าม self-review, หนึ่ง booking หนึ่งรีวิว, tags รวมไม่เกิน 5); public summary/list นับเฉพาะ `published` และคง report/moderation path (`hide`/`reject`/`publish`)
+- **Review eligibility ของ course/enrollment:** `coach_reviews.booking_id` ปัจจุบันอ้าง `coach_booking_requests` เท่านั้น ต้องขยายให้รองรับ enrollment ของคลาสกลุ่ม/หลักสูตร (เช่น เพิ่ม `enrollment_id` พร้อม CHECK เลือกแหล่งอ้างอิงเดียว) โดยคง unique ต่อแหล่งอ้างอิงและห้าม self-review ของโค้ชเจ้าของ offering; eligibility ต่อทั้ง course หรือ per session เป็น decision gate เดิม
+- **Decision gates ก่อน implementation:** กำหนด required fields และ re-review policy ของ profile ที่ approved; timezone สำหรับ venue/custom/online; 1:1 ใช้ weekly availability เดิมหรือ coach-published slots; เมื่อกำหนด minimum แล้วไม่ถึง cutoff จะยกเลิกหรือดำเนินต่ออย่างไร; pending enrollment กันที่นั่งหรือไม่และหมดอายุเมื่อใด; รีวิวหนึ่งครั้งต่อ course หรือ per session
+- **Test/exit gate:** profile status/notification/verified badge, contact privacy, private favorite/RLS, CTA ตามสถานะ, filter history, schedule ทั้งสามรูปแบบ, enrollment mode, min/max, pricing snapshots, venue/custom location, capacity concurrency/idempotency, course cancellations/notifications, review eligibility/tags ≤5/atomic submit/self-review denial และการคงพฤติกรรม 1:1 เดิมผ่าน domain/widget/integration/security tests; widget tests ยืนยัน booking/contact actions เปิดผ่าน Slidable ด้านท้ายแถวตามสิทธิ์และ footer ของ CoachDetailSheet pin ตำแหน่งเดียวกับ GroupDetailSheet โดย detail body เลื่อนได้อิสระ; widget/integration tests ครอบคลุมบทความ: ปุ่มสร้างแสดงเฉพาะ owner + approved, dialog ซ้อนเหนือ sheet โดยไม่ปิด sheet, title buttons ตัด `...` ครบสามบรรทัดพร้อม “บทความเพิ่มเติม” บรรทัดที่สี่, เรียงใหม่สุดก่อน, navigation ไป `/health/article` และ ArticlesPage พร้อม author filter ที่ล้างได้, และหลัง publish สำเร็จ title ล่าสุดปรากฏทันทีใน sheet
+
+#### 21.7.13 Sports Hub — Shared Sport Catalog, Usage Ranking และ Filter Scroll Continuity
+
+- เป้าหมายคือใช้ approved sport catalog และลำดับเดียวกันใน Book Court, Find Buddies และ Find Coach พร้อมรักษาตำแหน่งแถบชิปเมื่อสลับหน้า โดยไม่เปลี่ยน selected filter, domain query หรือพฤติกรรม action เดิม
+- **สถิติรายบุคคลร่วมกัน:** นับการเลือกชนิดกีฬาจากทั้งสามหน้าโดยใช้ `sportId` เป็น key และผูกกับผู้ใช้คนเดียวกัน ไม่ใช่สถิติรวมของทุกคน; นับเฉพาะการเลือกจริงของผู้ใช้ที่มี `sportId` เท่านั้น ไม่เพิ่มจากการ restore, sync, clear/เลือก “ทั้งหมด”, การยกเลิกการเลือก หรือการเปลี่ยนหน้า
+- **Persistence รายบุคคล:** บันทึก event/aggregate ที่มี timestamp ในฐานข้อมูลโดยผูกกับ authenticated account เพื่อให้ใช้ข้ามอุปกรณ์ได้; เขียน/อ่านผ่าน trusted RPC หรือ RLS ที่ผูกสิทธิ์กับ `auth.uid()` และป้องกันการนับซ้ำจาก retry; เก็บเวลาให้พอคำนวณได้หลายช่วง ไม่ล็อกเป็น total counter อย่างเดียว
+- **Decision gate ก่อนเปิด ranking:** กำหนด guest fallback, สูตร/ช่วงเวลาที่ใช้จริง, tie-break และเกณฑ์ว่าข้อมูลเพียงพอเมื่อใด; ตัดสินใจว่าจะคง ใช้เป็น fallback หรือแทน `getUserSportFrequency` เดิม ซึ่งนับกีฬาจากก๊วนที่ผู้ใช้สร้าง/เป็นสมาชิก ไม่ใช่การแตะปุ่ม
+- **สูตรสำหรับพิจารณา (ยังไม่เลือก):** (A) count ตลอดอายุเรียงมากไปน้อย; (B) count ในช่วง rolling window เช่น 90 วันเรียงมากไปน้อย; หรือ (C) คะแนน recency-decay ที่น้ำหนักการเลือกเก่าลดลงตามเวลา; ทุกสูตรใช้เวลาเลือกครั้งล่าสุดเป็น tie-break ก่อนลำดับภาษาไทยและ `sportId` เพื่อให้ผล deterministic; เก็บ timestamped data ไว้ก่อน แล้วเลือกสูตรเมื่อ 21.7.12 เปิด coach profiles/courses จริงและมี usage data เพียงพอ
+- **Shared catalog snapshot:** โหลด approved sports และ usage stats เป็น snapshot เดียวต่อ Sports Hub session, คำนวณลำดับเพียงครั้งเดียวและส่งรายการเดียวกันให้ทั้งสามหน้า; ห้ามแต่ละหน้าโหลด/เรียงรายการอิสระจนได้ลำดับคนละชุด, เมื่อผู้ใช้เปลี่ยนบัญชีต้องโหลด snapshot ของบัญชีใหม่, และต้องรักษา `selectedSportId` เมื่อ ranking เปลี่ยน
+- **Failure fallback (agreed):** หากอ่าน usage stats ไม่ได้ ให้ใช้ stats/order cache ล่าสุดของบัญชีเดียวกัน; หากไม่มี ให้คงลำดับ deterministic เดิมเมื่อคำนวณได้ มิฉะนั้นเรียง approved catalog ที่โหลดได้ด้วยชื่อไทยและ `sportId`; ห้ามใช้ cache ของบัญชีอื่นหรือเคลียร์/เปลี่ยน `selectedSportId` เป็น “ทั้งหมด” เพียงเพราะ stats ล้มเหลว หากโหลด catalog ไม่ได้ ให้ใช้ approved catalog cache ล่าสุด และถ้าไม่มีให้แสดง error/retry ไม่แสดงเสมือนโหลดสำเร็จแต่มีเพียง “ทั้งหมด”; หากเขียน event ไม่ได้ ต้องไม่ขวางการ apply filter/query ให้ retry แบบ non-blocking และ idempotent ด้วย event ID เดิม โดยยังไม่เพิ่มยอดใน shared ranking จนกว่าจะยืนยันว่าบันทึกแล้ว
+- ระหว่างเก็บข้อมูลก่อนอนุมัติสูตร ranking ให้คงลำดับเดิม; เมื่อเลือกสูตรแล้วคงลำดับแถบให้เสถียรตลอด session และคำนวณ snapshot ใหม่เมื่อเปิด hub/refresh catalog ตาม policy เท่านั้น ไม่ reorder ทันทีหลังแตะชิปหรือเปลี่ยนหน้า; สถิติจาก DB จะมีผลข้ามอุปกรณ์เมื่อ catalog refresh แต่ session ที่เปิดอยู่ไม่ต้อง live-reorder และการเปลี่ยนลำดับต้องไม่ยิง domain query เพิ่ม
+- **Scroll continuity:** sync ตำแหน่งแนวนอนด้วย anchor ของ `sportId` ที่มองเห็นและตำแหน่งย่อยในชิป แทนการสมมติว่า pixel offset/max extent ของทุก viewport เท่ากัน; ใช้พื้นที่ชิปเต็มตาม layout ของแต่ละหน้า ไม่จองช่องว่างหรือ placeholder เพื่อบังคับความกว้าง และยอมให้แต่ละหน้าเห็นจำนวนชิปต่างกันตามพื้นที่จริง; clamp อย่างปลอดภัยที่ขอบรายการ ส่วน vertical scroll ของแต่ละหน้าคงแยกกัน
+- **Trailing controls:** หลังผู้ใช้กำหนดรายการ action ของแต่ละหน้าแล้ว ให้กลุ่ม trailing ที่มี action จริงอยู่ในตำแหน่งเดียวกันและมีกรอบภายนอกขนาดเดียวกัน; จำนวนและชนิดปุ่มของแต่ละหน้าเป็นการตัดสินใจของผู้ใช้ ไม่เพิ่ม/ตัดหรือย้าย action เอง และไม่จองช่องว่างเปล่าแทน action ที่ไม่มี
+- **Test/exit gate:** ยืนยันว่า event ถูกบันทึก/อ่านจาก DB ภายใต้บัญชีที่ยืนยันตัวตน, ข้ามอุปกรณ์ได้, แยกสิทธิ์ข้ามบัญชีและ retry ไม่เพิ่มซ้ำ; stats read/write failure ใช้ fallback ตามลำดับโดยไม่เปลี่ยน selected filter และ write failure ไม่ขวาง query; การเลือกจากทั้งสามหน้าปรับ counter รายบุคคลชุดเดียวกันครั้งละหนึ่ง event, restore/sync/clear/page switch ไม่เพิ่ม counter, ลำดับ catalog ตรงกันและ tie-break คงที่, ลำดับไม่กระโดดใน session, anchor กีฬาไม่ reset เมื่อสลับหน้าโดยไม่กินพื้นที่ชิป, trailing controls มีขนาด/ตำแหน่งตรงกันหลังยืนยันรายการปุ่ม, selected filter/query เดิมและ vertical scroll แยกหน้าทำงานเหมือนเดิม; analyzer, relevant tests และ `git diff --check` ผ่าน
+
 ### 21.8 Test plan และ Acceptance Criteria
 
 #### UI/Widget tests
@@ -3462,6 +3502,9 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - หน้าจอแคบยังคงชื่อย่อคู่กับ icon โดยไม่ overflow; ชื่อเต็ม wrap ได้ไม่เกิน 2 บรรทัด
 - hit area, tooltip, semantic label และ keyboard navigation ทำงาน
 - shared sport/location filter คงอยู่เมื่อปัดไป-กลับ
+- sport catalog และลำดับจาก usage snapshot เดียวกันตรงกันทั้งสามหน้า; explicit user selection นับในสถิติรายบุคคลชุดเดียว ส่วน restore/sync/clear/page switch ไม่เพิ่ม counter และการเลือกใหม่ไม่ทำให้ลำดับกระโดดกลาง session
+- เมื่ออ่าน stats ไม่ได้ใช้ cache ของบัญชีเดียวกันก่อน แล้ว fallback เป็นลำดับ deterministic โดยไม่เปลี่ยน selected sport; เมื่อ catalog โหลดไม่ได้ใช้ cache หรือแสดง error/retry; เมื่อเขียน stats ไม่ได้ filter/query ยังทำงานและ retry ไม่เพิ่ม event ซ้ำ
+- ปุ่ม trailing จริงของแต่ละหน้ามีกรอบภายนอกและตำแหน่งเท่ากันหลังผู้ใช้ยืนยันรายการ action; ไม่มี placeholder ว่าง และยังคง action เดิมที่ไม่ได้ถูกเปลี่ยนโดยผู้ใช้
 - Book Court sport row ใช้ตัวเลือกกีฬาเดียวกับ shared filter; quick filter ทั้งสี่รายการและ advanced filter sheet แสดง/กรอง/restore ค่าได้ตรงกัน
 - CTA “ลงทะเบียนสนาม” แสดงเป็น FAB มุมขวาล่างตำแหน่งเดียวกับ “สร้างก๊วน” เฉพาะเมื่อเลือก “เป็นเจ้าของ”; ยังแสดงใน empty state, เปิด owner registration ได้ และกลับมาแล้ว restore filter/scroll state
 - owner registration แสดง sport-based unit default และ override ที่จำกัดขอบเขต venue+sport
@@ -3473,8 +3516,19 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - pending slot conflict ให้คำขอคง pending พร้อม action เปลี่ยนเวลา/ยกเลิก; cutoff ทำให้ปุ่มยกเลิก disabled พร้อมคำอธิบาย
 - review sheet เลือกดาว 1–5, comment 0–500, เลือก standard/custom tags ได้หลายรายการรวมไม่เกิน 5; ปุ่ม review แสดง eligibility state ถูกต้อง
 - เมื่อบันทึกสำเร็จ review summary/list อัปเดต; เมื่อผิดพลาด draft คงอยู่และ retry แล้วไม่เกิด duplicate
+- coach review sheet ใช้ interaction เดียวกับ venue: ดาว 1–5, comment 0–500, standard/custom tags รวมไม่เกิน 5, eligibility เฉพาะ completed request/enrollment, ห้าม self-review, retry idempotent และ summary ใน CoachDetailSheet อัปเดตหลังบันทึกสำเร็จ
 - domain-specific filter ไม่ถูกส่งไปยัง query ของอีกหน้า
-- scroll position ของทั้งสามหน้าถูก restore แยกกัน
+- Coach cards/detail แสดงภาพ, ประสบการณ์/credentials, specialties, learner levels, location และราคาพร้อมหน่วย; CoachDetailSheet pin header/footer ตาม GroupDetailSheet, detail body scroll แยกได้, Slidable เปิด booking/contact actions จากขอบท้ายแถวตำแหน่งเดียวกันตามสิทธิ์; loading/error/empty states และ pagination ทำงานถูกต้อง
+- profile สมัคร/แก้ไขแสดง status `pending/approved/rejected/suspended`; verified badge เป็นอิสระจากการอนุมัติโปรไฟล์ และ contact channels ไม่เปิดก่อน enrollment ยืนยัน
+- favorite เป็น private per-user toggle; quick filter “ถูกใจ” คืนเฉพาะ coach ที่ผู้ใช้บันทึกไว้และไม่แสดงยอด/ส่งแจ้งเตือน
+- quick filters “เปิดรับสอน” ต้องทั้ง accepting flag และมี slot จริง, “ใกล้ฉัน”, “ถูกใจ” และ “ผู้ฝึกสอนของฉัน” ที่อิง confirmed/completed history; CTA ลงทะเบียน/จัดการแสดงเมื่อเลือก My Coaches และ route ตาม profile status
+- advanced coach filters ครอบคลุม specialty, learner level, price แบบ unit-aware, teaching mode, available time, verified/rating และ venue/session type
+- section “บทความสุขภาพ” ใน CoachDetailSheet แสดงเฉพาะบทความของ `author_id == coach.userId` เรียงใหม่สุดก่อน; title ยาวตัดท้ายด้วย `...`, แสดงได้สูงสุด 3 บรรทัด, ถ้ามีบทความเกินให้แสดง “บทความเพิ่มเติม” บรรทัดที่ 4; empty state แสดงเมื่อไม่มีบทความ
+- ปุ่ม “สร้างบทความ” แสดงเฉพาะเมื่อ `currentUser.id == coach.userId` และ `coach.status == approved` (ไม่บังคับ `is_verified`); กดแล้ว dialog block editor ลอยเหนือ sheet โดยไม่ปิด sheet; publish สำเร็จแล้ว title ล่าสุดปรากฏใน section ทันที; double-submit ถูกป้องกันและ save ล้มเหลวไม่แสดง success
+- แตะ title button เปิด `HealthArticlePage` ด้วย article ที่เลือก; แตะ “บทความเพิ่มเติม” เปิด `ArticlesPage` พร้อม author filter ของโค้ชที่ล้าง/แก้ได้ โดย category filter เดิมทำงานเหมือนเดิม
+- coach management สร้าง/แก้/ยกเลิกนัด 1:1, คลาสกลุ่ม และหลักสูตรหลายรอบได้; course ตั้ง enrollment scope, booking mode, pricing basis และ capacity ตามตัวเลือกของโค้ช พร้อมแสดง timezone/สถานที่ถูกต้อง
+- หลักสูตรปิดยังปรากฏใน directory แต่ enrollment เป็น pending จนโค้ชตัดสินใจ; offering อื่นทำ instant confirm หรือ coach approval ตาม mode ที่ตั้งไว้; ไม่มี in-app payment
+- horizontal sport-chip anchor (`sportId` + ตำแหน่งย่อยในชิป) คงเดิมเมื่อสลับทั้งสามหน้าโดยไม่จองพื้นที่ว่าง; vertical scroll position ของแต่ละหน้ายังคง restore แยกกัน
 - สลับออก/กลับหน้าเดิมแบบเร็วไม่เรียก initial load ซ้ำ; แต่ละ page state อยู่ต่อหรือต้อง restore scroll ได้โดยไม่มี skeleton flash
 - data อายุไม่เกิน 60 วินาทีไม่ trigger query เมื่อกลับเข้าหน้า; data เก่ากว่า threshold ทำ background revalidate โดยคง cards, pagination และ scroll เดิม; failure ต้องคง cached content
 - shared date ไม่ปนเข้า Book Court/Coach: Book Court ใช้ date ในเวลาท้องถิ่น venue, Coach ใช้ availability/timezone ของ coach
@@ -3487,6 +3541,9 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - dispose hub ระหว่าง request ไม่เรียก `setState` หลัง unmount
 - revalidate ที่เริ่มจาก page return ถูกยกเลิกเมื่อ shared/domain filter หรือ load-more request ใหม่เริ่ม; response เก่าห้ามเขียนทับรายการใหม่
 - background refresh โหลดเฉพาะ domain ปัจจุบันและช่วง pagination ที่เคยเปิดไว้; ไม่ refresh ทุก page ที่ inactive และไม่ reset scroll/page size
+- Coach favorites, coach history และ contact access แยกตาม authenticated user; My Coaches ไม่นับ pending/rejected/cancelled/expired enrollment
+- concurrent enrollment ของคลาส/หลักสูตรไม่เกิน capacity; duplicate/idempotent retry ไม่สร้างที่นั่งหรือ notification ซ้ำ; 1:1 overlapping slots ถูกปฏิเสธ
+- closed-course approval, per-offering instant/coach-approval mode, pending-seat/expiry policy และ course cancellation ไม่ทำให้ enrollment หรือ seat count ผิดสถานะ
 
 #### Integration/E2E tests
 
@@ -3505,6 +3562,10 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - public review summary นับเฉพาะ review ที่เผยแพร่; moderation hide/reject เอาออกจาก aggregate และรายการ public
 - จอง court ที่เวลาทับซ้อนถูกป้องกันแบบ atomic
 - coach request สร้างสถานะและ snapshot ที่ตรวจสอบย้อนหลังได้
+- coach application ส่ง notification ถึง admin; approve/reject/resubmit/suspend ส่ง notification ถึงผู้สมัคร และมีเหตุผล/audit; public view ไม่เผยแพร่ profile ที่ไม่ approved และ verified badge มาจากการตรวจเอกสารแยกต่างหาก
+- contact details ไม่อ่านได้จาก public view/RPC สำหรับผู้ใช้ทั่วไป; เฉพาะ enrollment/booking ที่ confirmed หรือ completed ของผู้ใช้คนนั้นจึงอ่านช่องทางติดต่อได้
+- 1:1, group session และ multi-session course ใช้ ID/authorization แยกจาก fitness groups; enrollment scope, price snapshot, min/max capacity และสถานที่จริง/custom ถูกตรวจ server-side
+- course booking mode มีทั้ง instant-confirm และ coach approval; closed course บังคับ coach approval, ส่ง notifications แบบ durable/idempotent และ concurrent requests ไม่เกิน capacity
 
 ### Gate 21 — Definition of Done
 
@@ -3528,6 +3589,8 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - [x] venue detail bottom sheet มีปุ่มรีวิว/แสดง review summary และแบบฟอร์มตามภาพ; รีวิวได้เฉพาะ completed booking ที่ยังไม่เคยรีวิว และหนึ่ง booking รีวิวได้ครั้งเดียว
 - [x] rating/comment, standard multi-select tags และ custom tags ต่อรีวิวถูกบันทึกใน relational tables แบบ atomic; tag รวมไม่เกิน 5 และ aggregate ใช้เฉพาะ review ที่เผยแพร่
 - [x] Find Coach MVP ผ่าน discovery, profile, availability และ request flow
+- [ ] Find Coach experience completion ใน 21.7.12 ผ่าน coach supply/moderation, profile/detail, private favorite/history filters, schedules/courses, capacity/approval, privacy และ notification gates
+- [ ] Shared sport usage ranking/scroll continuity ใน 21.7.13 ผ่านเมื่อมีข้อมูลจริงจาก Coach เพียงพอ; ระหว่างรอยังคงลำดับเดิมและ fallback ตามที่กำหนด
 - [ ] ผ่าน widget, unit, integration, authorization, accessibility และ device QA บนจอเล็ก (widget/unit ผ่านแล้ว; เหลือ integration/concurrency ฝั่ง server และ device QA)
 
 ### 21.9 ความเสี่ยงและแนวทางป้องกัน
