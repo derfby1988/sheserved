@@ -15,6 +15,7 @@ class NeumorphicVerifyButton extends StatefulWidget {
   final double height;
   final double? width;
   final Widget? icon;
+  final bool fitTextToWidth;
 
   const NeumorphicVerifyButton({
     super.key,
@@ -25,6 +26,7 @@ class NeumorphicVerifyButton extends StatefulWidget {
     this.height = 54.0,
     this.width = double.infinity,
     this.icon,
+    this.fitTextToWidth = false,
   });
 
   @override
@@ -36,7 +38,19 @@ class _NeumorphicVerifyButtonState extends State<NeumorphicVerifyButton> {
 
   @override
   Widget build(BuildContext context) {
-    final bool active = widget.isEnabled && !widget.isLoading && widget.onPressed != null;
+    final bool active =
+        widget.isEnabled && !widget.isLoading && widget.onPressed != null;
+    final label = Text(
+      widget.text,
+      maxLines: widget.fitTextToWidth ? 1 : null,
+      softWrap: !widget.fitTextToWidth,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.2,
+      ),
+    );
 
     return AnimatedScale(
       scale: _isHoveredOrPressed ? 0.98 : 1.0,
@@ -71,9 +85,15 @@ class _NeumorphicVerifyButtonState extends State<NeumorphicVerifyButton> {
             color: Colors.transparent,
             child: InkWell(
               onTap: active ? widget.onPressed : null,
-              onTapDown: active ? (_) => setState(() => _isHoveredOrPressed = true) : null,
-              onTapUp: active ? (_) => setState(() => _isHoveredOrPressed = false) : null,
-              onTapCancel: active ? () => setState(() => _isHoveredOrPressed = false) : null,
+              onTapDown: active
+                  ? (_) => setState(() => _isHoveredOrPressed = true)
+                  : null,
+              onTapUp: active
+                  ? (_) => setState(() => _isHoveredOrPressed = false)
+                  : null,
+              onTapCancel: active
+                  ? () => setState(() => _isHoveredOrPressed = false)
+                  : null,
               borderRadius: BorderRadius.circular(widget.height / 2),
               splashColor: Colors.white.withValues(alpha: 0.2),
               highlightColor: Colors.white.withValues(alpha: 0.1),
@@ -84,21 +104,23 @@ class _NeumorphicVerifyButtonState extends State<NeumorphicVerifyButton> {
                         height: 22,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            widget.text,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
+                          if (widget.fitTextToWidth)
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: label,
+                              ),
+                            )
+                          else
+                            label,
                           const SizedBox(width: 8),
                           widget.icon ??
                               const Icon(

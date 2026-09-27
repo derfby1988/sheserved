@@ -845,13 +845,7 @@ class GroupDetailSheet {
                                                             )
                                                             .toList(),
                                                     isCompact: false,
-                                                    backgroundColor: Colors
-                                                        .white
-                                                        .withValues(alpha: 0.8),
-                                                    borderColor: Colors
-                                                        .grey
-                                                        .shade300
-                                                        .withValues(alpha: 0.8),
+                                                    useNeumorphicStyle: true,
                                                   ),
                                               ],
                                             ),
@@ -2821,66 +2815,80 @@ class GroupDetailSheet {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.only(top: 8),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 10,
-        runSpacing: 10,
+      child: Row(
         children: [
           // Join group (non-members or guests)
           if (!isMember)
-            SizedBox(
-              width: double.infinity,
+            Expanded(
+              flex: isAdmin ? 3 : 1,
               child: NeumorphicVerifyButton(
                 onPressed: () => _handleJoinGroup(ctx, groupId, group),
                 text: group['is_private'] == true
                     ? 'ขอเข้าร่วมก๊วน'
                     : 'เข้าร่วมก๊วนทันที',
                 height: 52,
+                fitTextToWidth: true,
               ),
             ),
+          if (!isMember && isAdmin) const SizedBox(width: 8),
           // Edit group (admin only)
           if (isAdmin)
-            Container(
-              decoration: BoxDecoration(
-                color: NeumorphicTheme.baseColor,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: NeumorphicTheme.smallShadows(distance: 2.5, blur: 5),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
+            Expanded(
+              flex: isMember ? 1 : 2,
+              child: Container(
+                height: 52,
+                decoration: BoxDecoration(
+                  color: NeumorphicTheme.baseColor,
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    EditGroupSheet.show(
-                      pageContext,
-                      repo: repo,
-                      client: client,
-                      group: group,
-                      onGroupSaved: onPageRefresh,
-                    );
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.edit_rounded,
-                          size: 17,
-                          color: NeumorphicTheme.primaryBlue,
+                  boxShadow: NeumorphicTheme.smallShadows(
+                    distance: 2.5,
+                    blur: 5,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      EditGroupSheet.show(
+                        pageContext,
+                        repo: repo,
+                        client: client,
+                        group: group,
+                        onGroupSaved: onPageRefresh,
+                      );
+                    },
+                    child: const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.edit_rounded,
+                              size: 17,
+                              color: NeumorphicTheme.primaryBlue,
+                            ),
+                            SizedBox(width: 6),
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'แก้ไขก๊วน',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: NeumorphicTheme.primaryBlue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(width: 6),
-                        Text(
-                          'แก้ไขก๊วน',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: NeumorphicTheme.primaryBlue,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -2888,75 +2896,90 @@ class GroupDetailSheet {
             ),
           // Leave group (non-admin members only)
           if (isMember && !isAdmin && userId != null)
-            Container(
-              decoration: BoxDecoration(
-                color: NeumorphicTheme.baseColor,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: NeumorphicTheme.smallShadows(distance: 2.5, blur: 5),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
+            Expanded(
+              child: Container(
+                height: 52,
+                decoration: BoxDecoration(
+                  color: NeumorphicTheme.baseColor,
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () async {
-                    final confirm = await showDialog<bool>(
-                      context: ctx,
-                      builder: (c) => AlertDialog(
-                        title: const Text('ออกจากก๊วน'),
-                        content: const Text(
-                          'คุณต้องการออกจากก๊วนนี้ใช่หรือไม่? การจองทั้งหมดของคุณจะถูกยกเลิก',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(c, false),
-                            child: const Text('ยกเลิก'),
+                  boxShadow: NeumorphicTheme.smallShadows(
+                    distance: 2.5,
+                    blur: 5,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: ctx,
+                        builder: (c) => AlertDialog(
+                          title: const Text('ออกจากก๊วน'),
+                          content: const Text(
+                            'คุณต้องการออกจากก๊วนนี้ใช่หรือไม่? การจองทั้งหมดของคุณจะถูกยกเลิก',
                           ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(c, true),
-                            child: const Text(
-                              'ยืนยัน',
-                              style: TextStyle(color: Colors.red),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('ยกเลิก'),
                             ),
-                          ),
-                        ],
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text(
+                                'ยืนยัน',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm != true) return;
+                      try {
+                        await repo.leaveGroup(groupId: groupId, userId: userId);
+                        if (!pageContext.mounted) return;
+                        ScaffoldMessenger.of(pageContext).showSnackBar(
+                          const SnackBar(content: Text('ออกจากก๊วนแล้ว')),
+                        );
+                        Navigator.pop(ctx);
+                        onPageRefresh();
+                      } catch (e) {
+                        if (!pageContext.mounted) return;
+                        ScaffoldMessenger.of(pageContext).showSnackBar(
+                          SnackBar(content: Text('ออกจากก๊วนไม่สำเร็จ: $e')),
+                        );
+                      }
+                    },
+                    child: const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.exit_to_app_rounded,
+                              size: 17,
+                              color: Colors.red,
+                            ),
+                            SizedBox(width: 6),
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'ออกจากก๊วน',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                    if (confirm != true) return;
-                    try {
-                      await repo.leaveGroup(groupId: groupId, userId: userId);
-                      if (!pageContext.mounted) return;
-                      ScaffoldMessenger.of(pageContext).showSnackBar(
-                        const SnackBar(content: Text('ออกจากก๊วนแล้ว')),
-                      );
-                      Navigator.pop(ctx);
-                      onPageRefresh();
-                    } catch (e) {
-                      if (!pageContext.mounted) return;
-                      ScaffoldMessenger.of(pageContext).showSnackBar(
-                        SnackBar(content: Text('ออกจากก๊วนไม่สำเร็จ: $e')),
-                      );
-                    }
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.exit_to_app_rounded,
-                          size: 17,
-                          color: Colors.red,
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          'ออกจากก๊วน',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),

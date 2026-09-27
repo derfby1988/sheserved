@@ -230,6 +230,7 @@ class SkillLevelBadge extends StatelessWidget {
   final List<String>? targetSkillLevels;
   final List<SportSkillLevel>? availableLevels;
   final bool isCompact;
+  final bool useNeumorphicStyle;
 
   /// Overrides the badge background color (e.g. to match sibling chips).
   final Color? backgroundColor;
@@ -242,6 +243,7 @@ class SkillLevelBadge extends StatelessWidget {
     required this.targetSkillLevels,
     this.availableLevels,
     this.isCompact = false,
+    this.useNeumorphicStyle = false,
     this.backgroundColor,
     this.borderColor,
   });
@@ -252,26 +254,50 @@ class SkillLevelBadge extends StatelessWidget {
     final summary = formatSkillLevelSummary(targetSkillLevels, levels);
     final isAll = summary == 'ทุกระดับ';
 
+    final iconColor = useNeumorphicStyle
+        ? NeumorphicTheme.primaryBlue
+        : isAll
+        ? Colors.teal.shade700
+        : AppColors.primaryDark;
+    final labelColor = useNeumorphicStyle
+        ? NeumorphicTheme.textPrimary
+        : isAll
+        ? Colors.teal.shade800
+        : AppColors.primaryDark;
+
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isCompact ? 6 : 8,
-        vertical: isCompact ? 2 : 4,
+        horizontal: isCompact
+            ? 6
+            : useNeumorphicStyle
+            ? 10
+            : 8,
+        vertical: isCompact
+            ? 2
+            : useNeumorphicStyle
+            ? 6
+            : 4,
       ),
       decoration: BoxDecoration(
-        color:
-            backgroundColor ??
-            (isAll
-                ? Colors.teal.shade50
-                : AppColors.primary.withValues(alpha: 0.1)),
-        borderRadius: BorderRadius.circular(8),
+        color: useNeumorphicStyle
+            ? NeumorphicTheme.baseColor
+            : backgroundColor ??
+                  (isAll
+                      ? Colors.teal.shade50
+                      : AppColors.primary.withValues(alpha: 0.1)),
+        borderRadius: BorderRadius.circular(useNeumorphicStyle ? 12 : 8),
         border: Border.all(
-          color:
-              borderColor ??
-              (isAll
-                  ? Colors.teal.shade200
-                  : AppColors.primary.withValues(alpha: 0.35)),
-          width: 0.8,
+          color: useNeumorphicStyle
+              ? Colors.white.withValues(alpha: 0.7)
+              : borderColor ??
+                    (isAll
+                        ? Colors.teal.shade200
+                        : AppColors.primary.withValues(alpha: 0.35)),
+          width: useNeumorphicStyle ? 1 : 0.8,
         ),
+        boxShadow: useNeumorphicStyle
+            ? NeumorphicTheme.smallShadows(distance: 1.5, blur: 3.5)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -279,7 +305,7 @@ class SkillLevelBadge extends StatelessWidget {
           Icon(
             isAll ? Icons.all_inclusive_rounded : Icons.military_tech_rounded,
             size: isCompact ? 12 : 14,
-            color: isAll ? Colors.teal.shade700 : AppColors.primaryDark,
+            color: iconColor,
           ),
           const SizedBox(width: 4),
           Text(
@@ -287,7 +313,7 @@ class SkillLevelBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: isCompact ? 11 : 12,
               fontWeight: FontWeight.w600,
-              color: isAll ? Colors.teal.shade800 : AppColors.primaryDark,
+              color: labelColor,
             ),
           ),
         ],
