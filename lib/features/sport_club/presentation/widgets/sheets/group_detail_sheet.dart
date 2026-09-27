@@ -22,6 +22,7 @@ import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_g
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_invite_poster_sheet.dart';
 import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 /// Signature for booking a session (optionally at a field position).
 typedef SessionBookCallback =
@@ -138,23 +139,31 @@ class GroupDetailSheet {
     Color? backgroundColor,
     Border? border,
   }) {
-    return Container(
-      margin: margin ?? const EdgeInsets.only(bottom: 12),
+    final isCustomColor = backgroundColor != null;
+    return NeumorphicContainer(
+      margin: margin ?? const EdgeInsets.only(bottom: 14),
       padding: padding,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(18),
-        border:
-            border ??
-            Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+      borderRadius: 20,
+      color: backgroundColor ?? NeumorphicTheme.baseColor,
+      depth: 4,
+      blur: 8,
+      border:
+          border ??
+          Border.all(
+            color: isCustomColor
+                ? Colors.transparent
+                : Colors.white.withValues(alpha: 0.7),
+            width: 1,
           ),
-        ],
-      ),
+      customShadows: isCustomColor
+          ? [
+              BoxShadow(
+                color: NeumorphicTheme.shadowDark.withValues(alpha: 0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ]
+          : null,
       child: child,
     );
   }
@@ -169,35 +178,46 @@ class GroupDetailSheet {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(6),
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
+            shape: BoxShape.circle,
+            color: NeumorphicTheme.baseColor,
+            boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
           ),
-          child: Icon(icon, size: 16, color: iconColor),
+          child: Icon(icon, size: 18, color: iconColor),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 12),
         Expanded(
           child: Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1E293B),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: NeumorphicTheme.textPrimary,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
               if (badge != null) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 1.5,
+                    horizontal: 8,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.12),
+                    color: NeumorphicTheme.baseColor,
                     borderRadius: BorderRadius.circular(10),
+                    boxShadow: NeumorphicTheme.smallShadows(
+                      distance: 1.5,
+                      blur: 3,
+                    ),
                   ),
                   child: Text(
                     badge,
@@ -286,8 +306,6 @@ class GroupDetailSheet {
         : permissionLabel == 'ผู้ขอเข้าร่วม'
         ? Colors.orange.shade800
         : Colors.grey.shade600;
-    final isCurrentUserMember =
-        currentUserId != null && myJoinedGroupIds.contains(groupId);
     final memberSwipeHint = isAdmin
         ? 'ปัดรายชื่อไปทางซ้ายเพื่อจัดการ'
         : 'ปัดรอบนัดไปทางซ้ายเพื่อเลือกเพิ่มรอบ';
@@ -354,11 +372,11 @@ class GroupDetailSheet {
           return ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
               child: Container(
                 constraints: BoxConstraints(maxHeight: screenHeight * 0.90),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
+                  color: NeumorphicTheme.baseColor,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(28),
                   ),
@@ -370,7 +388,7 @@ class GroupDetailSheet {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
+                      color: NeumorphicTheme.shadowDark.withValues(alpha: 0.35),
                       blurRadius: 25,
                       offset: const Offset(0, -6),
                     ),
@@ -508,15 +526,22 @@ class GroupDetailSheet {
                             // ── Top drag handle ──
                             Center(
                               child: Container(
-                                width: 42,
+                                width: 44,
                                 height: 4.5,
                                 margin: const EdgeInsets.only(
-                                  top: 2,
-                                  bottom: 12,
+                                  top: 4,
+                                  bottom: 14,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey.shade300,
+                                  color: const Color(0xFFD4DAE3),
                                   borderRadius: BorderRadius.circular(10),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.white,
+                                      offset: Offset(0, 1),
+                                      blurRadius: 1,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -528,24 +553,11 @@ class GroupDetailSheet {
                                   width: 48,
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.primary.withValues(
-                                          alpha: 0.2,
-                                        ),
-                                        AppColors.primaryDark.withValues(
-                                          alpha: 0.25,
-                                        ),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: AppColors.primary.withValues(
-                                        alpha: 0.35,
-                                      ),
-                                      width: 1.2,
+                                    shape: BoxShape.circle,
+                                    color: NeumorphicTheme.baseColor,
+                                    boxShadow: NeumorphicTheme.smallShadows(
+                                      distance: 3,
+                                      blur: 6,
                                     ),
                                   ),
                                   alignment: Alignment.center,
@@ -565,7 +577,7 @@ class GroupDetailSheet {
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.w700,
-                                          color: Color(0xFF1E293B),
+                                          color: NeumorphicTheme.textPrimary,
                                           letterSpacing: -0.2,
                                         ),
                                         maxLines: 2,
@@ -579,18 +591,17 @@ class GroupDetailSheet {
                                           Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 8,
-                                              vertical: 2,
+                                              vertical: 2.5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: permissionColor.withValues(
-                                                alpha: 0.1,
-                                              ),
+                                              color: NeumorphicTheme.baseColor,
                                               borderRadius:
                                                   BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: permissionColor
-                                                    .withValues(alpha: 0.25),
-                                              ),
+                                              boxShadow:
+                                                  NeumorphicTheme.smallShadows(
+                                                    distance: 1.5,
+                                                    blur: 3,
+                                                  ),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -623,18 +634,18 @@ class GroupDetailSheet {
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                     horizontal: 8,
-                                                    vertical: 2,
+                                                    vertical: 2.5,
                                                   ),
                                               decoration: BoxDecoration(
-                                                color: Colors.orange.withValues(
-                                                  alpha: 0.1,
-                                                ),
+                                                color:
+                                                    NeumorphicTheme.baseColor,
                                                 borderRadius:
                                                     BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: Colors.orange
-                                                      .withValues(alpha: 0.3),
-                                                ),
+                                                boxShadow:
+                                                    NeumorphicTheme.smallShadows(
+                                                      distance: 1.5,
+                                                      blur: 3,
+                                                    ),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
@@ -667,51 +678,62 @@ class GroupDetailSheet {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    IconButton(
-                                      onPressed: () =>
-                                          GroupInvitePosterSheet.show(
-                                            ctx,
-                                            groupData: group,
-                                          ),
-                                      icon: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.05,
-                                          ),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.share_rounded,
-                                          size: 18,
-                                          color: Color(0xFF64748B),
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: NeumorphicTheme.baseColor,
+                                        boxShadow: NeumorphicTheme.smallShadows(
+                                          distance: 2.5,
+                                          blur: 5,
                                         ),
                                       ),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      splashRadius: 20,
-                                      tooltip: 'เชิญเข้าร่วมก๊วน',
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          onTap: () =>
+                                              GroupInvitePosterSheet.show(
+                                                ctx,
+                                                groupData: group,
+                                              ),
+                                          child: const Icon(
+                                            Icons.share_rounded,
+                                            size: 18,
+                                            color: NeumorphicTheme.textPrimary,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                     const SizedBox(width: 8),
-                                    IconButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      icon: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.05,
-                                          ),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.close_rounded,
-                                          size: 18,
-                                          color: Color(0xFF64748B),
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: NeumorphicTheme.baseColor,
+                                        boxShadow: NeumorphicTheme.smallShadows(
+                                          distance: 2.5,
+                                          blur: 5,
                                         ),
                                       ),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      splashRadius: 20,
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          onTap: () => Navigator.pop(ctx),
+                                          child: const Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                            color: NeumorphicTheme.textPrimary,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1123,29 +1145,31 @@ class GroupDetailSheet {
                                               ),
                                             const SizedBox(height: 8),
                                             if (sessions.isEmpty)
-                                              Container(
+                                              NeumorphicInsetBox(
                                                 width: double.infinity,
+                                                height: null,
+                                                borderRadius: 14,
                                                 padding:
                                                     const EdgeInsets.symmetric(
                                                       vertical: 18,
                                                     ),
-                                                alignment: Alignment.center,
                                                 child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     Icon(
                                                       Icons.event_busy_rounded,
                                                       size: 32,
-                                                      color:
-                                                          Colors.grey.shade400,
+                                                      color: NeumorphicTheme
+                                                          .textSecondary,
                                                     ),
                                                     const SizedBox(height: 6),
                                                     Text(
                                                       'ยังไม่มีรอบนัดที่กำลังจะมาถึง',
-                                                      style: TextStyle(
+                                                      style: const TextStyle(
                                                         fontSize: 13,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade600,
+                                                        color: NeumorphicTheme
+                                                            .textSecondary,
                                                       ),
                                                     ),
                                                   ],
@@ -1448,22 +1472,22 @@ class GroupDetailSheet {
                                                         width: 38,
                                                         height: 38,
                                                         decoration: BoxDecoration(
-                                                          color: AppColors
-                                                              .primary
-                                                              .withValues(
-                                                                alpha: 0.12,
-                                                              ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                10,
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          color: NeumorphicTheme
+                                                              .baseColor,
+                                                          boxShadow:
+                                                              NeumorphicTheme.smallShadows(
+                                                                distance: 2,
+                                                                blur: 4,
                                                               ),
                                                         ),
                                                         child: const Icon(
                                                           Icons
                                                               .event_note_rounded,
-                                                          color: AppColors
-                                                              .primaryDark,
-                                                          size: 20,
+                                                          color: NeumorphicTheme
+                                                              .primaryBlue,
+                                                          size: 19,
                                                         ),
                                                       ),
                                                       title: Text(
@@ -1500,22 +1524,45 @@ class GroupDetailSheet {
                                                           ),
                                                         ),
                                                       ),
-                                                      trailing: IconButton(
-                                                        onPressed: () =>
-                                                            GroupInvitePosterSheet.show(
-                                                              ctx,
-                                                              groupData: group,
-                                                              sessionData: s,
+                                                      trailing: Container(
+                                                        width: 32,
+                                                        height: 32,
+                                                        decoration: BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          color: NeumorphicTheme
+                                                              .baseColor,
+                                                          boxShadow:
+                                                              NeumorphicTheme.smallShadows(
+                                                                distance: 1.5,
+                                                                blur: 3,
+                                                              ),
+                                                        ),
+                                                        child: Material(
+                                                          color: Colors
+                                                              .transparent,
+                                                          child: InkWell(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  16,
+                                                                ),
+                                                            onTap: () =>
+                                                                GroupInvitePosterSheet.show(
+                                                                  ctx,
+                                                                  groupData:
+                                                                      group,
+                                                                  sessionData:
+                                                                      s,
+                                                                ),
+                                                            child: const Icon(
+                                                              Icons
+                                                                  .share_outlined,
+                                                              size: 16,
+                                                              color: NeumorphicTheme
+                                                                  .textSecondary,
                                                             ),
-                                                        icon: const Icon(
-                                                          Icons.share_outlined,
-                                                          size: 20,
-                                                          color: Color(
-                                                            0xFF64748B,
                                                           ),
                                                         ),
-                                                        tooltip:
-                                                            'เชิญเข้าร่วมรอบนี้',
                                                       ),
                                                       children: sessionChildren,
                                                     ),
@@ -1687,33 +1734,24 @@ class GroupDetailSheet {
                                                   }
                                                   return Container(
                                                     decoration: BoxDecoration(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                            alpha: 0.85,
-                                                          ),
+                                                      color: NeumorphicTheme
+                                                          .baseColor,
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             16,
                                                           ),
                                                       border: Border.all(
-                                                        color: Colors
-                                                            .grey
-                                                            .shade200,
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.7,
+                                                            ),
                                                         width: 1,
                                                       ),
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                          color: Colors.black
-                                                              .withValues(
-                                                                alpha: 0.02,
-                                                              ),
-                                                          blurRadius: 6,
-                                                          offset: const Offset(
-                                                            0,
-                                                            2,
+                                                      boxShadow:
+                                                          NeumorphicTheme.smallShadows(
+                                                            distance: 2,
+                                                            blur: 5,
                                                           ),
-                                                        ),
-                                                      ],
                                                     ),
                                                     child: ClipRRect(
                                                       borderRadius:
@@ -1756,59 +1794,66 @@ class GroupDetailSheet {
                                           margin: const EdgeInsets.only(
                                             bottom: 12,
                                           ),
-                                          child: OutlinedButton(
-                                            onPressed: () =>
-                                                GroupSessionHistoryDialog.show(
-                                                  ctx,
-                                                  groupName:
-                                                      group['name']
-                                                          ?.toString() ??
-                                                      'ก๊วน',
-                                                  groupOwnerId: groupOwnerId,
-                                                  sessions: endedSessions,
-                                                  confirmedMembersBySession:
-                                                      confirmedMembersBySession,
-                                                ),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  AppColors.primaryDark,
-                                              side: BorderSide(
-                                                color: AppColors.primary
-                                                    .withValues(alpha: 0.35),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 16,
-                                                    vertical: 12,
-                                                  ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                              ),
+                                          decoration: BoxDecoration(
+                                            color: NeumorphicTheme.baseColor,
+                                            borderRadius: BorderRadius.circular(
+                                              14,
                                             ),
-                                            child: FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: const [
-                                                  Icon(
-                                                    Icons.history_rounded,
-                                                    size: 18,
+                                            boxShadow:
+                                                NeumorphicTheme.smallShadows(
+                                                  distance: 2,
+                                                  blur: 4,
+                                                ),
+                                          ),
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              onTap: () =>
+                                                  GroupSessionHistoryDialog.show(
+                                                    ctx,
+                                                    groupName:
+                                                        group['name']
+                                                            ?.toString() ??
+                                                        'ก๊วน',
+                                                    groupOwnerId: groupOwnerId,
+                                                    sessions: endedSessions,
+                                                    confirmedMembersBySession:
+                                                        confirmedMembersBySession,
                                                   ),
-                                                  SizedBox(width: 8),
-                                                  Text(
-                                                    'รอบนัดสิ้นสุดแล้ว',
-                                                    maxLines: 1,
-                                                    softWrap: false,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w600,
+                                              child: const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 16,
+                                                  vertical: 12,
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.history_rounded,
+                                                      size: 18,
+                                                      color: NeumorphicTheme
+                                                          .primaryBlue,
                                                     ),
-                                                  ),
-                                                ],
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                      'รอบนัดสิ้นสุดแล้ว',
+                                                      maxLines: 1,
+                                                      softWrap: false,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: NeumorphicTheme
+                                                            .primaryBlue,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -1829,15 +1874,19 @@ class GroupDetailSheet {
                                               width: 36,
                                               height: 36,
                                               decoration: BoxDecoration(
-                                                color: const Color(
-                                                  0xFF6366F1,
-                                                ).withValues(alpha: 0.12),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
+                                                shape: BoxShape.circle,
+                                                color:
+                                                    NeumorphicTheme.baseColor,
+                                                boxShadow:
+                                                    NeumorphicTheme.smallShadows(
+                                                      distance: 2,
+                                                      blur: 4,
+                                                    ),
                                               ),
                                               child: const Icon(
                                                 Icons.people_alt_rounded,
-                                                color: Color(0xFF6366F1),
+                                                color:
+                                                    NeumorphicTheme.primaryBlue,
                                                 size: 18,
                                               ),
                                             ),
@@ -1848,23 +1897,28 @@ class GroupDetailSheet {
                                                   style: TextStyle(
                                                     fontSize: 15,
                                                     fontWeight: FontWeight.w700,
-                                                    color: Color(0xFF1E293B),
+                                                    color: NeumorphicTheme
+                                                        .textPrimary,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 6),
+                                                const SizedBox(width: 8),
                                                 Container(
                                                   padding:
                                                       const EdgeInsets.symmetric(
-                                                        horizontal: 7,
-                                                        vertical: 1.5,
+                                                        horizontal: 8,
+                                                        vertical: 2,
                                                       ),
                                                   decoration: BoxDecoration(
-                                                    color: const Color(
-                                                      0xFF6366F1,
-                                                    ).withValues(alpha: 0.12),
+                                                    color: NeumorphicTheme
+                                                        .baseColor,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          8,
+                                                          10,
+                                                        ),
+                                                    boxShadow:
+                                                        NeumorphicTheme.smallShadows(
+                                                          distance: 1.5,
+                                                          blur: 3,
                                                         ),
                                                   ),
                                                   child: Text(
@@ -1873,7 +1927,8 @@ class GroupDetailSheet {
                                                       fontSize: 11,
                                                       fontWeight:
                                                           FontWeight.bold,
-                                                      color: Color(0xFF6366F1),
+                                                      color: NeumorphicTheme
+                                                          .primaryBlue,
                                                     ),
                                                   ),
                                                 ),
@@ -1887,20 +1942,18 @@ class GroupDetailSheet {
                                               ),
                                             ),
                                             children: [
-                                              if (memberSwipeHint != null)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4,
-                                                      ),
-                                                  child: Text(
-                                                    memberSwipeHint,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[500],
-                                                    ),
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 4,
+                                                ),
+                                                child: Text(
+                                                  memberSwipeHint,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[500],
                                                   ),
                                                 ),
+                                              ),
                                               const SizedBox(height: 8),
                                               if (members.isEmpty)
                                                 const Text('ยังไม่มีสมาชิก')
@@ -2194,39 +2247,33 @@ class GroupDetailSheet {
                                             ),
                                             const SizedBox(height: 10),
                                             if (groupFees.isEmpty)
-                                              Container(
+                                              NeumorphicInsetBox(
                                                 width: double.infinity,
+                                                height: null,
+                                                borderRadius: 12,
                                                 padding:
                                                     const EdgeInsets.symmetric(
                                                       horizontal: 14,
                                                       vertical: 10,
                                                     ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.grey.shade50
-                                                      .withValues(alpha: 0.8),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  border: Border.all(
-                                                    color: Colors.grey.shade200,
-                                                  ),
-                                                ),
                                                 child: Row(
                                                   children: [
-                                                    Icon(
+                                                    const Icon(
                                                       Icons
                                                           .info_outline_rounded,
                                                       size: 16,
-                                                      color:
-                                                          Colors.grey.shade500,
+                                                      color: NeumorphicTheme
+                                                          .textSecondary,
                                                     ),
                                                     const SizedBox(width: 8),
-                                                    Text(
-                                                      'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade600,
+                                                    const Expanded(
+                                                      child: Text(
+                                                        'ยังไม่ได้กำหนด (ไม่มีค่าสมาชิกก๊วน)',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: NeumorphicTheme
+                                                              .textSecondary,
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
@@ -2244,29 +2291,24 @@ class GroupDetailSheet {
                                                         vertical: 10,
                                                       ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.9),
+                                                    color: NeumorphicTheme
+                                                        .baseColor,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          12,
+                                                          14,
                                                         ),
                                                     border: Border.all(
-                                                      color:
-                                                          Colors.grey.shade200,
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.7,
+                                                          ),
+                                                      width: 1,
                                                     ),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: Colors.black
-                                                            .withValues(
-                                                              alpha: 0.02,
-                                                            ),
-                                                        blurRadius: 4,
-                                                        offset: const Offset(
-                                                          0,
-                                                          1,
+                                                    boxShadow:
+                                                        NeumorphicTheme.smallShadows(
+                                                          distance: 1.5,
+                                                          blur: 3.5,
                                                         ),
-                                                      ),
-                                                    ],
                                                   ),
                                                   child: Row(
                                                     children: [
@@ -2274,22 +2316,22 @@ class GroupDetailSheet {
                                                         width: 34,
                                                         height: 34,
                                                         decoration: BoxDecoration(
-                                                          color: AppColors
-                                                              .primary
-                                                              .withValues(
-                                                                alpha: 0.12,
-                                                              ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                9,
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          color: NeumorphicTheme
+                                                              .baseColor,
+                                                          boxShadow:
+                                                              NeumorphicTheme.smallShadows(
+                                                                distance: 1.5,
+                                                                blur: 3,
                                                               ),
                                                         ),
                                                         child: const Icon(
                                                           Icons
                                                               .card_membership_rounded,
                                                           size: 18,
-                                                          color: AppColors
-                                                              .primaryDark,
+                                                          color: NeumorphicTheme
+                                                              .primaryBlue,
                                                         ),
                                                       ),
                                                       const SizedBox(width: 10),
@@ -2603,30 +2645,27 @@ class GroupDetailSheet {
 
   static Widget _detailInfoChip(String label, IconData icon) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        color: NeumorphicTheme.baseColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.7),
+          width: 1,
+        ),
+        boxShadow: NeumorphicTheme.smallShadows(distance: 1.5, blur: 3.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF475569)),
-          const SizedBox(width: 5),
+          Icon(icon, size: 14, color: NeumorphicTheme.textSecondary),
+          const SizedBox(width: 6),
           Text(
             label,
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF334155),
+              color: NeumorphicTheme.textPrimary,
             ),
           ),
         ],
@@ -2678,9 +2717,13 @@ class GroupDetailSheet {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        color: NeumorphicTheme.baseColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.7),
+          width: 1,
+        ),
+        boxShadow: NeumorphicTheme.cardShadows(distance: 4, blur: 8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2688,24 +2731,26 @@ class GroupDetailSheet {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
+                  color: NeumorphicTheme.baseColor,
+                  boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.analytics_outlined,
                   size: 16,
-                  color: AppColors.primary,
+                  color: NeumorphicTheme.primaryBlue,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               const Text(
                 'สถิติการแชร์เชิญชวน',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
-                  color: Color(0xFF1E293B),
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
             ],
@@ -2786,114 +2831,134 @@ class GroupDetailSheet {
           if (!isMember)
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: NeumorphicVerifyButton(
                 onPressed: () => _handleJoinGroup(ctx, groupId, group),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  group['is_private'] == true
-                      ? 'ขอเข้าร่วมก๊วน'
-                      : 'เข้าร่วมก๊วนทันที',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                text: group['is_private'] == true
+                    ? 'ขอเข้าร่วมก๊วน'
+                    : 'เข้าร่วมก๊วนทันที',
+                height: 52,
               ),
             ),
           // Edit group (admin only)
           if (isAdmin)
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                EditGroupSheet.show(
-                  pageContext,
-                  repo: repo,
-                  client: client,
-                  group: group,
-                  onGroupSaved: onPageRefresh,
-                );
-              },
-              icon: const Icon(Icons.edit_rounded, size: 17),
-              label: const Text('แก้ไขก๊วน'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primaryDark,
-                side: const BorderSide(color: AppColors.primaryDark),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: NeumorphicTheme.baseColor,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 2.5, blur: 5),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    EditGroupSheet.show(
+                      pageContext,
+                      repo: repo,
+                      client: client,
+                      group: group,
+                      onGroupSaved: onPageRefresh,
+                    );
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.edit_rounded,
+                          size: 17,
+                          color: NeumorphicTheme.primaryBlue,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'แก้ไขก๊วน',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: NeumorphicTheme.primaryBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           // Leave group (non-admin members only)
           if (isMember && !isAdmin && userId != null)
-            OutlinedButton.icon(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: ctx,
-                  builder: (c) => AlertDialog(
-                    title: const Text('ออกจากก๊วน'),
-                    content: const Text(
-                      'คุณต้องการออกจากก๊วนนี้ใช่หรือไม่? การจองทั้งหมดของคุณจะถูกยกเลิก',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(c, false),
-                        child: const Text('ยกเลิก'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(c, true),
-                        child: const Text(
-                          'ยืนยัน',
-                          style: TextStyle(color: Colors.red),
+            Container(
+              decoration: BoxDecoration(
+                color: NeumorphicTheme.baseColor,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 2.5, blur: 5),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: ctx,
+                      builder: (c) => AlertDialog(
+                        title: const Text('ออกจากก๊วน'),
+                        content: const Text(
+                          'คุณต้องการออกจากก๊วนนี้ใช่หรือไม่? การจองทั้งหมดของคุณจะถูกยกเลิก',
                         ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, false),
+                            child: const Text('ยกเลิก'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, true),
+                            child: const Text(
+                              'ยืนยัน',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    );
+                    if (confirm != true) return;
+                    try {
+                      await repo.leaveGroup(groupId: groupId, userId: userId);
+                      if (!pageContext.mounted) return;
+                      ScaffoldMessenger.of(pageContext).showSnackBar(
+                        const SnackBar(content: Text('ออกจากก๊วนแล้ว')),
+                      );
+                      Navigator.pop(ctx);
+                      onPageRefresh();
+                    } catch (e) {
+                      if (!pageContext.mounted) return;
+                      ScaffoldMessenger.of(pageContext).showSnackBar(
+                        SnackBar(content: Text('ออกจากก๊วนไม่สำเร็จ: $e')),
+                      );
+                    }
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.exit_to_app_rounded,
+                          size: 17,
+                          color: Colors.red,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'ออกจากก๊วน',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-                if (confirm != true) return;
-                try {
-                  await repo.leaveGroup(groupId: groupId, userId: userId);
-                  if (!pageContext.mounted) return;
-                  ScaffoldMessenger.of(pageContext).showSnackBar(
-                    const SnackBar(content: Text('ออกจากก๊วนแล้ว')),
-                  );
-                  Navigator.pop(ctx);
-                  onPageRefresh();
-                } catch (e) {
-                  if (!pageContext.mounted) return;
-                  ScaffoldMessenger.of(pageContext).showSnackBar(
-                    SnackBar(content: Text('ออกจากก๊วนไม่สำเร็จ: $e')),
-                  );
-                }
-              },
-              icon: const Icon(
-                Icons.exit_to_app_rounded,
-                size: 17,
-                color: Colors.red,
-              ),
-              label: const Text(
-                'ออกจากก๊วน',
-                style: TextStyle(color: Colors.red),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),

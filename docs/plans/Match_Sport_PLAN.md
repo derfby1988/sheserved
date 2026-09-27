@@ -3211,6 +3211,81 @@ lib/features/sport_club/
 - `sports_hub_page.dart` เรียก page/domain ผ่าน public constructor และ callback contract ไม่เข้าถึง repository ภายในของแต่ละ domain
 - ห้ามย้ายไฟล์เดิมจำนวนมากใน Phase เดียว เพราะ route, deep link, notification และ login redirect เดิมอ้างอิงหน้า Sport Club อยู่แล้ว
 
+### 21.4.1 มาตรฐานการออกแบบ UI/UX สไตล์ Neumorphic (Soft UI)
+
+เพื่อยกระดับประสบการณ์ใช้งานให้สวยงาม พรีเมียม ทันสมัย และสอดคล้องเป็นหนึ่งเดียวกับหน้ารายละเอียดก๊วน (`GroupDetailSheet` ใน `lib/features/sport_club/presentation/widgets/sheets/group_detail_sheet.dart`) ที่ได้ปรับใช้ Neumorphic UI เรียบร้อยแล้ว ชิ้นส่วน UI สำคัญของระบบจองสนามและค้นหาโค้ช ได้แก่ `court_detail_sheet.dart` (และ `court_detail_page.dart`), `coach_detail_page.dart` (และ `coach_detail_sheet.dart`), `book_court_filter.dart` (ร่วมกับ `book_court_filter_sheet.dart` และ `book_court_quick_filter_row.dart`), และ `find_coach_filter.dart` (ร่วมกับ `coach_filter_sheet.dart` และ `coach_quick_filter_row.dart`) ต้องปฏิบัติตามมาตรฐาน Neumorphic Design System ใน `lib/shared/widgets/neumorphic` อย่างเคร่งครัด:
+
+#### 1. กฎพื้นฐานด้าน Theming & Visual Tokens (`NeumorphicTheme`)
+- **สีพื้นหลังหลัก (Background Matching):** พื้นหลังของ Scaffold, BottomSheet Modal Shell และแผ่นการ์ด ต้องใช้ `NeumorphicTheme.baseColor` (`#E7EBF0`) เสมอ ห้ามใช้สีขาวล้วน (`#FFFFFF`) หรือสีดำล้วน เพื่อให้การจัดแสงและเงาสองทิศทาง (Dual Shadows) แสดงมิติความนูนและร่องลึกได้อย่างสมจริง
+- **เงาสองทิศทาง (Dual Directional Shadows):**
+  - **Large Cards & Panels:** ใช้ `NeumorphicTheme.cardShadows(distance: 4, blur: 8)` (แสงสีขาวจากบนซ้าย `rgba(255,255,255,0.95)` + เงามืดอมเทาจากล่างขวา `rgba(163,177,198,0.65)`) พร้อมเส้นขอบไฮไลต์ด้านบน `Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.7), width: 1.0))`
+  - **Small Items, Buttons & Badges:** ใช้ `NeumorphicTheme.smallShadows(distance: 2.5, blur: 5)`
+- **แถบจับด้านบน (Drag Handle):** ออกแบบเป็นร่องลึกสไตล์ Inset/Recessed Pill Capsule ด้วยสี `NeumorphicTheme.shadowDark.withValues(alpha: 0.35)` พร้อมเงาสะท้อนสีขาวด้านล่าง
+- **ปุ่มยืนยันหลัก (Vibrant Gradient CTA):** ปุ่ม Call-to-Action หลัก (เช่น "จองคอร์ท", "ส่งคำขอเรียน") ใช้ปุ่มแคปซูล Vibrant Cyan-Blue Gradient (`NeumorphicTheme.buttonGradient`: `#38BDF8` → `#2563EB`) ควบคู่กับเงาเรืองแสง `NeumorphicTheme.glowShadows` โดดเด่น ชัดเจน น่ากด
+- **สีตัวอักษร:** หัวข้อหลักใช้ `NeumorphicTheme.textPrimary` (`#1E293B`) และข้อความรอง/คำอธิบายใช้ `NeumorphicTheme.textSecondary` (`#64748B`)
+
+#### 2. การออกแบบ `court_detail_sheet.dart` และ `court_detail_page.dart` (หน้ารายละเอียดสนามและคอร์ท)
+- **Modal Shell & Header:**
+  - ตัว Sheet / Page ใช้พื้นหลัง `NeumorphicTheme.baseColor` มุมขอบบนมน `Radius.circular(28)` พร้อมขอบเส้นไฮไลต์สีขาว
+  - Hero Image Carousel มีกรอบมนขนาดใหญ่ ลอยเด่นด้วย `NeumorphicTheme.cardShadows`
+  - ปุ่ม Action บน Header (ปุ่ม Back, Share, Favorite, Close): ออกแบบเป็นปุ่มวงกลมนูน `NeumorphicContainer` ทรงกลม พร้อม Ripple Effect
+  - ป้ายประเภทกีฬาและสถานะสนาม: แสดงเป็น Neumorphic Raised Micro-Pill Chips
+- **Section Cards & Information Blocks:**
+  - ข้อมูลสถานที่, สิ่งอำนวยความสะดวก (Amenities), เวลาเปิด-ปิด และเงื่อนไขการใช้งาน จัดวางบน Neumorphic Raised Cards
+  - ไอคอนประจำหัวข้อแต่ละ Section บรรจุใน Neumorphic Circle Badge ขนาด 32–36px
+  - ชิปสิ่งอำนวยความสะดวก (เช่น ที่จอดรถ, ห้องอาบน้ำ, ติดแอร์, Wi-Fi): แสดงเป็น Raised Clay Pills
+- **Court Units List & Availability Slot Picker:**
+  - คอร์ทแต่ละคอร์ท (Court Units) แสดงเป็นการ์ด Neumorphic พร้อมป้ายราคาต่อหน่วยแบบ Clay Pill
+  - ตัวเลือกช่วงเวลาว่าง (Availability Time Slots):
+    - Slot ว่าง (Available): Neumorphic Raised Pill สัมผัสนุ่ม แตะแล้วยุบตัว (Tactile press)
+    - Slot ที่กำลังเลือก (Selected): Inset Sunken Box ร่องลึก ขอบเรืองแสงสี `accentCyan` หรือ Gradient Pill ขอบเรืองแสง
+    - Slot ไม่ว่าง/เต็ม (Unavailable/Booked): Flat Discolored Pill เรียบเสมอพื้นผิว ปิดกั้นการกดสัมผัส
+- **Pinned Bottom Sticky Action Bar:**
+  - ลอยตรึงอยู่ด้านล่างด้วยพื้นหลัง `baseColor` พร้อมเส้นขอบแสงเงาบน
+  - ด้านซ้ายแสดงสรุปราคาคอร์ทที่เลือก ด้านขวาเป็นปุ่ม "จองคอร์ทนี้" สไตล์ Vibrant Gradient Pill พร้อม Cyan Glow Shadow
+
+#### 3. การออกแบบ `coach_detail_page.dart` และ `coach_detail_sheet.dart` (หน้ารายละเอียดผู้ฝึกสอน)
+- **Layout & Structure:** สอดรับกับ Interaction Layout ของ `GroupDetailSheet` (Pin Header + Scrollable Detail Body + Pin Sticky Footer)
+- **Profile Header & Verified Identity:**
+  - Avatar โค้ชขนาดใหญ่บรรจุใน `NeumorphicContainer` ทรงกลมนูน 2 ชั้น พร้อมเส้นขอบไฮไลต์สีขาว
+  - ป้ายรับรองความน่าเชื่อถือ (`is_verified` / Approval Badge): Neumorphic Raised Badge พร้อมไอคอนเครื่องหมายถูกสีฟ้าหรือสีเขียว
+  - Quick Actions (ปุ่มถูกใจส่วนตัว, ปุ่มแชร์โปรไฟล์, ปุ่มปิด): เป็นปุ่มวงกลมนูน Neumorphic Circle Buttons
+- **Content Sections & Cards:**
+  - ประวัติและผลงาน (Bio & Achievements), กีฬาและความถนัด (Specialties): จัดวางบน Neumorphic Raised Cards
+  - ชิประดับผู้เรียนที่เปิดสอน (Learner Levels) และรูปแบบการสอน (Teaching Modes: 1:1, คลาสกลุ่ม, ออนไลน์): นำเสนอเป็น Neumorphic Raised Clay Chips
+  - Section บทความสุขภาพ (Health Articles): การ์ด Neumorphic บรรจุรายการบทความ พร้อมปุ่ม Neumorphic Button สำหรับ "บทความเพิ่มเติม" และปุ่ม "สร้างบทความ" (สำหรับโค้ชเจ้าของโปรไฟล์ที่ approved)
+- **Course & Scheduling Rows:**
+  - รายการคอร์สและรอบสอนแต่ละรายการแสดงเป็นการ์ด Neumorphic Raised Card พร้อมรองรับ Slidable action pane ที่กลมกลืนกับโทนสี
+- **Sticky Footer Action Bar:**
+  - ฝั่งซ้าย: ปุ่มช่องทางติดต่อ (เมื่อมีสิทธิ์ดูข้อมูลติดต่อ) เป็น Neumorphic Raised Icon Buttons
+  - ฝั่งขวา: ปุ่ม Call-to-Action หลัก ("สนใจ/ส่งคำขอเรียน" หรือ "สมัครคอร์ส") เป็น Vibrant Gradient Pill (`NeumorphicTheme.buttonGradient`) พร้อม Cyan Glow Shadow
+
+#### 4. การออกแบบ `book_court_filter.dart` (ร่วมกับ `book_court_filter_sheet.dart` และ `book_court_quick_filter_row.dart`)
+- **Quick Filter Row (แถบตัวกรองด่วนบนหน้าจองสนาม):**
+  - ชิปตัวกรองด่วน ("คอร์ทว่าง", "รัศมีใกล้ฉัน", "เป็นเจ้าของ"):
+    - สถานะปกติ (Unselected): Neumorphic Raised Pill นูนเบาๆ (`NeumorphicTheme.smallShadows`)
+    - สถานะเลือกใช้งาน (Selected): ปรับเป็น Inset Sunken Box พร้อมขอบสี `accentCyan` หรือ Gradient Pill ขอบเรืองแสง พร้อมไอคอนเช็คถูก
+- **Advanced Filter Sheet:**
+  - ตัว Sheet ใช้สี `NeumorphicTheme.baseColor` ขอบบนมน พร้อม Recessed Drag Handle
+  - ตัวเลือกวันที่และช่วงเวลา: ชิปปุ่มนูนแบบ Neumorphic Raised Buttons จัดกลุ่มในการ์ด
+  - ตัวเลือกช่วงราคา (Price Range Slider & Inputs):
+    - รางสไลเดอร์ (Slider Track) ใช้เอฟเฟกต์ร่องลึก (Sunken Inset Track) เสมือนร่องบนแผ่นปูน
+    - หัวเลื่อน (Thumb / Knob) เป็น Neumorphic Raised Disc ทรงกลมลอยเด่นพร้อมเงาคู่
+    - ช่องกรอกตัวเลขราคาใช้ `NeumorphicInsetBox` ข้อความสี `textPrimary`
+  - สิ่งอำนวยความสะดวก (Amenities Multi-Select): กริดตัวเลือกเป็น Neumorphic Raised Tiles เมื่อเลือกจะเปลี่ยนเป็น Inset Tile สไตล์ Sunken Shadow
+  - ปุ่ม Footer: ปุ่ม "ล้างตัวกรอง" (Neumorphic Raised Button) และปุ่ม "นำตัวกรองไปใช้" (Vibrant Gradient CTA Button)
+
+#### 5. การออกแบบ `find_coach_filter.dart` (ร่วมกับ `coach_filter_sheet.dart` และ `coach_quick_filter_row.dart`)
+- **Quick Filter Row (แถบตัวกรองด่วนบนหน้าค้นหาโค้ช):**
+  - ชิปด่วน ("เปิดรับสอน", "อยู่ใกล้ฉัน", "ถูกใจ", "ผู้ฝึกสอนของฉัน"): ออกแบบเป็น Neumorphic Raised Clay Pills
+  - แตะเพื่อ Toggle สลับระหว่าง Raised State (ปิด) และ Inset Sunken / Active Gradient State (เปิด)
+- **Coach Filter Sheet:**
+  - โครงสร้างและสีพื้นหลังใช้ `NeumorphicTheme.baseColor` ทั้งหมด
+  - ตัวเลือกระดับผู้เรียน (Beginner, Intermediate, Advanced) และรูปแบบสอน (1:1, กลุ่ม, คอร์ส): ออกแบบเป็น Neumorphic Segmented Control วางอยู่บนราง Inset Base
+  - ตัวเลือกเรทราคาต่อชั่วโมง (Hourly Rate Range): ใช้ Slider ราง Inset ร่องลึก หรือกล่องตัวเลขสไตล์ `NeumorphicInsetBox` เพื่อความชัดเจนและป้องกันการสับสนกับเรทราคาเหมาคอร์ส
+  - ตัวเลือกวันว่างและความถนัดเฉพาะทาง: แสดงเป็น Neumorphic Multi-Select Chips สัมผัสเด้งนุ่มนวล
+  - ปุ่มควบคุมท้ายชีท: ปุ่ม Reset เป็น Neumorphic Button นุ่มมือ และปุ่ม Apply เป็น Vibrant Gradient Pill เรืองแสง
+
 ### 21.5 Route และ backward compatibility
 
 เพิ่ม route ใหม่สำหรับ hub และรายละเอียดของระบบใหม่:
@@ -3381,10 +3456,10 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 
 #### 21.7.4 Book Court — Read-only Discovery และ Availability
 
-- ทำ public query เฉพาะ venue/court ที่ผ่าน approval; สร้าง court card/detail พร้อมกีฬา, หน่วย, ราคา, rating, ระยะทาง, เวลาเปิด และข้อมูล amenities ที่มีหลักฐาน
+- ทำ public query เฉพาะ venue/court ที่ผ่าน approval; สร้าง court card/detail พร้อมกีฬา, หน่วย, ราคา, rating, ระยะทาง, เวลาเปิด และข้อมูล amenities ที่มีหลักฐาน โดยการออกแบบ `court_detail_sheet.dart` และ `court_detail_page.dart` ต้องใช้มาตรฐาน Neumorphic Design System (`NeumorphicTheme.baseColor`, dual shadows `cardShadows`, circle icon badges, clay amenity chips, tactile availability slots และ Vibrant Gradient CTA ตามข้อ 21.4.1)
 - ใช้ shared sport/location filters และ `BookCourtFilter` สำหรับวันที่ (เวลา local ของ venue), ช่วงเวลา, ราคา, rating, ประเภทสนาม, amenities และ availability
-- ทำ quick filters ที่ข้อมูลรองรับ เช่น “คอร์ทว่าง”, “รัศมี” และ “เป็นเจ้าของ”; defer “เคยจองแล้ว” จน booking history มีจริงใน 21.7.5; personal filters ต้อง login และ query ตามสิทธิ์จริง
-- เพิ่ม loading/error/empty states และ `BookCourtFilterSheet` ตาม interaction/accessibility pattern ของ `advanced_filter_sheet.dart` แต่แยก model/query
+- ทำ quick filters (`book_court_quick_filter_row.dart`) ที่ข้อมูลรองรับ เช่น “คอร์ทว่าง”, “รัศมี” และ “เป็นเจ้าของ” ออกแบบเป็น Neumorphic Raised Pills พร้อม Inset/Gradient state เมื่อเลือก; defer “เคยจองแล้ว” จน booking history มีจริงใน 21.7.5; personal filters ต้อง login และ query ตามสิทธิ์จริง
+- เพิ่ม loading/error/empty states และ `BookCourtFilterSheet` ตาม interaction/accessibility pattern ของ `advanced_filter_sheet.dart` แต่แยก model/query และออกแบบ UI สไตล์ Neumorphic (`baseColor`, Inset Slider Track, `NeumorphicInsetBox`, Raised Amenity Tiles และ Vibrant CTA ตามข้อ 21.4.1)
 - เพิ่ม pagination/indexes สำหรับ sport + geo + availability; debounce keyword/filter changes และไม่ query domain ที่ inactive
 - ระยะนี้เป็น read-only เท่านั้น: แสดง slot/availability ได้แต่ยังสร้าง/hold booking ไม่ได้
 - Exit gate: approved inventory ค้นหา/กรอง/เปิด detail/ดู availability ได้; unauthorized data ไม่รั่ว; pagination/empty/error states ผ่าน tests; query ไม่เกิด booking side effect
@@ -3418,7 +3493,7 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 
 - สร้าง coach profile/sport/certification/service area/availability พร้อม `pending/approved/suspended`; เก็บ timezone ของ coach/พื้นที่ให้บริการ
 - coach directory แสดงเฉพาะ profile ที่ผ่าน verification/approval; ใช้ shared sport/location filters และ coach-specific specialty, skill level, hourly rate, teaching mode และ availability
-- ทำ coach card/detail และ loading/error/empty states; discovery phase ยังไม่ส่งคำขอจอง
+- ทำ coach card/detail (`coach_card.dart`, `coach_detail_sheet.dart`, `coach_detail_page.dart`) และตัวกรอง (`find_coach_filter.dart`, `coach_filter_sheet.dart`, `coach_quick_filter_row.dart`) โดยใช้มาตรฐาน Neumorphic Design System (`baseColor`, dual shadows, recessed drag handle, raised pills, inset controls ตามข้อ 21.4.1) พร้อม loading/error/empty states; discovery phase ยังไม่ส่งคำขอจอง
 - Exit gate: public visibility/authorization, filter contract, timezone display, availability query และ pagination ผ่าน tests
 
 #### 21.7.9 Find Coach — Request/Booking และ Reviews
@@ -3460,14 +3535,14 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - **Coach registration/admin lifecycle:** มี bottom sheet สมัครและหน้า management ของผู้ฝึกสอน; ใช้สถานะ `pending/approved/rejected/suspended` ตาม venue flow, แจ้งเหตุผลเมื่อ rejected/suspended, เปิดแก้และ resubmit เมื่อ rejected, ไม่เปิด resubmit ปกติเมื่อ suspended; ส่ง persistent notification ถึง admin เมื่อมีใบสมัคร และแจ้งผู้สมัครเมื่อมีผล review; public directory แสดงเฉพาะ profile ที่ approved
 - **Verified แยกจาก approval:** โปรไฟล์ที่ approved แสดงได้แม้ยังไม่มี badge; `is_verified` แสดงได้ต่อเมื่อ admin ตรวจเอกสาร/ใบรับรองแล้ว; เอกสารต้นฉบับเก็บ private และ public view เปิดเผยเฉพาะข้อมูล credentials ที่อนุมัติให้แสดง
 - **ข้อมูลโปรไฟล์ตามภาพ:** cover/avatar, ชื่อและคำแนะนำตัว, ประสบการณ์/ผลงาน, ใบรับรอง, กีฬาและความถนัดแยกตามกีฬา, ระดับผู้เรียน, รูปแบบสอน, พื้นที่บริการ, สถานที่สอน, รายการราคา และข้อมูลติดต่อโทรศัพท์/LINE/Facebook; อนุญาตให้เลือกสนาม Book Court ที่ approved หรือกรอกสถานที่เอง; กำหนด required fields ก่อนส่ง review และ field changes ที่ต้อง re-review
-- **Directory/detail:** card แสดงภาพ, approval/verified badge, specialties/levels และราคาเริ่มต้นพร้อมหน่วย; detail bottom sheet ตาม reference แสดงประสบการณ์, ความเชี่ยวชาญ, ระดับ, รูปแบบราคา, สนาม/แผนที่, รีวิว และตาราง; ใช้ interaction layout เดียวกับ GroupDetailSheet โดย pin header และ bottom action bar แยกจาก scrollable detail body; coach/session rows ใช้ `endActionPane`/`ScrollMotion` ด้านท้ายแถวสำหรับปุ่ม booking/contact ที่มีสิทธิ์แสดง พร้อม responsive action extent ตามจำนวนปุ่ม; footer วาง contact buttons ฝั่งซ้ายและปุ่ม “สนใจ/จอง” ฝั่งขวาตาม reference; ก่อน enrollment/booking ยืนยันให้แสดงเฉพาะ request/booking actions และเปิด phone/LINE/chat ได้เมื่อสถานะของผู้ใช้นั้นเป็น `confirmed` หรือ `completed`; contact ต้องอ่านผ่าน authorized path ไม่ส่งไปใน public coach view
+- **Directory/detail:** card แสดงภาพ, approval/verified badge, specialties/levels และราคาเริ่มต้นพร้อมหน่วย; detail bottom sheet และ page (`coach_detail_page.dart`, `coach_detail_sheet.dart`) ตาม reference แสดงประสบการณ์, ความเชี่ยวชาญ, ระดับ, รูปแบบราคา, สนาม/แผนที่, รีวิว และตาราง; ออกแบบสไตล์ Neumorphic เต็มรูปแบบ (`NeumorphicTheme.baseColor`, dual shadows, raised cards, avatar ใน `NeumorphicContainer` วงกลมนูน, Neumorphic raised badges สำหรับ verified state) และใช้ interaction layout เดียวกับ GroupDetailSheet โดย pin header และ bottom action bar แยกจาก scrollable detail body; coach/session rows ใช้ `endActionPane`/`ScrollMotion` ด้านท้ายแถวสำหรับปุ่ม booking/contact ที่มีสิทธิ์แสดง พร้อม responsive action extent ตามจำนวนปุ่ม; footer วาง contact buttons ฝั่งซ้าย (Neumorphic raised buttons) และปุ่ม “สนใจ/จอง” ฝั่งขวา (Vibrant Cyan-Blue Gradient CTA พร้อม Cyan glow shadow ตามข้อ 21.4.1); ก่อน enrollment/booking ยืนยันให้แสดงเฉพาะ request/booking actions และเปิด phone/LINE/chat ได้เมื่อสถานะของผู้ใช้นั้นเป็น `confirmed` หรือ `completed`; contact ต้องอ่านผ่าน authorized path ไม่ส่งไปใน public coach view
 - **บทความสุขภาพ:** เพิ่ม section ใน CoachDetailSheet โดยโหลดเฉพาะบทความ published ที่ `author_id` ตรงกับ `coach.userId`, เรียง `created_at DESC`; ถ้ายังไม่มีบทความแสดง empty state; title buttons ย่อเป็นหนึ่งบรรทัดและเติม `...` เมื่อยาว, จัดได้สูงสุด 3 บรรทัด และเมื่อมีรายการเกินพื้นที่ให้มีปุ่ม “บทความเพิ่มเติม” ในบรรทัดที่ 4
 - แตะ title button เปิด `/health/article` โดยส่ง article record ที่เลือก; “บทความเพิ่มเติม” เปิด ArticlesPage พร้อม author filter ของโค้ชและยังให้ผู้ใช้ล้าง filter กลับไป feed รวมได้ โดยไม่เปลี่ยนการทำงานเดิมของ category filter/route
 - **สร้างบทความ:** ปุ่มอยู่ใน section บทความและแสดงเมื่อผู้ใช้กำลังดูโปรไฟล์ของตนเอง (`currentUser.id == coach.userId`) และ `coach.status == approved`; `is_verified` ไม่ใช่เงื่อนไขเพิ่ม; เมื่อกดเปิด reusable dialog “เขียนบทความแบบบล็อก” ลอยเหนือ CoachDetailSheet โดยไม่ปิด sheet; ใช้ create/publish ทันทีตาม ArticlesPage ปัจจุบัน ไม่เพิ่ม paywall/draft; หลัง create คืน published article สำเร็จ ปิดเฉพาะ dialog, refresh บทความของ coach และแสดง title ล่าสุดใน sheet; ต้องป้องกัน double-submit และห้ามแสดง title/แจ้งเผยแพร่สำเร็จหาก save ล้มเหลว
 - **Private favorite:** ปุ่มถูกใจเป็น saved favorite รายบัญชี ต้อง login, toggle ซ้ำได้, ใช้กับ quick filter “ถูกใจ”, ไม่แสดงยอดสาธารณะและไม่แจ้งเตือนโค้ช
 - **Coach management/CTA:** มีหน้าจัดการโปรไฟล์ ตาราง/หลักสูตร roster และคำขอ; แสดง CTA “ลงทะเบียนผู้ฝึกสอน” เมื่อเปิด quick filter “ผู้ฝึกสอนของฉัน”; route ตามสถานะคือสมัครใหม่, ดู pending, แก้/resubmit rejected, จัดการเมื่อ approved, และอ่านเหตุผล/ช่องทางติดต่อเมื่อ suspended
 - **Quick filters:** “เปิดรับสอน” ต้องผ่านทั้ง `accepting_students` ที่โค้ชตั้งเองและมี slot/ที่นั่งในอนาคตที่จองได้จริง; “อยู่ใกล้ฉัน” ใช้ shared location/radius กับ service area/สถานที่; “ถูกใจ” ใช้ favorites ของผู้ใช้; “ผู้ฝึกสอนของฉัน” รวมเฉพาะประวัติ enrollment/booking สถานะ `confirmed` หรือ `completed` ไม่รวม pending/rejected/cancelled/expired
-- **Advanced filters:** ความถนัดต่อกีฬา, ระดับผู้เรียน, ช่วงราคาแบบ unit-aware, รูปแบบสอน, วัน/เวลาที่มี slot, verified, rating ขั้นต่ำ และประเภทคลาส/สถานที่; ห้ามเปรียบเทียบราคา `ต่อชั่วโมง`, `ต่อคน/ครั้ง`, `เหมาทั้งกลุ่ม` และ `แพ็กเกจหลักสูตร` เสมือนเป็นหน่วยเดียวกัน
+- **Advanced filters (`find_coach_filter.dart`, `coach_filter_sheet.dart`, `coach_quick_filter_row.dart`):** ออกแบบ UI ด้วย Neumorphic Design System (พื้นหลัง `baseColor`, Neumorphic Segmented Control บนร่อง Inset Base, Inset Slider Track สำหรับช่วงราคา, และ Raised Chips); กรองความถนัดต่อกีฬา, ระดับผู้เรียน, ช่วงราคาแบบ unit-aware, รูปแบบสอน, วัน/เวลาที่มี slot, verified, rating ขั้นต่ำ และประเภทคลาส/สถานที่; ห้ามเปรียบเทียบราคา `ต่อชั่วโมง`, `ต่อคน/ครั้ง`, `เหมาทั้งกลุ่ม` และ `แพ็กเกจหลักสูตร` เสมือนเป็นหน่วยเดียวกัน
 - **Schedule types:** รองรับ (1) นัด 1:1 (2) คลาสกลุ่มหนึ่ง session และ (3) หลักสูตรหลาย session; coach manager สร้าง/แก้/ยกเลิกด้วย bottom sheet ตาม `create_session_sheet.dart` โดยเก็บวันเวลา, sport, format, timezone, สถานที่/สนาม, capacity และราคาเป็น snapshot; session ของหลักสูตรผูกกับ course เดียว และ coach กำหนดได้ว่าผู้เรียนสมัครทั้งหลักสูตรหรือเลือกบาง session
 - **ราคาและจำนวนคน:** 1:1 คิดรายชั่วโมง; คลาสกลุ่มเลือกราคาต่อผู้เรียนหรือเหมาทั้งกลุ่มต่อครั้ง; หลักสูตรหลายรอบเลือกแพ็กเกจทั้งหลักสูตรหรือราคาต่อรอบ; แต่ละ offering เลือกเพดานอย่างเดียวหรือกำหนดขั้นต่ำ+สูงสุดได้ พร้อมแสดงราคา/จำนวนคน/หน่วยอย่างชัดเจน; ราคาเป็นข้อมูลและ booking snapshot เท่านั้น ไม่มี in-app payment/refund ใน phase นี้ตามข้อกำหนด 21.6
 - **Open/closed enrollment:** แสดงหลักสูตรปิดใน directory แต่คำขอเข้าร่วมทุกคนเป็น `pending` จนโค้ชอนุมัติ/ปฏิเสธ; offering อื่นให้โค้ชเลือกต่อรายการว่าจะ auto-confirm เมื่อ capacity ว่างหรือรออนุมัติ; capacity check/การสร้าง enrollment ต้อง atomic, idempotent และห้ามเกินจำนวนที่นั่ง; แยก enrollment ของคลาส/หลักสูตรจาก 1:1 booking request โดยคง snapshot ของเวลา, venue, format, ราคา, pricing unit และ course scope
@@ -3505,12 +3580,12 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - sport catalog และลำดับจาก usage snapshot เดียวกันตรงกันทั้งสามหน้า; explicit user selection นับในสถิติรายบุคคลชุดเดียว ส่วน restore/sync/clear/page switch ไม่เพิ่ม counter และการเลือกใหม่ไม่ทำให้ลำดับกระโดดกลาง session
 - เมื่ออ่าน stats ไม่ได้ใช้ cache ของบัญชีเดียวกันก่อน แล้ว fallback เป็นลำดับ deterministic โดยไม่เปลี่ยน selected sport; เมื่อ catalog โหลดไม่ได้ใช้ cache หรือแสดง error/retry; เมื่อเขียน stats ไม่ได้ filter/query ยังทำงานและ retry ไม่เพิ่ม event ซ้ำ
 - ปุ่ม trailing จริงของแต่ละหน้ามีกรอบภายนอกและตำแหน่งเท่ากันหลังผู้ใช้ยืนยันรายการ action; ไม่มี placeholder ว่าง และยังคง action เดิมที่ไม่ได้ถูกเปลี่ยนโดยผู้ใช้
-- Book Court sport row ใช้ตัวเลือกกีฬาเดียวกับ shared filter; quick filter ทั้งสี่รายการและ advanced filter sheet แสดง/กรอง/restore ค่าได้ตรงกัน
+- Book Court sport row ใช้ตัวเลือกกีฬาเดียวกับ shared filter; quick filter ทั้งสี่รายการและ advanced filter sheet แสดง/กรอง/restore ค่าได้ตรงกัน และมี UI สไตล์ Neumorphic ตามข้อ 21.4.1 (พื้นหลัง baseColor, แถบ Inset Drag Handle, ชิปตัวกรองนูนพร้อม Inset Selected State, และปุ่ม Vibrant CTA Gradient)
 - CTA “ลงทะเบียนสนาม” แสดงเป็น FAB มุมขวาล่างตำแหน่งเดียวกับ “สร้างก๊วน” เฉพาะเมื่อเลือก “เป็นเจ้าของ”; ยังแสดงใน empty state, เปิด owner registration ได้ และกลับมาแล้ว restore filter/scroll state
 - owner registration แสดง sport-based unit default และ override ที่จำกัดขอบเขต venue+sport
 - admin review อนุมัติ/ปฏิเสธ/ระงับ owner และ venue ตาม status พร้อมเหตุผลได้
 - owner dashboard ซ่อน/ปฏิเสธข้อมูล venue ที่ผู้ใช้ไม่มีสิทธิ์จัดการ และจัดการหลาย venue ของ owner เดียวได้
-- court detail sheet มี layout/pinned actions ตาม group detail pattern และปุ่มทั้งสามแสดงตาม state ที่ถูกต้อง
+- court detail sheet มี layout/pinned actions ตาม group detail pattern, ใช้ Neumorphic theme โทนเดียวกับ GroupDetailSheet (baseColor, dual cardShadows, circle icon badges, availability slot chips ที่รองรับ tactile states, และปุ่ม CTA Gradient ตามข้อ 21.4.1) และปุ่มทั้งสามแสดงตาม state ที่ถูกต้อง
 - instant booking แสดง confirmed state; owner-approval แสดง pending state และ terms dialog บังคับยอมรับก่อน submit
 - terms dialog ปิด/ไม่ยอมรับแล้วไม่สร้าง booking; stale terms version ขอ consent ใหม่; accepted terms/cutoff snapshot ถูกผูกกับ booking
 - pending slot conflict ให้คำขอคง pending พร้อม action เปลี่ยนเวลา/ยกเลิก; cutoff ทำให้ปุ่มยกเลิก disabled พร้อมคำอธิบาย
@@ -3518,11 +3593,11 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - เมื่อบันทึกสำเร็จ review summary/list อัปเดต; เมื่อผิดพลาด draft คงอยู่และ retry แล้วไม่เกิด duplicate
 - coach review sheet ใช้ interaction เดียวกับ venue: ดาว 1–5, comment 0–500, standard/custom tags รวมไม่เกิน 5, eligibility เฉพาะ completed request/enrollment, ห้าม self-review, retry idempotent และ summary ใน CoachDetailSheet อัปเดตหลังบันทึกสำเร็จ
 - domain-specific filter ไม่ถูกส่งไปยัง query ของอีกหน้า
-- Coach cards/detail แสดงภาพ, ประสบการณ์/credentials, specialties, learner levels, location และราคาพร้อมหน่วย; CoachDetailSheet pin header/footer ตาม GroupDetailSheet, detail body scroll แยกได้, Slidable เปิด booking/contact actions จากขอบท้ายแถวตำแหน่งเดียวกันตามสิทธิ์; loading/error/empty states และ pagination ทำงานถูกต้อง
+- Coach cards/detail แสดงภาพ, ประสบการณ์/credentials, specialties, learner levels, location และราคาพร้อมหน่วย; CoachDetailSheet และ CoachDetailPage ใช้ Neumorphic UI ตามข้อ 21.4.1 (baseColor, circular avatar container, raised chips, verified badge นูน, pinned header/footer ตาม GroupDetailSheet, detail body scroll แยกได้, Slidable เปิด booking/contact actions จากขอบท้ายแถวตำแหน่งเดียวกันตามสิทธิ์); loading/error/empty states และ pagination ทำงานถูกต้อง
 - profile สมัคร/แก้ไขแสดง status `pending/approved/rejected/suspended`; verified badge เป็นอิสระจากการอนุมัติโปรไฟล์ และ contact channels ไม่เปิดก่อน enrollment ยืนยัน
 - favorite เป็น private per-user toggle; quick filter “ถูกใจ” คืนเฉพาะ coach ที่ผู้ใช้บันทึกไว้และไม่แสดงยอด/ส่งแจ้งเตือน
 - quick filters “เปิดรับสอน” ต้องทั้ง accepting flag และมี slot จริง, “ใกล้ฉัน”, “ถูกใจ” และ “ผู้ฝึกสอนของฉัน” ที่อิง confirmed/completed history; CTA ลงทะเบียน/จัดการแสดงเมื่อเลือก My Coaches และ route ตาม profile status
-- advanced coach filters ครอบคลุม specialty, learner level, price แบบ unit-aware, teaching mode, available time, verified/rating และ venue/session type
+- advanced coach filters (`coach_filter_sheet.dart`) และ quick filters (`coach_quick_filter_row.dart`) ใช้ Neumorphic UI ครอบคลุม specialty, learner level, price แบบ unit-aware พร้อม Inset Sunken Track, teaching mode, available time, verified/rating และ venue/session type
 - section “บทความสุขภาพ” ใน CoachDetailSheet แสดงเฉพาะบทความของ `author_id == coach.userId` เรียงใหม่สุดก่อน; title ยาวตัดท้ายด้วย `...`, แสดงได้สูงสุด 3 บรรทัด, ถ้ามีบทความเกินให้แสดง “บทความเพิ่มเติม” บรรทัดที่ 4; empty state แสดงเมื่อไม่มีบทความ
 - ปุ่ม “สร้างบทความ” แสดงเฉพาะเมื่อ `currentUser.id == coach.userId` และ `coach.status == approved` (ไม่บังคับ `is_verified`); กดแล้ว dialog block editor ลอยเหนือ sheet โดยไม่ปิด sheet; publish สำเร็จแล้ว title ล่าสุดปรากฏใน section ทันที; double-submit ถูกป้องกันและ save ล้มเหลวไม่แสดง success
 - แตะ title button เปิด `HealthArticlePage` ด้วย article ที่เลือก; แตะ “บทความเพิ่มเติม” เปิด `ArticlesPage` พร้อม author filter ของโค้ชที่ล้าง/แก้ได้ โดย category filter เดิมทำงานเหมือนเดิม
