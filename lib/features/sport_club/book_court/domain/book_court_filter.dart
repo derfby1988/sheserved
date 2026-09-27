@@ -115,7 +115,10 @@ class BookCourtFilter {
       'durationMinutes': duration?.inMinutes,
       'minPrice': minPrice,
       'maxPrice': maxPrice,
-      'minRating': minRating,
+      // 21.7.14: persisted on the 10-point scale under a new key; a
+      // legacy 1–5 `minRating` value is dropped rather than silently
+      // reinterpreted as a 10-point threshold.
+      'minRating10': minRating,
       'availableOnly': availableOnly,
       'bookedByMeOnly': bookedByMeOnly,
       'ownerOnly': ownerOnly,
@@ -140,7 +143,7 @@ class BookCourtFilter {
           : Duration(minutes: durationMinutes),
       minPrice: (json['minPrice'] as num?)?.toDouble(),
       maxPrice: (json['maxPrice'] as num?)?.toDouble(),
-      minRating: (json['minRating'] as num?)?.toDouble(),
+      minRating: (json['minRating10'] as num?)?.toDouble(),
       availableOnly: json['availableOnly'] == true,
       bookedByMeOnly: json['bookedByMeOnly'] == true,
       ownerOnly: json['ownerOnly'] == true,

@@ -109,7 +109,10 @@ class BookCourtRepository {
     for (final row in (results[0] as List)) {
       final m = Map<String, dynamic>.from(row);
       ratingByVenue[m['venue_id']?.toString() ?? ''] = (
-        (m['average_rating'] as num?)?.toDouble() ?? 0,
+        // 10-point scale is authoritative; fall back to the folded
+        // legacy 1–5 average only while the pre-21.7.14 view is live.
+        (m['average_rating_10'] as num?)?.toDouble() ??
+            ((m['average_rating'] as num?)?.toDouble() ?? 0) * 2,
         (m['review_count'] as num?)?.toInt() ?? 0,
       );
     }
@@ -662,24 +665,110 @@ class BookCourtRepository {
   Future<String> submitReview({
     required String userId,
     required String bookingId,
-    required int rating,
+    required int rating10,
+    required Map<String, int> categoryScores,
     String? comment,
     List<String> tagIds = const [],
     List<String> customTags = const [],
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
-      'submit_sports_venue_review',
+      'submit_sports_venue_review_v2',
       params: {
         'p_user_id': userId,
         'p_booking_id': bookingId,
-        'p_rating': rating,
+        'p_rating_10': rating10,
+        'p_category_scores': categoryScores,
         'p_comment': comment,
         'p_tag_ids': tagIds,
         'p_custom_tags': customTags,
       },
     );
     return res.toString();
+  }
+
+  /// Active review categories that must each be scored (1–10) in the
+  /// review form.
+  Future<List<VenueReviewCategory>> listReviewCategoryCatalog() async {
+    final res = await _client.rpc('list_sports_venue_review_categories');
+    return (res as List)
+        .map((e) => VenueReviewCategory.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Aggregated published-review summary for a venue, optionally scoped
+  /// to one court (overall/category averages, band counts, topics).
+  Future<VenueReviewSummary> getVenueReviewSummary(
+    String venueId, {
+    String? courtId,
+  }) async {
+    final res = await _client.rpc(
+      'get_sports_venue_review_summary_v2',
+      params: {'p_venue_id': venueId, 'p_court_id': courtId},
+    );
+    return VenueReviewSummary.fromJson(Map<String, dynamic>.from(res as Map));
+  }
+
+  /// Server-side filtered/sorted/paginated review list. The caller's id
+  /// is passed so rows can carry the `viewer_voted` flag; voting itself
+  /// stays behind [setReviewHelpful].
+  Future<VenueReviewListPage> listVenueReviewsV2(
+    String venueId, {
+    String? courtId,
+    String? tagId,
+    VenueReviewBand? band,
+    VenueReviewSort sort = VenueReviewSort.helpful,
+    int limit = 20,
+    int offset = 0,
+    String? viewerId,
+  }) async {
+    final res = await _client.rpc(
+      'list_sports_venue_reviews_v2',
+      params: {
+        'p_venue_id': venueId,
+        'p_court_id': courtId,
+        'p_tag_id': tagId,
+        'p_min_rating_10': band?.min,
+        'p_max_rating_10': band?.max,
+        'p_sort': sort.wireValue,
+        'p_limit': limit,
+        'p_offset': offset,
+        'p_viewer_id': viewerId,
+      },
+    );
+    final list = res as List;
+    final rows = list
+        .map((e) => VenueReview.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    final total = list.isEmpty
+        ? 0
+        : (list.first['total_count'] as num?)?.toInt() ??
+            offset + rows.length;
+    return VenueReviewListPage(
+      reviews: rows,
+      totalCount: total,
+      nextOffset: offset + rows.length,
+      hasMore: offset + rows.length < total,
+    );
+  }
+
+  /// One helpful vote per review per account; idempotent in both
+  /// directions. Self-votes and non-published reviews are rejected
+  /// server-side.
+  Future<void> setReviewHelpful(
+    String userId,
+    String reviewId, {
+    required bool helpful,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_review_helpful',
+      params: {
+        'p_user_id': userId,
+        'p_review_id': reviewId,
+        'p_helpful': helpful,
+      },
+    );
   }
 
   Future<void> reportReview(

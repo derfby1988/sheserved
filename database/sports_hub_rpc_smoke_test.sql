@@ -65,6 +65,7 @@ END $$;
 \ir ../supabase/migrations/20260925100000_sports_hub_owner_contact_fix.sql
 \ir ../supabase/migrations/20260925110000_sports_hub_notification_delivery.sql
 \ir ../supabase/migrations/20260925130000_sports_hub_venue_review_readiness.sql
+\ir ../supabase/migrations/20260926100000_sports_hub_review_scoring_10pt.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -86,6 +87,15 @@ EXCEPTION WHEN OTHERS THEN
     RAISE WARNING 'FAIL: % (got %, expected %)', label, SQLERRM, expected;
   END IF;
 END $$;
+
+-- Venue bookings must land inside the venue's operating hours (08:00–22:00
+-- Asia/Bangkok); using now() + N days makes the smoke depend on the
+-- time-of-day it runs. This helper returns a deterministic local time.
+CREATE OR REPLACE FUNCTION pg_temp.bkk_ts(p_days int, p_time time)
+RETURNS timestamptz LANGUAGE sql AS $$
+  SELECT (((now() AT TIME ZONE 'Asia/Bangkok')::date + p_days) + p_time)
+         AT TIME ZONE 'Asia/Bangkok';
+$$;
 
 DO $smoke$
 DECLARE
@@ -219,10 +229,10 @@ BEGIN
     format($s$SELECT public.upsert_sports_venue(
       %L, NULL, 'Mgr Venue', NULL, NULL, NULL, NULL, NULL, NULL)$s$, v_mgr));
 
-  -- 21.7.5 instant booking + atomicity
+  -- 21.7.5 instant booking + atomicity (fixed 10:00–11:00 local slots)
   v_b1 := public.create_sports_venue_booking(
-    v_cust, v_court, now() + interval '2 days',
-    now() + interval '2 days 1 hour', v_terms, 'idem-1');
+    v_cust, v_court, pg_temp.bkk_ts(2, '10:00'),
+    pg_temp.bkk_ts(2, '11:00'), v_terms, 'idem-1');
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
     WHERE id = v_b1) = 'confirmed', 'instant booking confirmed');
   PERFORM pg_temp.expect((SELECT accepted_terms_version FROM public.sports_venue_bookings
@@ -230,18 +240,18 @@ BEGIN
 
   PERFORM pg_temp.expect_raise('overlapping booking rejected',
     format($$SELECT public.create_sports_venue_booking(%L, %L,
-      now() + interval '2 days 30 minutes',
-      now() + interval '2 days 2 hours', %s, 'idem-2')$$,
+      pg_temp.bkk_ts(2, '10:30'),
+      pg_temp.bkk_ts(2, '11:30'), %s, 'idem-2')$$,
       v_cust2, v_court, v_terms));
 
   PERFORM pg_temp.expect(public.create_sports_venue_booking(
-    v_cust, v_court, now() + interval '2 days',
-    now() + interval '2 days 1 hour', v_terms, 'idem-1') = v_b1,
+    v_cust, v_court, pg_temp.bkk_ts(2, '10:00'),
+    pg_temp.bkk_ts(2, '11:00'), v_terms, 'idem-1') = v_b1,
     'idempotent retry returns same booking id');
 
   PERFORM pg_temp.expect_raise('stale terms version rejected',
     format($$SELECT public.create_sports_venue_booking(%L, %L,
-      now() + interval '4 days', now() + interval '4 days 1 hour',
+      pg_temp.bkk_ts(4, '10:00'), pg_temp.bkk_ts(4, '11:00'),
       99, 'idem-3')$$, v_cust, v_court));
 
   -- authorization
@@ -270,13 +280,97 @@ BEGIN
     format($$SELECT public.submit_sports_venue_review(
       %L, %L, 4, 'again', NULL, NULL)$$, v_cust, v_b1));
 
+  -- =============== 21.7.14: 10-point scoring + category scores ===============
+  -- The legacy RPC stays live as a compat adapter: rating 5 -> rating_10 = 10.
+  PERFORM pg_temp.expect((SELECT rating_10 FROM public.sports_venue_reviews
+    WHERE id = v_review) = 10, 'legacy 1-5 submit writes scaled rating_10');
+
+  -- A second completed booking for a fresh v2 review.
+  v_b2 := public.create_sports_venue_booking(
+    v_cust2, v_court, pg_temp.bkk_ts(5, '10:00'),
+    pg_temp.bkk_ts(5, '11:00'), v_terms, 'idem-5');
+  UPDATE public.sports_venue_bookings
+    SET starts_at = now() - interval '2 hours',
+        ends_at = now() - interval '1 hour'
+    WHERE id = v_b2;
+  PERFORM public.complete_sports_venue_bookings();
+
+  PERFORM pg_temp.expect(public.submit_sports_venue_review_v2(
+    v_cust2, v_b2, 9, (SELECT jsonb_object_agg(id::text, 8)
+      FROM public.sports_venue_review_category_catalog),
+    'ดีมาก',
+    ARRAY[(SELECT id FROM public.sports_venue_review_tag_catalog
+      ORDER BY display_order LIMIT 1)]::uuid[],
+    ARRAY['จอดรถง่าย']) IS NOT NULL,
+    'v2 review accepted with all five categories');
+
+  PERFORM pg_temp.expect((SELECT rating_10 FROM public.sports_venue_reviews
+    WHERE booking_id = v_b2) = 9, 'v2 stores rating_10 verbatim');
+  PERFORM pg_temp.expect((SELECT rating FROM public.sports_venue_reviews
+    WHERE booking_id = v_b2) = 5, 'v2 folds legacy rating 9 -> 5');
+  PERFORM pg_temp.expect((SELECT count(*) FROM
+    public.sports_venue_review_category_scores sc
+    JOIN public.sports_venue_reviews r ON r.id = sc.review_id
+    WHERE r.booking_id = v_b2) = 5, 'all five category scores written');
+
+  PERFORM pg_temp.expect_raise('v2 duplicate rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 9,
+      (SELECT jsonb_object_agg(id::text, 8)
+       FROM public.sports_venue_review_category_catalog), NULL)$$,
+      v_cust2, v_b2), 'ALREADY_REVIEWED');
+  PERFORM pg_temp.expect_raise('v2 missing category rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 9,
+      jsonb_build_object((SELECT id::text
+        FROM public.sports_venue_review_category_catalog LIMIT 1), 8),
+      NULL)$$, v_cust, v_b2), 'MISSING_CATEGORY_SCORES');
+  PERFORM pg_temp.expect_raise('v2 out-of-range score rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 9,
+      (SELECT jsonb_object_agg(id::text, 11)
+       FROM public.sports_venue_review_category_catalog), NULL)$$,
+      v_cust, v_b2), 'INVALID_CATEGORY_SCORES');
+
+  -- Helpful votes: one per user, idempotent, no self-vote.
+  PERFORM public.set_sports_venue_review_helpful(v_cust2, v_review, true);
+  PERFORM public.set_sports_venue_review_helpful(v_cust2, v_review, true);
+  PERFORM pg_temp.expect((SELECT count(*)
+    FROM public.sports_venue_review_helpful_votes
+    WHERE review_id = v_review) = 1, 'helpful vote is idempotent');
+  PERFORM pg_temp.expect_raise('self vote rejected',
+    format($$SELECT public.set_sports_venue_review_helpful(%L, %L, true)$$,
+      v_cust, v_review), 'SELF_VOTE_NOT_ALLOWED');
+  PERFORM public.set_sports_venue_review_helpful(v_cust2, v_review, false);
+  PERFORM pg_temp.expect((SELECT count(*)
+    FROM public.sports_venue_review_helpful_votes
+    WHERE review_id = v_review) = 0, 'helpful vote removal idempotent');
+
+  -- Summary + list RPCs (published only, deterministic bands/topics).
+  PERFORM pg_temp.expect(
+    (public.get_sports_venue_review_summary_v2(v_venue)
+      ->> 'review_count')::int = 2, 'summary counts published reviews');
+  PERFORM pg_temp.expect(
+    (public.get_sports_venue_review_summary_v2(v_venue)
+      -> 'band_counts' ->> 'excellent')::int = 2,
+    'rating_10 9 and 10 land in the excellent band');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.list_sports_venue_reviews_v2(
+      v_venue, NULL, NULL, NULL, NULL, 'helpful', 20, 0, v_cust2)),
+    'v2 list returns rows for the venue');
+  PERFORM pg_temp.expect((SELECT count(*) FROM
+    public.list_sports_venue_reviews_v2(
+      v_venue, NULL, NULL, 9, 10, 'newest', 20, 0, NULL)) = 2,
+    'rating band filter narrows server-side');
+  PERFORM pg_temp.expect((SELECT count(*) FROM
+    public.list_sports_venue_reviews_v2(
+      v_venue, NULL, NULL, 1, 2, 'newest', 20, 0, NULL)) = 0,
+    'empty band returns no rows');
+
   -- 21.7.6 owner-approval flow
   SELECT public.upsert_sports_venue_court(
     v_owner, NULL, v_venue, v_sport, 'Court 2',
     1, 300, 'hour', 'grass', false, 'owner_approval', NULL, true) INTO v_court;
   v_b2 := public.create_sports_venue_booking(
-    v_cust2, v_court, now() + interval '3 days',
-    now() + interval '3 days 1 hour', v_terms, 'idem-4');
+    v_cust2, v_court, pg_temp.bkk_ts(3, '10:00'),
+    pg_temp.bkk_ts(3, '11:00'), v_terms, 'idem-4');
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
     WHERE id = v_b2) = 'pending', 'owner-approval court creates pending');
 

@@ -288,7 +288,7 @@ class _BookCourtFilterSheetBodyState
                     padding: EdgeInsets.only(top: 12),
                     child: Text('คะแนนขั้นต่ำ'),
                   ),
-                  for (final r in [3.0, 4.0, 4.5])
+                  for (final r in [5.0, 7.0, 9.0])
                     ChoiceChip(
                       label: Text('${r.toStringAsFixed(1)}+ ⭐'),
                       selected: _minRating == r,

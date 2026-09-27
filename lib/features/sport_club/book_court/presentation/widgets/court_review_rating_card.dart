@@ -3,17 +3,21 @@ import 'package:sheserved/core/constants/app_colors.dart';
 
 import '../../data/book_court_models.dart';
 
-/// Aggregate rating card + review list for the venue detail sheet.
+/// Compact review summary for the venue detail sheet. Shows the
+/// aggregate 1–10 score, a short preview of recent published reviews and
+/// a link to the full review page.
 class CourtReviewRatingCard extends StatelessWidget {
   final double? averageRating;
   final int reviewCount;
   final List<VenueReview> reviews;
+  final VoidCallback? onSeeAll;
 
   const CourtReviewRatingCard({
     super.key,
     this.averageRating,
     this.reviewCount = 0,
     this.reviews = const [],
+    this.onSeeAll,
   });
 
   @override
@@ -23,18 +27,41 @@ class CourtReviewRatingCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Icon(
-              Icons.star_rounded,
-              color: AppColors.alertGold,
-              size: 22,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 4,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.primaryDark,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                averageRating?.toStringAsFixed(1) ?? '-',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
             ),
-            const SizedBox(width: 4),
-            Text(
-              averageRating == null
-                  ? 'ยังไม่มีรีวิว'
-                  : '${averageRating!.toStringAsFixed(1)} ($reviewCount รีวิว)',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                averageRating == null
+                    ? 'ยังไม่มีรีวิว'
+                    : '$reviewCount รีวิว',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
             ),
+            if (onSeeAll != null && reviewCount > 0)
+              TextButton(
+                onPressed: onSeeAll,
+                child: const Text('ดูรีวิวทั้งหมด'),
+              ),
           ],
         ),
         if (reviews.isNotEmpty) ...[
@@ -73,17 +100,25 @@ class CourtReviewRatingCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Row(
-                              children: [
-                                for (var i = 0; i < 5; i++)
-                                  Icon(
-                                    i < review.rating
-                                        ? Icons.star_rounded
-                                        : Icons.star_outline_rounded,
-                                    size: 12,
-                                    color: AppColors.alertGold,
-                                  ),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryDark.withValues(
+                                  alpha: 0.1,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                review.rating10.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
                             ),
                           ],
                         ),

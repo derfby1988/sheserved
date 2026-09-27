@@ -3,6 +3,7 @@ import 'package:sheserved/core/constants/app_colors.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
+import '../pages/court_reviews_page.dart';
 import 'court_availability_picker.dart';
 import 'court_review_rating_card.dart';
 
@@ -95,6 +96,20 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Opens the full review page (summary, bands, topics, filtered list)
+  /// and refreshes the compact preview when coming back.
+  Future<void> _openReviewsPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourtReviewsPage(
+          venue: widget.venue,
+          repo: widget.repo,
+        ),
+      ),
+    );
+    if (mounted) _load();
   }
 
   Future<void> _loadAvailability(VenueCourt court) async {
@@ -280,6 +295,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                   averageRating: venue.averageRating,
                   reviewCount: venue.reviewCount,
                   reviews: _reviews,
+                  onSeeAll: _openReviewsPage,
                 ),
               ],
             ),

@@ -24,6 +24,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   List<VenueBooking> _bookings = [];
   Set<String> _reviewedBookingIds = {};
   List<VenueReviewTag> _tagCatalog = const [];
+  List<VenueReviewCategory> _categoryCatalog = const [];
   bool _loading = true;
   bool _showHistory = false;
 
@@ -54,12 +55,14 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
         widget.repo.listMyBookings(userId),
         widget.repo.listMyReviewedBookingIds(userId),
         widget.repo.listReviewTagCatalog(),
+        widget.repo.listReviewCategoryCatalog(),
       ]);
       if (!mounted) return;
       setState(() {
         _bookings = results[0] as List<VenueBooking>;
         _reviewedBookingIds = results[1] as Set<String>;
         _tagCatalog = results[2] as List<VenueReviewTag>;
+        _categoryCatalog = results[3] as List<VenueReviewCategory>;
         _loading = false;
       });
     } catch (_) {
@@ -125,13 +128,15 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       context,
       venueName: b.venueName ?? '',
       tagCatalog: _tagCatalog,
+      categories: _categoryCatalog,
     );
     if (draft == null) return;
     try {
       await widget.repo.submitReview(
         userId: _userId!,
         bookingId: b.id,
-        rating: draft.rating,
+        rating10: draft.rating10,
+        categoryScores: draft.categoryScores,
         comment: draft.comment,
         tagIds: draft.tagIds.toList(),
         customTags: draft.customTags,

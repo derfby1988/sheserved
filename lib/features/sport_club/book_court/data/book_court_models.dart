@@ -385,8 +385,14 @@ class VenueReview {
   final String? userDisplayName;
   final String? userAvatarUrl;
   final int rating;
+  final int rating10;
   final String? comment;
   final DateTime? createdAt;
+  final String? courtName;
+  final String? sportName;
+  final List<String> tagLabels;
+  final int helpfulCount;
+  final bool viewerVoted;
 
   const VenueReview({
     required this.id,
@@ -397,21 +403,62 @@ class VenueReview {
     this.userDisplayName,
     this.userAvatarUrl,
     required this.rating,
+    int? rating10,
     this.comment,
     this.createdAt,
-  });
+    this.courtName,
+    this.sportName,
+    this.tagLabels = const [],
+    this.helpfulCount = 0,
+    this.viewerVoted = false,
+  }) : rating10 = rating10 ?? rating * 2;
 
-  factory VenueReview.fromJson(Map<String, dynamic> j) => VenueReview(
-    id: j['id']?.toString() ?? '',
-    venueId: j['venue_id']?.toString() ?? '',
-    courtId: j['court_id']?.toString(),
-    bookingId: j['booking_id']?.toString() ?? '',
-    userId: j['user_id']?.toString() ?? '',
-    userDisplayName: j['user_display_name']?.toString(),
-    userAvatarUrl: j['user_avatar_url']?.toString(),
-    rating: (j['rating'] as num?)?.toInt() ?? 0,
-    comment: j['comment']?.toString(),
-    createdAt: DateTime.tryParse(j['created_at']?.toString() ?? ''),
+  factory VenueReview.fromJson(Map<String, dynamic> j) {
+    final rating = (j['rating'] as num?)?.toInt() ?? 0;
+    return VenueReview(
+      id: j['id']?.toString() ?? '',
+      venueId: j['venue_id']?.toString() ?? '',
+      courtId: j['court_id']?.toString(),
+      bookingId: j['booking_id']?.toString() ?? '',
+      userId: j['user_id']?.toString() ?? '',
+      userDisplayName: j['user_display_name']?.toString(),
+      userAvatarUrl: j['user_avatar_url']?.toString(),
+      rating: rating,
+      rating10: (j['rating_10'] as num?)?.toInt(),
+      comment: j['comment']?.toString(),
+      createdAt: DateTime.tryParse(j['created_at']?.toString() ?? ''),
+      courtName: j['court_name']?.toString(),
+      sportName: j['sport_name']?.toString(),
+      tagLabels:
+          (j['tag_labels'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      helpfulCount: (j['helpful_count'] as num?)?.toInt() ?? 0,
+      viewerVoted: j['viewer_voted'] == true,
+    );
+  }
+
+  VenueReview copyWith({
+    int? helpfulCount,
+    bool? viewerVoted,
+  }) => VenueReview(
+    id: id,
+    venueId: venueId,
+    courtId: courtId,
+    bookingId: bookingId,
+    userId: userId,
+    userDisplayName: userDisplayName,
+    userAvatarUrl: userAvatarUrl,
+    rating: rating,
+    rating10: rating10,
+    comment: comment,
+    createdAt: createdAt,
+    courtName: courtName,
+    sportName: sportName,
+    tagLabels: tagLabels,
+    helpfulCount: helpfulCount ?? this.helpfulCount,
+    viewerVoted: viewerVoted ?? this.viewerVoted,
   );
 }
 
@@ -434,6 +481,190 @@ class VenueReviewTag {
     labelEn: j['label_en']?.toString(),
     displayOrder: (j['display_order'] as num?)?.toInt() ?? 0,
   );
+}
+
+/// A review category the reviewer must score (1–10 each), from the
+/// `sports_venue_review_category_catalog` table.
+class VenueReviewCategory {
+  final String id;
+  final String key;
+  final String labelTh;
+  final String? labelEn;
+  final int displayOrder;
+
+  const VenueReviewCategory({
+    required this.id,
+    required this.key,
+    required this.labelTh,
+    this.labelEn,
+    this.displayOrder = 0,
+  });
+
+  factory VenueReviewCategory.fromJson(Map<String, dynamic> j) =>
+      VenueReviewCategory(
+        id: j['id']?.toString() ?? '',
+        key: j['key']?.toString() ?? '',
+        labelTh: j['label_th']?.toString() ?? '',
+        labelEn: j['label_en']?.toString(),
+        displayOrder: (j['display_order'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Per-category aggregate shown on the reviews page. [average] is null
+/// until at least one published review carries real category scores —
+/// legacy reviews never get synthetic category values.
+class VenueReviewCategoryScore {
+  final String categoryId;
+  final String key;
+  final String labelTh;
+  final double? average;
+  final int sampleCount;
+
+  const VenueReviewCategoryScore({
+    required this.categoryId,
+    required this.key,
+    required this.labelTh,
+    this.average,
+    this.sampleCount = 0,
+  });
+
+  factory VenueReviewCategoryScore.fromJson(Map<String, dynamic> j) =>
+      VenueReviewCategoryScore(
+        categoryId: j['category_id']?.toString() ?? '',
+        key: j['key']?.toString() ?? '',
+        labelTh: j['label_th']?.toString() ?? '',
+        average: (j['average'] as num?)?.toDouble(),
+        sampleCount: (j['sample_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Popular standard-tag topic with its published review count.
+class VenueReviewTopic {
+  final String tagId;
+  final String labelTh;
+  final String? labelEn;
+  final int reviewCount;
+
+  const VenueReviewTopic({
+    required this.tagId,
+    required this.labelTh,
+    this.labelEn,
+    required this.reviewCount,
+  });
+
+  factory VenueReviewTopic.fromJson(Map<String, dynamic> j) =>
+      VenueReviewTopic(
+        tagId: j['tag_id']?.toString() ?? '',
+        labelTh: j['label_th']?.toString() ?? '',
+        labelEn: j['label_en']?.toString(),
+        reviewCount: (j['review_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Deterministic 10-point rating bands used by the review page's score
+/// bars and rating filter. Boundaries are shared by display, filter and
+/// aggregates — they must never diverge.
+enum VenueReviewBand {
+  excellent('excellent', 9, 10, 'ดีเลิศ'),
+  good('good', 7, 8, 'ดี'),
+  fair('fair', 5, 6, 'พอใช้ได้'),
+  poor('poor', 3, 4, 'แย่'),
+  veryPoor('very_poor', 1, 2, 'แย่มาก');
+
+  const VenueReviewBand(this.wireKey, this.min, this.max, this.labelTh);
+
+  final String wireKey;
+  final int min;
+  final int max;
+  final String labelTh;
+
+  /// e.g. `ดีเลิศ: 9.0–10`, `ดี: 7.0–8.9`
+  String get label {
+    final hi = max >= 10 ? '10' : '$max.9';
+    return '$labelTh: $min.0–$hi';
+  }
+}
+
+/// Aggregated review summary for one venue (or one court) — published
+/// reviews only.
+class VenueReviewSummary {
+  final double? averageRating;
+  final int reviewCount;
+  final Map<VenueReviewBand, int> bandCounts;
+  final List<VenueReviewCategoryScore> categories;
+  final List<VenueReviewTopic> topics;
+
+  const VenueReviewSummary({
+    this.averageRating,
+    this.reviewCount = 0,
+    this.bandCounts = const {},
+    this.categories = const [],
+    this.topics = const [],
+  });
+
+  int bandCount(VenueReviewBand band) => bandCounts[band] ?? 0;
+
+  factory VenueReviewSummary.fromJson(Map<String, dynamic> j) {
+    final bands = <VenueReviewBand, int>{};
+    final rawBands = j['band_counts'];
+    if (rawBands is Map) {
+      for (final band in VenueReviewBand.values) {
+        bands[band] =
+            (rawBands[band.wireKey] as num?)?.toInt() ?? 0;
+      }
+    }
+    return VenueReviewSummary(
+      averageRating: (j['average_rating'] as num?)?.toDouble(),
+      reviewCount: (j['review_count'] as num?)?.toInt() ?? 0,
+      bandCounts: bands,
+      categories:
+          (j['categories'] as List?)
+              ?.map(
+                (e) => VenueReviewCategoryScore.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList() ??
+          const [],
+      topics:
+          (j['topics'] as List?)
+              ?.map(
+                (e) => VenueReviewTopic.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+/// Sort order for the full review list (server-side).
+enum VenueReviewSort {
+  helpful('helpful', 'มีประโยชน์ที่สุดก่อน'),
+  newest('newest', 'ใหม่ล่าสุด'),
+  highest('highest', 'คะแนนสูงสุด'),
+  lowest('lowest', 'คะแนนต่ำสุด');
+
+  const VenueReviewSort(this.wireValue, this.labelTh);
+
+  final String wireValue;
+  final String labelTh;
+}
+
+/// One page of the filtered review list plus the server-side total.
+class VenueReviewListPage {
+  final List<VenueReview> reviews;
+  final int totalCount;
+  final int nextOffset;
+  final bool hasMore;
+
+  const VenueReviewListPage({
+    required this.reviews,
+    required this.totalCount,
+    required this.nextOffset,
+    required this.hasMore,
+  });
 }
 
 /// Busy ranges for the read-only availability view of one court.

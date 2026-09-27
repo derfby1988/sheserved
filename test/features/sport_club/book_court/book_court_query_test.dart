@@ -242,9 +242,9 @@ void main() {
           limit = 50,
           offset = 0,
         }) async => [
-          _venue('a', rating: 4.6, amenities: {'parking', 'shower'}),
-          _venue('b', rating: 4.8, amenities: {'parking'}),
-          _venue('c', rating: 3.0, amenities: {'parking', 'shower'}),
+          _venue('a', rating: 9.2, amenities: {'parking', 'shower'}),
+          _venue('b', rating: 9.6, amenities: {'parking'}),
+          _venue('c', rating: 6.0, amenities: {'parking', 'shower'}),
         ],
       );
 
@@ -252,7 +252,7 @@ void main() {
         shared: const SportsDiscoveryFilter(),
         filter: const BookCourtFilter(
           amenityIds: {'parking', 'shower'},
-          minRating: 4.0,
+          minRating: 8.0,
         ),
         offset: 0,
       );
@@ -264,7 +264,7 @@ void main() {
       // upstream page can never fill a 4-slot visible page.
       final all = [
         for (var i = 0; i < 8; i++)
-          _venue('v$i', rating: i.isEven ? 4.5 : 1.0),
+          _venue('v$i', rating: i.isEven ? 9.0 : 2.0),
       ];
       final offsets = <int>[];
       final query = buildQuery(
@@ -284,7 +284,7 @@ void main() {
 
       final page = await query.fetch(
         shared: const SportsDiscoveryFilter(),
-        filter: const BookCourtFilter(minRating: 4.0),
+        filter: const BookCourtFilter(minRating: 8.0),
         offset: 0,
       );
       expect(page.venues.map((v) => v.id), ['v0', 'v2', 'v4', 'v6']);
