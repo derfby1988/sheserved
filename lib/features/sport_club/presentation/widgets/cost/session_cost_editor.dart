@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/cost_editors.dart';
@@ -32,16 +33,16 @@ class SessionCostEditor extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
+            const NeumorphicContainer(
+              width: 36,
+              height: 36,
+              shape: BoxShape.circle,
+              depth: 3,
+              blur: 6,
+              child: Icon(
                 Icons.payments_outlined,
-                size: 16,
-                color: AppColors.primaryDark,
+                size: 18,
+                color: NeumorphicTheme.primaryBlue,
               ),
             ),
             const SizedBox(width: 8),

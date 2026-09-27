@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/services/auth_service.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/position_lineup.dart';
 import 'package:sheserved/features/community/find_buddies/domain/models/sport_skill_level.dart';
@@ -78,8 +78,10 @@ class EditGroupSheet {
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SafeArea(
@@ -100,124 +102,217 @@ class EditGroupSheet {
                     children: [
                       Center(
                         child: Container(
-                          width: 40,
-                          height: 4,
+                          width: 44,
+                          height: 5,
                           decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
+                            color: const Color(0xFFD4DAE3),
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.white,
+                                offset: Offset(0, 1),
+                                blurRadius: 1,
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'แก้ไขก๊วน',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                       const SizedBox(height: 16),
-                      TextField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'ชื่อก๊วน',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: descCtrl,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'คำอธิบาย',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: genderPref,
-                        decoration: const InputDecoration(
-                          labelText: 'เพศที่ต้องการชวน',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'any', child: Text('ทุกเพศ')),
-                          DropdownMenuItem(value: 'male', child: Text('ชาย')),
-                          DropdownMenuItem(
-                            value: 'female',
-                            child: Text('หญิง'),
+                      Row(
+                        children: [
+                          NeumorphicContainer(
+                            width: 40,
+                            height: 40,
+                            shape: BoxShape.circle,
+                            depth: 3,
+                            blur: 6,
+                            child: const Icon(
+                              Icons.edit_note_rounded,
+                              color: NeumorphicTheme.primaryBlue,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'แก้ไขก๊วน',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: NeumorphicTheme.textPrimary,
+                              letterSpacing: -0.2,
+                            ),
                           ),
                         ],
-                        onChanged: (v) {
-                          if (v != null) {
-                            setSheetState(() => genderPref = v);
-                          }
-                        },
                       ),
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('ก๊วนส่วนตัว (ต้องรออนุมัติ)'),
-                        value: requiresApproval,
-                        onChanged: (v) =>
-                            setSheetState(() => requiresApproval = v),
-                      ),
-                      if (isGroupOwner) ...[
-                        const SizedBox(height: 8),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('เข้าร่วมทุกรอบอัตโนมัติ'),
-                          subtitle: const Text(
-                            'เปิดแล้วจะจองรอบนัดที่กำลังจะถึงให้เจ้าของก๊วนโดยอัตโนมัติ',
-                          ),
-                          value: ownerAutoJoin,
-                          onChanged: (v) =>
-                              setSheetState(() => ownerAutoJoin = v),
-                        ),
-                      ],
                       const SizedBox(height: 16),
-                      SkillLevelSelector(
-                        availableLevels: resolveSkillLevelsForSport(
-                          sportData: sportData,
+                      NeumorphicContainer(
+                        borderRadius: 20,
+                        depth: 4,
+                        blur: 8,
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            NeumorphicInsetBox(
+                              height: null,
+                              borderRadius: 14,
+                              child: TextField(
+                                controller: nameCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'ชื่อก๊วน',
+                                  filled: true,
+                                  fillColor: Colors.transparent,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  errorBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            NeumorphicInsetBox(
+                              height: null,
+                              borderRadius: 14,
+                              child: TextField(
+                                controller: descCtrl,
+                                maxLines: 3,
+                                decoration: const InputDecoration(
+                                  labelText: 'คำอธิบาย',
+                                  filled: true,
+                                  fillColor: Colors.transparent,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  errorBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            NeumorphicInsetBox(
+                              height: null,
+                              borderRadius: 14,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: DropdownButtonFormField<String>(
+                                initialValue: genderPref,
+                                decoration: const InputDecoration(
+                                  labelText: 'เพศที่ต้องการชวน',
+                                  filled: true,
+                                  fillColor: Colors.transparent,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  errorBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'any',
+                                    child: Text('ทุกเพศ'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'male',
+                                    child: Text('ชาย'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'female',
+                                    child: Text('หญิง'),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    setSheetState(() => genderPref = v);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('ก๊วนส่วนตัว (ต้องรออนุมัติ)'),
+                              value: requiresApproval,
+                              onChanged: (v) =>
+                                  setSheetState(() => requiresApproval = v),
+                            ),
+                            if (isGroupOwner) ...[
+                              const SizedBox(height: 8),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('เข้าร่วมทุกรอบอัตโนมัติ'),
+                                subtitle: const Text(
+                                  'เปิดแล้วจะจองรอบนัดที่กำลังจะถึงให้เจ้าของก๊วนโดยอัตโนมัติ',
+                                ),
+                                value: ownerAutoJoin,
+                                onChanged: (v) =>
+                                    setSheetState(() => ownerAutoJoin = v),
+                              ),
+                            ],
+                          ],
                         ),
-                        selectedLevels: targetSkillLevels,
-                        onLevelsChanged: (lvls) {
-                          setSheetState(() => targetSkillLevels = lvls);
-                        },
-                        noteController: skillNoteCtrl,
+                      ),
+                      const SizedBox(height: 16),
+                      NeumorphicContainer(
+                        borderRadius: 20,
+                        depth: 4,
+                        blur: 8,
+                        padding: const EdgeInsets.all(16),
+                        child: SkillLevelSelector(
+                          availableLevels: resolveSkillLevelsForSport(
+                            sportData: sportData,
+                          ),
+                          selectedLevels: targetSkillLevels,
+                          onLevelsChanged: (lvls) {
+                            setSheetState(() => targetSkillLevels = lvls);
+                          },
+                          noteController: skillNoteCtrl,
+                        ),
                       ),
                       const Divider(height: 24),
-                      GroupCostManager(
-                        sheetContext: ctx,
-                        groupId: groupId,
-                        actorUserId: userId,
-                        standards: costStandards,
-                        refresh: () async {
-                          try {
-                            costStandards = await repo.listGroupCostStandards(
-                              groupId,
-                            );
-                          } catch (_) {}
-                          setSheetState(() {});
-                        },
-                        repo: repo,
+                      NeumorphicContainer(
+                        borderRadius: 20,
+                        depth: 4,
+                        blur: 8,
+                        padding: const EdgeInsets.all(16),
+                        child: GroupCostManager(
+                          sheetContext: ctx,
+                          groupId: groupId,
+                          actorUserId: userId,
+                          standards: costStandards,
+                          refresh: () async {
+                            try {
+                              costStandards = await repo.listGroupCostStandards(
+                                groupId,
+                              );
+                            } catch (_) {}
+                            setSheetState(() {});
+                          },
+                          repo: repo,
+                        ),
                       ),
                       if (fieldLayout != null) ...[
                         const Divider(height: 24),
                         Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(
-                                  alpha: 0.15,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                            NeumorphicContainer(
+                              width: 36,
+                              height: 36,
+                              shape: BoxShape.circle,
+                              depth: 3,
+                              blur: 6,
                               child: const Icon(
                                 Icons.sports_soccer_rounded,
-                                size: 16,
-                                color: AppColors.primaryDark,
+                                size: 18,
+                                color: NeumorphicTheme.primaryBlue,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -273,33 +368,41 @@ class EditGroupSheet {
                                       if (states.contains(
                                         WidgetState.selected,
                                       )) {
-                                        return AppColors.primary.withValues(
-                                          alpha: 0.1,
-                                        );
+                                        return NeumorphicTheme.primaryBlue
+                                            .withValues(alpha: 0.12);
                                       }
                                       return Colors.transparent;
                                     }),
                                 side: WidgetStateProperty.all(
-                                  BorderSide(color: Colors.grey.shade300),
+                                  BorderSide(
+                                    color: NeumorphicTheme.shadowDark
+                                        .withValues(alpha: 0.5),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                           const SizedBox(height: 16),
                         ],
-                        PositionLineupEditor(
-                          layout: fieldLayout!,
-                          fieldStyle: fieldStyle,
-                          positions: groupPositions,
-                          onChanged: (updated) {
-                            groupPositions = updated;
-                          },
+                        NeumorphicContainer(
+                          borderRadius: 18,
+                          depth: 3,
+                          blur: 6,
+                          padding: const EdgeInsets.all(8),
+                          child: PositionLineupEditor(
+                            layout: fieldLayout!,
+                            fieldStyle: fieldStyle,
+                            positions: groupPositions,
+                            onChanged: (updated) {
+                              groupPositions = updated;
+                            },
+                          ),
                         ),
                       ],
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: NeumorphicVerifyButton(
                           onPressed: () async {
                             final name = nameCtrl.text.trim();
                             if (name.isEmpty) {
@@ -386,11 +489,8 @@ class EditGroupSheet {
                               );
                             }
                           },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('บันทึก'),
+                          text: 'บันทึก',
+                          height: 52,
                         ),
                       ),
                       const SizedBox(height: 12),

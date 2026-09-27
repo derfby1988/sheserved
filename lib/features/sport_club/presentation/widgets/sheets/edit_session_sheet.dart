@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/services/auth_service.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/position_lineup.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/cost/session_cost_editor.dart';
@@ -90,8 +90,10 @@ class EditSessionSheet {
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SafeArea(
@@ -108,106 +110,177 @@ class EditSessionSheet {
                   children: [
                     Center(
                       child: Container(
-                        width: 40,
-                        height: 4,
+                        width: 44,
+                        height: 5,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                          color: const Color(0xFFD4DAE3),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.white,
+                              offset: Offset(0, 1),
+                              blurRadius: 1,
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'แก้ไขรอบนัด',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                     const SizedBox(height: 16),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('เวลาเริ่ม'),
-                      subtitle: Text(formatThaiBuddhistDateTime(editStart)),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: ctx,
-                          initialDate: editStart,
-                          firstDate: DateTime.now().subtract(
-                            const Duration(days: 1),
-                          ),
-                          lastDate: DateTime.now().add(
-                            const Duration(days: 365),
-                          ),
-                        );
-                        if (date != null) {
-                          final time = TimeOfDay.fromDateTime(editStart);
-                          setSheetState(
-                            () => editStart = DateTime(
-                              date.year,
-                              date.month,
-                              date.day,
-                              time.hour,
-                              time.minute,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('เวลาสิ้นสุด'),
-                      subtitle: Text(formatThaiBuddhistDateTime(editEnd)),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: ctx,
-                          initialDate: editEnd,
-                          firstDate: DateTime.now().subtract(
-                            const Duration(days: 1),
-                          ),
-                          lastDate: DateTime.now().add(
-                            const Duration(days: 365),
-                          ),
-                        );
-                        if (date != null) {
-                          final time = TimeOfDay.fromDateTime(editEnd);
-                          setSheetState(
-                            () => editEnd = DateTime(
-                              date.year,
-                              date.month,
-                              date.day,
-                              time.hour,
-                              time.minute,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('จำนวนผู้เข้าร่วมสูงสุดในรอบนี้'),
-                        Text('$editCapacity คน'),
+                        NeumorphicContainer(
+                          width: 40,
+                          height: 40,
+                          shape: BoxShape.circle,
+                          depth: 3,
+                          blur: 6,
+                          child: const Icon(
+                            Icons.edit_calendar_rounded,
+                            color: NeumorphicTheme.primaryBlue,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'แก้ไขรอบนัด',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: NeumorphicTheme.textPrimary,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
                       ],
                     ),
-                    Slider(
-                      value: editCapacity.toDouble(),
-                      min: 1,
-                      max: 30,
-                      divisions: 29,
-                      label: '$editCapacity',
-                      onChanged: (value) =>
-                          setSheetState(() => editCapacity = value.toInt()),
+                    const SizedBox(height: 16),
+                    NeumorphicContainer(
+                      borderRadius: 16,
+                      depth: 3,
+                      blur: 6,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('เวลาเริ่ม'),
+                        subtitle: Text(formatThaiBuddhistDateTime(editStart)),
+                        trailing: const Icon(
+                          Icons.calendar_today,
+                          color: NeumorphicTheme.primaryBlue,
+                        ),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: ctx,
+                            initialDate: editStart,
+                            firstDate: DateTime.now().subtract(
+                              const Duration(days: 1),
+                            ),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                          );
+                          if (date != null) {
+                            final time = TimeOfDay.fromDateTime(editStart);
+                            setSheetState(
+                              () => editStart = DateTime(
+                                date.year,
+                                date.month,
+                                date.day,
+                                time.hour,
+                                time.minute,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    NeumorphicContainer(
+                      borderRadius: 16,
+                      depth: 3,
+                      blur: 6,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('เวลาสิ้นสุด'),
+                        subtitle: Text(formatThaiBuddhistDateTime(editEnd)),
+                        trailing: const Icon(
+                          Icons.calendar_today,
+                          color: NeumorphicTheme.primaryBlue,
+                        ),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: ctx,
+                            initialDate: editEnd,
+                            firstDate: DateTime.now().subtract(
+                              const Duration(days: 1),
+                            ),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                          );
+                          if (date != null) {
+                            final time = TimeOfDay.fromDateTime(editEnd);
+                            setSheetState(
+                              () => editEnd = DateTime(
+                                date.year,
+                                date.month,
+                                date.day,
+                                time.hour,
+                                time.minute,
+                              ),
+                            );
+                          }
+                        },
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: placeNameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'สถานที่',
-                        border: OutlineInputBorder(),
+                    NeumorphicContainer(
+                      borderRadius: 18,
+                      depth: 4,
+                      blur: 8,
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('จำนวนผู้เข้าร่วมสูงสุดในรอบนี้'),
+                              Text('$editCapacity คน'),
+                            ],
+                          ),
+                          Slider(
+                            value: editCapacity.toDouble(),
+                            min: 1,
+                            max: 30,
+                            divisions: 29,
+                            label: '$editCapacity',
+                            activeColor: NeumorphicTheme.primaryBlue,
+                            onChanged: (value) => setSheetState(
+                              () => editCapacity = value.toInt(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    NeumorphicInsetBox(
+                      height: null,
+                      borderRadius: 14,
+                      child: TextField(
+                        controller: placeNameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'สถานที่',
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
                       ),
                     ),
                     if (ownerAutoJoin &&
@@ -216,16 +289,16 @@ class EditSessionSheet {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          NeumorphicContainer(
+                            width: 36,
+                            height: 36,
+                            shape: BoxShape.circle,
+                            depth: 3,
+                            blur: 6,
                             child: const Icon(
                               Icons.person_pin_circle_rounded,
-                              size: 16,
-                              color: AppColors.primaryDark,
+                              size: 18,
+                              color: NeumorphicTheme.primaryBlue,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -244,15 +317,21 @@ class EditSessionSheet {
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 10),
-                      PositionLineupView(
-                        layout: fieldLayout,
-                        fieldStyle: fieldStyle,
-                        positions: groupPositions,
-                        takenCounts: takenCounts,
-                        selectedPositionId: editOwnerPositionId,
-                        onPositionSelected: (posId) {
-                          setSheetState(() => editOwnerPositionId = posId);
-                        },
+                      NeumorphicContainer(
+                        borderRadius: 18,
+                        depth: 3,
+                        blur: 6,
+                        padding: const EdgeInsets.all(8),
+                        child: PositionLineupView(
+                          layout: fieldLayout,
+                          fieldStyle: fieldStyle,
+                          positions: groupPositions,
+                          takenCounts: takenCounts,
+                          selectedPositionId: editOwnerPositionId,
+                          onPositionSelected: (posId) {
+                            setSheetState(() => editOwnerPositionId = posId);
+                          },
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -281,9 +360,8 @@ class EditSessionSheet {
                             label: Text(
                               '$label (${isFull ? 'เต็ม' : 'ว่าง $availableSlots'})',
                             ),
-                            selectedColor: AppColors.primary.withValues(
-                              alpha: 0.25,
-                            ),
+                            selectedColor: NeumorphicTheme.primaryBlue
+                                .withValues(alpha: 0.18),
                             onSelected: isFull && !isSelected
                                 ? null
                                 : (_) => setSheetState(
@@ -294,29 +372,49 @@ class EditSessionSheet {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    SessionCostEditor(
-                      sheetContext: ctx,
-                      groupId: groupId,
-                      costItems: costItems,
-                      sessionHours: () {
-                        return editEnd.difference(editStart).inMinutes / 60.0;
-                      },
-                      refresh: () => setSheetState(() {}),
-                      repo: repo,
+                    NeumorphicContainer(
+                      borderRadius: 20,
+                      depth: 4,
+                      blur: 8,
+                      padding: const EdgeInsets.all(16),
+                      child: SessionCostEditor(
+                        sheetContext: ctx,
+                        groupId: groupId,
+                        costItems: costItems,
+                        sessionHours: () {
+                          return editEnd.difference(editStart).inMinutes / 60.0;
+                        },
+                        refresh: () => setSheetState(() {}),
+                        repo: repo,
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: noteCtrl,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'หมายเหตุ',
-                        border: OutlineInputBorder(),
+                    NeumorphicInsetBox(
+                      height: null,
+                      borderRadius: 14,
+                      child: TextField(
+                        controller: noteCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'หมายเหตุ',
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton(
+                      child: NeumorphicVerifyButton(
                         onPressed: () async {
                           if (editEnd.isBefore(editStart) ||
                               editEnd.isAtSameMomentAs(editStart)) {
@@ -388,11 +486,8 @@ class EditSessionSheet {
                             );
                           }
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('บันทึก'),
+                        text: 'บันทึก',
+                        height: 52,
                       ),
                     ),
                     const SizedBox(height: 12),

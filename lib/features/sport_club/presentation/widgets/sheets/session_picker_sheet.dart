@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/services/auth_service.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/cost_editors.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/position_lineup.dart';
@@ -167,8 +167,10 @@ class SessionPickerSheet {
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) => SafeArea(
         top: false,
@@ -187,23 +189,30 @@ class SessionPickerSheet {
                     width: 44,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(3),
+                      color: const Color(0xFFD4DAE3),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.white,
+                          offset: Offset(0, 1),
+                          blurRadius: 1,
+                        ),
+                      ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.16),
-                        shape: BoxShape.circle,
-                      ),
+                    NeumorphicContainer(
+                      width: 40,
+                      height: 40,
+                      shape: BoxShape.circle,
+                      depth: 3,
+                      blur: 6,
                       child: const Icon(
                         Icons.event_available_rounded,
-                        color: AppColors.primaryDark,
+                        color: NeumorphicTheme.primaryBlue,
                         size: 20,
                       ),
                     ),
@@ -214,6 +223,7 @@ class SessionPickerSheet {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: NeumorphicTheme.textPrimary,
                         ),
                       ),
                     ),
@@ -251,26 +261,23 @@ class SessionPickerSheet {
                           costItemsBySession[s['id']?.toString() ?? ''] ??
                           const <Map<String, dynamic>>[];
 
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isAlreadyBooked
-                                ? bookingStatus == 'pending'
-                                      ? Colors.orange.shade200
-                                      : Colors.green.shade200
-                                : isFull
-                                ? Colors.grey.shade300
-                                : AppColors.primary.withValues(alpha: 0.35),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                      return NeumorphicContainer(
+                        color: NeumorphicTheme.baseColor,
+                        borderRadius: 16,
+                        border: Border.all(
+                          color: isAlreadyBooked
+                              ? bookingStatus == 'pending'
+                                    ? Colors.orange.shade200
+                                    : Colors.green.shade200
+                              : isFull
+                              ? Colors.grey.shade300
+                              : NeumorphicTheme.primaryBlue.withValues(
+                                  alpha: 0.35,
+                                ),
+                        ),
+                        customShadows: NeumorphicTheme.smallShadows(
+                          distance: 2,
+                          blur: 5,
                         ),
                         child: Material(
                           color: Colors.transparent,
@@ -289,9 +296,12 @@ class SessionPickerSheet {
                                       final chosenPosId = await showModalBottomSheet<String>(
                                         context: pageContext,
                                         isScrollControlled: true,
+                                        backgroundColor:
+                                            NeumorphicTheme.baseColor,
+                                        clipBehavior: Clip.antiAlias,
                                         shape: const RoundedRectangleBorder(
                                           borderRadius: BorderRadius.vertical(
-                                            top: Radius.circular(24),
+                                            top: Radius.circular(28),
                                           ),
                                         ),
                                         builder: (bctx) {
@@ -320,16 +330,27 @@ class SessionPickerSheet {
                                                     children: [
                                                       Center(
                                                         child: Container(
-                                                          width: 40,
-                                                          height: 4,
+                                                          width: 44,
+                                                          height: 5,
                                                           decoration: BoxDecoration(
-                                                            color: Colors
-                                                                .grey
-                                                                .shade300,
+                                                            color: const Color(
+                                                              0xFFD4DAE3,
+                                                            ),
                                                             borderRadius:
                                                                 BorderRadius.circular(
-                                                                  2,
+                                                                  10,
                                                                 ),
+                                                            boxShadow: const [
+                                                              BoxShadow(
+                                                                color: Colors
+                                                                    .white,
+                                                                offset: Offset(
+                                                                  0,
+                                                                  1,
+                                                                ),
+                                                                blurRadius: 1,
+                                                              ),
+                                                            ],
                                                           ),
                                                         ),
                                                       ),
@@ -338,25 +359,18 @@ class SessionPickerSheet {
                                                       ),
                                                       Row(
                                                         children: [
-                                                          Container(
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  8,
-                                                                ),
-                                                            decoration: BoxDecoration(
-                                                              color: AppColors
-                                                                  .primary
-                                                                  .withValues(
-                                                                    alpha: 0.15,
-                                                                  ),
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                            ),
+                                                          NeumorphicContainer(
+                                                            width: 40,
+                                                            height: 40,
+                                                            shape:
+                                                                BoxShape.circle,
+                                                            depth: 3,
+                                                            blur: 6,
                                                             child: const Icon(
                                                               Icons
                                                                   .sports_soccer_rounded,
-                                                              color: AppColors
-                                                                  .primaryDark,
+                                                              color: NeumorphicTheme
+                                                                  .primaryBlue,
                                                               size: 20,
                                                             ),
                                                           ),
@@ -371,6 +385,8 @@ class SessionPickerSheet {
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .bold,
+                                                                color: NeumorphicTheme
+                                                                    .textPrimary,
                                                               ),
                                                             ),
                                                           ),
@@ -387,21 +403,32 @@ class SessionPickerSheet {
                                                       const SizedBox(
                                                         height: 12,
                                                       ),
-                                                      PositionLineupView(
-                                                        layout: fieldLayout!,
-                                                        fieldStyle: fieldStyle,
-                                                        positions:
-                                                            groupPositions,
-                                                        takenCounts: takenMap,
-                                                        selectedPositionId:
-                                                            tempSelectedId,
-                                                        onPositionSelected: (pid) {
-                                                          setModalState(
-                                                            () =>
-                                                                tempSelectedId =
-                                                                    pid,
-                                                          );
-                                                        },
+                                                      NeumorphicContainer(
+                                                        borderRadius: 18,
+                                                        depth: 3,
+                                                        blur: 6,
+                                                        padding:
+                                                            const EdgeInsets.all(
+                                                              8,
+                                                            ),
+                                                        child: PositionLineupView(
+                                                          layout: fieldLayout!,
+                                                          fieldStyle:
+                                                              fieldStyle,
+                                                          positions:
+                                                              groupPositions,
+                                                          takenCounts: takenMap,
+                                                          selectedPositionId:
+                                                              tempSelectedId,
+                                                          onPositionSelected:
+                                                              (pid) {
+                                                                setModalState(
+                                                                  () =>
+                                                                      tempSelectedId =
+                                                                          pid,
+                                                                );
+                                                              },
+                                                        ),
                                                       ),
                                                       const SizedBox(
                                                         height: 12,
@@ -455,11 +482,11 @@ class SessionPickerSheet {
                                                               '$label (${isFullPos ? 'เต็ม' : 'ว่าง $remaining'})',
                                                             ),
                                                             selectedColor:
-                                                                AppColors
-                                                                    .primary
+                                                                NeumorphicTheme
+                                                                    .primaryBlue
                                                                     .withValues(
                                                                       alpha:
-                                                                          0.25,
+                                                                          0.18,
                                                                     ),
                                                             onSelected:
                                                                 isFullPos
@@ -479,21 +506,7 @@ class SessionPickerSheet {
                                                       ),
                                                       SizedBox(
                                                         width: double.infinity,
-                                                        height: 48,
-                                                        child: ElevatedButton(
-                                                          style: ElevatedButton.styleFrom(
-                                                            backgroundColor:
-                                                                AppColors
-                                                                    .primary,
-                                                            foregroundColor:
-                                                                Colors.white,
-                                                            shape: RoundedRectangleBorder(
-                                                              borderRadius:
-                                                                  BorderRadius.circular(
-                                                                    12,
-                                                                  ),
-                                                            ),
-                                                          ),
+                                                        child: NeumorphicVerifyButton(
                                                           onPressed:
                                                               tempSelectedId ==
                                                                   null
@@ -502,15 +515,9 @@ class SessionPickerSheet {
                                                                   bctx,
                                                                   tempSelectedId,
                                                                 ),
-                                                          child: const Text(
-                                                            'ยืนยันตำแหน่งนี้',
-                                                            style: TextStyle(
-                                                              fontSize: 15,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                            ),
-                                                          ),
+                                                          text:
+                                                              'ยืนยันตำแหน่งนี้',
+                                                          height: 48,
                                                         ),
                                                       ),
                                                     ],
@@ -542,24 +549,18 @@ class SessionPickerSheet {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: isDisabled
-                                              ? Colors.grey.shade200
-                                              : AppColors.primary.withValues(
-                                                  alpha: 0.15,
-                                                ),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
+                                      NeumorphicContainer(
+                                        width: 36,
+                                        height: 36,
+                                        shape: BoxShape.circle,
+                                        depth: 2.5,
+                                        blur: 5,
                                         child: Icon(
                                           Icons.calendar_today_rounded,
                                           size: 18,
                                           color: isDisabled
-                                              ? Colors.grey.shade600
-                                              : AppColors.primaryDark,
+                                              ? NeumorphicTheme.textSecondary
+                                              : NeumorphicTheme.primaryBlue,
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -654,13 +655,14 @@ class SessionPickerSheet {
                                   ],
                                   if (sessionCostItems.isNotEmpty) ...[
                                     const SizedBox(height: 10),
-                                    Container(
+                                    NeumorphicContainer(
+                                      borderRadius: 12,
+                                      depth: 2,
+                                      blur: 4,
                                       padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey.shade50,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: Colors.grey.shade200,
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.7,
                                         ),
                                       ),
                                       child: Column(
@@ -682,8 +684,8 @@ class SessionPickerSheet {
                                                           ?.toString(),
                                                     ),
                                                     size: 14,
-                                                    color:
-                                                        AppColors.primaryDark,
+                                                    color: NeumorphicTheme
+                                                        .primaryBlue,
                                                   ),
                                                   const SizedBox(width: 6),
                                                   Expanded(
@@ -722,7 +724,8 @@ class SessionPickerSheet {
                                                 style: const TextStyle(
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.bold,
-                                                  color: AppColors.primaryDark,
+                                                  color: NeumorphicTheme
+                                                      .primaryBlue,
                                                 ),
                                               ),
                                             ],
@@ -752,7 +755,7 @@ class SessionPickerSheet {
                                             fontWeight: FontWeight.w600,
                                             color: isDisabled
                                                 ? Colors.grey.shade500
-                                                : AppColors.primaryDark,
+                                                : NeumorphicTheme.primaryBlue,
                                           ),
                                         ),
                                         const SizedBox(width: 4),
@@ -761,7 +764,7 @@ class SessionPickerSheet {
                                           size: 15,
                                           color: isDisabled
                                               ? Colors.grey.shade500
-                                              : AppColors.primaryDark,
+                                              : NeumorphicTheme.primaryBlue,
                                         ),
                                       ],
                                     ),

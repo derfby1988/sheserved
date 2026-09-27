@@ -3,6 +3,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/cost_editors.dart';
@@ -278,16 +279,16 @@ class GroupCostManager extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
+            const NeumorphicContainer(
+              width: 36,
+              height: 36,
+              shape: BoxShape.circle,
+              depth: 3,
+              blur: 6,
+              child: Icon(
                 Icons.payments_outlined,
                 size: 18,
-                color: AppColors.primaryDark,
+                color: NeumorphicTheme.primaryBlue,
               ),
             ),
             const SizedBox(width: 8),
@@ -300,12 +301,19 @@ class GroupCostManager extends StatelessWidget {
         const SizedBox(height: 14),
         Row(
           children: [
-            const Icon(
-              Icons.card_membership_rounded,
-              size: 16,
-              color: AppColors.primaryDark,
+            const NeumorphicContainer(
+              width: 30,
+              height: 30,
+              shape: BoxShape.circle,
+              depth: 2,
+              blur: 4,
+              child: Icon(
+                Icons.card_membership_rounded,
+                size: 16,
+                color: NeumorphicTheme.primaryBlue,
+              ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             const Text(
               'ค่าก๊วน / ค่าสมาชิก',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
@@ -364,12 +372,19 @@ class GroupCostManager extends StatelessWidget {
         const SizedBox(height: 18),
         Row(
           children: [
-            const Icon(
-              Icons.sports_tennis_rounded,
-              size: 16,
-              color: AppColors.primaryDark,
+            const NeumorphicContainer(
+              width: 30,
+              height: 30,
+              shape: BoxShape.circle,
+              depth: 2,
+              blur: 4,
+              child: Icon(
+                Icons.sports_tennis_rounded,
+                size: 16,
+                color: NeumorphicTheme.primaryBlue,
+              ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             const Text(
               'Template ค่าใช้จ่ายรอบ',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),

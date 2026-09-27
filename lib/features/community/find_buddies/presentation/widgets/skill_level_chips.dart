@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../domain/models/sport_skill_level.dart';
 
@@ -99,8 +100,19 @@ class SkillLevelSelector extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Icon(Icons.stars_rounded, size: 18, color: AppColors.primary),
-            const SizedBox(width: 6),
+            const NeumorphicContainer(
+              width: 32,
+              height: 32,
+              shape: BoxShape.circle,
+              depth: 2.5,
+              blur: 5,
+              child: Icon(
+                Icons.stars_rounded,
+                size: 16,
+                color: NeumorphicTheme.primaryBlue,
+              ),
+            ),
+            const SizedBox(width: 10),
             const Text(
               'ระดับฝีมือของผู้เล่นที่เปิดรับ',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
@@ -181,23 +193,31 @@ class SkillLevelSelector extends StatelessWidget {
 
         if (noteController != null) ...[
           const SizedBox(height: 12),
-          TextField(
-            controller: noteController,
-            maxLength: 150,
-            decoration: InputDecoration(
-              labelText: 'คำอธิบายระดับเพิ่มเติม (ตัวเลือก)',
-              hintText:
-                  'เช่น เน้นตีสนุก ไม่ซีเรียสผลแพ้ชนะ / ขอคนที่ตีเกมได้คล่อง',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          NeumorphicInsetBox(
+            height: null,
+            borderRadius: 14,
+            child: TextField(
+              controller: noteController,
+              maxLength: 150,
+              decoration: InputDecoration(
+                labelText: 'คำอธิบายระดับเพิ่มเติม (ตัวเลือก)',
+                hintText:
+                    'เช่น เน้นตีสนุก ไม่ซีเรียสผลแพ้ชนะ / ขอคนที่ตีเกมได้คล่อง',
+                filled: true,
+                fillColor: Colors.transparent,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                counterText: '',
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
-              counterText: '',
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              style: const TextStyle(fontSize: 13),
             ),
-            style: const TextStyle(fontSize: 13),
           ),
         ],
       ],

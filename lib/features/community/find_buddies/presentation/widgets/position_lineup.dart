@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../../core/constants/app_colors.dart';
 
 /// Icon options for position markers with localized Thai names.
@@ -3143,14 +3144,12 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: parseHexColor(
-                            selectedColor,
-                          ).withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
+                      NeumorphicContainer(
+                        width: 44,
+                        height: 44,
+                        shape: BoxShape.circle,
+                        depth: 3,
+                        blur: 6,
                         child: Icon(
                           (kPositionIconChoices[selectedIcon] ??
                                   kPositionIconChoices['player']!)
@@ -3174,17 +3173,29 @@ Future<Map<String, dynamic>?> showPositionMarkerEditor(
                   const SizedBox(height: 16),
 
                   // Label Input
-                  TextField(
-                    controller: labelCtrl,
-                    maxLength: 60,
-                    decoration: InputDecoration(
-                      labelText: 'ชื่อตำแหน่ง (เช่น กองหน้า, ผู้รักษาประตู)',
-                      hintText: 'ระบุชื่อตำแหน่งผู้เล่น',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  NeumorphicInsetBox(
+                    height: null,
+                    borderRadius: 14,
+                    child: TextField(
+                      controller: labelCtrl,
+                      maxLength: 60,
+                      decoration: InputDecoration(
+                        labelText: 'ชื่อตำแหน่ง (เช่น กองหน้า, ผู้รักษาประตู)',
+                        hintText: 'ระบุชื่อตำแหน่งผู้เล่น',
+                        filled: true,
+                        fillColor: Colors.transparent,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        errorText: errorText,
+                        counterText: '',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                       ),
-                      errorText: errorText,
-                      counterText: '',
                     ),
                   ),
                   const SizedBox(height: 14),

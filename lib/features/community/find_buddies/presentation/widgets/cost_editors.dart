@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:flutter/services.dart';
 import '../../../../../core/constants/app_colors.dart';
 
@@ -189,35 +190,36 @@ Widget paymentTimingBadge(String? timing, {double fontSize = 11}) {
 
 // ── Bottom-sheet editors ──
 
+OutlineInputBorder _fieldBorder() => OutlineInputBorder(
+  borderRadius: BorderRadius.circular(14),
+  borderSide: BorderSide.none,
+);
+
 InputDecoration _fieldDecoration(
   String label, {
   IconData? prefixIcon,
   String? hintText,
   Widget? suffix,
-}) => InputDecoration(
-  labelText: label,
-  hintText: hintText,
-  prefixIcon: prefixIcon != null
-      ? Icon(prefixIcon, size: 20, color: Colors.grey.shade600)
-      : null,
-  suffix: suffix,
-  filled: true,
-  fillColor: Colors.grey.shade50,
-  border: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: BorderSide(color: Colors.grey.shade300),
-  ),
-  enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: BorderSide(color: Colors.grey.shade300),
-  ),
-  focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: const BorderSide(color: AppColors.primaryDark, width: 1.8),
-  ),
-  isDense: true,
-  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-);
+}) {
+  final border = _fieldBorder();
+  return InputDecoration(
+    labelText: label,
+    hintText: hintText,
+    prefixIcon: prefixIcon != null
+        ? Icon(prefixIcon, size: 20, color: Colors.grey.shade600)
+        : null,
+    suffix: suffix,
+    filled: true,
+    fillColor: Colors.grey.shade50,
+    border: border,
+    enabledBorder: border,
+    focusedBorder: border,
+    errorBorder: border,
+    disabledBorder: border,
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  );
+}
 
 /// Parses a positive money amount (max 2 decimal places) from [raw].
 /// Returns null when invalid.
@@ -324,15 +326,15 @@ Future<Map<String, dynamic>?> showGroupFeeEditor(
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.16),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
+                    const NeumorphicContainer(
+                      width: 44,
+                      height: 44,
+                      shape: BoxShape.circle,
+                      depth: 3,
+                      blur: 6,
+                      child: Icon(
                         Icons.card_membership_rounded,
-                        color: AppColors.primaryDark,
+                        color: NeumorphicTheme.primaryBlue,
                         size: 22,
                       ),
                     ),
@@ -567,15 +569,15 @@ Future<Map<String, dynamic>?> showRoundExpenseTemplateEditor(
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.16),
-                          shape: BoxShape.circle,
-                        ),
+                      NeumorphicContainer(
+                        width: 44,
+                        height: 44,
+                        shape: BoxShape.circle,
+                        depth: 3,
+                        blur: 6,
                         child: Icon(
                           costCategoryIcon(category),
-                          color: AppColors.primaryDark,
+                          color: NeumorphicTheme.primaryBlue,
                           size: 22,
                         ),
                       ),
@@ -903,15 +905,15 @@ Future<Map<String, dynamic>?> showSessionCostItemEditor(
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.16),
-                          shape: BoxShape.circle,
-                        ),
+                      NeumorphicContainer(
+                        width: 44,
+                        height: 44,
+                        shape: BoxShape.circle,
+                        depth: 3,
+                        blur: 6,
                         child: Icon(
                           costCategoryIcon(category),
-                          color: AppColors.primaryDark,
+                          color: NeumorphicTheme.primaryBlue,
                           size: 22,
                         ),
                       ),
@@ -1252,15 +1254,15 @@ Future<Map<String, dynamic>?> showCostStandardPicker(
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.16),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
+                  const NeumorphicContainer(
+                    width: 40,
+                    height: 40,
+                    shape: BoxShape.circle,
+                    depth: 3,
+                    blur: 6,
+                    child: Icon(
                       Icons.playlist_add_check_rounded,
-                      color: AppColors.primaryDark,
+                      color: NeumorphicTheme.primaryBlue,
                       size: 20,
                     ),
                   ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/shared/widgets/thai_address_picker/thai_address_repository.dart';
 
@@ -48,6 +49,11 @@ class AdvancedFilterSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (sheetContext) => _AdvancedFilterSheetBody(
         currentFilter: currentFilter,
         onRequestLocation: onRequestLocation,
@@ -243,20 +249,47 @@ class _AdvancedFilterSheetBodyState extends State<_AdvancedFilterSheetBody> {
               width: 44,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(4),
+                color: const Color(0xFFD4DAE3),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.white,
+                    offset: Offset(0, 1),
+                    blurRadius: 1,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
+                NeumorphicContainer(
+                  width: 36,
+                  height: 36,
+                  shape: BoxShape.circle,
+                  depth: 3,
+                  blur: 6,
+                  child: const Icon(
+                    Icons.filter_alt_rounded,
+                    size: 18,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
                     'ตัวกรอง "เฉพาะก๊วน"',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: NeumorphicTheme.textPrimary,
+                    ),
                   ),
                 ),
                 TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: NeumorphicTheme.primaryBlue,
+                  ),
                   onPressed: () {
                     _qController.clear();
                     _currentProvince = null;
@@ -277,166 +310,227 @@ class _AdvancedFilterSheetBodyState extends State<_AdvancedFilterSheetBody> {
               ],
             ),
             Expanded(
-              child: ListView(
-                children: [
-                  TextField(
-                    controller: _qController,
-                    decoration: const InputDecoration(
-                      labelText: 'ค้นหา "ชื่อก๊วน"',
-                      prefixIcon: Icon(Icons.search),
+              child: NeumorphicContainer(
+                borderRadius: 20,
+                depth: 4,
+                blur: 8,
+                padding: const EdgeInsets.all(14),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: Theme.of(context).colorScheme.copyWith(
+                      primary: NeumorphicTheme.primaryBlue,
+                    ),
+                    sliderTheme: Theme.of(context).sliderTheme.copyWith(
+                      activeTrackColor: NeumorphicTheme.primaryBlue,
+                      thumbColor: NeumorphicTheme.primaryBlue,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: _currentProvince ?? '',
-                    menuMaxHeight: 320,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: 'จังหวัด',
-                      helperText: _loadingProvinces ? 'กำลังโหลด...' : null,
-                    ),
-                    items: [
-                      const DropdownMenuItem<String>(
-                        value: '',
-                        child: Text('ทุกจังหวัด'),
-                      ),
-                      if (_currentProvince != null &&
-                          !_provinces.contains(_currentProvince))
-                        DropdownMenuItem<String>(
-                          value: _currentProvince,
-                          child: Text(_currentProvince!),
-                        ),
-                      ..._provinces.map(
-                        (province) => DropdownMenuItem<String>(
-                          value: province,
-                          child: Text(province),
+                  child: ListView(
+                    children: [
+                      NeumorphicInsetBox(
+                        height: null,
+                        borderRadius: 14,
+                        child: TextField(
+                          controller: _qController,
+                          decoration: const InputDecoration(
+                            labelText: 'ค้นหา "ชื่อก๊วน"',
+                            prefixIcon: Icon(Icons.search),
+                            filled: true,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      NeumorphicInsetBox(
+                        height: null,
+                        borderRadius: 14,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: DropdownButtonFormField<String>(
+                          value: _currentProvince ?? '',
+                          menuMaxHeight: 320,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'จังหวัด',
+                            helperText: _loadingProvinces
+                                ? 'กำลังโหลด...'
+                                : null,
+                            filled: true,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('ทุกจังหวัด'),
+                            ),
+                            if (_currentProvince != null &&
+                                !_provinces.contains(_currentProvince))
+                              DropdownMenuItem<String>(
+                                value: _currentProvince,
+                                child: Text(_currentProvince!),
+                              ),
+                            ..._provinces.map(
+                              (province) => DropdownMenuItem<String>(
+                                value: province,
+                                child: Text(province),
+                              ),
+                            ),
+                          ],
+                          onChanged: _loadingProvinces
+                              ? null
+                              : (province) => _selectProvince(
+                                  province?.isEmpty == true ? null : province,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      NeumorphicInsetBox(
+                        height: null,
+                        borderRadius: 14,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: DropdownButtonFormField<String>(
+                          value: _currentDistrict ?? '',
+                          menuMaxHeight: 320,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'อำเภอ/เขต',
+                            helperText: _currentProvince == null
+                                ? 'เลือกจังหวัดก่อน'
+                                : (_loadingDistricts ? 'กำลังโหลด...' : null),
+                            filled: true,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('ทุกอำเภอ/เขต'),
+                            ),
+                            if (_currentDistrict != null &&
+                                !_districts.contains(_currentDistrict))
+                              DropdownMenuItem<String>(
+                                value: _currentDistrict,
+                                child: Text(_currentDistrict!),
+                              ),
+                            ..._districts.map(
+                              (district) => DropdownMenuItem<String>(
+                                value: district,
+                                child: Text(district),
+                              ),
+                            ),
+                          ],
+                          onChanged:
+                              _currentProvince == null || _loadingDistricts
+                              ? null
+                              : (district) => setState(
+                                  () => _currentDistrict =
+                                      district?.isEmpty == true
+                                      ? null
+                                      : district,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('เป็นก๊วน "เปิด" เข้าร่วมได้ทันที'),
+                        subtitle: const Text('ไม่ต้องรอเจ้าของอนุมัติ'),
+                        value: _openOnly,
+                        onChanged: (value) => setState(() => _openOnly = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ที่เป็นสมาชิก'),
+                        value: _joinedOnly,
+                        onChanged: (value) => _togglePersonal(value, false),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ที่ดูแล'),
+                        value: _managedOnly,
+                        onChanged: (value) => _togglePersonal(value, true),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ทุกระดับ'),
+                        subtitle: const Text('เปิดรับผู้เล่นทุกระดับ'),
+                        value: _allLevelsOnly,
+                        onChanged: (value) =>
+                            setState(() => _allLevelsOnly = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('เปิดรับทุกเพศ'),
+                        subtitle: const Text('เฉพาะก๊วนที่ไม่จำกัดเพศผู้เล่น'),
+                        value: _genderAnyOnly,
+                        onChanged: (value) =>
+                            setState(() => _genderAnyOnly = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ไม่ระบุค่าใช้จ่าย'),
+                        subtitle: const Text(
+                          'เฉพาะก๊วนที่ไม่มีค่าก๊วนหรือค่าใช้จ่ายเฉพาะรอบ',
+                        ),
+                        value: _noFeesOnly,
+                        onChanged: (value) =>
+                            setState(() => _noFeesOnly = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('ใช้ตำแหน่งปัจจุบัน'),
+                        subtitle: Text(
+                          _locationEnabled && _locationReady
+                              ? 'กรองก๊วนภายในรัศมี'
+                              : 'ต้องอนุญาตสิทธิ์ตำแหน่งก่อน',
+                        ),
+                        value: _locationEnabled && _locationReady,
+                        onChanged: (value) {
+                          if (value) {
+                            _enableLocation();
+                          } else {
+                            setState(() => _locationEnabled = false);
+                          }
+                        },
+                      ),
+                      if (_locationEnabled && _locationReady)
+                        Row(
+                          children: [
+                            const Text('รัศมี'),
+                            Expanded(
+                              child: Slider(
+                                value: _radiusKm.clamp(1, 50).toDouble(),
+                                min: 1,
+                                max: 50,
+                                divisions: 49,
+                                label: '${_radiusKm.round()} กม.',
+                                onChanged: (value) =>
+                                    setState(() => _radiusKm = value),
+                              ),
+                            ),
+                            Text('${_radiusKm.round()} กม.'),
+                          ],
+                        ),
                     ],
-                    onChanged: _loadingProvinces
-                        ? null
-                        : (province) => _selectProvince(
-                            province?.isEmpty == true ? null : province,
-                          ),
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: _currentDistrict ?? '',
-                    menuMaxHeight: 320,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: 'อำเภอ/เขต',
-                      helperText: _currentProvince == null
-                          ? 'เลือกจังหวัดก่อน'
-                          : (_loadingDistricts ? 'กำลังโหลด...' : null),
-                    ),
-                    items: [
-                      const DropdownMenuItem<String>(
-                        value: '',
-                        child: Text('ทุกอำเภอ/เขต'),
-                      ),
-                      if (_currentDistrict != null &&
-                          !_districts.contains(_currentDistrict))
-                        DropdownMenuItem<String>(
-                          value: _currentDistrict,
-                          child: Text(_currentDistrict!),
-                        ),
-                      ..._districts.map(
-                        (district) => DropdownMenuItem<String>(
-                          value: district,
-                          child: Text(district),
-                        ),
-                      ),
-                    ],
-                    onChanged: _currentProvince == null || _loadingDistricts
-                        ? null
-                        : (district) => setState(
-                            () => _currentDistrict = district?.isEmpty == true
-                                ? null
-                                : district,
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('เป็นก๊วน "เปิด" เข้าร่วมได้ทันที'),
-                    subtitle: const Text('ไม่ต้องรอเจ้าของอนุมัติ'),
-                    value: _openOnly,
-                    onChanged: (value) => setState(() => _openOnly = value),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('ที่เป็นสมาชิก'),
-                    value: _joinedOnly,
-                    onChanged: (value) => _togglePersonal(value, false),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('ที่ดูแล'),
-                    value: _managedOnly,
-                    onChanged: (value) => _togglePersonal(value, true),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('ทุกระดับ'),
-                    subtitle: const Text('เปิดรับผู้เล่นทุกระดับ'),
-                    value: _allLevelsOnly,
-                    onChanged: (value) =>
-                        setState(() => _allLevelsOnly = value),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('เปิดรับทุกเพศ'),
-                    subtitle: const Text('เฉพาะก๊วนที่ไม่จำกัดเพศผู้เล่น'),
-                    value: _genderAnyOnly,
-                    onChanged: (value) =>
-                        setState(() => _genderAnyOnly = value),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('ไม่ระบุค่าใช้จ่าย'),
-                    subtitle: const Text(
-                      'เฉพาะก๊วนที่ไม่มีค่าก๊วนหรือค่าใช้จ่ายเฉพาะรอบ',
-                    ),
-                    value: _noFeesOnly,
-                    onChanged: (value) => setState(() => _noFeesOnly = value),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('ใช้ตำแหน่งปัจจุบัน'),
-                    subtitle: Text(
-                      _locationEnabled && _locationReady
-                          ? 'กรองก๊วนภายในรัศมี'
-                          : 'ต้องอนุญาตสิทธิ์ตำแหน่งก่อน',
-                    ),
-                    value: _locationEnabled && _locationReady,
-                    onChanged: (value) {
-                      if (value) {
-                        _enableLocation();
-                      } else {
-                        setState(() => _locationEnabled = false);
-                      }
-                    },
-                  ),
-                  if (_locationEnabled && _locationReady)
-                    Row(
-                      children: [
-                        const Text('รัศมี'),
-                        Expanded(
-                          child: Slider(
-                            value: _radiusKm.clamp(1, 50).toDouble(),
-                            min: 1,
-                            max: 50,
-                            divisions: 49,
-                            label: '${_radiusKm.round()} กม.',
-                            onChanged: (value) =>
-                                setState(() => _radiusKm = value),
-                          ),
-                        ),
-                        Text('${_radiusKm.round()} กม.'),
-                      ],
-                    ),
-                ],
+                ),
               ),
             ),
             Padding(
@@ -448,6 +542,12 @@ class _AdvancedFilterSheetBodyState extends State<_AdvancedFilterSheetBody> {
                       height: 48,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
+                          foregroundColor: NeumorphicTheme.textSecondary,
+                          side: BorderSide(
+                            color: NeumorphicTheme.shadowDark.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
                           shape: const StadiumBorder(),
                           alignment: Alignment.center,
                           padding: EdgeInsets.zero,
@@ -465,18 +565,10 @@ class _AdvancedFilterSheetBodyState extends State<_AdvancedFilterSheetBody> {
                   Expanded(
                     child: SizedBox(
                       height: 48,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          alignment: Alignment.center,
-                          padding: EdgeInsets.zero,
-                        ),
+                      child: NeumorphicVerifyButton(
                         onPressed: () => Navigator.pop(context, buildValues()),
-                        child: const Text(
-                          'แสดงผลลัพธ์',
-                          maxLines: 1,
-                          textAlign: TextAlign.center,
-                        ),
+                        text: 'แสดงผลลัพธ์',
+                        height: 48,
                       ),
                     ),
                   ),

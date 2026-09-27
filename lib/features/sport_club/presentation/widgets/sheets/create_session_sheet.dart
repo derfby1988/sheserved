@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/services/auth_service.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/community/find_buddies/presentation/widgets/position_lineup.dart';
 import 'package:sheserved/shared/widgets/thai_buddhist_date_picker.dart';
@@ -81,8 +81,10 @@ class CreateSessionSheet {
     await showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
         return StatefulBuilder(
@@ -271,26 +273,53 @@ class CreateSessionSheet {
                     const SizedBox(height: 6),
                     Center(
                       child: Container(
-                        width: 40,
-                        height: 4,
+                        width: 44,
+                        height: 5,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                          color: const Color(0xFFD4DAE3),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.white,
+                              offset: Offset(0, 1),
+                              blurRadius: 1,
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'สร้างรอบนัด',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        NeumorphicContainer(
+                          width: 40,
+                          height: 40,
+                          shape: BoxShape.circle,
+                          depth: 3,
+                          blur: 6,
+                          child: const Icon(
+                            Icons.event_available_rounded,
+                            color: NeumorphicTheme.primaryBlue,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'สร้างรอบนัด',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: NeumorphicTheme.textPrimary,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     ThaiBuddhistDatePickerField(
                       value: selectedDate,
                       label: 'วันที่',
+                      useInsetStyle: true,
                       onDateSelected: (d) {
                         var nextStart = dateTimeAt(d, startTime);
                         var nextEnd = endDateTimeAt(d, startTime, endTime);
@@ -318,6 +347,15 @@ class CreateSessionSheet {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: NeumorphicTheme.primaryBlue,
+                              side: BorderSide(
+                                color: NeumorphicTheme.shadowDark.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                              shape: const StadiumBorder(),
+                            ),
                             onPressed: pickStartTime,
                             icon: const Icon(Icons.schedule),
                             label: Text('เริ่ม ${startTime.format(ctx)} น.'),
@@ -326,6 +364,15 @@ class CreateSessionSheet {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: NeumorphicTheme.primaryBlue,
+                              side: BorderSide(
+                                color: NeumorphicTheme.shadowDark.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                              shape: const StadiumBorder(),
+                            ),
                             onPressed: pickEndTime,
                             icon: const Icon(Icons.timer_off_outlined),
                             label: Text('สิ้นสุด ${endTime.format(ctx)} น.'),
@@ -334,21 +381,32 @@ class CreateSessionSheet {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('จำนวนผู้เข้าร่วมสูงสุดในรอบนี้'),
-                        Text('$capacity คน'),
-                      ],
-                    ),
-                    Slider(
-                      value: capacity.toDouble(),
-                      min: 1,
-                      max: 30,
-                      divisions: 29,
-                      label: '$capacity',
-                      onChanged: (value) =>
-                          setModalState(() => capacity = value.toInt()),
+                    NeumorphicContainer(
+                      borderRadius: 18,
+                      depth: 4,
+                      blur: 8,
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('จำนวนผู้เข้าร่วมสูงสุดในรอบนี้'),
+                              Text('$capacity คน'),
+                            ],
+                          ),
+                          Slider(
+                            value: capacity.toDouble(),
+                            min: 1,
+                            max: 30,
+                            divisions: 29,
+                            label: '$capacity',
+                            activeColor: NeumorphicTheme.primaryBlue,
+                            onChanged: (value) =>
+                                setModalState(() => capacity = value.toInt()),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (ownerAutoJoin &&
@@ -356,16 +414,16 @@ class CreateSessionSheet {
                         fieldLayout != null) ...[
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          NeumorphicContainer(
+                            width: 36,
+                            height: 36,
+                            shape: BoxShape.circle,
+                            depth: 3,
+                            blur: 6,
                             child: const Icon(
                               Icons.person_pin_circle_rounded,
-                              size: 16,
-                              color: AppColors.primaryDark,
+                              size: 18,
+                              color: NeumorphicTheme.primaryBlue,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -384,14 +442,22 @@ class CreateSessionSheet {
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 10),
-                      PositionLineupView(
-                        layout: fieldLayout,
-                        fieldStyle: fieldStyle,
-                        positions: groupPositions,
-                        selectedPositionId: selectedOwnerPositionId,
-                        onPositionSelected: (posId) {
-                          setModalState(() => selectedOwnerPositionId = posId);
-                        },
+                      NeumorphicContainer(
+                        borderRadius: 18,
+                        depth: 3,
+                        blur: 6,
+                        padding: const EdgeInsets.all(8),
+                        child: PositionLineupView(
+                          layout: fieldLayout,
+                          fieldStyle: fieldStyle,
+                          positions: groupPositions,
+                          selectedPositionId: selectedOwnerPositionId,
+                          onPositionSelected: (posId) {
+                            setModalState(
+                              () => selectedOwnerPositionId = posId,
+                            );
+                          },
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -409,9 +475,8 @@ class CreateSessionSheet {
                               radius: 8,
                             ),
                             label: Text(label),
-                            selectedColor: AppColors.primary.withValues(
-                              alpha: 0.25,
-                            ),
+                            selectedColor: NeumorphicTheme.primaryBlue
+                                .withValues(alpha: 0.18),
                             onSelected: (_) => setModalState(
                               () => selectedOwnerPositionId = posId,
                             ),
@@ -420,52 +485,77 @@ class CreateSessionSheet {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    SessionCostEditor(
-                      sheetContext: ctx,
-                      groupId: groupId,
-                      costItems: costItems,
-                      sessionHours: () {
-                        final s = dateTimeAt(selectedDate, startTime);
-                        final e = endDateTimeAt(
-                          selectedDate,
-                          startTime,
-                          endTime,
-                        );
-                        return e.difference(s).inMinutes / 60.0;
-                      },
-                      refresh: () => setModalState(() {}),
-                      repo: repo,
+                    NeumorphicContainer(
+                      borderRadius: 20,
+                      depth: 4,
+                      blur: 8,
+                      padding: const EdgeInsets.all(16),
+                      child: SessionCostEditor(
+                        sheetContext: ctx,
+                        groupId: groupId,
+                        costItems: costItems,
+                        sessionHours: () {
+                          final s = dateTimeAt(selectedDate, startTime);
+                          final e = endDateTimeAt(
+                            selectedDate,
+                            startTime,
+                            endTime,
+                          );
+                          return e.difference(s).inMinutes / 60.0;
+                        },
+                        refresh: () => setModalState(() {}),
+                        repo: repo,
+                      ),
                     ),
 
                     const SizedBox(height: 12),
-                    TextFormField(
-                      controller: noteCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'หมายเหตุ (ไม่บังคับ)',
+                    NeumorphicInsetBox(
+                      height: null,
+                      borderRadius: 14,
+                      child: TextFormField(
+                        controller: noteCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'หมายเหตุ (ไม่บังคับ)',
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        maxLines: 2,
                       ),
-                      maxLines: 2,
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: submitting || waitingForRefresh
-                            ? null
-                            : submit,
+                      child: NeumorphicVerifyButton(
+                        onPressed: submit,
+                        isEnabled: !submitting && !waitingForRefresh,
+                        text: waitingForRefresh
+                            ? 'กำลังรีเฟรชรายการก๊วน...'
+                            : 'บันทึกรอบนัด',
+                        height: 52,
                         icon: submitting || waitingForRefresh
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
                                 ),
                               )
-                            : const Icon(Icons.save),
-                        label: Text(
-                          waitingForRefresh
-                              ? 'กำลังรีเฟรชรายการก๊วน...'
-                              : 'บันทึกรอบนัด',
-                        ),
+                            : const Icon(
+                                Icons.save_rounded,
+                                color: Colors.white,
+                              ),
                       ),
                     ),
                   ],
