@@ -16,8 +16,8 @@ import '../../../find_buddies/domain/models/sport_skill_level.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 import '../../../find_buddies/presentation/widgets/skill_level_chips.dart';
-import '../../../../../../shared/widgets/tlz_app_top_bar.dart';
 import '../../../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
+import '../../../../../../shared/widgets/neumorphic/neumorphic.dart';
 
 class CreateGroupPage extends StatefulWidget {
   const CreateGroupPage({super.key});
@@ -485,6 +485,29 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     } catch (_) {}
   }
 
+  Widget _buildBackgroundCircle(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: NeumorphicTheme.baseColor,
+        boxShadow: [
+          BoxShadow(
+            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.35),
+            offset: const Offset(12, 12),
+            blurRadius: 24,
+          ),
+          BoxShadow(
+            color: NeumorphicTheme.shadowLight,
+            offset: const Offset(-12, -12),
+            blurRadius: 24,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -495,44 +518,71 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _handleBackRequest();
       },
       child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: Container(
-          decoration: BoxDecoration(gradient: AppColors.primaryGradient),
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: TlzAppTopBar.onPrimary(
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => _handleBackRequest(),
-                    ),
-                    middle: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'สร้างก๊วนกีฬา',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
+        backgroundColor: NeumorphicTheme.baseColor,
+        body: Stack(
+          children: [
+            // Ambient Neumorphic Background Circles
+            Positioned(
+              top: -60,
+              left: -60,
+              child: _buildBackgroundCircle(200),
+            ),
+            Positioned(
+              bottom: 120,
+              right: -80,
+              child: _buildBackgroundCircle(240),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  // Neumorphic Top Bar
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: NeumorphicTheme.baseColor,
+                            boxShadow: NeumorphicTheme.smallShadows(
+                              distance: 4,
+                              blur: 8,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(21),
+                              onTap: () => _handleBackRequest(),
+                              child: const Icon(
+                                Icons.arrow_back,
+                                color: NeumorphicTheme.textPrimary,
+                                size: 20,
+                              ),
+                            ),
+                          ),
                         ),
-                        maxLines: 1,
-                      ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Text(
+                            'สร้างก๊วนกีฬา',
+                            style: TextStyle(
+                              color: NeumorphicTheme.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(32),
-                        topRight: Radius.circular(32),
-                      ),
-                    ),
+                  Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () =>
@@ -546,7 +596,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               child: ListView(
                                 padding: const EdgeInsets.fromLTRB(
                                   20,
-                                  24,
+                                  8,
                                   20,
                                   24,
                                 ),
@@ -861,15 +911,23 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                   20,
                                   12,
                                   20,
-                                  12,
+                                  16,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  border: Border(
-                                    top: BorderSide(
-                                      color: Colors.grey.shade200,
+                                  color: NeumorphicTheme.baseColor,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: NeumorphicTheme.shadowDark
+                                          .withValues(alpha: 0.35),
+                                      offset: const Offset(0, -4),
+                                      blurRadius: 12,
                                     ),
-                                  ),
+                                    const BoxShadow(
+                                      color: NeumorphicTheme.shadowLight,
+                                      offset: Offset(0, -1),
+                                      blurRadius: 2,
+                                    ),
+                                  ],
                                 ),
                                 child: _buildSubmitButton(),
                               ),
@@ -879,10 +937,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -893,34 +951,50 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     required IconData icon,
     required Widget child,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 20, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+    return NeumorphicContainer(
+      color: NeumorphicTheme.baseColor,
+      borderRadius: 24,
+      depth: 8,
+      blur: 16,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: NeumorphicTheme.baseColor,
+                  boxShadow: NeumorphicTheme.smallShadows(
+                    distance: 3,
+                    blur: 6,
+                  ),
+                ),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: NeumorphicTheme.primaryBlue,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.backgroundCream.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: NeumorphicTheme.textPrimary,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
           ),
-          child: child,
-        ),
-      ],
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
     );
   }
 
@@ -931,57 +1005,103 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     required VoidCallback onToggle,
     required Widget child,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onToggle,
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Icon(icon, size: 20, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+    return NeumorphicContainer(
+      color: NeumorphicTheme.baseColor,
+      borderRadius: 24,
+      depth: expanded ? 8 : 5,
+      blur: expanded ? 16 : 12,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: NeumorphicTheme.baseColor,
+                        boxShadow: NeumorphicTheme.smallShadows(
+                          distance: 3,
+                          blur: 6,
+                        ),
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 18,
+                        color: expanded
+                            ? NeumorphicTheme.primaryBlue
+                            : NeumorphicTheme.textSecondary,
                       ),
                     ),
-                  ),
-                  if (!expanded) ...[
-                    const Text(
-                      'แตะเพื่อเปิด',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: NeumorphicTheme.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 4),
+                    if (!expanded) ...[
+                      const Text(
+                        'แตะเพื่อเปิด',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: NeumorphicTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: NeumorphicTheme.baseColor,
+                        boxShadow: NeumorphicTheme.smallShadows(
+                          distance: expanded ? 1.5 : 2.5,
+                          blur: expanded ? 3 : 5,
+                        ),
+                      ),
+                      child: Center(
+                        child: AnimatedRotation(
+                          turns: expanded ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            color: expanded
+                                ? NeumorphicTheme.primaryBlue
+                                : NeumorphicTheme.textSecondary,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
-                  Icon(
-                    expanded ? Icons.expand_less : Icons.expand_more,
-                    color: AppColors.primary,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-        if (expanded)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.backgroundCream.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.primary.withOpacity(0.1)),
-            ),
-            child: child,
-          ),
-      ],
+          if (expanded) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xFFD4DAE3)),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ],
+      ),
     );
   }
 
@@ -993,49 +1113,13 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     int maxLines = 1,
     String? Function(String?)? validator,
   }) {
-    return TextFormField(
+    return _NeumorphicModernTextField(
       controller: controller,
-      maxLines: maxLines,
+      label: label,
+      hint: hint,
       maxLength: maxLength,
+      maxLines: maxLines,
       validator: validator,
-      buildCounter:
-          (context, {required currentLength, required isFocused, maxLength}) {
-            if (maxLength == null) return null;
-            return Padding(
-              padding: const EdgeInsets.only(top: 4, right: 4),
-              child: Text(
-                '$currentLength/$maxLength',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: currentLength > maxLength
-                      ? Colors.redAccent
-                      : Colors.grey,
-                ),
-              ),
-            );
-          },
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.2)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.1)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-      ),
     );
   }
 
@@ -1062,61 +1146,84 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text(
+              'กีฬา *',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: NeumorphicTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
             GestureDetector(
               onTap: () => _showSportsSelector(field),
-              child: Container(
-                height: 56,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: hasError
-                        ? Colors.redAccent
-                        : AppColors.primary.withOpacity(0.2),
-                  ),
+              child: CustomPaint(
+                painter: NeumorphicInsetPainter(
+                  borderRadius: 16,
+                  distance: 4.0,
+                  blur: 6.0,
+                  border: hasError
+                      ? const BorderSide(color: Colors.redAccent, width: 1.5)
+                      : BorderSide(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          width: 1.0,
+                        ),
                 ),
-                child: Row(
-                  children: [
-                    if (name != null) ...[
-                      if (icon.isNotEmpty)
-                        Text(
-                          icon,
-                          style: _emojiTextStyle(
-                            context,
-                          ).copyWith(fontSize: 18),
-                        ),
-                      if (icon.isNotEmpty) const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          name,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
-                    ] else
-                      Expanded(
-                        child: Text(
-                          'เลือกประเภทกีฬา *',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      if (name != null) ...[
+                        if (icon.isNotEmpty)
+                          Text(
+                            icon,
+                            style: _emojiTextStyle(
+                              context,
+                            ).copyWith(fontSize: 18),
+                          ),
+                        if (icon.isNotEmpty) const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: NeumorphicTheme.textPrimary,
+                            ),
                           ),
                         ),
+                      ] else
+                        Expanded(
+                          child: Text(
+                            'เลือกประเภทกีฬา *',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: NeumorphicTheme.textSecondary
+                                  .withValues(alpha: 0.65),
+                            ),
+                          ),
+                        ),
+                      Icon(
+                        Icons.keyboard_arrow_down,
+                        color: hasError
+                            ? Colors.redAccent
+                            : NeumorphicTheme.textSecondary,
                       ),
-                    Icon(
-                      Icons.keyboard_arrow_down,
-                      color: hasError ? Colors.redAccent : Colors.grey,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
             if (hasError) ...[
               const SizedBox(height: 6),
-              Text(
-                field.errorText!,
-                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  field.errorText!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
               ),
             ],
           ],
@@ -1129,8 +1236,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     final selectedId = await showModalBottomSheet<String?>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
         String query = '';
@@ -1141,10 +1249,19 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
               child: Container(
-                height: MediaQuery.of(ctx).size.height * 0.6,
+                height: MediaQuery.of(ctx).size.height * 0.65,
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                 child: Column(
                   children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCAD1DC),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         const Expanded(
@@ -1153,35 +1270,58 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: NeumorphicTheme.textPrimary,
                             ),
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(
+                            Icons.close,
+                            color: NeumorphicTheme.textSecondary,
+                          ),
                           onPressed: () => Navigator.of(ctx).pop(),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: 'ค้นหากีฬา',
-                        prefixIcon: const Icon(Icons.search),
-                        filled: true,
-                        fillColor: Colors.grey[50],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
+                    CustomPaint(
+                      painter: NeumorphicInsetPainter(
+                        borderRadius: 16,
+                        distance: 3.0,
+                        blur: 5.0,
+                      ),
+                      child: Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: TextField(
+                          autofocus: true,
+                          style: const TextStyle(
+                            color: NeumorphicTheme.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'ค้นหากีฬา',
+                            hintStyle: TextStyle(
+                              color: NeumorphicTheme.textSecondary
+                                  .withValues(alpha: 0.65),
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: NeumorphicTheme.textSecondary,
+                            ),
+                            filled: true,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onChanged: (value) {
+                            setSheetState(() => query = value);
+                          },
                         ),
                       ),
-                      onChanged: (value) {
-                        setSheetState(() => query = value);
-                      },
                     ),
                     const SizedBox(height: 12),
                     Expanded(
@@ -1199,7 +1339,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                             return const Center(
                               child: Text(
                                 'ไม่พบกีฬาที่ค้นหา',
-                                style: TextStyle(color: Colors.grey),
+                                style: TextStyle(
+                                  color: NeumorphicTheme.textSecondary,
+                                ),
                               ),
                             );
                           }
@@ -1211,7 +1353,6 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                               final icon = s['icon']?.toString() ?? '';
                               final isSelected = id == _sportId;
                               return ListTile(
-                                contentPadding: EdgeInsets.zero,
                                 leading: icon.isNotEmpty
                                     ? Text(
                                         icon,
@@ -1227,14 +1368,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                                         ? FontWeight.bold
                                         : FontWeight.normal,
                                     color: isSelected
-                                        ? AppColors.primary
-                                        : null,
+                                        ? NeumorphicTheme.primaryBlue
+                                        : NeumorphicTheme.textPrimary,
                                   ),
                                 ),
                                 trailing: isSelected
-                                    ? Icon(
+                                    ? const Icon(
                                         Icons.check_circle,
-                                        color: AppColors.primary,
+                                        color: NeumorphicTheme.primaryBlue,
                                       )
                                     : null,
                                 onTap: () => Navigator.of(ctx).pop(id),
@@ -1259,55 +1400,104 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   }
 
   Widget _buildLoadingField(String label) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withOpacity(0.1)),
-      ),
-      child: Row(
-        children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          const Spacer(),
-          const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: NeumorphicTheme.textPrimary,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+        CustomPaint(
+          painter: NeumorphicInsetPainter(
+            borderRadius: 16,
+            distance: 4.0,
+            blur: 6.0,
+          ),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text(
+                  'กำลังโหลด...',
+                  style: TextStyle(
+                    color: NeumorphicTheme.textSecondary
+                        .withValues(alpha: 0.65),
+                    fontSize: 14,
+                  ),
+                ),
+                const Spacer(),
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildSportsErrorField() {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'โหลดรายการกีฬาไม่สำเร็จ',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'กีฬา',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: NeumorphicTheme.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CustomPaint(
+          painter: NeumorphicInsetPainter(
+            borderRadius: 16,
+            distance: 4.0,
+            blur: 6.0,
+            border: const BorderSide(color: Colors.redAccent, width: 1.5),
+          ),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'โหลดรายการกีฬาไม่สำเร็จ',
+                    style: TextStyle(
+                      color: NeumorphicTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _loadSports,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('โหลดใหม่', style: TextStyle(fontSize: 13)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: NeumorphicTheme.primaryBlue,
+                  ),
+                ),
+              ],
             ),
           ),
-          TextButton.icon(
-            onPressed: _loadSports,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('โหลดใหม่', style: TextStyle(fontSize: 13)),
-            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1317,22 +1507,42 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       child: Row(
         children: _recentGroupNames.take(8).map((n) {
           return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ActionChip(
-              backgroundColor: AppColors.primary.withOpacity(0.05),
-              side: BorderSide(color: AppColors.primary.withOpacity(0.1)),
-              shape: RoundedRectangleBorder(
+            padding: const EdgeInsets.only(right: 8, bottom: 4),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
                 borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  setState(() {
+                    _nameCtrl.text = n;
+                    _nameCtrl.selection = TextSelection.fromPosition(
+                      TextPosition(offset: n.length),
+                    );
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: NeumorphicTheme.baseColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: NeumorphicTheme.smallShadows(
+                      distance: 2,
+                      blur: 4,
+                    ),
+                  ),
+                  child: Text(
+                    n,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: NeumorphicTheme.textPrimary,
+                    ),
+                  ),
+                ),
               ),
-              label: Text(n, style: const TextStyle(fontSize: 12)),
-              onPressed: () {
-                setState(() {
-                  _nameCtrl.text = n;
-                  _nameCtrl.selection = TextSelection.fromPosition(
-                    TextPosition(offset: n.length),
-                  );
-                });
-              },
             ),
           );
         }).toList(),
@@ -1356,31 +1566,25 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     final isSelected = _genderPreference == value;
     return GestureDetector(
       onTap: () => setState(() => _genderPreference = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.white,
+          color: isSelected ? null : NeumorphicTheme.baseColor,
+          gradient: isSelected ? NeumorphicTheme.buttonGradient : null,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primary
-                : AppColors.primary.withOpacity(0.2),
-          ),
           boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
+              ? NeumorphicTheme.glowShadows()
+              : NeumorphicTheme.smallShadows(distance: 3, blur: 6),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : AppColors.textPrimary,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : NeumorphicTheme.textPrimary,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              fontSize: 14,
+            ),
           ),
         ),
       ),
@@ -1404,19 +1608,24 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                style: const TextStyle(
+                  color: NeumorphicTheme.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
         ),
         Switch.adaptive(
           value: value,
-          activeColor: AppColors.primary,
+          activeTrackColor: NeumorphicTheme.accentCyan,
+          activeThumbColor: Colors.white,
           onChanged: onChanged,
         ),
       ],
@@ -1764,88 +1973,114 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.primary.withOpacity(0.18)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+        CustomPaint(
+          painter: NeumorphicInsetPainter(
+            borderRadius: 16,
+            distance: 4.0,
+            blur: 6.0,
+            border: BorderSide(
+              color: Colors.white.withValues(alpha: 0.7),
+              width: 1.0,
+            ),
           ),
-          child: Row(
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Icon(Icons.search, color: Colors.grey, size: 20),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _searchPlaceCtrl,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => setState(() {}),
-                  onSubmitted: _searchPlace,
-                  decoration: const InputDecoration(
-                    hintText: 'รหัสไปรษณีย์ | ชื่อสถานที่',
-                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              if (_isSearchingPlace)
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
                 const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(
+                    Icons.search,
+                    color: NeumorphicTheme.textSecondary,
+                    size: 20,
                   ),
-                )
-              else if (_searchPlaceCtrl.text.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
-                  onPressed: () {
-                    setState(() {
-                      _searchPlaceCtrl.clear();
-                      _placeSearchResults = [];
-                      _placeSearchMessage = null;
-                    });
-                  },
                 ),
-              IconButton(
-                icon: _isSearchingPlace
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(
-                        Icons.arrow_forward,
-                        size: 18,
-                        color: AppColors.primary,
+                Expanded(
+                  child: TextField(
+                    controller: _searchPlaceCtrl,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: _searchPlace,
+                    style: const TextStyle(
+                      color: NeumorphicTheme.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.transparent,
+                      hintText: 'รหัสไปรษณีย์ | ชื่อสถานที่',
+                      hintStyle: TextStyle(
+                        fontSize: 13,
+                        color: NeumorphicTheme.textSecondary
+                            .withValues(alpha: 0.65),
                       ),
-                tooltip: 'ค้นหา',
-                onPressed: _isSearchingPlace
-                    ? null
-                    : () => _searchPlace(_searchPlaceCtrl.text),
-              ),
-              Container(height: 24, width: 1, color: Colors.grey[200]),
-              IconButton(
-                icon: const Icon(
-                  Icons.tune_rounded,
-                  size: 20,
-                  color: AppColors.primary,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
                 ),
-                tooltip: 'เลือกที่อยู่ทีละขั้นตอน (ต./อ./จ.)',
-                onPressed: _showThaiAddressPicker,
-              ),
-            ],
+                if (_isSearchingPlace)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (_searchPlaceCtrl.text.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.clear,
+                      size: 18,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _searchPlaceCtrl.clear();
+                        _placeSearchResults = [];
+                        _placeSearchMessage = null;
+                      });
+                    },
+                  ),
+                IconButton(
+                  icon: _isSearchingPlace
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(
+                          Icons.arrow_forward,
+                          size: 18,
+                          color: NeumorphicTheme.primaryBlue,
+                        ),
+                  tooltip: 'ค้นหา',
+                  onPressed: _isSearchingPlace
+                      ? null
+                      : () => _searchPlace(_searchPlaceCtrl.text),
+                ),
+                Container(
+                  height: 22,
+                  width: 1,
+                  color: const Color(0xFFCAD1DC),
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.tune_rounded,
+                    size: 20,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                  tooltip: 'เลือกที่อยู่ทีละขั้นตอน (ต./อ./จ.)',
+                  onPressed: _showThaiAddressPicker,
+                ),
+              ],
+            ),
           ),
         ),
         if (_selectedAddress != null) ...[
@@ -1853,15 +2088,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.06),
+              color: const Color(0xFFDFE5ED),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
             ),
             child: Row(
               children: [
                 const Icon(
                   Icons.location_on,
-                  color: AppColors.primary,
+                  color: NeumorphicTheme.primaryBlue,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -1874,7 +2108,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
+                          color: NeumorphicTheme.primaryBlue,
                         ),
                       ),
                       Text(
@@ -1882,6 +2116,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
+                          color: NeumorphicTheme.textPrimary,
                         ),
                       ),
                     ],
@@ -1890,13 +2125,18 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 TextButton(
                   onPressed: _showThaiAddressPicker,
                   style: TextButton.styleFrom(
+                    foregroundColor: NeumorphicTheme.primaryBlue,
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                   child: const Text('แก้ไข', style: TextStyle(fontSize: 12)),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                  icon: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: NeumorphicTheme.textSecondary,
+                  ),
                   tooltip: 'ล้างที่อยู่',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => setState(() => _selectedAddress = null),
@@ -1956,24 +2196,18 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         ],
         if (_placeSearchResults.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
+          NeumorphicContainer(
+            color: NeumorphicTheme.baseColor,
+            borderRadius: 16,
+            depth: 4,
+            blur: 10,
+            padding: EdgeInsets.zero,
             child: ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _placeSearchResults.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (context, index) =>
+                  const Divider(height: 1, color: Color(0xFFD4DAE3)),
               itemBuilder: (ctx, i) {
                 final place = _placeSearchResults[i];
                 final isPostal = place['isPostal'] == true;
@@ -2014,13 +2248,17 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
+                      color: NeumorphicTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
                     place['address']?.toString() ?? '',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2057,22 +2295,25 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       pageName: 'group_create',
     );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withOpacity(0.1)),
-      ),
-      clipBehavior: Clip.antiAlias,
+    return NeumorphicContainer(
+      color: NeumorphicTheme.baseColor,
+      borderRadius: 20,
+      depth: 6,
+      blur: 14,
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
             child: Row(
               children: [
                 const Text(
                   'ตำแหน่งสนาม',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: NeumorphicTheme.textPrimary,
+                  ),
                 ),
                 if (_isGeocoding) ...[
                   const SizedBox(width: 8),
@@ -2087,53 +2328,130 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   child: Wrap(
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
                     children: [
                       if (_lat != null && _lng != null)
-                        TextButton.icon(
-                          onPressed: () => setState(() {
+                        InkWell(
+                          onTap: () => setState(() {
                             _lat = null;
                             _lng = null;
                           }),
-                          icon: const Icon(Icons.clear, size: 16),
-                          label: const Text(
-                            'ล้างพิกัด',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.redAccent,
-                          ),
-                        ),
-                      TextButton.icon(
-                        onPressed: _isGettingLocation
-                            ? null
-                            : _getCurrentLocation,
-                        icon: _isGettingLocation
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: NeumorphicTheme.baseColor,
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: NeumorphicTheme.smallShadows(
+                                distance: 2,
+                                blur: 4,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.clear,
+                                  size: 14,
+                                  color: Colors.redAccent,
                                 ),
-                              )
-                            : const Icon(Icons.my_location, size: 16),
-                        label: const Text(
-                          'ใช้ตำแหน่งฉัน',
-                          style: TextStyle(fontSize: 12),
+                                SizedBox(width: 4),
+                                Text(
+                                  'ล้างพิกัด',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.primary,
+                      InkWell(
+                        onTap: _isGettingLocation ? null : _getCurrentLocation,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: NeumorphicTheme.baseColor,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: NeumorphicTheme.smallShadows(
+                              distance: 2,
+                              blur: 4,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _isGettingLocation
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.my_location,
+                                      size: 14,
+                                      color: NeumorphicTheme.primaryBlue,
+                                    ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'ใช้ตำแหน่งฉัน',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: NeumorphicTheme.primaryBlue,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       if (showLiveMap)
-                        TextButton.icon(
-                          onPressed: _showFullscreenMapPicker,
-                          icon: const Icon(Icons.fullscreen, size: 16),
-                          label: const Text(
-                            'ขยาย',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.primary,
+                        InkWell(
+                          onTap: _showFullscreenMapPicker,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: NeumorphicTheme.baseColor,
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: NeumorphicTheme.smallShadows(
+                                distance: 2,
+                                blur: 4,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.fullscreen,
+                                  size: 14,
+                                  color: NeumorphicTheme.primaryBlue,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'ขยาย',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: NeumorphicTheme.primaryBlue,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                     ],
@@ -2142,21 +2460,33 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               ],
             ),
           ),
-          SizedBox(
-            height: 180,
-            child: KeyedSubtree(
-              key: const ValueKey('create_group_map_subtree'),
-              child: showLiveMap ? _buildGoogleMap() : _buildWebMapFallback(),
+          ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(20)),
+            child: SizedBox(
+              height: 180,
+              child: KeyedSubtree(
+                key: const ValueKey('create_group_map_subtree'),
+                child: showLiveMap ? _buildGoogleMap() : _buildWebMapFallback(),
+              ),
             ),
           ),
           if (_lat != null && _lng != null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: AppColors.backgroundCream.withOpacity(0.5),
+              decoration: const BoxDecoration(
+                color: Color(0xFFDFE5ED),
+                borderRadius:
+                    BorderRadius.vertical(bottom: Radius.circular(20)),
+              ),
               child: Text(
                 'พิกัด: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: NeumorphicTheme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
         ],
@@ -2278,7 +2608,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: false,
-      pageBuilder: (ctx, _, __) {
+      pageBuilder: (ctx, anim1, anim2) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
             final markers = tempPicked == null
@@ -2319,7 +2649,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               floatingActionButton: tempPicked != null
                   ? FloatingActionButton.extended(
                       onPressed: () {
-                        this.setState(() {
+                        setState(() {
                           _lat = tempPicked!.latitude;
                           _lng = tempPicked!.longitude;
                         });
@@ -2345,49 +2675,17 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   }
 
   Widget _buildSubmitButton() {
-    return Container(
-      width: double.infinity,
-      height: 56,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
+    return NeumorphicVerifyButton(
+      text: 'สร้างก๊วนใหม่',
+      isLoading: _submitting,
+      isEnabled: !_submitting,
+      height: 54,
+      icon: const Icon(
+        Icons.check_circle_outline,
+        color: Colors.white,
+        size: 22,
       ),
-      child: ElevatedButton(
-        onPressed: _submitting ? null : _submit,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-        child: _submitting
-            ? const CircularProgressIndicator(color: Colors.white)
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Icon(Icons.check_circle_outline, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text(
-                    'สร้างก๊วนใหม่',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-      ),
+      onPressed: _submitting ? null : _submit,
     );
   }
 
@@ -2400,46 +2698,57 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                shape: BoxShape.circle,
+                color: NeumorphicTheme.baseColor,
+                boxShadow: NeumorphicTheme.smallShadows(
+                  distance: 2,
+                  blur: 4,
+                ),
               ),
               child: const Icon(
                 Icons.card_membership_rounded,
-                size: 18,
-                color: AppColors.primaryDark,
+                size: 16,
+                color: NeumorphicTheme.primaryBlue,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             const Text(
               'ค่าก๊วน / ค่าสมาชิก',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: NeumorphicTheme.textPrimary,
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         if (_groupFeeDrafts.isEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+              color: const Color(0xFFDFE5ED),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
-              children: [
+              children: const [
                 Icon(
                   Icons.info_outline_rounded,
                   size: 18,
-                  color: Colors.grey.shade500,
+                  color: NeumorphicTheme.textSecondary,
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'ยังไม่ได้กำหนดค่าก๊วน/ค่าสมาชิก (ไม่บังคับ)',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -2458,72 +2767,101 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               onEdit: () => _editGroupFeeDraft(i),
               onDelete: () => setState(() => _groupFeeDrafts.removeAt(i)),
             ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryDark,
-              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+          child: InkWell(
+            onTap: _addGroupFeeDraft,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            ),
-            onPressed: _addGroupFeeDraft,
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text(
-              'เพิ่มค่าก๊วน / ค่าสมาชิก',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              decoration: BoxDecoration(
+                color: NeumorphicTheme.baseColor,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: NeumorphicTheme.smallShadows(
+                  distance: 3,
+                  blur: 6,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.add_rounded,
+                    size: 18,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'เพิ่มค่าก๊วน / ค่าสมาชิก',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: NeumorphicTheme.primaryBlue,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
         const SizedBox(height: 20),
-        const Divider(height: 1),
+        const Divider(height: 1, color: Color(0xFFD4DAE3)),
         const SizedBox(height: 20),
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                shape: BoxShape.circle,
+                color: NeumorphicTheme.baseColor,
+                boxShadow: NeumorphicTheme.smallShadows(
+                  distance: 2,
+                  blur: 4,
+                ),
               ),
               child: const Icon(
                 Icons.sports_tennis_rounded,
-                size: 18,
-                color: AppColors.primaryDark,
+                size: 16,
+                color: NeumorphicTheme.primaryBlue,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             const Text(
               'Template ค่าใช้จ่ายรอบ',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: NeumorphicTheme.textPrimary,
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         if (_roundExpenseDrafts.isEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+              color: const Color(0xFFDFE5ED),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
-              children: [
+              children: const [
                 Icon(
                   Icons.info_outline_rounded,
                   size: 18,
-                  color: Colors.grey.shade500,
+                  color: NeumorphicTheme.textSecondary,
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'ยังไม่ได้กำหนดแม่แบบค่าใช้จ่ายรอบ (ไม่บังคับ)',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -2542,23 +2880,41 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               onEdit: () => _editRoundExpenseDraft(i),
               onDelete: () => setState(() => _roundExpenseDrafts.removeAt(i)),
             ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryDark,
-              side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+          child: InkWell(
+            onTap: _addRoundExpenseDraft,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            ),
-            onPressed: _addRoundExpenseDraft,
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text(
-              'เพิ่ม Template ค่าใช้จ่ายรอบ',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              decoration: BoxDecoration(
+                color: NeumorphicTheme.baseColor,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: NeumorphicTheme.smallShadows(
+                  distance: 3,
+                  blur: 6,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.add_rounded,
+                    size: 18,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'เพิ่ม Template ค่าใช้จ่ายรอบ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: NeumorphicTheme.primaryBlue,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -2579,16 +2935,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: NeumorphicTheme.baseColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2597,12 +2946,13 @@ class _CreateGroupPageState extends State<CreateGroupPage>
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
+              shape: BoxShape.circle,
+              color: NeumorphicTheme.baseColor,
+              boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
             ),
             child: Icon(
               costCategoryIcon(category),
-              color: AppColors.primaryDark,
+              color: NeumorphicTheme.primaryBlue,
               size: 20,
             ),
           ),
@@ -2616,6 +2966,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
+                    color: NeumorphicTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -2626,14 +2977,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.primaryDark,
+                        color: NeumorphicTheme.primaryBlue,
                       ),
                     ),
                     Text(
                       ' / $unitText',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: NeumorphicTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -2648,7 +2999,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
             children: [
               IconButton(
                 icon: const Icon(Icons.edit_outlined, size: 19),
-                color: Colors.grey.shade700,
+                color: NeumorphicTheme.textSecondary,
                 onPressed: onEdit,
                 visualDensity: VisualDensity.compact,
                 tooltip: 'แก้ไข',
@@ -2714,54 +3065,307 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           'รูปแบบสนาม',
           style: TextStyle(
             fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+            color: NeumorphicTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'single',
-                label: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text('ครึ่งสนาม (1 ฝั่ง)'),
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _customFieldLayout = 'single';
+                    _positionDrafts.clear();
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: layout == 'single'
+                        ? null
+                        : NeumorphicTheme.baseColor,
+                    gradient: layout == 'single'
+                        ? NeumorphicTheme.buttonGradient
+                        : null,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: layout == 'single'
+                        ? NeumorphicTheme.glowShadows()
+                        : NeumorphicTheme.smallShadows(
+                            distance: 2,
+                            blur: 5,
+                          ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'ครึ่งสนาม (1 ฝั่ง)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: layout == 'single'
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: layout == 'single'
+                            ? Colors.white
+                            : NeumorphicTheme.textPrimary,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              ButtonSegment(
-                value: 'double',
-                label: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text('เต็มสนาม (2 ฝั่ง)'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _customFieldLayout = 'double';
+                    _positionDrafts.clear();
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: layout == 'double'
+                        ? null
+                        : NeumorphicTheme.baseColor,
+                    gradient: layout == 'double'
+                        ? NeumorphicTheme.buttonGradient
+                        : null,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: layout == 'double'
+                        ? NeumorphicTheme.glowShadows()
+                        : NeumorphicTheme.smallShadows(
+                            distance: 2,
+                            blur: 5,
+                          ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'เต็มสนาม (2 ฝั่ง)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: layout == 'double'
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: layout == 'double'
+                            ? Colors.white
+                            : NeumorphicTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _NeumorphicModernTextField extends StatefulWidget {
+  final TextEditingController controller;
+  final String label;
+  final String? hint;
+  final int? maxLength;
+  final int maxLines;
+  final String? Function(String?)? validator;
+
+  const _NeumorphicModernTextField({
+    required this.controller,
+    required this.label,
+    this.hint,
+    this.maxLength,
+    this.maxLines = 1,
+    this.validator,
+  });
+
+  @override
+  State<_NeumorphicModernTextField> createState() =>
+      _NeumorphicModernTextFieldState();
+}
+
+class _NeumorphicModernTextFieldState
+    extends State<_NeumorphicModernTextField> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isFocused = _focusNode.hasFocus;
+
+    return FormField<String>(
+      initialValue: widget.controller.text,
+      validator: widget.validator != null
+          ? (_) => widget.validator!(widget.controller.text)
+          : null,
+      builder: (field) {
+        final hasError = field.hasError;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.label,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: NeumorphicTheme.textPrimary,
+                  ),
+                ),
+                if (widget.maxLength != null)
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: widget.controller,
+                    builder: (context, val, _) {
+                      final len = val.text.characters.length;
+                      return Text(
+                        '$len/${widget.maxLength}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: len > widget.maxLength!
+                              ? Colors.redAccent
+                              : NeumorphicTheme.textSecondary,
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: isFocused ? NeumorphicTheme.glowShadows() : null,
+              ),
+              child: CustomPaint(
+                painter: NeumorphicInsetPainter(
+                  borderRadius: 16,
+                  distance: 4.0,
+                  blur: 6.0,
+                  border: isFocused
+                      ? const BorderSide(
+                          color: NeumorphicTheme.accentCyan,
+                          width: 2.0,
+                        )
+                      : (hasError
+                          ? const BorderSide(
+                              color: Colors.redAccent,
+                              width: 1.5,
+                            )
+                          : BorderSide(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              width: 1.0,
+                            )),
+                ),
+                child: widget.maxLines > 1
+                    ? TextField(
+                        controller: widget.controller,
+                        focusNode: _focusNode,
+                        maxLines: widget.maxLines,
+                        style: const TextStyle(
+                          color: NeumorphicTheme.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        onChanged: (text) {
+                          if (hasError) field.didChange(text);
+                        },
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          hintText: widget.hint,
+                          hintStyle: TextStyle(
+                            color: NeumorphicTheme.textSecondary
+                                .withValues(alpha: 0.65),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                      )
+                    : SizedBox(
+                        height: 52,
+                        child: Center(
+                          child: TextField(
+                            controller: widget.controller,
+                            focusNode: _focusNode,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: NeumorphicTheme.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            onChanged: (text) {
+                              if (hasError) field.didChange(text);
+                            },
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              hintText: widget.hint,
+                              hintStyle: TextStyle(
+                                color: NeumorphicTheme.textSecondary
+                                    .withValues(alpha: 0.65),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                              ),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            if (hasError) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  field.errorText ?? '',
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
-            selected: {layout},
-            onSelectionChanged: (Set<String> newSelection) {
-              setState(() {
-                _customFieldLayout = newSelection.first;
-                // Reset positions draft because the layout changed
-                _positionDrafts.clear();
-              });
-            },
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith<Color>((
-                Set<WidgetState> states,
-              ) {
-                if (states.contains(WidgetState.selected)) {
-                  return AppColors.primary.withOpacity(0.1);
-                }
-                return Colors.transparent;
-              }),
-              side: WidgetStateProperty.all(
-                BorderSide(color: Colors.grey.shade300),
-              ),
-            ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
