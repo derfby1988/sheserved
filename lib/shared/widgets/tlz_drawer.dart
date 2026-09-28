@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
@@ -203,6 +205,9 @@ class _TlzDrawerState extends State<TlzDrawer>
 
   @override
   Widget build(BuildContext context) {
+    // iOS: เบลอฉากหลังที่เป็น platform view (Google Maps) ไม่ได้ และทำให้เกิด
+    // เส้นรอยต่อที่ขอบ platform view — จึงปิด blur เหลือพื้นโปร่งแสงล้วน
+    final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     final screenWidth = MediaQuery.of(context).size.width;
     final drawerWidth = math.min(
       screenWidth * 0.75,
@@ -226,7 +231,7 @@ class _TlzDrawerState extends State<TlzDrawer>
                   Positioned.fill(
                     child: LitGlassSurface(
                       borderRadius: 28,
-                      blurSigma: 12,
+                      blurSigma: isIOS ? 0 : 12,
                       fillOpacity: 0.18,
                       surfaceColor: const Color(0xFF101827),
                       accentColor: AppColors.primary,
@@ -934,8 +939,8 @@ class _TlzDrawerState extends State<TlzDrawer>
     double? fontSize,
   }) {
     final textColor = Colors.white.withValues(alpha: 0.92);
-    final fillOpacity = isSubItem ? 0.035 : 0.10;
-    final borderOpacity = isSubItem ? 0.07 : 0.16;
+    final fillOpacity = isSubItem ? 0.07 : 0.10;
+    final borderOpacity = isSubItem ? 0.12 : 0.16;
 
     return GestureDetector(
       onTap: onTap,
@@ -1003,11 +1008,12 @@ class _TlzDrawerState extends State<TlzDrawer>
     required bool isExpanded,
     required VoidCallback onTap,
   }) {
+    final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: LitGlassSurface(
         borderRadius: 16,
-        blurSigma: 10,
+        blurSigma: isIOS ? 0 : 10,
         fillOpacity: 0.12,
         accentColor: AppColors.primary,
         accentStrength: isExpanded ? 0.16 : 0.08,

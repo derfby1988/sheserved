@@ -59,6 +59,24 @@ class LitGlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final body = CustomPaint(
+      painter: _GlassBodyPainter(
+        radius: borderRadius,
+        fillOpacity: fillOpacity,
+        surfaceColor: surfaceColor,
+        accent: accentColor,
+        accentStrength: accentStrength,
+      ),
+      foregroundPainter: _GlassRimPainter(
+        radius: borderRadius,
+        rimWidth: rimWidth,
+        rimColor: selected && accentColor != null
+            ? Color.lerp(Colors.white, accentColor, 0.45)!
+            : Colors.white,
+      ),
+      child: child,
+    );
+
     return CustomPaint(
       painter: _GlassHaloPainter(
         radius: borderRadius,
@@ -68,26 +86,14 @@ class LitGlassSurface extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: CustomPaint(
-            painter: _GlassBodyPainter(
-              radius: borderRadius,
-              fillOpacity: fillOpacity,
-              surfaceColor: surfaceColor,
-              accent: accentColor,
-              accentStrength: accentStrength,
-            ),
-            foregroundPainter: _GlassRimPainter(
-              radius: borderRadius,
-              rimWidth: rimWidth,
-              rimColor: selected && accentColor != null
-                  ? Color.lerp(Colors.white, accentColor, 0.45)!
-                  : Colors.white,
-            ),
-            child: child,
-          ),
-        ),
+        // blurSigma <= 0: ข้าม BackdropFilter (เช่น บน iOS ที่เบลอ platform view
+        // อย่าง Google Maps ไม่ได้ และทำให้เกิดรอยต่อเป็นเส้นที่ขอบ platform view)
+        child: blurSigma > 0
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                child: body,
+              )
+            : body,
       ),
     );
   }
