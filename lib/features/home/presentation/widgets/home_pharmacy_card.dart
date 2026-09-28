@@ -27,58 +27,129 @@ class HomePharmacyCard extends StatelessWidget {
     required int targetPage,
     bool isActive = false,
   }) {
-    return NeumorphicInsetBox(
-      height: 27,
-      borderRadius: 9,
-      distance: 2.2,
-      blur: 4.0,
-      border: isActive
-          ? const BorderSide(color: NeumorphicTheme.accentCyan, width: 1.2)
-          : null,
-      outerGlowShadows: isActive
-          ? [
-              BoxShadow(
-                color: NeumorphicTheme.accentCyan.withValues(alpha: 0.35),
-                offset: const Offset(0, 1),
-                blurRadius: 4,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showIcon = constraints.maxWidth >= 72;
+        return NeumorphicInsetBox(
+          height: 27,
+          borderRadius: 9,
+          distance: 2.2,
+          blur: 4.0,
+          border: isActive
+              ? const BorderSide(color: NeumorphicTheme.accentCyan, width: 1.2)
+              : null,
+          outerGlowShadows: isActive
+              ? [
+                  BoxShadow(
+                    color: NeumorphicTheme.accentCyan.withValues(alpha: 0.35),
+                    offset: const Offset(0, 1),
+                    blurRadius: 4,
+                  ),
+                ]
+              : null,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(9),
+              onTap: () => _navigateToSportsHub(context, targetPage),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showIcon) ...[
+                          Icon(
+                            icon,
+                            size: 12,
+                            color: isActive
+                                ? NeumorphicTheme.primaryBlue
+                                : NeumorphicTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 2.5),
+                        ],
+                        Text(
+                          label,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                            fontSize: showIcon ? 9.5 : 10.5,
+                            fontWeight: isActive
+                                ? FontWeight.w700
+                                : FontWeight.w600,
+                            color: isActive
+                                ? NeumorphicTheme.primaryBlue
+                                : NeumorphicTheme.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ]
-          : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchButton(BuildContext context) {
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: NeumorphicTheme.buttonGradient,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E40AF).withValues(alpha: 0.35),
+            offset: const Offset(0, 4),
+            blurRadius: 8,
+          ),
+          BoxShadow(
+            color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+            offset: const Offset(0, 1.5),
+            blurRadius: 7,
+          ),
+        ],
+      ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: () => _navigateToSportsHub(context, targetPage),
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(builder: (_) => const SportClubPage()),
+            );
+          },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Center(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 12,
-                      color: isActive
-                          ? NeumorphicTheme.primaryBlue
-                          : NeumorphicTheme.textSecondary,
-                    ),
-                    const SizedBox(width: 2.5),
+                  children: const [
                     Text(
-                      label,
+                      'เข้าคลับ',
                       maxLines: 1,
                       softWrap: false,
                       overflow: TextOverflow.clip,
                       style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: isActive
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                        color: isActive
-                            ? NeumorphicTheme.primaryBlue
-                            : NeumorphicTheme.textPrimary,
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
                       ),
+                    ),
+                    SizedBox(width: 3),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Colors.white,
+                      size: 14,
                     ),
                   ],
                 ),
@@ -97,7 +168,7 @@ class HomePharmacyCard extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
 
     Widget cardContent = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
         // ไล่เฉดแสงเฉียง 135 องศา (บนซ้ายสว่างรับแสง -> ล่างขวาหลบแสง) ตามภาพต้นแบบ
@@ -220,173 +291,136 @@ class HomePharmacyCard extends StatelessWidget {
 
           // 2. Content ตรงกลาง (ความสูงคงที่ ไม่ทำให้การ์ดยืดออก)
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // บรรทัดที่ 1: "คลับของคนรัก" + ไอคอนหัวใจสีขาว + "การออกกำลังกาย"
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text.rich(
-                    TextSpan(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final buttonWidth = constraints.maxWidth < 232
+                    ? constraints.maxWidth * 0.38
+                    : 88.0;
+                final supportingWidth = (constraints.maxWidth - buttonWidth - 8)
+                    .clamp(0.0, constraints.maxWidth)
+                    .toDouble();
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const TextSpan(text: 'คลับของคนรัก '),
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: Container(
-                            width: 17,
-                            height: 17,
-                            margin: const EdgeInsets.symmetric(horizontal: 1),
-                            decoration: BoxDecoration(
-                              gradient: NeumorphicTheme.buttonGradient,
-                              borderRadius: BorderRadius.circular(5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: NeumorphicTheme.accentCyan.withValues(
-                                    alpha: 0.4,
+                        // บรรทัดที่ 1: "คลับของคนรัก" + ไอคอนหัวใจสีขาว + "การออกกำลังกาย"
+                        SizedBox(
+                          width: double.infinity,
+                          child: FittedBox(
+                            fit: BoxFit.fitWidth,
+                            alignment: Alignment.centerLeft,
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  const TextSpan(text: 'คลับของคนรัก '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: Container(
+                                      width: 17,
+                                      height: 17,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient:
+                                            NeumorphicTheme.buttonGradient,
+                                        borderRadius: BorderRadius.circular(5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: NeumorphicTheme.accentCyan
+                                                .withValues(alpha: 0.4),
+                                            offset: const Offset(0, 1),
+                                            blurRadius: 3,
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.favorite_rounded,
+                                          color: Colors.white,
+                                          size: 10,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  offset: const Offset(0, 1),
-                                  blurRadius: 3,
-                                ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.favorite_rounded,
-                                color: Colors.white,
-                                size: 10,
+                                  const TextSpan(text: ' การออกกำลังกาย'),
+                                ],
                               ),
+                              style: AppTextStyles.heading5.copyWith(
+                                color: NeumorphicTheme.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                              maxLines: 1,
                             ),
                           ),
                         ),
-                        const TextSpan(text: ' การออกกำลังกาย'),
-                      ],
-                    ),
-                    style: AppTextStyles.heading5.copyWith(
-                      color: NeumorphicTheme.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(height: 3),
-
-                // บรรทัดที่ 2: "ศูนย์รวมอุปกรณ์ อาหารเพื่อสุขภาพ ศูนย์ความงาม"
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'ศูนย์รวมอุปกรณ์ อาหารเพื่อสุขภาพ ศูนย์ความงาม',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: NeumorphicTheme.textSecondary,
-                      fontSize: 11,
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(height: 5),
-
-                // บรรทัดที่ 3: ปุ่ม Inset Boxes จิ๋ว 3 ช่อง (สนามกีฬา -> หาเพื่อน -> ผู้ฝึกสอน)
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildMiniInsetButton(
-                        context: context,
-                        icon: Icons.stadium_rounded,
-                        label: 'สนามกีฬา',
-                        targetPage: 0,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildMiniInsetButton(
-                        context: context,
-                        icon: Icons.group_rounded,
-                        label: 'หาเพื่อน',
-                        targetPage: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildMiniInsetButton(
-                        context: context,
-                        icon: Icons.sports_rounded,
-                        label: 'ผู้ฝึกสอน',
-                        targetPage: 2,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 10),
-
-          // 3. Search Button สไตล์ Vibrant Cyan-Blue Gradient Pill พร้อมเงาลอยเด่นชัด
-          Container(
-            height: 38,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(19),
-              gradient: NeumorphicTheme.buttonGradient,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF1E40AF).withValues(alpha: 0.35),
-                  offset: const Offset(0, 4),
-                  blurRadius: 8,
-                ),
-                BoxShadow(
-                  color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
-                  offset: const Offset(0, 1.5),
-                  blurRadius: 7,
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(19),
-                onTap: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SportClubPage(),
-                    ),
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Text(
-                            'ค้นหา',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.3,
+                        const SizedBox(height: 1),
+                        SizedBox(
+                          width: supportingWidth,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'ศูนย์รวมอุปกรณ์ อาหารเพื่อสุขภาพ ศูนย์ความงาม',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: NeumorphicTheme.textSecondary,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
                             ),
                           ),
-                          SizedBox(width: 3),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            color: Colors.white,
-                            size: 14,
+                        ),
+                        const SizedBox(height: 5),
+                        SizedBox(
+                          width: supportingWidth,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _buildMiniInsetButton(
+                                  context: context,
+                                  icon: Icons.stadium_rounded,
+                                  label: 'สนามกีฬา',
+                                  targetPage: 0,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: _buildMiniInsetButton(
+                                  context: context,
+                                  icon: Icons.group_rounded,
+                                  label: 'หาเพื่อน',
+                                  targetPage: 1,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: _buildMiniInsetButton(
+                                  context: context,
+                                  icon: Icons.sports_rounded,
+                                  label: 'ผู้ฝึกสอน',
+                                  targetPage: 2,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-              ),
+                    // 3. Search Button สไตล์ Vibrant Cyan-Blue Gradient Pill พร้อมเงาลอยเด่นชัด
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      width: buttonWidth,
+                      child: _buildSearchButton(context),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
