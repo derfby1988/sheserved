@@ -1,23 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/thai_address_picker/thai_address_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/book_court_filter.dart';
 
 class BookCourtFilterSheetResult {
-  const BookCourtFilterSheetResult({required this.filter, required this.query});
+  const BookCourtFilterSheetResult({
+    required this.filter,
+    required this.query,
+    this.province,
+    this.district,
+  });
 
   final BookCourtFilter filter;
   final String query;
+  final String? province;
+  final String? district;
 }
 
 /// Advanced filter bottom sheet for Book Court.
 ///
-/// Edits Book Court filters and the shared keyword query. Booking date/time,
-/// duration, price range, minimum rating, court type, amenities, and
-/// indoor/open-now remain domain-specific; shared sport/location values are
-/// not edited here. Follows the interaction pattern of
-/// `advanced_filter_sheet.dart`.
+/// Edits Book Court filters, the shared keyword query and the shared
+/// province/district. Booking date/time, duration, price range, minimum
+/// rating, court type, amenities, and indoor/open-now remain
+/// domain-specific; the shared sport value is not edited here. Follows the
+/// interaction pattern of `advanced_filter_sheet.dart`.
 class BookCourtFilterSheet {
   /// Amenity keys the venue supply schema supports.
   static const amenityOptions = <String, String>{
@@ -37,15 +45,25 @@ class BookCourtFilterSheet {
     BuildContext context, {
     required BookCourtFilter current,
     required String currentQuery,
+    String? currentProvince,
+    String? currentDistrict,
+    ThaiAddressRepository? addressRepository,
   }) {
     return showModalBottomSheet<BookCourtFilterSheetResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (sheetContext) => _BookCourtFilterSheetBody(
         current: current,
         currentQuery: currentQuery,
+        currentProvince: currentProvince,
+        currentDistrict: currentDistrict,
+        addressRepository: addressRepository,
       ),
     );
   }
@@ -54,10 +72,16 @@ class BookCourtFilterSheet {
 class _BookCourtFilterSheetBody extends StatefulWidget {
   final BookCourtFilter current;
   final String currentQuery;
+  final String? currentProvince;
+  final String? currentDistrict;
+  final ThaiAddressRepository? addressRepository;
 
   const _BookCourtFilterSheetBody({
     required this.current,
     required this.currentQuery,
+    this.currentProvince,
+    this.currentDistrict,
+    this.addressRepository,
   });
 
   @override
@@ -65,9 +89,17 @@ class _BookCourtFilterSheetBody extends StatefulWidget {
       _BookCourtFilterSheetBodyState();
 }
 
-class _BookCourtFilterSheetBodyState
-    extends State<_BookCourtFilterSheetBody> {
+class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
   late final TextEditingController _queryController;
+  late final ThaiAddressRepository _addressRepository =
+      widget.addressRepository ??
+      ThaiAddressRepository(Supabase.instance.client);
+  List<String> _provinces = [];
+  List<String> _districts = [];
+  bool _loadingProvinces = false;
+  bool _loadingDistricts = false;
+  String? _currentProvince;
+  String? _currentDistrict;
   late DateTime? _date = widget.current.date;
   late TimeOfDay? _startTime = widget.current.startTime;
   late Duration? _duration = widget.current.duration;
@@ -103,6 +135,9 @@ class _BookCourtFilterSheetBodyState
   void initState() {
     super.initState();
     _queryController = TextEditingController(text: widget.currentQuery);
+    _currentProvince = widget.currentProvince;
+    _currentDistrict = widget.currentDistrict;
+    _loadProvinces(initialProvince: widget.currentProvince);
   }
 
   @override
@@ -111,6 +146,60 @@ class _BookCourtFilterSheetBodyState
     _minPrice.dispose();
     _maxPrice.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProvinces({String? initialProvince}) async {
+    setState(() => _loadingProvinces = true);
+    try {
+      final provinces = await _addressRepository.getAllProvinces();
+      if (!mounted) return;
+      setState(() {
+        _provinces = provinces;
+        _loadingProvinces = false;
+        if (initialProvince != null && !provinces.contains(initialProvince)) {
+          _currentProvince = null;
+          _currentDistrict = null;
+        }
+      });
+      if (initialProvince != null && provinces.contains(initialProvince)) {
+        await _selectProvince(
+          initialProvince,
+          initialDistrict: _currentDistrict,
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingProvinces = false);
+    }
+  }
+
+  Future<void> _selectProvince(
+    String? province, {
+    String? initialDistrict,
+  }) async {
+    setState(() {
+      _currentProvince = province;
+      _currentDistrict = null;
+      _districts = [];
+      _loadingDistricts = province != null;
+    });
+    if (province == null) return;
+    try {
+      final districts = await _addressRepository.getDistrictsByProvince(
+        province,
+      );
+      if (!mounted || _currentProvince != province) return;
+      setState(() {
+        _districts = districts;
+        _loadingDistricts = false;
+        if (initialDistrict != null && districts.contains(initialDistrict)) {
+          _currentDistrict = initialDistrict;
+        }
+      });
+    } catch (_) {
+      if (mounted && _currentProvince == province) {
+        setState(() => _loadingDistricts = false);
+      }
+    }
   }
 
   Future<void> _pickDate() async {
@@ -140,6 +229,8 @@ class _BookCourtFilterSheetBodyState
   BookCourtFilterSheetResult _buildResult() {
     return BookCourtFilterSheetResult(
       query: _queryController.text.trim(),
+      province: _currentProvince,
+      district: _currentDistrict,
       filter: BookCourtFilter(
         date: _date,
         startTime: _startTime,
@@ -160,242 +251,339 @@ class _BookCourtFilterSheetBodyState
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+    return NeumorphicSheetShell(
+      title: 'ตัวกรองสนาม',
+      icon: Icons.stadium_rounded,
+      onClearAll: () {
+        setState(() {
+          _queryController.clear();
+          _currentProvince = null;
+          _currentDistrict = null;
+          _districts = [];
+          _date = null;
+          _startTime = null;
+          _duration = null;
+          _minPrice.clear();
+          _maxPrice.clear();
+          _minRating = null;
+          _amenityIds = {};
+          _courtType = null;
+          _indoorOnly = false;
+          _openNowOnly = false;
+        });
+      },
+      onClose: () => Navigator.of(context).pop(),
+      footer: Row(
+        children: [
+          Expanded(
+            child: NeumorphicPillButton(
+              text: 'ยกเลิก',
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: NeumorphicVerifyButton(
+              onPressed: () => Navigator.pop(context, _buildResult()),
+              text: 'ใช้ตัวกรอง',
+              height: 48,
+            ),
+          ),
+        ],
       ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+      children: [
+        NeumorphicInsetBox(
+          height: null,
+          borderRadius: 14,
+          child: TextField(
+            key: const ValueKey('book_court_search_query'),
+            controller: _queryController,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              labelText: 'ค้นหาสนาม',
+              prefixIcon: Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: Colors.transparent,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'ตัวกรองสนาม',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'ปิด',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                key: const ValueKey('book_court_search_query'),
-                controller: _queryController,
-                textInputAction: TextInputAction.search,
-                decoration: const InputDecoration(
-                  labelText: 'ค้นหาสนาม',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Booking date/time
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickDate,
-                      icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                      label: Text(_dateLabel),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickTime,
-                      icon: const Icon(Icons.schedule_rounded, size: 18),
-                      label: Text(
-                        _startTime == null
-                            ? 'เวลาเริ่ม'
-                            : _startTime!.format(context),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final entry in _durations)
-                    ChoiceChip(
-                      label: Text(entry.label),
-                      selected: _duration == entry.duration,
-                      onSelected: (sel) => setState(
-                        () => _duration = sel ? entry.duration : null,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Price range
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _minPrice,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'ราคาต่ำสุด (บาท)',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _maxPrice,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'ราคาสูงสุด (บาท)',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Rating
-              Wrap(
-                spacing: 8,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: Text('คะแนนขั้นต่ำ'),
-                  ),
-                  for (final r in [5.0, 7.0, 9.0])
-                    ChoiceChip(
-                      label: Text('${r.toStringAsFixed(1)}+ ⭐'),
-                      selected: _minRating == r,
-                      onSelected: (sel) =>
-                          setState(() => _minRating = sel ? r : null),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Court type + flags
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final entry in _courtTypes.entries)
-                    ChoiceChip(
-                      label: Text(entry.value),
-                      selected: _courtType == entry.key,
-                      onSelected: (sel) => setState(
-                        () => _courtType = sel ? entry.key : null,
-                      ),
-                    ),
-                ],
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('เฉพาะสนามในร่ม'),
-                value: _indoorOnly,
-                onChanged: (v) => setState(() => _indoorOnly = v),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('เปิดอยู่ตอนนี้'),
-                value: _openNowOnly,
-                onChanged: (v) => setState(() => _openNowOnly = v),
-              ),
-              const SizedBox(height: 8),
-
-              // Amenities
-              const Text(
-                'สิ่งอำนวยความสะดวก',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  for (final entry in BookCourtFilterSheet
-                      .amenityOptions
-                      .entries)
-                    FilterChip(
-                      label: Text(entry.value),
-                      selected: _amenityIds.contains(entry.key),
-                      onSelected: (sel) => setState(() {
-                        if (sel) {
-                          _amenityIds.add(entry.key);
-                        } else {
-                          _amenityIds.remove(entry.key);
-                        }
-                      }),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _queryController.clear();
-                        _date = null;
-                        _startTime = null;
-                        _duration = null;
-                        _minPrice.clear();
-                        _maxPrice.clear();
-                        _minRating = null;
-                        _amenityIds = {};
-                        _courtType = null;
-                        _indoorOnly = false;
-                        _openNowOnly = false;
-                      });
-                    },
-                    child: const Text('ล้างทั้งหมด'),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('ยกเลิก'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryDark,
-                    ),
-                    onPressed: () => Navigator.pop(context, _buildResult()),
-                    child: const Text('ใช้ตัวกรอง'),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+        NeumorphicInsetBox(
+          height: null,
+          borderRadius: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DropdownButtonFormField<String>(
+            value: _currentProvince ?? '',
+            menuMaxHeight: 320,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'จังหวัด',
+              helperText: _loadingProvinces ? 'กำลังโหลด...' : null,
+              filled: true,
+              fillColor: Colors.transparent,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+            ),
+            items: [
+              const DropdownMenuItem<String>(
+                value: '',
+                child: Text('ทุกจังหวัด'),
+              ),
+              if (_currentProvince != null &&
+                  !_provinces.contains(_currentProvince))
+                DropdownMenuItem<String>(
+                  value: _currentProvince,
+                  child: Text(_currentProvince!),
+                ),
+              ..._provinces.map(
+                (province) => DropdownMenuItem<String>(
+                  value: province,
+                  child: Text(province),
+                ),
+              ),
+            ],
+            onChanged: _loadingProvinces
+                ? null
+                : (province) => _selectProvince(
+                    province?.isEmpty == true ? null : province,
+                  ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        NeumorphicInsetBox(
+          height: null,
+          borderRadius: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DropdownButtonFormField<String>(
+            value: _currentDistrict ?? '',
+            menuMaxHeight: 320,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'อำเภอ/เขต',
+              helperText: _currentProvince == null
+                  ? 'เลือกจังหวัดก่อน'
+                  : (_loadingDistricts ? 'กำลังโหลด...' : null),
+              filled: true,
+              fillColor: Colors.transparent,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+            ),
+            items: [
+              const DropdownMenuItem<String>(
+                value: '',
+                child: Text('ทุกอำเภอ/เขต'),
+              ),
+              if (_currentDistrict != null &&
+                  !_districts.contains(_currentDistrict))
+                DropdownMenuItem<String>(
+                  value: _currentDistrict,
+                  child: Text(_currentDistrict!),
+                ),
+              ..._districts.map(
+                (district) => DropdownMenuItem<String>(
+                  value: district,
+                  child: Text(district),
+                ),
+              ),
+            ],
+            onChanged: _currentProvince == null || _loadingDistricts
+                ? null
+                : (district) => setState(
+                    () => _currentDistrict = district?.isEmpty == true
+                        ? null
+                        : district,
+                  ),
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // Booking date/time
+        const Text('วันและเวลา', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: NeumorphicPillButton(
+                text: _dateLabel,
+                icon: Icons.calendar_today_rounded,
+                active: _date != null,
+                onPressed: _pickDate,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: NeumorphicPillButton(
+                text: _startTime == null
+                    ? 'เวลาเริ่ม'
+                    : _startTime!.format(context),
+                icon: Icons.schedule_rounded,
+                active: _startTime != null,
+                onPressed: _pickTime,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in _durations)
+              NeumorphicChoiceChip(
+                label: entry.label,
+                selected: _duration == entry.duration,
+                onSelected: (sel) =>
+                    setState(() => _duration = sel ? entry.duration : null),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+
+        // Price range
+        const Text('ช่วงราคา', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: NeumorphicInsetBox(
+                height: null,
+                borderRadius: 14,
+                child: TextField(
+                  controller: _minPrice,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'ราคาต่ำสุด',
+                    suffixText: 'บาท',
+                    filled: true,
+                    fillColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: NeumorphicInsetBox(
+                height: null,
+                borderRadius: 14,
+                child: TextField(
+                  controller: _maxPrice,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'ราคาสูงสุด',
+                    suffixText: 'บาท',
+                    filled: true,
+                    fillColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+
+        // Rating
+        const Text('คะแนนขั้นต่ำ', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final r in [5.0, 7.0, 9.0])
+              NeumorphicChoiceChip(
+                label: '${r.toStringAsFixed(1)}+',
+                icon: Icons.star_rounded,
+                selected: _minRating == r,
+                onSelected: (sel) =>
+                    setState(() => _minRating = sel ? r : null),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+
+        // Court type + flags
+        const Text('ประเภทสนาม', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in _courtTypes.entries)
+              NeumorphicChoiceChip(
+                label: entry.value,
+                selected: _courtType == entry.key,
+                onSelected: (sel) =>
+                    setState(() => _courtType = sel ? entry.key : null),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        NeumorphicSwitchTile(
+          title: 'เฉพาะสนามในร่ม',
+          value: _indoorOnly,
+          onChanged: (v) => setState(() => _indoorOnly = v),
+        ),
+        NeumorphicSwitchTile(
+          title: 'เปิดอยู่ตอนนี้',
+          value: _openNowOnly,
+          onChanged: (v) => setState(() => _openNowOnly = v),
+        ),
+        const SizedBox(height: 12),
+
+        // Amenities
+        const Text('สิ่งอำนวยความสะดวก', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in BookCourtFilterSheet.amenityOptions.entries)
+              NeumorphicChoiceChip(
+                label: entry.value,
+                selected: _amenityIds.contains(entry.key),
+                onSelected: (sel) => setState(() {
+                  if (sel) {
+                    _amenityIds.add(entry.key);
+                  } else {
+                    _amenityIds.remove(entry.key);
+                  }
+                }),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

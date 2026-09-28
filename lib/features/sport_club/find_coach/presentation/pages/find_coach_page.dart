@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -64,8 +62,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
   late final CoachRequestService _requests;
 
   final _scrollController = ScrollController();
-  final _searchController = TextEditingController();
-  Timer? _searchDebounce;
 
   List<Map<String, dynamic>> _sports = [];
   List<CoachSummary> _coaches = [];
@@ -108,7 +104,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
         widget.sportBar?.setTrailing(2, (_) => _buildBarTrailing());
       }
     });
-    _searchController.text = _hub?.shared.query ?? '';
     _init();
   }
 
@@ -124,8 +119,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
-    _searchController.dispose();
     _scrollController.dispose();
     _hub?.removeListener(_onHubChanged);
     widget.sportBar?.setTrailing(2, null);
@@ -134,10 +127,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
 
   void _onHubChanged() {
     if (!mounted) return;
-    final shared = _hub?.shared;
-    if (shared != null && _searchController.text != shared.query) {
-      _searchController.text = shared.query;
-    }
     _reload();
   }
 
@@ -274,13 +263,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
     );
   }
 
-  void _onSearchChanged(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-      _hub?.updateShared(_hub!.shared.copyWith(query: value));
-    });
-  }
-
   Future<bool> _requestLocation() async {
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -344,13 +326,26 @@ class _FindCoachPageState extends State<FindCoachPage> {
         .expand((c) => c.specialties)
         .toSet()
         .toList();
-    final next = await CoachFilterSheet.show(
+    final result = await CoachFilterSheet.show(
       context,
       current: _filter,
+      currentQuery: hub.shared.query,
+      currentProvince: hub.shared.province,
+      currentDistrict: hub.shared.district,
       specialtyOptions: specialtyOptions,
       signedIn: _userId != null,
     );
-    if (next != null) hub.updateCoaches(next);
+    if (result == null || !mounted) return;
+    hub.updateShared(
+      hub.shared.copyWith(
+        query: result.query,
+        province: result.province,
+        clearProvince: result.province == null,
+        district: result.district,
+        clearDistrict: result.district == null,
+      ),
+    );
+    hub.updateCoaches(result.filter);
   }
 
   Future<bool> _requireLogin() async {
@@ -514,7 +509,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
             children: [
               if (widget.sportBar != null)
                 // The shared chips row is the shell's overlay; this spacer
-                // keeps the search field at its usual position without
+                // keeps the quick filters at their usual position without
                 // changing the viewport when the bar collapses.
                 const SizedBox(height: SportsHubBarController.barHeight - 8)
               else
@@ -524,22 +519,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
                   onSportSelected: _onSportSelected,
                   trailing: _buildBarTrailing(),
                 ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'ค้นหาโค้ช…',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  isDense: true,
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
               const SizedBox(height: 8),
               CoachQuickFilterRow(
                 verifiedOnly: filter.verifiedOnly,

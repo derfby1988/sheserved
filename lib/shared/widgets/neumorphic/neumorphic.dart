@@ -9,5 +9,6 @@ export 'neumorphic_lock_badge.dart';
 export 'neumorphic_button.dart';
 export 'neumorphic_inset.dart';
 export 'neumorphic_input_field.dart';
+export 'neumorphic_sheet.dart';
 export 'neumorphic_otp_field.dart';
 export 'neumorphic_otp_card.dart';

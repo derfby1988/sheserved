@@ -58,6 +58,14 @@ class NeumorphicTheme {
   /// สีข้อความรอง (Slate Grey)
   static const Color textSecondary = Color(0xFF64748B);
 
+  /// สไตล์หัวข้อย่อยภายใน bottom sheet (เช่น "ระดับผู้เล่น", "สิ่งอำนวยความสะดวก")
+  static const TextStyle sectionLabel = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.2,
+    color: textSecondary,
+  );
+
   /// Gradient สีฟ้าสำหรับปุ่ม Verify OTP ตามรูปเป๊ะๆ
   static const LinearGradient buttonGradient = LinearGradient(
     begin: Alignment.centerLeft,

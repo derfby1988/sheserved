@@ -1,0 +1,495 @@
+import 'package:flutter/material.dart';
+
+import 'neumorphic_container.dart';
+import 'neumorphic_inset.dart';
+import 'neumorphic_theme.dart';
+
+/// ชุดโครงและคอนโทรลสำหรับ bottom sheet สไตล์ Neumorphic
+///
+/// **หลักการออกแบบ (Design Notes):**
+/// - ทุก sheet ใช้โครงเดียวกันผ่าน [NeumorphicSheetShell]: drag handle, header
+///   ที่มี badge ไอคอนนูน, เนื้อหาในแผงนูน (Raised Panel) และ footer ปุ่มกด
+/// - ต้องตั้งค่า `backgroundColor: NeumorphicTheme.baseColor` ให้ `showModalBottomSheet`
+///   เสมอ เพื่อให้เงาสองทิศทางของ Neumorphic เนียนตาตามคำแนะนำใน [NeumorphicTheme]
+/// - คอนโทรลทั้งหมด (ชิป, สวิตช์, ปุ่ม) ใช้มิติจาก [NeumorphicContainer] และ
+///   [NeumorphicInsetBox] โดยไม่แตะสีพื้นหลังของเนื้อหาข้างใน
+
+/// โครง bottom sheet สไตล์ Neumorphic: drag handle, header (badge ไอคอน +
+/// หัวข้อ + ปุ่มล้างทั้งหมด/ปิด) และแผงเนื้อหาแบบนูน.
+class NeumorphicSheetShell extends StatelessWidget {
+  const NeumorphicSheetShell({
+    super.key,
+    required this.title,
+    this.icon = Icons.tune_rounded,
+    this.onClearAll,
+    this.clearAllLabel = 'ล้างทั้งหมด',
+    this.onClose,
+    this.children = const <Widget>[],
+    this.footer,
+    this.heightFactor = 0.9,
+  });
+
+  final String title;
+  final IconData icon;
+  final VoidCallback? onClearAll;
+  final String clearAllLabel;
+  final VoidCallback? onClose;
+  final List<Widget> children;
+  final Widget? footer;
+  final double heightFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: heightFactor,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4DAE3),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.white,
+                    offset: Offset(0, 1),
+                    blurRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _header,
+            const SizedBox(height: 12),
+            Expanded(
+              child: NeumorphicContainer(
+                borderRadius: 20,
+                depth: 4,
+                blur: 8,
+                padding: const EdgeInsets.all(14),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: Theme.of(context).colorScheme.copyWith(
+                      primary: NeumorphicTheme.primaryBlue,
+                    ),
+                    sliderTheme: Theme.of(context).sliderTheme.copyWith(
+                      activeTrackColor: NeumorphicTheme.primaryBlue,
+                      thumbColor: NeumorphicTheme.primaryBlue,
+                    ),
+                  ),
+                  child: ListView(padding: EdgeInsets.zero, children: children),
+                ),
+              ),
+            ),
+            if (footer != null) ...[const SizedBox(height: 12), footer!],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget get _header {
+    return Row(
+      children: [
+        NeumorphicContainer(
+          width: 36,
+          height: 36,
+          shape: BoxShape.circle,
+          depth: 3,
+          blur: 6,
+          child: Icon(icon, size: 18, color: NeumorphicTheme.primaryBlue),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: NeumorphicTheme.textPrimary,
+            ),
+          ),
+        ),
+        if (onClearAll != null)
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: NeumorphicTheme.primaryBlue,
+            ),
+            onPressed: onClearAll,
+            child: Text(clearAllLabel),
+          ),
+        if (onClose != null) ...[
+          const SizedBox(width: 4),
+          NeumorphicSheetCloseButton(onPressed: onClose!),
+        ],
+      ],
+    );
+  }
+}
+
+/// ปุ่มปิด sheet แบบวงกลมนูน พร้อม tooltip (ค่าเริ่มต้น "ปิด").
+class NeumorphicSheetCloseButton extends StatelessWidget {
+  const NeumorphicSheetCloseButton({
+    super.key,
+    required this.onPressed,
+    this.tooltip = 'ปิด',
+    this.size = 36,
+  });
+
+  final VoidCallback onPressed;
+  final String tooltip;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(size / 2),
+          child: NeumorphicContainer(
+            width: size,
+            height: size,
+            shape: BoxShape.circle,
+            depth: 3,
+            blur: 6,
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: NeumorphicTheme.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ชิปเลือกได้แบบนูน: ยกขึ้นเมื่อยังไม่เลือก และจมลงพร้อม tint ฟ้าเมื่อเลือก.
+class NeumorphicChoiceChip extends StatelessWidget {
+  const NeumorphicChoiceChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool> onSelected;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = NeumorphicTheme.primaryBlue;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onSelected(!selected),
+          borderRadius: BorderRadius.circular(14),
+          child: NeumorphicContainer(
+            borderRadius: 14,
+            depth: selected ? 2 : 5,
+            blur: selected ? 4 : 10,
+            isPressed: selected,
+            color: selected
+                ? Color.alphaBlend(
+                    accent.withValues(alpha: 0.16),
+                    NeumorphicTheme.baseColor,
+                  )
+                : NeumorphicTheme.baseColor,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: selected ? accent : NeumorphicTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: selected ? accent : NeumorphicTheme.textPrimary,
+                  ),
+                ),
+                if (selected) ...[
+                  const SizedBox(width: 5),
+                  Icon(Icons.check_rounded, size: 15, color: accent),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ป้าย (tag) แบบนูนสำหรับค่าที่เพิ่มแล้ว พร้อมปุ่มลบได้.
+class NeumorphicTagChip extends StatelessWidget {
+  const NeumorphicTagChip({super.key, required this.label, this.onDeleted});
+
+  final String label;
+  final VoidCallback? onDeleted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      child: NeumorphicContainer(
+        borderRadius: 14,
+        depth: 4,
+        blur: 8,
+        padding: EdgeInsets.only(
+          left: 14,
+          right: onDeleted == null ? 14 : 8,
+          top: 6,
+          bottom: 6,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: NeumorphicTheme.textPrimary,
+              ),
+            ),
+            if (onDeleted != null) ...[
+              const SizedBox(width: 4),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onDeleted,
+                  borderRadius: BorderRadius.circular(10),
+                  child: const Padding(
+                    padding: EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 15,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// สวิตช์เปิด/ปิดแบบนูน: รางจม (Inset) และปุ่มเลื่อนนูนที่เปลี่ยนเป็นสีฟ้าเมื่อเปิด.
+class NeumorphicSwitchTile extends StatelessWidget {
+  const NeumorphicSwitchTile({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    return Semantics(
+      container: true,
+      toggled: value,
+      enabled: enabled,
+      label: title,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? () => onChanged!(!value) : null,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: enabled
+                              ? NeumorphicTheme.textPrimary
+                              : NeumorphicTheme.textSecondary.withValues(
+                                  alpha: 0.7,
+                                ),
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: NeumorphicTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _toggle,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget get _toggle {
+    return SizedBox(
+      width: 54,
+      height: 32,
+      child: NeumorphicInsetBox(
+        width: 54,
+        height: 32,
+        borderRadius: 16,
+        padding: EdgeInsets.zero,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: NeumorphicContainer(
+                  width: 24,
+                  height: 24,
+                  shape: BoxShape.circle,
+                  depth: 2,
+                  blur: 4,
+                  color: value
+                      ? NeumorphicTheme.primaryBlue
+                      : NeumorphicTheme.baseColor,
+                  child: value
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ปุ่มทรงแคปซูลแบบนูน (รอง) สำหรับยกเลิกหรือปุ่มตัวเลือก เช่น วันที่/เวลา.
+class NeumorphicPillButton extends StatelessWidget {
+  const NeumorphicPillButton({
+    super.key,
+    required this.text,
+    this.onPressed,
+    this.icon,
+    this.active = false,
+    this.height = 48,
+  });
+
+  final String text;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool active;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = NeumorphicTheme.primaryBlue;
+    final enabled = onPressed != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(height / 2),
+          child: NeumorphicContainer(
+            height: height,
+            borderRadius: height / 2,
+            depth: 5,
+            blur: 10,
+            isPressed: active,
+            color: active
+                ? Color.alphaBlend(
+                    accent.withValues(alpha: 0.16),
+                    NeumorphicTheme.baseColor,
+                  )
+                : NeumorphicTheme.baseColor,
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(
+                      icon,
+                      size: 18,
+                      color: active ? accent : NeumorphicTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: active ? accent : NeumorphicTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sheserved/features/sport_club/book_court/domain/book_court_filter.dart';
-import 'package:sheserved/features/sport_club/book_court/presentation/widgets/book_court_filter_sheet.dart';
+import 'package:sheserved/features/sport_club/find_coach/domain/find_coach_filter.dart';
+import 'package:sheserved/features/sport_club/find_coach/presentation/widgets/coach_filter_sheet.dart';
 import 'package:sheserved/shared/widgets/thai_address_picker/thai_address_repository.dart';
 
 class _FakeAddressRepository implements ThaiAddressRepository {
@@ -23,11 +23,11 @@ class _FakeAddressRepository implements ThaiAddressRepository {
 }
 
 void main() {
-  testWidgets('edits the shared venue query in the filter sheet', (
+  testWidgets('edits the shared coach query in the filter sheet', (
     tester,
   ) async {
-    const currentFilter = BookCourtFilter(minPrice: 100.0);
-    BookCourtFilterSheetResult? result;
+    const currentFilter = FindCoachFilter(skillLevel: 'beginner');
+    CoachFilterSheetResult? result;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -36,10 +36,10 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 onPressed: () async {
-                  result = await BookCourtFilterSheet.show(
+                  result = await CoachFilterSheet.show(
                     context,
                     current: currentFilter,
-                    currentQuery: 'Old court',
+                    currentQuery: 'Old coach',
                     addressRepository: _FakeAddressRepository(),
                   );
                 },
@@ -54,24 +54,24 @@ void main() {
     await tester.tap(find.text('เปิดตัวกรอง'));
     await tester.pumpAndSettle();
 
-    final queryField = find.byKey(const ValueKey('book_court_search_query'));
-    expect(tester.widget<TextField>(queryField).controller?.text, 'Old court');
+    final queryField = find.byKey(const ValueKey('coach_filter_search_query'));
+    expect(tester.widget<TextField>(queryField).controller?.text, 'Old coach');
 
-    await tester.enterText(queryField, '  New court  ');
+    await tester.enterText(queryField, '  New coach  ');
     await tester.ensureVisible(find.text('ใช้ตัวกรอง'));
     await tester.tap(find.text('ใช้ตัวกรอง'));
     await tester.pumpAndSettle();
 
-    expect(result?.query, 'New court');
-    expect(result?.filter.minPrice, 100.0);
+    expect(result?.query, 'New coach');
+    expect(result?.filter.skillLevel, 'beginner');
     expect(result?.province, isNull);
     expect(result?.district, isNull);
   });
 
-  testWidgets('keeps the current province and district when applied', (
+  testWidgets('keeps the shared province and district when applied', (
     tester,
   ) async {
-    BookCourtFilterSheetResult? result;
+    CoachFilterSheetResult? result;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -80,9 +80,9 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 onPressed: () async {
-                  result = await BookCourtFilterSheet.show(
+                  result = await CoachFilterSheet.show(
                     context,
-                    current: const BookCourtFilter(),
+                    current: const FindCoachFilter(),
                     currentQuery: '',
                     currentProvince: 'ขอนแก่น',
                     currentDistrict: 'เมืองขอนแก่น',
@@ -112,7 +112,7 @@ void main() {
   });
 
   testWidgets('selecting a province loads its districts', (tester) async {
-    BookCourtFilterSheetResult? result;
+    CoachFilterSheetResult? result;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -121,9 +121,9 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 onPressed: () async {
-                  result = await BookCourtFilterSheet.show(
+                  result = await CoachFilterSheet.show(
                     context,
-                    current: const BookCourtFilter(),
+                    current: const FindCoachFilter(),
                     currentQuery: '',
                     addressRepository: _FakeAddressRepository(),
                   );
@@ -157,10 +157,8 @@ void main() {
     expect(result?.district, 'ดินแดง');
   });
 
-  testWidgets('close button dismisses without applying changes', (
-    tester,
-  ) async {
-    BookCourtFilterSheetResult? result;
+  testWidgets('cancel dismisses without applying changes', (tester) async {
+    CoachFilterSheetResult? result;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -169,9 +167,9 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 onPressed: () async {
-                  result = await BookCourtFilterSheet.show(
+                  result = await CoachFilterSheet.show(
                     context,
-                    current: const BookCourtFilter(),
+                    current: const FindCoachFilter(),
                     currentQuery: 'Current query',
                     addressRepository: _FakeAddressRepository(),
                   );
@@ -186,10 +184,11 @@ void main() {
 
     await tester.tap(find.text('เปิดตัวกรอง'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('ปิด'));
+    await tester.ensureVisible(find.text('ยกเลิก'));
+    await tester.tap(find.text('ยกเลิก'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ตัวกรองสนาม'), findsNothing);
+    expect(find.text('ตัวกรองโค้ช'), findsNothing);
     expect(result, isNull);
   });
 }

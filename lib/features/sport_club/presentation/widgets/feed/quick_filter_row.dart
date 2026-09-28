@@ -114,6 +114,7 @@ class QuickFilterRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 44,
+      width: double.infinity,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(

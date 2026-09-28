@@ -285,9 +285,19 @@ class _BookCourtPageState extends State<BookCourtPage> {
       context,
       current: _filter,
       currentQuery: hub.shared.query,
+      currentProvince: hub.shared.province,
+      currentDistrict: hub.shared.district,
     );
     if (result == null || !mounted) return;
-    hub.updateShared(hub.shared.copyWith(query: result.query));
+    hub.updateShared(
+      hub.shared.copyWith(
+        query: result.query,
+        province: result.province,
+        clearProvince: result.province == null,
+        district: result.district,
+        clearDistrict: result.district == null,
+      ),
+    );
     hub.updateCourts(result.filter);
   }
 
