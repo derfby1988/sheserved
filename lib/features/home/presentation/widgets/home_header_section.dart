@@ -125,7 +125,7 @@ class HomeHeaderSection extends StatelessWidget {
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.center,
                               child: Text(
-                                headerText ?? 'สุขภาพ "ดี"',
+                                headerText ?? '',
                                 style: AppTextStyles.bodyLarge.copyWith(
                                   color: AppColors.textOnPrimary,
                                   fontWeight: FontWeight.w600,
@@ -327,12 +327,6 @@ class HomeHeaderSection extends StatelessWidget {
                           return (b['time'] as DateTime).compareTo(
                             a['time'] as DateTime,
                           );
-                        });
-
-                        // Medicine reminder อยู่ล่างสุดเสมอ
-                        combinedItems.add({
-                          'time': DateTime(2000),
-                          'type': 'medicine',
                         });
 
                         return Column(
@@ -914,21 +908,6 @@ class HomeHeaderSection extends StatelessWidget {
                                             ),
                                           ],
                                         ),
-                                      ),
-                                    ),
-                                  );
-
-                                  // ── Medicine Reminder ─────────────────────────────
-                                } else {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 4,
-                                    ),
-                                    child: Text(
-                                      'อีก 10 นาที\nทานยา มื้อเย็น\nทานยา มื้อก่อนนอน',
-                                      textAlign: TextAlign.right,
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: AppColors.textOnPrimary,
                                       ),
                                     ),
                                   );
