@@ -7,7 +7,9 @@ import 'package:uuid/uuid.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_bar_controller.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_sport_catalog.dart';
 import 'package:sheserved/features/sport_club/shared/domain/sports_discovery_filter.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/shared_sport_filter_bar.dart';
 import 'package:sheserved/services/auth_service.dart';
@@ -37,7 +39,19 @@ import 'my_coach_requests_page.dart';
 class FindCoachPage extends StatefulWidget {
   final SportsHubController? hubController;
 
-  const FindCoachPage({super.key, this.hubController});
+  /// Shell-owned shared sport catalog + bar state (plan 21.7.13). Present
+  /// when embedded in [SportsHubPage]; the shared chips row is rendered once
+  /// by the shell overlay and this page registers its quick-action buttons
+  /// as the bar's trailing controls.
+  final SportsHubSportCatalog? sportCatalog;
+  final SportsHubBarController? sportBar;
+
+  const FindCoachPage({
+    super.key,
+    this.hubController,
+    this.sportCatalog,
+    this.sportBar,
+  });
 
   @override
   State<FindCoachPage> createState() => _FindCoachPageState();
@@ -86,6 +100,14 @@ class _FindCoachPageState extends State<FindCoachPage> {
     );
     _scrollController.addListener(_onScroll);
     _hub?.addListener(_onHubChanged);
+    // initState runs while the shell's PageView is still building; defer the
+    // registration so the bar controller's notifyListeners cannot mark the
+    // shell's AnimatedBuilder dirty mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.sportBar?.setTrailing(2, (_) => _buildBarTrailing());
+      }
+    });
     _searchController.text = _hub?.shared.query ?? '';
     _init();
   }
@@ -106,6 +128,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
     _searchController.dispose();
     _scrollController.dispose();
     _hub?.removeListener(_onHubChanged);
+    widget.sportBar?.setTrailing(2, null);
     super.dispose();
   }
 
@@ -118,10 +141,24 @@ class _FindCoachPageState extends State<FindCoachPage> {
     _reload();
   }
 
+  /// Sport list for sheets/pickers — the shared ranked catalog when
+  /// embedded, otherwise this page's own load (standalone usage).
+  List<Map<String, dynamic>> get _sportRows {
+    final catalog = widget.sportCatalog;
+    if (catalog != null && catalog.sports.isNotEmpty) return catalog.sports;
+    return _sports;
+  }
+
   Future<void> _init() async {
+    // Embedded pages share the shell's single ranked catalog (21.7.13);
+    // standalone usage keeps its own load.
+    final includeSports = widget.sportCatalog == null;
     try {
       final results = await Future.wait<Object?>([
-        _buddiesRepo.getApprovedSports(userId: _userId),
+        if (includeSports)
+          _buddiesRepo.getApprovedSports(userId: _userId)
+        else
+          Future<List<Map<String, dynamic>>>.value(const []),
         if (_userId != null)
           _repo.listMyFavoriteCoachIds(_userId!)
         else
@@ -144,12 +181,9 @@ class _FindCoachPageState extends State<FindCoachPage> {
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients ||
-        _loading ||
-        _isLoadingMore ||
-        !_hasMore) {
-      return;
-    }
+    if (!_scrollController.hasClients) return;
+    widget.sportBar?.reportScroll(2, _scrollController.position.pixels);
+    if (_loading || _isLoadingMore || !_hasMore) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
@@ -332,6 +366,12 @@ class _FindCoachPageState extends State<FindCoachPage> {
   // =============== Detail + request flow ===============
 
   Future<void> _openCoach(CoachSummary coach) async {
+    // Real user detail-opens feed the shared usage ranking (21.7.13).
+    widget.sportCatalog?.recordDetailOpen(
+      domain: 'coaches',
+      entityId: coach.id,
+      sportIds: coach.sportIds,
+    );
     await CoachDetailSheet.show(
       context,
       coach: coach,
@@ -375,7 +415,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
     final draft = await CoachRequestSheet.show(
       context,
       coach: coach,
-      sports: _sports,
+      sports: _sportRows,
       preferredSportId: _hub?.shared.sportId,
     );
     if (draft == null || !mounted) return;
@@ -405,7 +445,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CoachManagementPage(repo: _repo, sports: _sports),
+        builder: (_) => CoachManagementPage(repo: _repo, sports: _sportRows),
       ),
     );
   }
@@ -437,6 +477,31 @@ class _FindCoachPageState extends State<FindCoachPage> {
     return parts.join(' · ');
   }
 
+  /// Trailing quick actions registered on the shell's shared sport bar
+  /// while this page is embedded; standalone builds keep them inline.
+  Widget _buildBarTrailing() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'การสมัครของฉัน',
+          icon: const Icon(Icons.how_to_reg_rounded),
+          onPressed: _openMyEnrollments,
+        ),
+        IconButton(
+          tooltip: 'คำขอนัดของฉัน',
+          icon: const Icon(Icons.event_note_rounded),
+          onPressed: _openMyRequests,
+        ),
+        IconButton(
+          tooltip: 'จัดการโค้ชของฉัน',
+          icon: const Icon(Icons.school_rounded),
+          onPressed: _openCoachTools,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final shared = _hub?.shared;
@@ -447,31 +512,18 @@ class _FindCoachPageState extends State<FindCoachPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             children: [
-              SharedSportFilterBar(
-                sports: _sports,
-                selectedSportId: shared?.sportId,
-                onSportSelected: _onSportSelected,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'การสมัครของฉัน',
-                      icon: const Icon(Icons.how_to_reg_rounded),
-                      onPressed: _openMyEnrollments,
-                    ),
-                    IconButton(
-                      tooltip: 'คำขอนัดของฉัน',
-                      icon: const Icon(Icons.event_note_rounded),
-                      onPressed: _openMyRequests,
-                    ),
-                    IconButton(
-                      tooltip: 'จัดการโค้ชของฉัน',
-                      icon: const Icon(Icons.school_rounded),
-                      onPressed: _openCoachTools,
-                    ),
-                  ],
+              if (widget.sportBar != null)
+                // The shared chips row is the shell's overlay; this spacer
+                // keeps the search field at its usual position without
+                // changing the viewport when the bar collapses.
+                const SizedBox(height: SportsHubBarController.barHeight - 8)
+              else
+                SharedSportFilterBar(
+                  sports: _sports,
+                  selectedSportId: shared?.sportId,
+                  onSportSelected: _onSportSelected,
+                  trailing: _buildBarTrailing(),
                 ),
-              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _searchController,

@@ -25,8 +25,10 @@
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.sports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name_en text, name_th text, status text DEFAULT 'approved'
+  name_en text, name_th text, icon text, status text DEFAULT 'approved'
 );
+-- Pre-21.7.13 scratch stubs may predate the icon column.
+ALTER TABLE public.sports ADD COLUMN IF NOT EXISTS icon text;
 CREATE TABLE IF NOT EXISTS public.users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   first_name text, last_name text, profile_image_url text, role text,
@@ -67,6 +69,7 @@ END $$;
 \ir ../supabase/migrations/20260925110000_sports_hub_notification_delivery.sql
 \ir ../supabase/migrations/20260925130000_sports_hub_venue_review_readiness.sql
 \ir ../supabase/migrations/20260926100000_sports_hub_review_scoring_10pt.sql
+\ir ../supabase/migrations/20260928120000_sports_hub_sport_usage.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -790,3 +793,105 @@ BEGIN
 
   RAISE NOTICE 'notification delivery smoke test complete';
 END $notify$;
+
+-- ---------------------------------------------------------------------
+-- Shared sport catalog usage ranking (20260928120000, Phase 21.7.13)
+-- ---------------------------------------------------------------------
+DO $usage$
+DECLARE
+  v_u1    uuid := 'abababab-0000-0000-0000-0000000000a1';
+  v_u2    uuid := 'abababab-0000-0000-0000-0000000000a2';
+  v_s1    uuid := 'eeeeeeee-0000-0000-0000-0000000000b1';
+  v_s2    uuid := 'eeeeeeee-0000-0000-0000-0000000000b2';
+  v_s3    uuid := 'eeeeeeee-0000-0000-0000-0000000000b3';
+  v_s4    uuid := 'eeeeeeee-0000-0000-0000-0000000000b4';
+  v_bad   uuid := 'eeeeeeee-0000-0000-0000-0000000000b5';
+  v_ent_a uuid := 'cccccccc-0000-0000-0000-0000000000a1';
+  v_ent_b uuid := 'cccccccc-0000-0000-0000-0000000000a2';
+  v_top   uuid;
+  v_cnt   int;
+BEGIN
+  INSERT INTO public.users (id, first_name, role) VALUES
+    (v_u1, 'UsageU1', 'user'), (v_u2, 'UsageU2', 'user')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO public.sports (id, name_th, name_en, icon, status) VALUES
+    (v_s1, 'AAUsage1', 'UsageA', '🏐', 'approved'),
+    (v_s2, 'AAUsage2', 'UsageB', '🎾', 'approved'),
+    (v_s3, 'AAUsage3', 'UsageC', '🏀', 'approved'),
+    (v_s4, 'AAUsage4', 'UsageD', '🥏', 'approved'),
+    (v_bad, 'AAUsageBad', 'UsageX', '🚫', 'pending')
+  ON CONFLICT (id) DO NOTHING;
+  DELETE FROM public.sport_detail_open_events WHERE user_id IN (v_u1, v_u2);
+
+  -- First open recorded; idempotent event_id retry does not double count.
+  PERFORM pg_temp.expect(
+    public.record_sport_detail_open(v_u1, '11111111-0000-0000-0000-000000000001',
+      v_s1, 'buddies', v_ent_a),
+    'first detail open returns true');
+  PERFORM pg_temp.expect(NOT
+    public.record_sport_detail_open(v_u1, '11111111-0000-0000-0000-000000000001',
+      v_s1, 'buddies', v_ent_a),
+    'event_id retry not counted');
+  PERFORM pg_temp.expect((SELECT COUNT(*)::int
+    FROM public.sport_detail_open_events WHERE user_id = v_u1) = 1,
+    'exactly one row after retry');
+
+  -- Same entity within the dedupe window ignored even with a new event_id.
+  PERFORM pg_temp.expect(NOT
+    public.record_sport_detail_open(v_u1, '11111111-0000-0000-0000-000000000002',
+      v_s1, 'buddies', v_ent_a),
+    'same entity inside 24h deduped');
+
+  -- Same sport via a different domain is an independent signal.
+  PERFORM public.record_sport_detail_open(v_u1, '11111111-0000-0000-0000-000000000003',
+    v_s1, 'coaches', v_ent_b);
+  -- Different entity in the same domain counts.
+  PERFORM public.record_sport_detail_open(v_u1, '11111111-0000-0000-0000-000000000004',
+    v_s2, 'coaches', 'cccccccc-0000-0000-0000-0000000000a3');
+  PERFORM pg_temp.expect((SELECT COUNT(*)::int
+    FROM public.sport_detail_open_events WHERE user_id = v_u1) = 3,
+    'cross-domain and different-entity opens counted');
+
+  -- Validation: bad domain, non-approved sport, null user all rejected.
+  PERFORM pg_temp.expect_raise('invalid domain rejected',
+    format($s$SELECT public.record_sport_detail_open(%L, %L, %L, %L, NULL)$s$,
+      v_u1, gen_random_uuid(), v_s1, 'bad_domain'), 'INVALID_DOMAIN');
+  PERFORM pg_temp.expect_raise('non-approved sport rejected',
+    format($s$SELECT public.record_sport_detail_open(%L, %L, %L, %L, NULL)$s$,
+      v_u1, gen_random_uuid(), v_bad, 'buddies'), 'INVALID_SPORT');
+  PERFORM pg_temp.expect_raise('null user rejected',
+    $s$SELECT public.record_sport_detail_open(NULL, gen_random_uuid(),
+      'eeeeeeee-0000-0000-0000-0000000000b1'::uuid, 'buddies', NULL)$s$,
+    'UNAUTHORIZED');
+
+  -- Ranking: s1 opened in two domains beats s2 (one domain).
+  v_top := (SELECT id FROM public.list_sport_ranking(v_u1)
+    ORDER BY score DESC, last_opened_at DESC NULLS LAST, name_th ASC, id
+    LIMIT 1);
+  PERFORM pg_temp.expect(v_top = v_s1,
+    'most-used cross-domain sport ranked first for u1');
+
+  -- Catalog completeness: every approved sport returned, pending excluded.
+  PERFORM pg_temp.expect((SELECT COUNT(*)::int
+    FROM public.list_sport_ranking(v_u1)
+    WHERE id IN (v_s1, v_s2, v_s3, v_s4)) = 4,
+    'ranking returns all approved sports');
+  PERFORM pg_temp.expect(NOT EXISTS(
+    SELECT 1 FROM public.list_sport_ranking(v_u1) WHERE id = v_bad),
+    'pending sport excluded from catalog');
+
+  -- Guests get the deterministic catalog; per-user isolation holds.
+  PERFORM pg_temp.expect((SELECT COUNT(*)::int
+    FROM public.list_sport_ranking(NULL)
+    WHERE id IN (v_s1, v_s2, v_s3, v_s4)) = 4,
+    'guest ranking returns approved sports');
+  PERFORM public.record_sport_detail_open(v_u2, '22222222-0000-0000-0000-000000000001',
+    v_s3, 'courts', v_ent_b);
+  v_top := (SELECT id FROM public.list_sport_ranking(v_u2)
+    ORDER BY score DESC, last_opened_at DESC NULLS LAST, name_th ASC, id
+    LIMIT 1);
+  PERFORM pg_temp.expect(v_top = v_s3, 'u2 top sport is its own usage');
+
+  DELETE FROM public.sport_detail_open_events WHERE user_id IN (v_u1, v_u2);
+  RAISE NOTICE 'sport usage ranking smoke test complete';
+END $usage$;

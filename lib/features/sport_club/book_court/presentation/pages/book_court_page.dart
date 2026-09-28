@@ -5,7 +5,9 @@ import 'package:uuid/uuid.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_bar_controller.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_sport_catalog.dart';
 import 'package:sheserved/features/sport_club/shared/domain/sports_discovery_filter.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/shared_sport_filter_bar.dart';
 import 'package:sheserved/services/auth_service.dart';
@@ -35,7 +37,18 @@ import 'court_owner_dashboard.dart';
 class BookCourtPage extends StatefulWidget {
   final SportsHubController? hubController;
 
-  const BookCourtPage({super.key, this.hubController});
+  /// Shell-owned shared sport catalog + bar state (plan 21.7.13). Present
+  /// when embedded in [SportsHubPage]; the shared chips row is rendered once
+  /// by the shell overlay, so this page then only reserves its height.
+  final SportsHubSportCatalog? sportCatalog;
+  final SportsHubBarController? sportBar;
+
+  const BookCourtPage({
+    super.key,
+    this.hubController,
+    this.sportCatalog,
+    this.sportBar,
+  });
 
   @override
   State<BookCourtPage> createState() => _BookCourtPageState();
@@ -114,23 +127,24 @@ class _BookCourtPageState extends State<BookCourtPage> {
   }
 
   Future<void> _init() async {
-    try {
-      final sports = await _buddiesRepo.getApprovedSports(userId: _userId);
-      if (!mounted) return;
-      setState(() => _sports = sports);
-    } catch (_) {
-      // Empty sport row is fine; the feed still renders.
+    // Embedded pages share the shell's single ranked catalog (21.7.13);
+    // standalone usage keeps its own load.
+    if (widget.sportCatalog == null) {
+      try {
+        final sports = await _buddiesRepo.getApprovedSports(userId: _userId);
+        if (!mounted) return;
+        setState(() => _sports = sports);
+      } catch (_) {
+        // Empty sport row is fine; the feed still renders.
+      }
     }
     await _reload();
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients ||
-        _loading ||
-        _isLoadingMore ||
-        !_hasMore) {
-      return;
-    }
+    if (!_scrollController.hasClients) return;
+    widget.sportBar?.reportScroll(0, _scrollController.position.pixels);
+    if (_loading || _isLoadingMore || !_hasMore) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
@@ -280,6 +294,12 @@ class _BookCourtPageState extends State<BookCourtPage> {
   // =============== Detail + booking flow ===============
 
   Future<void> _openVenue(VenueSummary venue) async {
+    // Real user detail-opens feed the shared usage ranking (21.7.13).
+    widget.sportCatalog?.recordDetailOpen(
+      domain: 'courts',
+      entityId: venue.id,
+      sportIds: venue.sportIds,
+    );
     await CourtDetailSheet.show(
       context,
       venue: venue,
@@ -476,11 +496,17 @@ class _BookCourtPageState extends State<BookCourtPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             children: [
-              SharedSportFilterBar(
-                sports: _sports,
-                selectedSportId: shared?.sportId,
-                onSportSelected: _onSportSelected,
-              ),
+              if (widget.sportBar != null)
+                // The shared chips row is the shell's overlay; this spacer
+                // keeps the quick filters at their usual position without
+                // changing the viewport when the bar collapses.
+                const SizedBox(height: SportsHubBarController.barHeight - 8)
+              else
+                SharedSportFilterBar(
+                  sports: _sports,
+                  selectedSportId: shared?.sportId,
+                  onSportSelected: _onSportSelected,
+                ),
               const SizedBox(height: 8),
               BookCourtQuickFilterRow(
                 availableOnly: filter.availableOnly,

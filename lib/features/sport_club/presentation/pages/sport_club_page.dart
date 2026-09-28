@@ -31,7 +31,9 @@ import '../../application/sport_club_data_freshness_policy.dart';
 import '../../application/sport_club_intent.dart';
 import '../../application/feed_filter_collapse_controller.dart';
 import '../../services/sport_club_deep_link_service.dart';
+import '../../shared/application/sports_hub_bar_controller.dart';
 import '../../shared/application/sports_hub_controller.dart';
+import '../../shared/application/sports_hub_sport_catalog.dart';
 import '../../shared/domain/sports_hub_filter_state.dart';
 
 class SportClubPageController {
@@ -107,12 +109,21 @@ class SportClubPage extends StatefulWidget {
   final SportsHubController? hubController;
   final FitnessBuddiesRepository? repository;
 
+  /// Shell-owned shared sport catalog + bar state (plan 21.7.13). Present
+  /// only when the page is embedded in [SportsHubPage]; the shared chips
+  /// row is rendered once by the shell overlay, so this page then only
+  /// keeps its own quick-filter row.
+  final SportsHubSportCatalog? sportCatalog;
+  final SportsHubBarController? sportBar;
+
   const SportClubPage({
     super.key,
     this.embeddedInSportsHub = false,
     this.controller,
     this.hubController,
     this.repository,
+    this.sportCatalog,
+    this.sportBar,
   });
 
   @override
@@ -158,13 +169,17 @@ class _SportClubPageState extends State<SportClubPage> {
 
   // Vertical offsets of the collapsing filter button. They mirror the filter
   // bar layout: 16 padding + 40 sport-chips row + 10 gap, with the button
-  // centred inside the 44-high quick-filter row when expanded.
+  // centred inside the 44-high quick-filter row when expanded. In embedded
+  // mode the chips row lives in the shell's shared bar, so the quick-filter
+  // row starts at bar height + 16 padding.
   static const double _filterButtonTopExpanded = 69;
+  static const double _filterButtonTopEmbeddedExpanded = 76;
   static const double _filterButtonTopCollapsed = 17;
 
   // Inset used before the filter bar is measured, so the first frame already
   // matches the usual bar height and the feed does not flash.
   static const double _filterBarFallbackHeight = 110;
+  static const double _embeddedFilterBarFallbackHeight = 60;
 
   String? get _sportId => _filter.sportId;
   String get _q => _filter.q;
@@ -200,6 +215,12 @@ class _SportClubPageState extends State<SportClubPage> {
     _booking = SportClubBookingService(_repo.bookSession);
     _listScrollController.addListener(_onScroll);
     widget.hubController?.addListener(_onHubFilterChanged);
+    // initState runs while the shell's PageView is still building; defer the
+    // registration so the bar controller's notifyListeners cannot mark the
+    // shell's AnimatedBuilder dirty mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.sportBar?.setTrailing(1, (_) => const AddSportFab());
+    });
     _attachController();
     _init();
   }
@@ -246,6 +267,7 @@ class _SportClubPageState extends State<SportClubPage> {
   void dispose() {
     widget.controller?._detach(this);
     widget.hubController?.removeListener(_onHubFilterChanged);
+    widget.sportBar?.setTrailing(1, null);
     _listScrollController.dispose();
     _detailScrollController.dispose();
     super.dispose();
@@ -255,7 +277,7 @@ class _SportClubPageState extends State<SportClubPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Ensure we reflect latest ordering/data if dependencies change after hot reload.
-    if (_sports.isEmpty && !_loading) {
+    if (_sports.isEmpty && !_loading && widget.sportCatalog == null) {
       _init();
     }
   }
@@ -277,13 +299,28 @@ class _SportClubPageState extends State<SportClubPage> {
 
   /// Collapses the pinned filter rows once the feed is scrolled up past a
   /// threshold, and restores them when the user scrolls back down or taps
-  /// the floating filter button.
+  /// the floating filter button. The same offset drives the shell's shared
+  /// sport bar so both collapse together.
   void _updateFilterCollapse() {
     if (!_listScrollController.hasClients) return;
-    if (_filterCollapse.update(_listScrollController.position.pixels)) {
+    final pixels = _listScrollController.position.pixels;
+    widget.sportBar?.reportScroll(1, pixels);
+    if (_filterCollapse.update(pixels)) {
       setState(() {});
       _publishFeedTitle();
     }
+  }
+
+  /// True while the shell renders the shared sport bar (21.7.13): this page
+  /// then reserves the bar's height and drops its own chips row.
+  bool get _sharedBarActive => widget.sportBar != null;
+
+  /// Sport list for name lookups — the shared ranked catalog when embedded,
+  /// otherwise this page's own load (standalone usage).
+  List<Map<String, dynamic>> get _sportRows {
+    final catalog = widget.sportCatalog;
+    if (catalog != null && catalog.sports.isNotEmpty) return catalog.sports;
+    return _sports;
   }
 
   /// Name of the sport currently selected in the sport filter, or null when
@@ -291,7 +328,7 @@ class _SportClubPageState extends State<SportClubPage> {
   String? get _selectedSportName {
     final sportId = _sportId;
     if (sportId == null) return null;
-    for (final sport in _sports) {
+    for (final sport in _sportRows) {
       if (sport['id']?.toString() != sportId) continue;
       final name = sport['name_th']?.toString();
       return (name == null || name.isEmpty) ? null : name;
@@ -506,7 +543,11 @@ class _SportClubPageState extends State<SportClubPage> {
     final requestId = ++_filterRequestId;
     try {
       final userId = AuthService.instance.currentUser?.id;
-      unawaited(_loadApprovedSports(userId));
+      // Embedded pages share the shell's single ranked catalog (21.7.13);
+      // standalone usage keeps its own load.
+      if (widget.sportCatalog == null) {
+        unawaited(_loadApprovedSports(userId));
+      }
       await _restoreFilterState(userId);
       if (requestId != _filterRequestId) return;
       final membership = await _membershipSnapshot(userId);
@@ -531,6 +572,7 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = membership.blocked;
         _myCreatedSportIds = membership.createdSports;
       });
+      widget.sportCatalog?.setMyCreatedSportIds(membership.createdSports);
       _lastSuccessfulFetchAt = DateTime.now();
 
       _publishFeedTitle();
@@ -651,6 +693,7 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = membership.blocked;
         _myCreatedSportIds = membership.createdSports;
       });
+      widget.sportCatalog?.setMyCreatedSportIds(membership.createdSports);
       _lastSuccessfulFetchAt = DateTime.now();
     } on StateError catch (error) {
       if (error.message != 'STALE_FILTER_REQUEST') rethrow;
@@ -729,6 +772,7 @@ class _SportClubPageState extends State<SportClubPage> {
         _myBlockedGroupIds = membership.blocked;
         _myCreatedSportIds = membership.createdSports;
       });
+      widget.sportCatalog?.setMyCreatedSportIds(membership.createdSports);
       _lastSuccessfulFetchAt = DateTime.now();
     } catch (_) {
     } finally {
@@ -869,17 +913,23 @@ class _SportClubPageState extends State<SportClubPage> {
 
   Widget _buildFindBuddiesContent() {
     _scheduleFilterBarMeasure();
+    // When the shell renders the shared sport bar (21.7.13) this page's
+    // overlay only holds the quick-filter row, sitting below the bar.
+    final sharedBarHeight =
+        _sharedBarActive ? SportsHubBarController.barHeight : 0.0;
     final barHeight = _filterBarHeight > 0
         ? _filterBarHeight
-        : _filterBarFallbackHeight;
-    final filterBarInset = barHeight + 8;
+        : (_sharedBarActive
+            ? _embeddedFilterBarFallbackHeight
+            : _filterBarFallbackHeight);
+    final filterBarInset = sharedBarHeight + barHeight + 8;
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
       child: Stack(
         children: [
           RefreshIndicator(
             onRefresh: _reload,
-            displacement: barHeight + 24,
+            displacement: filterBarInset + 16,
             child: ListView(
               key: const PageStorageKey<String>('find_buddies_feed'),
               controller: _listScrollController,
@@ -939,8 +989,12 @@ class _SportClubPageState extends State<SportClubPage> {
           // Filter bar overlay: slides up and fades away while the feed
           // scrolls, without changing its layout height, so the cards never
           // jump. Its opaque background hides the feed while it is visible.
+          // When embedded in the hub the chips row lives in the shell's
+          // shared bar; standalone usage keeps it here.
           Positioned(
-            top: 0,
+            top: _sharedBarActive
+                ? SportsHubBarController.barHeight
+                : 0,
             left: 0,
             right: 0,
             child: AnimatedSlide(
@@ -959,35 +1013,37 @@ class _SportClubPageState extends State<SportClubPage> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: Column(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SportCategoryChips(
-                              sports: _sports,
-                              selectedSportId: _sportId,
-                              myCreatedSportIds: _myCreatedSportIds,
-                              onSportSelected: (id, selected) async {
-                                setState(() {
-                                  final nextSportId = selected ? id : null;
-                                  _filter = _filter.copyWith(
-                                    sportId: nextSportId,
-                                    clearSportId: nextSportId == null,
+                      if (!_sharedBarActive) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SportCategoryChips(
+                                sports: _sports,
+                                selectedSportId: _sportId,
+                                myCreatedSportIds: _myCreatedSportIds,
+                                onSportSelected: (id, selected) async {
+                                  setState(() {
+                                    final nextSportId = selected ? id : null;
+                                    _filter = _filter.copyWith(
+                                      sportId: nextSportId,
+                                      clearSportId: nextSportId == null,
+                                    );
+                                    _reloadingGroups = true;
+                                  });
+                                  _publishFeedTitle();
+                                  await _persistFilterState();
+                                  widget.hubController?.absorbSportClubFilter(
+                                    _filter,
                                   );
-                                  _reloadingGroups = true;
-                                });
-                                _publishFeedTitle();
-                                await _persistFilterState();
-                                widget.hubController?.absorbSportClubFilter(
-                                  _filter,
-                                );
-                                await _reload();
-                              },
+                                  await _reload();
+                                },
+                              ),
                             ),
-                          ),
-                          const AddSportFab(),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
+                            const AddSportFab(),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       QuickFilterRow(
                         filterOpenOnly: _filterOpenOnly,
                         filterJoinedOnly: _filterJoinedOnly,
@@ -1014,7 +1070,9 @@ class _SportClubPageState extends State<SportClubPage> {
             left: 16,
             top: _filterCollapse.isCollapsed
                 ? _filterButtonTopCollapsed
-                : _filterButtonTopExpanded,
+                : (_sharedBarActive
+                    ? _filterButtonTopEmbeddedExpanded
+                    : _filterButtonTopExpanded),
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
               opacity: _filterCollapse.isCollapsed ? 1 : 0,
@@ -1027,6 +1085,7 @@ class _SportClubPageState extends State<SportClubPage> {
                     filterSummary: _filterSummary,
                     onTap: () {
                       setState(_filterCollapse.expand);
+                      widget.sportBar?.expand();
                       _publishFeedTitle();
                       _showAdvancedFilterSheet();
                     },
@@ -1139,6 +1198,12 @@ class _SportClubPageState extends State<SportClubPage> {
     bool openChatOnShow = false,
     String? chatRoomId,
   }) {
+    // Real user detail-opens feed the shared usage ranking (21.7.13).
+    widget.sportCatalog?.recordDetailOpen(
+      domain: 'buddies',
+      entityId: group['id']?.toString(),
+      sportIds: [group['sport_id']?.toString() ?? ''],
+    );
     return GroupDetailSheet.show(
       context,
       group: group,

@@ -5,7 +5,10 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/book_court_page.dart';
 import 'package:sheserved/features/sport_club/find_coach/presentation/pages/find_coach_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sport_club_page.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_bar_controller.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
+import 'package:sheserved/features/sport_club/shared/application/sports_hub_sport_catalog.dart';
+import 'package:sheserved/features/sport_club/shared/presentation/widgets/shared_sport_filter_bar.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/sports_hub_page_indicator.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
@@ -30,6 +33,8 @@ class SportsHubPage extends StatefulWidget {
 class _SportsHubPageState extends State<SportsHubPage> {
   final _findBuddiesController = SportClubPageController();
   late final SportsHubController _hubController;
+  late final SportsHubSportCatalog _sportCatalog;
+  late final SportsHubBarController _sportBar;
   int _currentPage = 1;
 
   int get _initialPage => widget.initialPage.clamp(0, 2).toInt();
@@ -41,7 +46,12 @@ class _SportsHubPageState extends State<SportsHubPage> {
     _hubController = SportsHubController(
       userIdProvider: () => AuthService.instance.currentUser?.id,
     );
+    _sportCatalog = SportsHubSportCatalog(
+      userIdProvider: () => AuthService.instance.currentUser?.id,
+    );
+    _sportBar = SportsHubBarController();
     unawaited(_hubController.load());
+    unawaited(_sportCatalog.load());
     AuthService.instance.addListener(_onAuthChanged);
   }
 
@@ -50,12 +60,15 @@ class _SportsHubPageState extends State<SportsHubPage> {
     _hubController.handleUserChanged(userId);
     // Load the new user's persisted hub filters (no-op on logout).
     unawaited(_hubController.load());
+    unawaited(_sportCatalog.load());
   }
 
   @override
   void dispose() {
     AuthService.instance.removeListener(_onAuthChanged);
     _hubController.dispose();
+    _sportCatalog.dispose();
+    _sportBar.dispose();
     _findBuddiesController.dispose();
     super.dispose();
   }
@@ -63,7 +76,14 @@ class _SportsHubPageState extends State<SportsHubPage> {
   void _handlePageChanged(int page) {
     if (_currentPage == page) return;
     setState(() => _currentPage = page);
+    _sportBar.setActivePage(page);
     if (page == 1) unawaited(_findBuddiesController.refreshIfStale());
+  }
+
+  void _onSharedSportSelected(String? id, bool selected) {
+    _hubController.updateShared(
+      _hubController.shared.withSportId(selected ? id : null),
+    );
   }
 
   void _onNavIndexChanged(int index) {
@@ -80,6 +100,62 @@ class _SportsHubPageState extends State<SportsHubPage> {
 
   void _onAddPressed() {
     Navigator.pushNamed(context, '/emergency');
+  }
+
+  /// The single shared sport bar (plan 21.7.13): one instance owned by the
+  /// shell, overlaid on the PageView so it does not move with horizontal
+  /// swipes. Collapsing slides/fades the bar without changing the page
+  /// viewport, and its horizontal scroll offset lives in the single mounted
+  /// chips list so it survives page switches.
+  Widget _buildSharedSportBar() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_sportBar, _sportCatalog, _hubController]),
+        builder: (context, _) {
+          final collapsed = _sportBar.isCollapsed;
+          return AnimatedSlide(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            offset: collapsed ? const Offset(0, -0.6) : Offset.zero,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 240),
+              opacity: collapsed ? 0 : 1,
+              child: IgnorePointer(
+                ignoring: collapsed,
+                child: Container(
+                  height: SportsHubBarController.barHeight,
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: _sportCatalog.loadError != null
+                      // Catalog unreachable: surface retry rather than a
+                      // bar that looks loaded with only "ทั้งหมด".
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                unawaited(_sportCatalog.load()),
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('โหลดรายการกีฬาไม่สำเร็จ'),
+                          ),
+                        )
+                      : SharedSportFilterBar(
+                          sports: _sportCatalog.sports,
+                          selectedSportId: _hubController.shared.sportId,
+                          myCreatedSportIds: _sportCatalog.myCreatedSportIds,
+                          onSportSelected: _onSharedSportSelected,
+                          trailing:
+                              _sportBar.buildTrailing(context, _currentPage),
+                        ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -157,15 +233,26 @@ class _SportsHubPageState extends State<SportsHubPage> {
               ),
               child: SportsHubPager(
                 initialPage: _initialPage,
-                bookCourtPage: BookCourtPage(hubController: _hubController),
+                bookCourtPage: BookCourtPage(
+                  hubController: _hubController,
+                  sportCatalog: _sportCatalog,
+                  sportBar: _sportBar,
+                ),
                 findBuddiesPage:
                     widget.findBuddiesPage ??
                     SportClubPage(
                       embeddedInSportsHub: true,
                       controller: _findBuddiesController,
                       hubController: _hubController,
+                      sportCatalog: _sportCatalog,
+                      sportBar: _sportBar,
                     ),
-                findCoachPage: FindCoachPage(hubController: _hubController),
+                findCoachPage: FindCoachPage(
+                  hubController: _hubController,
+                  sportCatalog: _sportCatalog,
+                  sportBar: _sportBar,
+                ),
+                overlay: _buildSharedSportBar(),
                 onPageChanged: _handlePageChanged,
               ),
             ),
@@ -194,6 +281,10 @@ class SportsHubPager extends StatefulWidget {
   final int initialPage;
   final ValueChanged<int>? onPageChanged;
 
+  /// Overlay rendered above the PageView viewport (e.g. the shared sport
+  /// bar). It stays fixed while pages swipe underneath it.
+  final Widget? overlay;
+
   const SportsHubPager({
     super.key,
     required this.bookCourtPage,
@@ -201,6 +292,7 @@ class SportsHubPager extends StatefulWidget {
     required this.findCoachPage,
     this.initialPage = 1,
     this.onPageChanged,
+    this.overlay,
   });
 
   @override
@@ -255,23 +347,28 @@ class _SportsHubPagerState extends State<SportsHubPager> {
           ),
         ),
         Expanded(
-          child: PageView(
-            key: const PageStorageKey<String>('sports_hub_page_view'),
-            controller: _pageController,
-            onPageChanged: _handlePageChanged,
+          child: Stack(
             children: [
-              _KeepAlivePage(
-                key: const PageStorageKey<String>('book_court'),
-                child: widget.bookCourtPage,
+              PageView(
+                key: const PageStorageKey<String>('sports_hub_page_view'),
+                controller: _pageController,
+                onPageChanged: _handlePageChanged,
+                children: [
+                  _KeepAlivePage(
+                    key: const PageStorageKey<String>('book_court'),
+                    child: widget.bookCourtPage,
+                  ),
+                  _KeepAlivePage(
+                    key: const PageStorageKey<String>('find_buddies'),
+                    child: widget.findBuddiesPage,
+                  ),
+                  _KeepAlivePage(
+                    key: const PageStorageKey<String>('find_coach'),
+                    child: widget.findCoachPage,
+                  ),
+                ],
               ),
-              _KeepAlivePage(
-                key: const PageStorageKey<String>('find_buddies'),
-                child: widget.findBuddiesPage,
-              ),
-              _KeepAlivePage(
-                key: const PageStorageKey<String>('find_coach'),
-                child: widget.findCoachPage,
-              ),
+              ?widget.overlay,
             ],
           ),
         ),
