@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
-import 'dart:ui';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import 'glass/glass_primitives.dart';
 import '../../services/auth_service.dart';
 import '../../services/service_locator.dart';
 import '../../features/consultation/presentation/logic/consultation_guard.dart';
@@ -224,25 +224,17 @@ class _TlzDrawerState extends State<TlzDrawer>
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.7),
-                            border: Border(
-                              left: BorderSide(
-                                color: Colors.white.withOpacity(0.2),
-                                width: 1.5,
-                              ),
-                              right: BorderSide(
-                                color: Colors.white.withOpacity(0.1),
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                    child: LitGlassSurface(
+                      borderRadius: 28,
+                      blurSigma: 12,
+                      fillOpacity: 0.18,
+                      surfaceColor: const Color(0xFF101827),
+                      accentColor: AppColors.primary,
+                      accentStrength: 0.06,
+                      glowOpacity: 0.05,
+                      rimWidth: 1.2,
+                      shadowOpacity: 0.22,
+                      child: const SizedBox.expand(),
                     ),
                   ),
 
@@ -268,33 +260,15 @@ class _TlzDrawerState extends State<TlzDrawer>
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               // Close button
-                              GestureDetector(
+                              GlassIconButton(
+                                icon: Icons.close_rounded,
+                                semanticsLabel: 'ปิดเมนู',
                                 onTap: () {
                                   // เริ่ม animation ปิด drawer
                                   _animationController.forward().then((_) {
                                     _closeDrawer();
                                   });
                                 },
-                                child: Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.backgroundWhite,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.shadow,
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.close,
-                                    size: 18,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
                               ),
 
                               // Profile Image
@@ -304,11 +278,13 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   width: 45,
                                   height: 45,
                                   decoration: BoxDecoration(
-                                    color: AppColors.backgroundWhite,
+                                    color: Colors.white.withValues(alpha: 0.10),
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: AppColors.primaryLight,
-                                      width: 2,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.58,
+                                      ),
+                                      width: 1.4,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
@@ -522,7 +498,9 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   ],
 
                                   const SizedBox(height: 16),
-                                  const Divider(color: AppColors.divider),
+                                  Divider(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                   const SizedBox(height: 16),
 
                                   // Section 2: Community
@@ -595,7 +573,9 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   ],
 
                                   const SizedBox(height: 16),
-                                  const Divider(color: AppColors.divider),
+                                  Divider(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                   const SizedBox(height: 16),
 
                                   // Section 3: Help & About
@@ -628,7 +608,9 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   ],
 
                                   const SizedBox(height: 16),
-                                  const Divider(color: AppColors.divider),
+                                  Divider(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                   const SizedBox(height: 16),
 
                                   // Section 4: Settings
@@ -690,7 +672,11 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   // การจัดการยา (Organization หรือ Personal Override)
                                   if (_canManageDrugRisk) ...[
                                     const SizedBox(height: 16),
-                                    const Divider(color: AppColors.divider),
+                                    Divider(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                    ),
                                     const SizedBox(height: 16),
                                     _buildGroupHeader(
                                       context,
@@ -722,7 +708,9 @@ class _TlzDrawerState extends State<TlzDrawer>
                                   ],
 
                                   const SizedBox(height: 16),
-                                  const Divider(color: AppColors.divider),
+                                  Divider(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                   const SizedBox(height: 16),
 
                                   // Section 5: Admin — แสดงเฉพาะ admin
@@ -945,48 +933,65 @@ class _TlzDrawerState extends State<TlzDrawer>
     bool isSubItem = false,
     double? fontSize,
   }) {
+    final textColor = Colors.white.withValues(alpha: 0.92);
+    final fillOpacity = isSubItem ? 0.035 : 0.10;
+    final borderOpacity = isSubItem ? 0.07 : 0.16;
+
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.only(top: 8, bottom: 8, right: isSubItem ? 4 : 0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Flexible(
-              child: isUnderlined && underlineText != null
-                  ? Text.rich(
-                      TextSpan(
+        padding: EdgeInsets.only(top: 4, bottom: 4, right: isSubItem ? 4 : 0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: fillOpacity),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: borderOpacity),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Flexible(
+                child: isUnderlined && underlineText != null
+                    ? Text.rich(
+                        TextSpan(
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: textColor,
+                            fontSize: fontSize ?? (isSubItem ? 12 : 14),
+                          ),
+                          children: [
+                            TextSpan(
+                              text: underlineText,
+                              style: const TextStyle(
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white70,
+                              ),
+                            ),
+                            TextSpan(
+                              text: title.replaceFirst(underlineText, ''),
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.right,
+                      )
+                    : Text(
+                        title,
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
                         style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textPrimary,
+                          color: textColor,
                           fontSize: fontSize ?? (isSubItem ? 12 : 14),
                         ),
-                        children: [
-                          TextSpan(
-                            text: underlineText,
-                            style: const TextStyle(
-                              decoration: TextDecoration.underline,
-                              decorationColor: AppColors.textPrimary,
-                            ),
-                          ),
-                          TextSpan(text: title.replaceFirst(underlineText, '')),
-                        ],
                       ),
-                      textAlign: TextAlign.right,
-                    )
-                  : Text(
-                      title,
-                      textAlign: TextAlign.right,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textPrimary,
-                        fontSize: fontSize ?? (isSubItem ? 12 : 14),
-                      ),
-                    ),
-            ),
-            const SizedBox(width: 8),
-            Icon(icon, size: isSubItem ? 16 : 20, color: AppColors.primary),
-          ],
+              ),
+              const SizedBox(width: 8),
+              Icon(icon, size: isSubItem ? 16 : 20, color: AppColors.primary),
+            ],
+          ),
         ),
       ),
     );
@@ -998,37 +1003,59 @@ class _TlzDrawerState extends State<TlzDrawer>
     required bool isExpanded,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Flexible(
-              child: Text(
-                title,
-                textAlign: TextAlign.right,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2, // อนุญาตให้ขึ้นบรรทัดใหม่ได้สูงสุด 2 บรรทัด
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: LitGlassSurface(
+        borderRadius: 16,
+        blurSigma: 10,
+        fillOpacity: 0.12,
+        accentColor: AppColors.primary,
+        accentStrength: isExpanded ? 0.16 : 0.08,
+        glowOpacity: isExpanded ? 0.08 : 0.02,
+        rimWidth: 1,
+        shadowOpacity: 0.10,
+        selected: isExpanded,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2, // อนุญาตให้ขึ้นบรรทัดใหม่ได้สูงสุด 2 บรรทัด
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 4),
+                // ตกแต่งจุดกลมๆ ข้างหน้ากลุ่ม
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  isExpanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                  color: Colors.white70,
+                  size: 18,
+                ),
+              ],
             ),
-            const SizedBox(width: 4),
-            // ตกแต่งจุดกลมๆ ข้างหน้ากลุ่ม
-            Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1086,7 +1113,7 @@ class _DrawerCurvePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = AppColors.primary
-          .withOpacity(0.9) // ปรับให้โปร่งใสแบบแก้ว
+          .withValues(alpha: 0.12) // ปรับให้โปร่งใสแบบแก้ว
       ..style = PaintingStyle.fill;
 
     final path = Path();
