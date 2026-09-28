@@ -48,6 +48,8 @@ class FindCoachQuery {
     required int offset,
     double? userLat,
     double? userLng,
+    Set<String> favoriteCoachIds = const {},
+    Set<String> myCoachIds = const {},
     bool Function()? isStale,
   }) async {
     var nextOffset = offset;
@@ -83,6 +85,8 @@ class FindCoachQuery {
             filter: filter,
             userLat: userLat,
             userLng: userLng,
+            favoriteCoachIds: favoriteCoachIds,
+            myCoachIds: myCoachIds,
           ),
         ),
       );
@@ -109,6 +113,8 @@ class FindCoachQuery {
     required FindCoachFilter filter,
     double? userLat,
     double? userLng,
+    Set<String> favoriteCoachIds = const {},
+    Set<String> myCoachIds = const {},
   }) {
     // Shared sport filter.
     if (shared.sportId != null && !c.sportIds.contains(shared.sportId)) {
@@ -143,6 +149,24 @@ class FindCoachQuery {
     }
     // Coach-domain filters.
     if (filter.verifiedOnly && !c.isVerified) return false;
+    // "เปิดรับสอน": the coach opted in AND has at least one bookable
+    // slot/seat in the future (has_open_availability on the public view).
+    if (filter.availableOnly &&
+        (!c.acceptingStudents || !c.hasOpenAvailability)) {
+      return false;
+    }
+    if (filter.minRating10 != null) {
+      final rating = c.averageRating10;
+      if (rating == null || rating < filter.minRating10!) return false;
+    }
+    if (filter.favoritesOnly && !favoriteCoachIds.contains(c.id)) {
+      return false;
+    }
+    if (filter.myCoachesOnly && !myCoachIds.contains(c.id)) return false;
+    if (filter.offeringType != null &&
+        !c.offeringTypes.contains(filter.offeringType)) {
+      return false;
+    }
     if (filter.teachingMode != null) {
       final mode = filter.teachingMode!;
       if (c.teachingMode != TeachingMode.both &&

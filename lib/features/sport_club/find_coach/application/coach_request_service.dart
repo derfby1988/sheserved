@@ -23,32 +23,26 @@ typedef CoachRequestDecideCall =
 typedef CoachRequestCancelCall =
     Future<void> Function(String userId, String requestId, {String? reason});
 
-typedef CoachReviewSubmitCall =
-    Future<String> Function({
-      required String userId,
-      required String requestId,
-      required int rating,
-      String? comment,
-    });
-
 /// Booking-request use cases for Find Coach.
 ///
 /// Mirrors [BookCourtBookingService]: UI concerns stay in pages; this
 /// service owns the "is there a user / invoke the repository" decision so
 /// it is unit-testable with fakes. Slot validation and duplicate request
 /// protection live server-side in `create_coach_booking_request`.
+///
+/// Reviews are deliberately not here: coach reviews go through the v2
+/// 10-point RPCs (`submit_coach_review_v2`) driven from the enrollments
+/// page, never the legacy 1–5 path.
 class CoachRequestService {
   const CoachRequestService({
     required this.createRequest,
     required this.decideRequest,
     required this.cancelRequest,
-    required this.submitReview,
   });
 
   final CoachRequestCreateCall createRequest;
   final CoachRequestDecideCall decideRequest;
   final CoachRequestCancelCall cancelRequest;
-  final CoachReviewSubmitCall submitReview;
 
   /// Sends a booking request to a coach. Returns null when [userId] is
   /// missing (caller routes to login). The server re-validates coach
@@ -109,26 +103,6 @@ class CoachRequestService {
     if (userId == null || userId.isEmpty) return false;
     if (!request.isPending && !request.isConfirmed) return false;
     await cancelRequest(userId, request.id, reason: reason);
-    return true;
-  }
-
-  /// Submits a review for a completed request. Eligibility (ownership,
-  /// completed status, one review per booking, no self-review) is enforced
-  /// server-side.
-  Future<bool> review({
-    required String? userId,
-    required CoachBookingRequest request,
-    required int rating,
-    String? comment,
-  }) async {
-    if (userId == null || userId.isEmpty) return false;
-    if (!request.isCompleted) return false;
-    await submitReview(
-      userId: userId,
-      requestId: request.id,
-      rating: rating,
-      comment: comment,
-    );
     return true;
   }
 }

@@ -62,6 +62,7 @@ END $$;
 \ir ../supabase/migrations/20260924100000_sports_hub_venue_supply.sql
 \ir ../supabase/migrations/20260924110000_sports_hub_venue_bookings.sql
 \ir ../supabase/migrations/20260924120000_sports_hub_coaches.sql
+\ir ../supabase/migrations/20260927100000_sports_hub_coach_courses.sql
 \ir ../supabase/migrations/20260925100000_sports_hub_owner_contact_fix.sql
 \ir ../supabase/migrations/20260925110000_sports_hub_notification_delivery.sql
 \ir ../supabase/migrations/20260925130000_sports_hub_venue_review_readiness.sql
@@ -485,7 +486,7 @@ BEGIN
   -- 21.7.8 coach profile creation + admin verification
   v_coach := public.upsert_coach_profile(
     v_cust2, 'Coach Bee', 'ex-national player', 'Asia/Bangkok',
-    500, 'both');
+    500, 'both', NULL);
   PERFORM pg_temp.expect(v_coach IS NOT NULL, 'coach profile created');
 
   PERFORM pg_temp.expect_raise('non-admin cannot approve coach',
@@ -560,6 +561,198 @@ BEGIN
 
   RAISE NOTICE 'coach smoke test complete';
 END $coach$;
+
+-- ---------------------------------------------------------------------
+-- 21.7.12 coach courses/slots/enrollments/favorites/review v2
+-- ---------------------------------------------------------------------
+DO $courses$
+DECLARE
+  v_cust  uuid := 'cccccccc-0000-0000-0000-000000000003';
+  v_cust2 uuid := 'dddddddd-0000-0000-0000-000000000004';
+  v_mgr   uuid := '99999999-0000-0000-0000-000000000007';
+  v_sport uuid := 'eeeeeeee-0000-0000-0000-000000000005';
+  v_coach uuid;
+  v_off uuid; v_sess uuid; v_enr uuid; v_enr2 uuid;
+  v_slot uuid; v_req uuid; v_req2 uuid;
+  v_review uuid; v_cats jsonb; v_tag uuid;
+BEGIN
+  SELECT p.id INTO v_coach FROM public.coach_profiles p
+    WHERE p.user_id = v_cust2;
+  SELECT jsonb_object_agg(c.id::text, 8) INTO v_cats
+    FROM public.coach_review_category_catalog c WHERE c.is_active;
+  SELECT c.id INTO v_tag FROM public.coach_review_tag_catalog c
+    WHERE c.is_active LIMIT 1;
+
+  -- Favorites: toggle on, idempotent list, toggle off.
+  PERFORM pg_temp.expect(public.toggle_coach_favorite(v_cust, v_coach),
+    'coach favorite toggled on');
+  PERFORM pg_temp.expect(v_coach = ANY(
+    public.list_my_coach_favorite_ids(v_cust)),
+    'favorite ids include coach');
+  PERFORM pg_temp.expect(NOT public.toggle_coach_favorite(v_cust, v_coach),
+    'coach favorite toggled off');
+
+  -- Course offering: draft -> sessions -> publish.
+  v_off := public.upsert_coach_offering(
+    v_cust2, NULL, 'course', 'Footwork fundamentals', 'desc', v_sport,
+    '{beginner}', 'onsite', NULL, 'สนามกลาง', 'Asia/Bangkok',
+    500, 'package', 1, 0, 24, 24, 'cancel', true, false);
+
+  PERFORM pg_temp.expect_raise('publish without sessions rejected',
+    format($s$SELECT public.publish_coach_offering(%L, %L)$s$,
+      v_cust2, v_off), 'NO_FUTURE_SESSIONS');
+
+  PERFORM public.set_coach_offering_sessions(v_cust2, v_off,
+    jsonb_build_array(
+      jsonb_build_object('starts_at', now() + interval '3 days',
+        'ends_at', now() + interval '3 days 1 hour', 'seq', 1),
+      jsonb_build_object('starts_at', now() + interval '4 days',
+        'ends_at', now() + interval '4 days 1 hour', 'seq', 2)));
+  SELECT s.id INTO v_sess FROM public.coach_offering_sessions s
+    WHERE s.offering_id = v_off AND s.seq = 1;
+
+  PERFORM public.publish_coach_offering(v_cust2, v_off);
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.coach_offerings
+    WHERE id = v_off AND status = 'published'),
+    'course offering published');
+
+  -- Enrollment: consent gate, session selection, idempotency, capacity.
+  PERFORM pg_temp.expect_raise('enrollment requires policy consent',
+    format($s$SELECT public.create_coach_enrollment(
+      %L, %L, ARRAY[%L]::uuid[], false, 'ce-0')$s$,
+      v_cust, v_off, v_sess), 'POLICY_CONSENT_REQUIRED');
+
+  -- Course without partial enrollment requires every session.
+  PERFORM pg_temp.expect_raise('partial pick rejected for course',
+    format($s$SELECT public.create_coach_enrollment(
+      %L, %L, ARRAY[%L]::uuid[], true, 'ce-1')$s$,
+      v_cust, v_off, v_sess), 'COURSE_REQUIRES_ALL_SESSIONS');
+
+  v_enr := public.create_coach_enrollment(
+    v_cust, v_off,
+    (SELECT array_agg(s.id) FROM public.coach_offering_sessions s
+     WHERE s.offering_id = v_off),
+    true, 'ce-2');
+  PERFORM pg_temp.expect((SELECT status FROM public.coach_enrollments
+    WHERE id = v_enr) = 'confirmed',
+    'auto-confirm enrollment confirmed');
+
+  v_enr2 := public.create_coach_enrollment(
+    v_cust, v_off,
+    (SELECT array_agg(s.id) FROM public.coach_offering_sessions s
+     WHERE s.offering_id = v_off),
+    true, 'ce-2');
+  PERFORM pg_temp.expect(v_enr = v_enr2,
+    'enrollment idempotent by key');
+
+  PERFORM pg_temp.expect_raise('capacity 1 rejects second learner',
+    format($s$SELECT public.create_coach_enrollment(
+      %L, %L,
+      (SELECT array_agg(s.id) FROM public.coach_offering_sessions s
+       WHERE s.offering_id = %L),
+      true, 'ce-3')$s$, v_mgr, v_off, v_off),
+    'SESSION_FULL');
+
+  -- 1:1 slot: publish, concurrent pending requests, first approve wins.
+  v_off := public.upsert_coach_offering(
+    v_cust2, NULL, 'one_on_one', 'Private 1:1', NULL, v_sport,
+    '{beginner}', 'onsite', NULL, NULL, 'Asia/Bangkok',
+    800, 'per_hour', 1, 0, 24, 24, 'cancel', true, false);
+  PERFORM public.publish_coach_offering(v_cust2, v_off);
+  v_slot := public.create_coach_slot(
+    v_cust2, v_off, now() + interval '6 days', now() + interval '6 days 1 hour', true);
+
+  v_req := public.create_coach_booking_request_v2(
+    v_cust, v_slot, 'morning drills', 'slot-idem-1');
+  PERFORM pg_temp.expect(
+    public.create_coach_booking_request_v2(v_cust, v_slot, 'retry',
+      'slot-idem-1') = v_req,
+    'slot request idempotent by key');
+  PERFORM pg_temp.expect((SELECT status FROM public.coach_slots
+    WHERE id = v_slot) = 'published',
+    'pending request does not claim the slot');
+
+  v_req2 := public.create_coach_booking_request_v2(
+    v_mgr, v_slot, NULL, 'slot-idem-2');
+  PERFORM pg_temp.expect(v_req2 IS NOT NULL AND v_req2 <> v_req,
+    'second pending request coexists on same slot');
+  PERFORM pg_temp.expect_raise('coach cannot request own slot',
+    format($s$SELECT public.create_coach_booking_request_v2(
+      %L, %L, NULL, 'x')$s$, v_cust2, v_slot), 'SELF_REQUEST_NOT_ALLOWED');
+
+  PERFORM public.decide_coach_booking_request(v_cust2, v_req, 'approve');
+  PERFORM pg_temp.expect((SELECT status FROM public.coach_slots
+    WHERE id = v_slot) = 'booked', 'first approve claims slot');
+  PERFORM pg_temp.expect((SELECT status
+    FROM public.coach_booking_requests WHERE id = v_req2) = 'rejected',
+    'losing pending request auto-rejected');
+  PERFORM pg_temp.expect_raise('new request on booked slot fails',
+    format($s$SELECT public.create_coach_booking_request_v2(
+      %L, %L, NULL, 'late')$s$, v_cust, v_slot), 'SLOT_UNAVAILABLE');
+
+  -- Review v2 on a completed enrollment session.
+  v_off := public.upsert_coach_offering(
+    v_cust2, NULL, 'class', 'Morning class', NULL, v_sport,
+    '{beginner}', 'onsite', NULL, NULL, 'Asia/Bangkok',
+    300, 'per_session', 5, 0, 24, 24, 'cancel', true, true);
+  PERFORM public.set_coach_offering_sessions(v_cust2, v_off,
+    jsonb_build_array(jsonb_build_object(
+      'starts_at', now() + interval '3 days',
+      'ends_at', now() + interval '3 days 1 hour', 'seq', 1)));
+  SELECT s.id INTO v_sess FROM public.coach_offering_sessions s
+    WHERE s.offering_id = v_off;
+  PERFORM public.publish_coach_offering(v_cust2, v_off);
+  v_enr := public.create_coach_enrollment(
+    v_cust, v_off, ARRAY[v_sess]::uuid[], true, 'ce-4');
+  UPDATE public.coach_offering_sessions
+    SET status = 'completed' WHERE id = v_sess;
+  UPDATE public.coach_enrollment_sessions
+    SET status = 'completed'
+    WHERE enrollment_id = v_enr AND session_id = v_sess;
+
+  PERFORM pg_temp.expect_raise('missing category scores rejected',
+    format($s$SELECT public.submit_coach_review_v2(
+      %L, '{}'::jsonb, NULL, NULL, NULL, NULL, %L, %L)$s$,
+      v_cust, v_enr, v_sess), 'MISSING_CATEGORY_SCORES');
+
+  PERFORM pg_temp.expect_raise('invalid tag rejected',
+    format($s$SELECT public.submit_coach_review_v2(
+      %L, %L, NULL, ARRAY[%L]::uuid[], NULL, NULL, %L, %L)$s$,
+      v_cust, v_cats, gen_random_uuid(), v_enr, v_sess), 'INVALID_TAG');
+
+  v_review := public.submit_coach_review_v2(
+    v_cust, v_cats, 'great class', ARRAY[v_tag]::uuid[],
+    '{สนุก}'::text[], NULL, v_enr, v_sess);
+  PERFORM pg_temp.expect(v_review IS NOT NULL,
+    'coach v2 review accepted');
+  PERFORM pg_temp.expect((SELECT r.rating_10
+    FROM public.coach_reviews r WHERE r.id = v_review) = 8.0,
+    'overall is mean of category scores');
+
+  PERFORM pg_temp.expect_raise('duplicate session review rejected',
+    format($s$SELECT public.submit_coach_review_v2(
+      %L, %L, NULL, NULL, NULL, NULL, %L, %L)$s$,
+      v_cust, v_cats, v_enr, v_sess), 'ALREADY_REVIEWED');
+
+  -- Helpful votes are idempotent and self-votes are rejected.
+  PERFORM public.set_coach_review_helpful(v_cust2, v_review, true);
+  PERFORM public.set_coach_review_helpful(v_cust2, v_review, true);
+  PERFORM pg_temp.expect((SELECT COUNT(*)::int
+    FROM public.coach_review_helpful_votes
+    WHERE review_id = v_review) = 1,
+    'helpful vote idempotent');
+  PERFORM pg_temp.expect_raise('self helpful vote rejected',
+    format($s$SELECT public.set_coach_review_helpful(%L, %L, true)$s$,
+      v_cust, v_review), 'SELF_VOTE_NOT_ALLOWED');
+
+  -- Aggregates: published review counts into summary v2.
+  PERFORM pg_temp.expect(((public.get_coach_review_summary_v2(v_coach)
+    ->>'review_count')::int) >= 1,
+    'summary v2 counts published review');
+
+  RAISE NOTICE 'coach courses smoke test complete';
+END $courses$;
 
 -- ---------------------------------------------------------------------
 -- Notification delivery hotfix (20260925110000)

@@ -18,6 +18,7 @@ class CoachFilterSheet {
     BuildContext context, {
     required FindCoachFilter current,
     List<String> specialtyOptions = const [],
+    bool signedIn = false,
   }) {
     return showModalBottomSheet<FindCoachFilter>(
       context: context,
@@ -26,6 +27,7 @@ class CoachFilterSheet {
       builder: (sheetContext) => _CoachFilterSheetBody(
         current: current,
         specialtyOptions: specialtyOptions,
+        signedIn: signedIn,
       ),
     );
   }
@@ -34,10 +36,12 @@ class CoachFilterSheet {
 class _CoachFilterSheetBody extends StatefulWidget {
   final FindCoachFilter current;
   final List<String> specialtyOptions;
+  final bool signedIn;
 
   const _CoachFilterSheetBody({
     required this.current,
     required this.specialtyOptions,
+    required this.signedIn,
   });
 
   @override
@@ -52,6 +56,10 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
   late String? _teachingMode = widget.current.teachingMode;
   late bool _verifiedOnly = widget.current.verifiedOnly;
   late bool _availableOnly = widget.current.availableOnly;
+  late double? _minRating10 = widget.current.minRating10;
+  late bool _favoritesOnly = widget.current.favoritesOnly;
+  late bool _myCoachesOnly = widget.current.myCoachesOnly;
+  late String? _offeringType = widget.current.offeringType;
   late List<String> _specialties = [...widget.current.specialties];
   final _specialtyController = TextEditingController();
 
@@ -142,6 +150,64 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
               ),
               const SizedBox(height: 16),
 
+              const Text(
+                'ประเภทบริการ',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final (type, label) in [
+                    ('one_on_one', 'สอนตัวต่อตัว'),
+                    ('group_class', 'คลาสกลุ่ม'),
+                    ('course', 'หลักสูตร'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: _offeringType == type,
+                      onSelected: (sel) => setState(
+                        () => _offeringType = sel ? type : null,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              const Text(
+                'คะแนนขั้นต่ำ (1–10)',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: _minRating10 ?? 0,
+                      min: 0,
+                      max: 10,
+                      divisions: 10,
+                      label: _minRating10 == null
+                          ? 'ไม่จำกัด'
+                          : _minRating10!.toStringAsFixed(0),
+                      onChanged: (v) => setState(
+                        () => _minRating10 = v <= 0 ? null : v,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      _minRating10 == null
+                          ? 'ทั้งหมด'
+                          : '≥ ${_minRating10!.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
               TextField(
                 controller: _maxRate,
                 keyboardType: TextInputType.number,
@@ -165,6 +231,20 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
                 value: _availableOnly,
                 onChanged: (v) => setState(() => _availableOnly = v),
               ),
+              if (widget.signedIn) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('เฉพาะโค้ชที่บันทึกไว้'),
+                  value: _favoritesOnly,
+                  onChanged: (v) => setState(() => _favoritesOnly = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('เฉพาะโค้ชที่เคยเรียนด้วย'),
+                  value: _myCoachesOnly,
+                  onChanged: (v) => setState(() => _myCoachesOnly = v),
+                ),
+              ],
               const SizedBox(height: 8),
 
               const Text(
@@ -238,6 +318,10 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
                       _maxRate.clear();
                       _verifiedOnly = false;
                       _availableOnly = false;
+                      _minRating10 = null;
+                      _favoritesOnly = false;
+                      _myCoachesOnly = false;
+                      _offeringType = null;
                       _specialties = [];
                     }),
                     child: const Text('ล้างทั้งหมด'),
@@ -261,6 +345,10 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
                         verifiedOnly: _verifiedOnly,
                         availableOnly: _availableOnly,
                         teachingMode: _teachingMode,
+                        minRating10: _minRating10,
+                        favoritesOnly: _favoritesOnly,
+                        myCoachesOnly: _myCoachesOnly,
+                        offeringType: _offeringType,
                       ),
                     ),
                     child: const Text('ใช้ตัวกรอง'),

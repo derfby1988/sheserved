@@ -7,6 +7,9 @@ import 'package:sheserved/features/sport_club/presentation/widgets/feed/sport_cl
 class CoachQuickFilterRow extends StatelessWidget {
   final bool verifiedOnly;
   final bool availableOnly;
+  final bool favoritesOnly;
+  final bool myCoachesOnly;
+  final bool signedIn;
   final bool locationEnabled;
   final double? radiusKm;
   final int activeFilterCount;
@@ -18,6 +21,9 @@ class CoachQuickFilterRow extends StatelessWidget {
     super.key,
     required this.verifiedOnly,
     required this.availableOnly,
+    this.favoritesOnly = false,
+    this.myCoachesOnly = false,
+    this.signedIn = false,
     required this.locationEnabled,
     required this.radiusKm,
     required this.activeFilterCount,
@@ -129,6 +135,20 @@ class CoachQuickFilterRow extends StatelessWidget {
               selected: availableOnly,
               icon: Icons.event_available_rounded,
             ),
+            if (signedIn) ...[
+              _chip(
+                key: 'favorites',
+                label: 'ที่บันทึกไว้',
+                selected: favoritesOnly,
+                icon: Icons.favorite_rounded,
+              ),
+              _chip(
+                key: 'my_coaches',
+                label: 'โค้ชของฉัน',
+                selected: myCoachesOnly,
+                icon: Icons.handshake_rounded,
+              ),
+            ],
             _chip(
               key: 'radius',
               label: 'รัศมี',

@@ -14,6 +14,8 @@ CoachSummary _coach(
   double? rate,
   Set<String> skillLevels = const {'beginner'},
   List<String> specialties = const [],
+  double? averageRating10,
+  Set<String> offeringTypes = const {},
 }) => CoachSummary(
   id: id,
   userId: 'u-$id',
@@ -25,6 +27,8 @@ CoachSummary _coach(
   hourlyRate: rate,
   skillLevels: skillLevels,
   specialties: specialties,
+  averageRating10: averageRating10,
+  offeringTypes: offeringTypes,
 );
 
 void main() {
@@ -197,6 +201,76 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('minRating10 uses the 1–10 aggregate and drops unrated', () async {
+      final query = buildQuery(
+        listCoaches: ({query, limit = 20, offset = 0}) async => [
+          _coach('high', averageRating10: 8.4),
+          _coach('low', averageRating10: 4.0),
+          _coach('unrated'),
+        ],
+      );
+
+      final page = await query.fetch(
+        shared: const SportsDiscoveryFilter(),
+        filter: const FindCoachFilter(minRating10: 7),
+        offset: 0,
+      );
+      expect(page.coaches.map((c) => c.id), ['high']);
+    });
+
+    test('favoritesOnly and myCoachesOnly apply the relationship sets',
+        () async {
+      final query = buildQuery(
+        listCoaches: ({query, limit = 20, offset = 0}) async => [
+          _coach('fav'),
+          _coach('mine'),
+          _coach('other'),
+        ],
+      );
+
+      final fav = await query.fetch(
+        shared: const SportsDiscoveryFilter(),
+        filter: const FindCoachFilter(favoritesOnly: true),
+        offset: 0,
+        favoriteCoachIds: const {'fav'},
+      );
+      expect(fav.coaches.map((c) => c.id), ['fav']);
+
+      final mine = await query.fetch(
+        shared: const SportsDiscoveryFilter(),
+        filter: const FindCoachFilter(myCoachesOnly: true),
+        offset: 0,
+        myCoachIds: const {'mine'},
+      );
+      expect(mine.coaches.map((c) => c.id), ['mine']);
+
+      // Signed-out viewers have empty relationship sets — the filters
+      // hide everyone rather than leaking private favorites.
+      final anon = await query.fetch(
+        shared: const SportsDiscoveryFilter(),
+        filter: const FindCoachFilter(favoritesOnly: true),
+        offset: 0,
+      );
+      expect(anon.coaches, isEmpty);
+    });
+
+    test('offeringType matches hydrated offering kinds', () async {
+      final query = buildQuery(
+        listCoaches: ({query, limit = 20, offset = 0}) async => [
+          _coach('course', offeringTypes: {'course'}),
+          _coach('slot', offeringTypes: {'one_on_one'}),
+          _coach('both', offeringTypes: {'course', 'group_class'}),
+        ],
+      );
+
+      final page = await query.fetch(
+        shared: const SportsDiscoveryFilter(),
+        filter: const FindCoachFilter(offeringType: 'course'),
+        offset: 0,
+      );
+      expect(page.coaches.map((c) => c.id), ['course', 'both']);
     });
 
     test('location-enabled sorts by nearest service area', () async {

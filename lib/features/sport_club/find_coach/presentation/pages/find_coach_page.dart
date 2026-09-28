@@ -20,10 +20,11 @@ import '../../domain/find_coach_filter.dart';
 import '../widgets/coach_card.dart';
 import '../widgets/coach_detail_sheet.dart';
 import '../widgets/coach_filter_sheet.dart';
-import '../widgets/coach_profile_editor_sheet.dart';
+import '../widgets/coach_labels.dart';
 import '../widgets/coach_quick_filter_row.dart';
 import '../widgets/coach_request_sheet.dart';
-import 'coach_requests_queue_page.dart';
+import 'coach_management_page.dart';
+import 'my_coach_enrollments_page.dart';
 import 'my_coach_requests_page.dart';
 
 /// Find Coach page of the Sports Hub.
@@ -61,7 +62,8 @@ class _FindCoachPageState extends State<FindCoachPage> {
   int _requestId = 0;
   double? _userLat;
   double? _userLng;
-  CoachSummary? _myCoachProfile;
+  Set<String> _favoriteCoachIds = const {};
+  Set<String> _myCoachIds = const {};
 
   SportsHubController? get _hub => widget.hubController;
   FindCoachFilter get _filter => _hub?.coaches ?? const FindCoachFilter();
@@ -81,7 +83,6 @@ class _FindCoachPageState extends State<FindCoachPage> {
       createRequest: _repo.createBookingRequest,
       decideRequest: _repo.decideBookingRequest,
       cancelRequest: _repo.cancelBookingRequest,
-      submitReview: _repo.submitReview,
     );
     _scrollController.addListener(_onScroll);
     _hub?.addListener(_onHubChanged);
@@ -121,14 +122,20 @@ class _FindCoachPageState extends State<FindCoachPage> {
     try {
       final results = await Future.wait<Object?>([
         _buddiesRepo.getApprovedSports(userId: _userId),
-        if (_userId != null) _repo.getMyCoachProfile(_userId!),
+        if (_userId != null)
+          _repo.listMyFavoriteCoachIds(_userId!)
+        else
+          Future<Set<String>>.value(const {}),
+        if (_userId != null)
+          _repo.listMyCoachRelationshipIds(_userId!)
+        else
+          Future<Set<String>>.value(const {}),
       ]);
       if (!mounted) return;
       setState(() {
         _sports = results[0] as List<Map<String, dynamic>>;
-        if (results.length > 1) {
-          _myCoachProfile = results[1] as CoachSummary?;
-        }
+        _favoriteCoachIds = results[1] as Set<String>;
+        _myCoachIds = results[2] as Set<String>;
       });
     } catch (_) {
       // Sports row may stay empty; the directory still renders.
@@ -152,6 +159,20 @@ class _FindCoachPageState extends State<FindCoachPage> {
   Future<void> _reload() async {
     final requestId = ++_requestId;
     setState(() => _loading = true);
+    // Relationship filters must see fresh sets (favorites may have been
+    // toggled from the detail sheet).
+    if ((_filter.favoritesOnly || _filter.myCoachesOnly) &&
+        _userId != null) {
+      try {
+        final results = await Future.wait([
+          _repo.listMyFavoriteCoachIds(_userId!),
+          _repo.listMyCoachRelationshipIds(_userId!),
+        ]);
+        if (!mounted || requestId != _requestId) return;
+        _favoriteCoachIds = results[0];
+        _myCoachIds = results[1];
+      } catch (_) {}
+    }
     try {
       final page = await _query.fetch(
         shared: _hub?.shared ?? const SportsDiscoveryFilter(),
@@ -159,6 +180,8 @@ class _FindCoachPageState extends State<FindCoachPage> {
         offset: 0,
         userLat: _userLat,
         userLng: _userLng,
+        favoriteCoachIds: _favoriteCoachIds,
+        myCoachIds: _myCoachIds,
         isStale: () => requestId != _requestId,
       );
       if (!mounted || requestId != _requestId) return;
@@ -187,6 +210,8 @@ class _FindCoachPageState extends State<FindCoachPage> {
         offset: _offset,
         userLat: _userLat,
         userLng: _userLng,
+        favoriteCoachIds: _favoriteCoachIds,
+        myCoachIds: _myCoachIds,
         isStale: () => requestId != _requestId,
       );
       if (!mounted) return;
@@ -267,6 +292,14 @@ class _FindCoachPageState extends State<FindCoachPage> {
         hub.updateCoaches(
           filter.copyWith(availableOnly: !filter.availableOnly),
         );
+      case 'favorites':
+        hub.updateCoaches(
+          filter.copyWith(favoritesOnly: !filter.favoritesOnly),
+        );
+      case 'my_coaches':
+        hub.updateCoaches(
+          filter.copyWith(myCoachesOnly: !filter.myCoachesOnly),
+        );
     }
   }
 
@@ -281,6 +314,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
       context,
       current: _filter,
       specialtyOptions: specialtyOptions,
+      signedIn: _userId != null,
     );
     if (next != null) hub.updateCoaches(next);
   }
@@ -303,6 +337,30 @@ class _FindCoachPageState extends State<FindCoachPage> {
       coach: coach,
       repo: _repo,
       onRequest: () => _startRequest(coach),
+      onOpenMyEnrollments: () {
+        Navigator.of(context).maybePop();
+        _openMyEnrollments();
+      },
+    );
+  }
+
+  Future<void> _openMyRequests() async {
+    if (!await _requireLogin()) return;
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MyCoachRequestsPage(repo: _repo)),
+    );
+  }
+
+  Future<void> _openMyEnrollments() async {
+    if (!await _requireLogin()) return;
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MyCoachEnrollmentsPage(repo: _repo),
+      ),
     );
   }
 
@@ -339,52 +397,17 @@ class _FindCoachPageState extends State<FindCoachPage> {
     }
   }
 
-  Future<void> _openMyRequests() async {
+  /// Coach self-service: the management page covers profile creation,
+  /// editing, offerings, slots and the request/enrollment queues.
+  Future<void> _openCoachTools() async {
     if (!await _requireLogin()) return;
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => MyCoachRequestsPage(repo: _repo)),
+      MaterialPageRoute(
+        builder: (_) => CoachManagementPage(repo: _repo, sports: _sports),
+      ),
     );
-  }
-
-  /// Coach self-service: edit profile, then open the request queue.
-  Future<void> _openCoachTools() async {
-    if (!await _requireLogin()) return;
-    if (!mounted) return;
-    final existing = _myCoachProfile;
-    final draft = await CoachProfileEditorSheet.show(
-      context,
-      existing: existing,
-    );
-    if (draft == null || !mounted) return;
-    try {
-      await _repo.upsertCoachProfile(
-        userId: _userId!,
-        displayName: draft.displayName,
-        bio: draft.bio,
-        hourlyRate: draft.hourlyRate,
-        teachingMode: draft.teachingMode,
-      );
-      _toast(
-        existing == null
-            ? 'ส่งโปรไฟล์แล้ว รอทีมงานอนุมัติ'
-            : 'บันทึกโปรไฟล์แล้ว',
-      );
-      final profile = await _repo.getMyCoachProfile(_userId!);
-      if (!mounted) return;
-      setState(() => _myCoachProfile = profile);
-      if (profile?.status == CoachStatus.approved) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CoachRequestsQueuePage(repo: _repo),
-          ),
-        );
-      }
-    } catch (e) {
-      _toast(_mapRequestError(e));
-    }
   }
 
   void _toast(String message) {
@@ -403,6 +426,14 @@ class _FindCoachPageState extends State<FindCoachPage> {
     if (f.skillLevel != null) parts.add('ระดับ');
     if (f.maxHourlyRate != null) parts.add('ราคา');
     if (f.teachingMode != null) parts.add('รูปแบบ');
+    if (f.minRating10 != null) {
+      parts.add('≥${f.minRating10!.toStringAsFixed(0)}');
+    }
+    if (f.offeringType != null) {
+      parts.add(CoachLabels.offeringType(coachOfferingTypeFrom(f.offeringType)));
+    }
+    if (f.favoritesOnly) parts.add('บันทึกไว้');
+    if (f.myCoachesOnly) parts.add('โค้ชของฉัน');
     return parts.join(' · ');
   }
 
@@ -424,12 +455,17 @@ class _FindCoachPageState extends State<FindCoachPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
+                      tooltip: 'การสมัครของฉัน',
+                      icon: const Icon(Icons.how_to_reg_rounded),
+                      onPressed: _openMyEnrollments,
+                    ),
+                    IconButton(
                       tooltip: 'คำขอนัดของฉัน',
                       icon: const Icon(Icons.event_note_rounded),
                       onPressed: _openMyRequests,
                     ),
                     IconButton(
-                      tooltip: 'โปรไฟล์โค้ชของฉัน',
+                      tooltip: 'จัดการโค้ชของฉัน',
                       icon: const Icon(Icons.school_rounded),
                       onPressed: _openCoachTools,
                     ),
@@ -456,6 +492,9 @@ class _FindCoachPageState extends State<FindCoachPage> {
               CoachQuickFilterRow(
                 verifiedOnly: filter.verifiedOnly,
                 availableOnly: filter.availableOnly,
+                favoritesOnly: filter.favoritesOnly,
+                myCoachesOnly: filter.myCoachesOnly,
+                signedIn: _userId != null,
                 locationEnabled: shared?.locationEnabled ?? false,
                 radiusKm: shared?.radiusKm,
                 activeFilterCount:

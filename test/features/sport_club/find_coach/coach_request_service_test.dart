@@ -24,7 +24,6 @@ CoachRequestService _service({
   void Function()? onCreate,
   void Function(String decision)? onDecide,
   void Function()? onCancel,
-  void Function()? onReview,
 }) => CoachRequestService(
   createRequest: ({
     required userId,
@@ -44,15 +43,6 @@ CoachRequestService _service({
   },
   cancelRequest: (userId, requestId, {reason}) async {
     onCancel?.call();
-  },
-  submitReview: ({
-    required userId,
-    required requestId,
-    required rating,
-    comment,
-  }) async {
-    onReview?.call();
-    return 'rev-1';
   },
 );
 
@@ -92,13 +82,6 @@ void main() {
         },
         decideRequest: (_, _, _, {reason}) async {},
         cancelRequest: (_, _, {reason}) async {},
-        submitReview: ({
-          required userId,
-          required requestId,
-          required rating,
-          comment,
-        }) async =>
-            'rev',
       );
 
       await service.request(
@@ -190,32 +173,6 @@ void main() {
         );
       }
       expect(calls, 2);
-    });
-  });
-
-  group('CoachRequestService.review', () {
-    test('reviews require a completed request', () async {
-      var calls = 0;
-      final service = _service(onReview: () => calls++);
-
-      expect(
-        await service.review(
-          userId: 'u1',
-          request: _request(status: CoachRequestStatus.confirmed),
-          rating: 5,
-        ),
-        isFalse,
-      );
-      expect(
-        await service.review(
-          userId: 'u1',
-          request: _request(status: CoachRequestStatus.completed),
-          rating: 5,
-          comment: 'great',
-        ),
-        isTrue,
-      );
-      expect(calls, 1);
     });
   });
 }
