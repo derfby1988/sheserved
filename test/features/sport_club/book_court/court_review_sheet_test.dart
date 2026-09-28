@@ -28,7 +28,10 @@ const _tags = [
   VenueReviewTag(id: 'tag-2', labelTh: 'คุ้มค่าราคา'),
 ];
 
-Widget _harness({required void Function(CourtReviewDraft?) onDone}) {
+Widget _harness({
+  required void Function(CourtReviewDraft?) onDone,
+  CourtReviewDraft? initial,
+}) {
   return MaterialApp(
     home: Builder(
       builder: (context) => Scaffold(
@@ -41,6 +44,7 @@ Widget _harness({required void Function(CourtReviewDraft?) onDone}) {
                   venueName: 'สนามทดสอบ',
                   tagCatalog: _tags,
                   categories: _categories,
+                  initial: initial,
                 ),
               );
             },
@@ -118,5 +122,44 @@ void main() {
     expect(draft!.categoryScores['cat-surface'], 7);
     expect(draft!.comment, 'สนามสะอาดดี');
     expect(draft!.tagIds, {'tag-1'});
+  });
+
+  testWidgets('prefills an unsubmitted draft so a retry loses nothing', (
+    tester,
+  ) async {
+    CourtReviewDraft? draft;
+    await tester.pumpWidget(
+      _harness(
+        onDone: (d) => draft = d,
+        initial: (
+          rating10: 6,
+          categoryScores: {for (final c in _categories) c.id: 7},
+          comment: 'กลับมาแก้รีวิว',
+          tagIds: {'tag-1'},
+          customTags: const ['ที่จอดรถดี'],
+        ),
+      ),
+    );
+    await _openSheet(tester);
+
+    // Overall + every category restored → submit is already enabled.
+    final submit = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'ส่งรีวิว'),
+    );
+    expect(submit.onPressed, isNotNull);
+    expect(find.text('กลับมาแก้รีวิว'), findsOneWidget);
+    expect(find.text('ที่จอดรถดี'), findsOneWidget);
+
+    // The restored selections survive a resubmit.
+    await tester.ensureVisible(find.text('ส่งรีวิว'));
+    await tester.tap(find.text('ส่งรีวิว'));
+    await tester.pumpAndSettle();
+
+    expect(draft, isNotNull);
+    expect(draft!.rating10, 6);
+    expect(draft!.categoryScores.length, 5);
+    expect(draft!.comment, 'กลับมาแก้รีวิว');
+    expect(draft!.tagIds, {'tag-1'});
+    expect(draft!.customTags, ['ที่จอดรถดี']);
   });
 }

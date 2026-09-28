@@ -107,7 +107,7 @@ DECLARE
   v_mail  uuid := 'ffffffff-0000-0000-0000-000000000006';
   v_mgr   uuid := '99999999-0000-0000-0000-000000000007';
   v_app uuid; v_venue uuid; v_venue2 uuid; v_court uuid; v_terms int;
-  v_b1 uuid; v_b2 uuid; v_review uuid;
+  v_b1 uuid; v_b2 uuid; v_b3 uuid; v_b4 uuid; v_review uuid;
   v_missing text[];
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
@@ -363,6 +363,46 @@ BEGIN
     public.list_sports_venue_reviews_v2(
       v_venue, NULL, NULL, 1, 2, 'newest', 20, 0, NULL)) = 0,
     'empty band returns no rows');
+
+  -- Tag limit/validation: >5 combined tags and non-catalog tags rejected.
+  PERFORM pg_temp.expect_raise('v2 more than 5 tags rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 9,
+      (SELECT jsonb_object_agg(id::text, 8)
+       FROM public.sports_venue_review_category_catalog), NULL, NULL,
+      ARRAY['a','b','c','d','e','f'])$$,
+      v_cust, v_b2), 'TOO_MANY_TAGS');
+
+  -- Fresh completed bookings for tag validation and the self-review
+  -- guard (the already-reviewed bookings would short-circuit earlier).
+  v_b3 := public.create_sports_venue_booking(
+    v_cust, v_court, pg_temp.bkk_ts(6, '10:00'),
+    pg_temp.bkk_ts(6, '11:00'), v_terms, 'idem-4');
+  UPDATE public.sports_venue_bookings
+    SET starts_at = now() - interval '2 hours',
+        ends_at = now() - interval '1 hour'
+    WHERE id = v_b3;
+  PERFORM public.complete_sports_venue_bookings();
+
+  PERFORM pg_temp.expect_raise('v2 unknown standard tag rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 8,
+      (SELECT jsonb_object_agg(id::text, 8)
+       FROM public.sports_venue_review_category_catalog), NULL,
+      ARRAY[gen_random_uuid()]::uuid[], NULL)$$,
+      v_cust, v_b3), 'INVALID_TAG');
+
+  v_b4 := public.create_sports_venue_booking(
+    v_owner, v_court, pg_temp.bkk_ts(7, '10:00'),
+    pg_temp.bkk_ts(7, '11:00'), v_terms, 'idem-5');
+  UPDATE public.sports_venue_bookings
+    SET starts_at = now() - interval '2 hours',
+        ends_at = now() - interval '1 hour'
+    WHERE id = v_b4;
+  PERFORM public.complete_sports_venue_bookings();
+  PERFORM pg_temp.expect_raise('venue owner self-review rejected',
+    format($$SELECT public.submit_sports_venue_review_v2(%L, %L, 8,
+      (SELECT jsonb_object_agg(id::text, 8)
+       FROM public.sports_venue_review_category_catalog), NULL)$$,
+      v_owner, v_b4), 'SELF_REVIEW_NOT_ALLOWED');
 
   -- 21.7.6 owner-approval flow
   SELECT public.upsert_sports_venue_court(

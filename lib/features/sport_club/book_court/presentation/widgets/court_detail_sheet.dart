@@ -84,7 +84,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
           sportId: widget.sharedSportId,
         ),
         widget.repo.listPublicOperatingHours(widget.venue.id),
-        widget.repo.listVenueReviews(widget.venue.id),
+        widget.repo.listVenueReviews(widget.venue.id, limit: 5),
       ]);
       if (!mounted) return;
       setState(() {

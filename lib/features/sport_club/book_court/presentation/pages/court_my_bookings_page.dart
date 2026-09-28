@@ -123,29 +123,62 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     }
   }
 
+  /// Opens the review sheet and submits through the v2 RPC. When a
+  /// submit fails transiently the sheet re-opens with the same draft so
+  /// the reviewer loses nothing; one review per booking is enforced
+  /// server-side, so retries can never create a duplicate.
   Future<void> _writeReview(VenueBooking b) async {
-    final draft = await CourtReviewSheet.show(
-      context,
-      venueName: b.venueName ?? '',
-      tagCatalog: _tagCatalog,
-      categories: _categoryCatalog,
-    );
-    if (draft == null) return;
-    try {
-      await widget.repo.submitReview(
-        userId: _userId!,
-        bookingId: b.id,
-        rating10: draft.rating10,
-        categoryScores: draft.categoryScores,
-        comment: draft.comment,
-        tagIds: draft.tagIds.toList(),
-        customTags: draft.customTags,
+    CourtReviewDraft? draft;
+    while (true) {
+      if (!mounted) return;
+      draft = await CourtReviewSheet.show(
+        context,
+        venueName: b.venueName ?? '',
+        tagCatalog: _tagCatalog,
+        categories: _categoryCatalog,
+        initial: draft,
       );
-      _toast('ขอบคุณสำหรับรีวิว');
-      await _load();
-    } catch (e) {
-      _toast(_mapError(e));
+      if (draft == null || !mounted) return;
+      try {
+        await widget.repo.submitReview(
+          userId: _userId!,
+          bookingId: b.id,
+          rating10: draft.rating10,
+          categoryScores: draft.categoryScores,
+          comment: draft.comment,
+          tagIds: draft.tagIds.toList(),
+          customTags: draft.customTags,
+        );
+        _toast('ขอบคุณสำหรับรีวิว');
+        await _load();
+        return;
+      } catch (e) {
+        _toast(_mapError(e));
+        if (_isFinalReviewError(e)) {
+          await _load();
+          return;
+        }
+      }
     }
+  }
+
+  /// Errors a retry cannot fix: eligibility and validation failures the
+  /// form already guards against or the server will keep rejecting.
+  static bool _isFinalReviewError(Object e) {
+    final raw = e.toString();
+    const codes = [
+      'ALREADY_REVIEWED',
+      'BOOKING_NOT_COMPLETED',
+      'BOOKING_NOT_FOUND',
+      'SELF_REVIEW_NOT_ALLOWED',
+      'MISSING_CATEGORY_SCORES',
+      'INVALID_CATEGORY',
+      'INVALID_RATING',
+      'COMMENT_TOO_LONG',
+      'TOO_MANY_TAGS',
+      'INVALID_TAG',
+    ];
+    return codes.any(raw.contains);
   }
 
   void _toast(String message) {
@@ -376,8 +409,26 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     if (raw.contains('CUTOFF_PASSED')) {
       return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง';
     }
-    if (raw.contains('REVIEW_NOT_ALLOWED')) {
+    if (raw.contains('BOOKING_NOT_COMPLETED') ||
+        raw.contains('REVIEW_NOT_ALLOWED')) {
       return 'ยังรีวิวไม่ได้ — รีวิวได้หลังการจองเสร็จสิ้น';
+    }
+    if (raw.contains('BOOKING_NOT_FOUND')) return 'ไม่พบการจองนี้แล้ว';
+    if (raw.contains('ALREADY_REVIEWED')) return 'รีวิวการจองนี้ไปแล้ว';
+    if (raw.contains('SELF_REVIEW_NOT_ALLOWED')) {
+      return 'ไม่สามารถรีวิวสนามของตนเองได้';
+    }
+    if (raw.contains('TOO_MANY_TAGS')) {
+      return 'เลือกแท็กรวมได้ไม่เกิน 5 รายการ';
+    }
+    if (raw.contains('COMMENT_TOO_LONG')) {
+      return 'ความคิดเห็นยาวเกิน 500 ตัวอักษร';
+    }
+    if (raw.contains('MISSING_CATEGORY_SCORES') ||
+        raw.contains('INVALID_CATEGORY') ||
+        raw.contains('INVALID_RATING') ||
+        raw.contains('INVALID_TAG')) {
+      return 'กรุณาตรวจคะแนนและแท็กแล้วลองใหม่';
     }
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';

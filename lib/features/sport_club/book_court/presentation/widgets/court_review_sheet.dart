@@ -10,7 +10,9 @@ import 'court_review_tag_picker.dart';
 /// Eligibility
 /// (completed booking, one review per booking, no self-review) is enforced
 /// server-side by `submit_sports_venue_review_v2`; the caller also disables
-/// the entry point when the booking is not reviewable.
+/// the entry point when the booking is not reviewable. Pass the previous
+/// draft as [CourtReviewSheet.show]'s `initial` to retry a failed submit
+/// without losing the reviewer's input.
 typedef CourtReviewDraft =
     ({
       int rating10,
@@ -26,6 +28,7 @@ class CourtReviewSheet {
     required String venueName,
     required List<VenueReviewTag> tagCatalog,
     required List<VenueReviewCategory> categories,
+    CourtReviewDraft? initial,
   }) {
     return showModalBottomSheet<CourtReviewDraft>(
       context: context,
@@ -35,6 +38,7 @@ class CourtReviewSheet {
         venueName: venueName,
         tagCatalog: tagCatalog,
         categories: categories,
+        initial: initial,
       ),
     );
   }
@@ -45,10 +49,14 @@ class _CourtReviewSheetBody extends StatefulWidget {
   final List<VenueReviewTag> tagCatalog;
   final List<VenueReviewCategory> categories;
 
+  /// Unsubmitted draft restored for a retry after a failed submit.
+  final CourtReviewDraft? initial;
+
   const _CourtReviewSheetBody({
     required this.venueName,
     required this.tagCatalog,
     required this.categories,
+    this.initial,
   });
 
   @override
@@ -56,11 +64,15 @@ class _CourtReviewSheetBody extends StatefulWidget {
 }
 
 class _CourtReviewSheetBodyState extends State<_CourtReviewSheetBody> {
-  int _rating = 0;
-  final Map<String, int> _categoryScores = {};
-  final _comment = TextEditingController();
-  Set<String> _tagIds = {};
-  List<String> _customTags = [];
+  late int _rating = widget.initial?.rating10 ?? 0;
+  late final Map<String, int> _categoryScores = {
+    ...?widget.initial?.categoryScores,
+  };
+  late final _comment = TextEditingController(
+    text: widget.initial?.comment ?? '',
+  );
+  late Set<String> _tagIds = {...?widget.initial?.tagIds};
+  late List<String> _customTags = [...?widget.initial?.customTags];
 
   bool get _categoriesComplete =>
       widget.categories.every((c) => _categoryScores.containsKey(c.id));
