@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
@@ -141,7 +142,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   Widget build(BuildContext context) {
     final venue = widget.venue;
     return Material(
-      color: Colors.white,
+      color: NeumorphicTheme.baseColor,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       child: _loading
           ? const Center(
@@ -304,18 +305,17 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
 
   Widget _buildCourtTile(VenueCourt court) {
     final selected = _selectedCourtId == court.id;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? AppColors.primaryDark : Colors.grey.shade200,
-          width: selected ? 1.6 : 1,
-        ),
+      padding: const EdgeInsets.all(12),
+      borderRadius: 12,
+      depth: 4,
+      blur: 8,
+      border: Border.all(
+        color: selected ? AppColors.primaryDark : Colors.grey.shade200,
+        width: selected ? 1.6 : 1,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -378,7 +378,6 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
             ),
           ],
         ),
-      ),
     );
   }
 

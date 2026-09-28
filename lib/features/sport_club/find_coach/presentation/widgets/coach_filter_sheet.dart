@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../domain/find_coach_filter.dart';
 
@@ -24,6 +25,7 @@ class CoachFilterSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _CoachFilterSheetBody(
         current: current,
         specialtyOptions: specialtyOptions,

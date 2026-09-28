@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/consultation/presentation/pages/health_program_request_dashboard.dart'
     show dashboardRouteObserver;
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
@@ -313,23 +318,33 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     if (!hasCustom) {
       final choice = await showModalBottomSheet<String>(
         context: context,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         builder: (c) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.verified_user_outlined),
-                title: const Text('ใช้เงื่อนไขมาตรฐานของแพลตฟอร์ม'),
-                subtitle: const Text('เหมาะสำหรับสนามทั่วไป'),
-                onTap: () => Navigator.pop(c, 'platform'),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+            child: Container(
+              color: NeumorphicTheme.baseColor,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.verified_user_outlined),
+                    title: const Text('ใช้เงื่อนไขมาตรฐานของแพลตฟอร์ม'),
+                    subtitle: const Text('เหมาะสำหรับสนามทั่วไป'),
+                    onTap: () => Navigator.pop(c, 'platform'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.edit_note_rounded),
+                    title: const Text('เขียนเงื่อนไขของสนามเอง'),
+                    subtitle: const Text('ระบุ cutoff และเงื่อนไขเฉพาะสนาม'),
+                    onTap: () => Navigator.pop(c, 'custom'),
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.edit_note_rounded),
-                title: const Text('เขียนเงื่อนไขของสนามเอง'),
-                subtitle: const Text('ระบุ cutoff และเงื่อนไขเฉพาะสนาม'),
-                onTap: () => Navigator.pop(c, 'custom'),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -379,22 +394,47 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         .length;
     if (blocked == 0) return true;
     if (!mounted) return false;
-    showDialog<void>(
+    unawaited(GlassDialog.show<void>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('ยังเอากีฬาออกไม่ได้'),
-        content: Text(
-          'มี $blocked คอร์ทที่เปิดใช้งานผูกกับกีฬานี้ '
-          '— ปิดการใช้งานหรือย้ายคอร์ทไปกีฬาอื่นก่อน',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('เข้าใจแล้ว'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      contentPadding: EdgeInsets.zero,
+      builder: (dialogContext) => ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'ยังเอากีฬาออกไม่ได้',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'มี $blocked คอร์ทที่เปิดใช้งานผูกกับกีฬานี้ '
+                '— ปิดการใช้งานหรือย้ายคอร์ทไปกีฬาอื่นก่อน',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              GlassActionButton(
+                label: 'เข้าใจแล้ว',
+                isFilled: true,
+                fillColor: AppColors.primaryDark,
+                onTap: () => Navigator.of(dialogContext).pop(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    );
+    ));
     return false;
   }
 
@@ -511,10 +551,18 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
   Widget build(BuildContext context) {
     final steps = _steps;
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
-        title: Text(_venue.name),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
+        title: Text(
+          _venue.name,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
         actions: [
           IconButton(
             tooltip: 'การจอง',
@@ -590,12 +638,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     };
     final reason =
         _venueMap['rejection_reason']?.toString() ?? _venue.rejectionReason;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -659,7 +708,6 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             _buildReviewAction(status),
           ],
         ),
-      ),
     );
   }
 
@@ -725,12 +773,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     final location = v['lat'] != null && v['lng'] != null
         ? '${(v['lat'] as num).toStringAsFixed(4)}, ${(v['lng'] as num).toStringAsFixed(4)}'
         : 'ยังไม่ได้ระบุ';
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -770,7 +819,6 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -799,12 +847,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
   Widget _buildCourtsSection() {
     final courts = _courts;
     final canAdd = _venueSports.isNotEmpty;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -868,7 +917,6 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                 ),
           ],
         ),
-      ),
     );
   }
 

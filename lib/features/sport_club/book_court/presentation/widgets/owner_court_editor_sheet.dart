@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 
@@ -17,6 +18,7 @@ class OwnerCourtEditorSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _OwnerCourtEditorSheetBody(
         court: court,
         sportId: sportId,

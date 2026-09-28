@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import 'book_court_filter_sheet.dart';
 
@@ -15,6 +16,7 @@ class VenueAmenitiesEditorSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) =>
           _VenueAmenitiesEditorSheetBody(selected: selected),
     );

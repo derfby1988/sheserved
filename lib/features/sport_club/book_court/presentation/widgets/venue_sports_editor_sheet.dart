@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 /// Owner editor for a venue's sport set. Multi-selects from the approved
 /// sports catalog and captures an optional `unit_label_override` per sport.
@@ -15,6 +16,7 @@ class VenueSportsEditorSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _VenueSportsEditorSheetBody(
         sports: sports,
         selectedUnits: selectedUnits,

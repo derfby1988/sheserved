@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
@@ -129,10 +129,18 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
         .toList();
 
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
-        title: Text('การจอง — ${widget.venue.name}'),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
+        title: Text(
+          'การจอง — ${widget.venue.name}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -192,7 +200,11 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Text(
       title,
-      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+      style: const TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: 15,
+        color: NeumorphicTheme.textPrimary,
+      ),
     ),
   );
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 import '../../data/book_court_models.dart';
 
@@ -15,9 +17,12 @@ class CourtUsageTermsDialog {
     required VenueTerms? terms,
     required String venueName,
   }) {
-    return showDialog<VenueTerms>(
+    return GlassDialog.show<VenueTerms>(
       context: context,
       barrierDismissible: false,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      panelAccentColor: AppColors.primary,
+      contentPadding: EdgeInsets.zero,
       builder: (dialogContext) => _CourtUsageTermsDialogBody(
         terms: terms,
         venueName: venueName,
@@ -42,31 +47,61 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
           termsText: VenueTerms.baseTermsText,
           cancellationCutoffMinutes: VenueTerms.baseCutoffMinutes,
         );
-    return AlertDialog(
-      title: const Text('เงื่อนไขการใช้สนาม'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                venueName,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: 400,
+        maxHeight: MediaQuery.of(context).size.height * 0.82,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'เงื่อนไขการใช้สนาม',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
-              const SizedBox(height: 8),
-              Text(
-                effective.termsText,
-                style: const TextStyle(fontSize: 14, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(10),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: LitGlassSurface.frosted(
+                borderRadius: 12,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        venueName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        effective.termsText,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.4,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            LitGlassSurface.frosted(
+              borderRadius: 10,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
                 child: Row(
                   children: [
                     Icon(
@@ -87,23 +122,30 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: GlassActionButton(
+                    label: 'ไม่ยอมรับ',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GlassActionButton(
+                    label: 'ยอมรับและจอง',
+                    isFilled: true,
+                    fillColor: AppColors.primaryDark,
+                    onTap: () => Navigator.of(context).pop(effective),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('ไม่ยอมรับ'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primaryDark,
-          ),
-          onPressed: () => Navigator.pop(context, effective),
-          child: const Text('ยอมรับและจอง'),
-        ),
-      ],
     );
   }
 }

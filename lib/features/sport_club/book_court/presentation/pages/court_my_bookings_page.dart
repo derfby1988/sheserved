@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
@@ -208,10 +209,15 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
         .toList();
 
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
-        title: const Text('การจองสนามของฉัน'),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'การจองสนามของฉัน',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -264,12 +270,13 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   Widget _buildBookingCard(VenueBooking b) {
     final reviewable =
         b.isCompleted && !_reviewedBookingIds.contains(b.id);
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -354,7 +361,6 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
             ],
           ],
         ),
-      ),
     );
   }
 

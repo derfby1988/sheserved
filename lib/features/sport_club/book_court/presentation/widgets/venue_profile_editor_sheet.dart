@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 /// Owner editor for the venue profile fields that public discovery,
 /// radius search and timezone handling depend on. Fields marked * are
@@ -22,6 +23,7 @@ class VenueProfileEditorSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _VenueProfileEditorSheetBody(
         name: name,
         description: description,

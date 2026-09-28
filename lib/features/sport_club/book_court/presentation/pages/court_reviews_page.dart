@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
@@ -187,7 +188,16 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('รีวิว')),
+      backgroundColor: NeumorphicTheme.baseColor,
+      appBar: AppBar(
+        title: const Text(
+          'รีวิว',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -485,15 +495,13 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
   Widget _buildReviewItem(VenueReview review) {
     final isMine =
         _userId != null && review.userId == _userId;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+      padding: const EdgeInsets.all(12),
+      borderRadius: 12,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -623,7 +631,6 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
             ),
           ],
         ),
-      ),
     );
   }
 }

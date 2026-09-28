@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 /// Owner onboarding sheet: registers a venue owner application.
 ///
@@ -29,6 +30,7 @@ class CourtOwnerRegisterSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => const _CourtOwnerRegisterSheetBody(),
     );
   }

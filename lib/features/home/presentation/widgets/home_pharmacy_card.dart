@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/features/sport_club/presentation/pages/sport_club_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sports_hub_page.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -120,11 +119,7 @@ class HomePharmacyCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () {
-            Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(builder: (_) => const SportClubPage()),
-            );
-          },
+          onTap: () => _navigateToSportsHub(context, 1),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Center(

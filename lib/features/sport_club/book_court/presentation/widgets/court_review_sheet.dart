@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 import 'court_review_tag_picker.dart';
@@ -34,6 +35,7 @@ class CourtReviewSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _CourtReviewSheetBody(
         venueName: venueName,
         tagCatalog: tagCatalog,

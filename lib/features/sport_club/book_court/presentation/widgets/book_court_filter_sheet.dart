@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../domain/book_court_filter.dart';
 
@@ -41,6 +42,7 @@ class BookCourtFilterSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _BookCourtFilterSheetBody(
         current: current,
         currentQuery: currentQuery,

@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:sheserved/shared/widgets/glass/glass_confirm_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
+import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
 
 /// Confirmation/reason dialogs for the venue booking lifecycle.
 class CourtBookingActionDialogs {
@@ -8,26 +12,24 @@ class CourtBookingActionDialogs {
     required String venueName,
     required int cutoffMinutes,
   }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('ยกเลิกการจอง'),
-        content: Text(
-          'ยืนยันยกเลิกการจองที่ $venueName?\n'
-          'ยกเลิกได้ฟรีถึง $cutoffMinutes นาทีก่อนเวลาเริ่ม',
+    final ok = await GlassConfirmDialog.show(
+      context,
+      icon: Icons.cancel_outlined,
+      title: 'ยกเลิกการจอง',
+      accentColor: const Color(0xFFC62828),
+      cancelLabel: 'ไม่ยกเลิก',
+      confirmLabel: 'ยืนยันยกเลิก',
+      maxWidth: 340,
+      content: Text(
+        'ยืนยันยกเลิกการจองที่ $venueName?\n'
+        'ยกเลิกได้ฟรีถึง $cutoffMinutes นาทีก่อนเวลาเริ่ม',
+        style: TextStyle(
+          fontSize: 12.5,
+          color: Colors.white.withValues(alpha: 0.75),
+          height: 1.4,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('ไม่ยกเลิก'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('ยืนยันยกเลิก'),
-          ),
-        ],
       ),
+      onConfirm: () async => true,
     );
     return ok == true;
   }
@@ -38,77 +40,115 @@ class CourtBookingActionDialogs {
     required String title,
     required String hint,
   }) {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 300,
-          decoration: InputDecoration(
-            hintText: hint,
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              Navigator.pop(c, text);
-            },
-            child: const Text('ยืนยัน'),
-          ),
-        ],
-      ),
+    return GlassTextPromptDialog.show(
+      context,
+      title: title,
+      hint: hint,
+      confirmLabel: 'ยืนยัน',
     );
   }
 
   /// Explains that the booker cancellation cutoff has passed.
   static Future<void> showCutoffPassed(BuildContext context) {
-    return showDialog(
+    return GlassDialog.show<void>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('เลยเวลายกเลิกแล้ว'),
-        content: const Text(
-          'การจองนี้เลยกำหนดยกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('รับทราบ'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      contentPadding: EdgeInsets.zero,
+      builder: (dialogContext) => ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'เลยเวลายกเลิกแล้ว',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'การจองนี้เลยกำหนดยกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              GlassActionButton(
+                label: 'รับทราบ',
+                isFilled: true,
+                fillColor: const Color(0xFF2563EB),
+                onTap: () => Navigator.of(dialogContext).pop(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   /// Explains that the pending slot was taken; offers change-slot or cancel.
   static Future<String?> showSlotConflict(BuildContext context) {
-    return showDialog<String>(
+    return GlassDialog.show<String>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('ช่วงเวลานี้ไม่ว่างแล้ว'),
-        content: const Text(
-          'ช่วงเวลาที่คุณขอถูกจองไปแล้ว คำขอยังคงรออนุมัติอยู่ — '
-          'คุณสามารถเปลี่ยนเวลาในสนามเดิมหรือยกเลิกคำขอได้',
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      panelAccentColor: const Color(0xFF2563EB),
+      contentPadding: EdgeInsets.zero,
+      builder: (dialogContext) => ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'ช่วงเวลานี้ไม่ว่างแล้ว',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'ช่วงเวลาที่คุณขอถูกจองไปแล้ว คำขอยังคงรออนุมัติอยู่ — '
+                'คุณสามารถเปลี่ยนเวลาในสนามเดิมหรือยกเลิกคำขอได้',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: GlassActionButton(
+                      label: 'ยกเลิกคำขอ',
+                      onTap: () =>
+                          Navigator.of(dialogContext).pop('cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GlassActionButton(
+                      label: 'เปลี่ยนเวลา',
+                      isFilled: true,
+                      fillColor: const Color(0xFF2563EB),
+                      onTap: () =>
+                          Navigator.of(dialogContext).pop('change'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, 'cancel'),
-            child: const Text('ยกเลิกคำขอ'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, 'change'),
-            child: const Text('เปลี่ยนเวลา'),
-          ),
-        ],
       ),
     );
   }

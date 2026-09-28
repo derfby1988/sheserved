@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 
@@ -21,12 +23,13 @@ class CourtOwnerBookingManager extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = booking;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -95,7 +98,6 @@ class CourtOwnerBookingManager extends StatelessWidget {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -103,35 +105,10 @@ class CourtOwnerBookingManager extends StatelessWidget {
     BuildContext context,
     Future<void> Function(String) action,
   ) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('ระบุเหตุผล'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 300,
-          decoration: const InputDecoration(
-            hintText: 'เช่น สนามซ่อมบำรุง / ตารางเต็ม',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              Navigator.pop(c, text);
-            },
-            child: const Text('ยืนยัน'),
-          ),
-        ],
-      ),
+    final reason = await GlassTextPromptDialog.show(
+      context,
+      title: 'ระบุเหตุผล',
+      hint: 'เช่น สนามซ่อมบำรุง / ตารางเต็ม',
     );
     if (reason != null) await action(reason);
   }

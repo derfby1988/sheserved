@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/coach_models.dart';
 import '../../data/find_coach_repository.dart';
@@ -53,33 +54,7 @@ class _AdminCoachReviewPageState extends State<AdminCoachReviewPage> {
   }
 
   Future<String?> _askReason(String title) {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 300,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              Navigator.pop(c, text);
-            },
-            child: const Text('ยืนยัน'),
-          ),
-        ],
-      ),
-    );
+    return GlassTextPromptDialog.show(context, title: title, hint: 'ระบุเหตุผล');
   }
 
   Future<void> _review(
@@ -120,10 +95,15 @@ class _AdminCoachReviewPageState extends State<AdminCoachReviewPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
-        title: const Text('ตรวจสอบโค้ช'),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'ตรวจสอบโค้ช',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
       ),
       body: Column(
         children: [
@@ -177,12 +157,13 @@ class _AdminCoachReviewPageState extends State<AdminCoachReviewPage> {
   }
 
   Widget _buildCard(CoachSummary coach) {
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -297,7 +278,6 @@ class _AdminCoachReviewPageState extends State<AdminCoachReviewPage> {
             ),
           ],
         ),
-      ),
     );
   }
 }

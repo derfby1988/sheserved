@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../application/court_owner_service.dart';
 import '../../data/book_court_models.dart';
@@ -104,35 +106,15 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
   }
 
   Future<String?> _askVenueName() {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('สร้างสนามใหม่'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 120,
-          decoration: const InputDecoration(
-            labelText: 'ชื่อสนาม/สถานที่',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              Navigator.pop(c, text);
-            },
-            child: const Text('สร้าง'),
-          ),
-        ],
-      ),
+    return GlassTextPromptDialog.show(
+      context,
+      title: 'สร้างสนามใหม่',
+      hint: 'ชื่อสนาม/สถานที่',
+      label: 'ชื่อสนาม/สถานที่',
+      confirmLabel: 'สร้าง',
+      accentColor: AppColors.primaryDark,
+      maxLength: 120,
+      maxLines: 1,
     );
   }
 
@@ -169,10 +151,15 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
   Widget build(BuildContext context) {
     final userId = _userId;
     return Scaffold(
+      backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
-        title: const Text('จัดการสนามของฉัน'),
-        backgroundColor: AppColors.primaryDark,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'จัดการสนามของฉัน',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
+        backgroundColor: NeumorphicTheme.baseColor,
+        elevation: 0,
+        foregroundColor: NeumorphicTheme.textPrimary,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -239,12 +226,13 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
 
   Widget _buildOwnerStatusCard() {
     final status = _ownerProfile?.status;
-    return Card(
+    return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: switch (status) {
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: switch (status) {
           VenueOwnerStatus.approved => Row(
             children: [
               Icon(Icons.verified_rounded, color: Colors.green.shade700),
@@ -333,7 +321,6 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
             ],
           ),
         },
-      ),
     );
   }
 

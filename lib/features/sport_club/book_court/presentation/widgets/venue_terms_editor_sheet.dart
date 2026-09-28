@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 /// Owner editor for venue usage terms. Publishing always creates a new
 /// active version (older versions stay for existing booking snapshots), so
@@ -15,6 +16,7 @@ class VenueTermsEditorSheet {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: NeumorphicTheme.baseColor,
       builder: (sheetContext) => _VenueTermsEditorSheetBody(
         currentText: currentText,
         currentCutoffMinutes: currentCutoffMinutes,
