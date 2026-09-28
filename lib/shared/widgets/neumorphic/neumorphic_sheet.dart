@@ -177,7 +177,11 @@ class NeumorphicSheetCloseButton extends StatelessWidget {
   }
 }
 
-/// ชิปเลือกได้แบบนูน: ยกขึ้นเมื่อยังไม่เลือก และจมลงพร้อม tint ฟ้าเมื่อเลือก.
+/// ชิปเลือกได้แบบนูน: ยกขึ้นเมื่อยังไม่เลือก และจมเป็นราง (Inset) เมื่อเลือก
+///
+/// **ข้อกำหนดด้านเลย์เอาต์:** เนื้อหา (ไอคอน + ข้อความ) เหมือนกันทั้งสองสถานะ
+/// และไม่มีการเพิ่มเครื่องหมายถูกหรือเปลี่ยนน้ำหนักตัวอักษร เพื่อให้ความกว้าง
+/// และความสูงของชิปเท่าเดิมเมื่อเลือก ชิปอื่นในแถวจึงไม่ถูกดันให้ขยับ
 class NeumorphicChoiceChip extends StatelessWidget {
   const NeumorphicChoiceChip({
     super.key,
@@ -195,6 +199,29 @@ class NeumorphicChoiceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = NeumorphicTheme.primaryBlue;
+    const padding = EdgeInsets.symmetric(horizontal: 14, vertical: 9);
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(
+            icon,
+            size: 15,
+            color: selected ? accent : NeumorphicTheme.textSecondary,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? accent : NeumorphicTheme.textPrimary,
+          ),
+        ),
+      ],
+    );
+
     return Semantics(
       button: true,
       selected: selected,
@@ -204,44 +231,20 @@ class NeumorphicChoiceChip extends StatelessWidget {
         child: InkWell(
           onTap: () => onSelected(!selected),
           borderRadius: BorderRadius.circular(14),
-          child: NeumorphicContainer(
-            borderRadius: 14,
-            depth: selected ? 2 : 5,
-            blur: selected ? 4 : 10,
-            isPressed: selected,
-            color: selected
-                ? Color.alphaBlend(
-                    accent.withValues(alpha: 0.16),
-                    NeumorphicTheme.baseColor,
-                  )
-                : NeumorphicTheme.baseColor,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(
-                    icon,
-                    size: 15,
-                    color: selected ? accent : NeumorphicTheme.textSecondary,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    color: selected ? accent : NeumorphicTheme.textPrimary,
-                  ),
+          child: selected
+              ? NeumorphicInsetBox(
+                  height: null,
+                  borderRadius: 14,
+                  padding: padding,
+                  child: content,
+                )
+              : NeumorphicContainer(
+                  borderRadius: 14,
+                  depth: 5,
+                  blur: 10,
+                  padding: padding,
+                  child: content,
                 ),
-                if (selected) ...[
-                  const SizedBox(width: 5),
-                  Icon(Icons.check_rounded, size: 15, color: accent),
-                ],
-              ],
-            ),
-          ),
         ),
       ),
     );

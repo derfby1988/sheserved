@@ -10,5 +10,6 @@ export 'neumorphic_button.dart';
 export 'neumorphic_inset.dart';
 export 'neumorphic_input_field.dart';
 export 'neumorphic_sheet.dart';
+export 'neumorphic_slider.dart';
 export 'neumorphic_otp_field.dart';
 export 'neumorphic_otp_card.dart';

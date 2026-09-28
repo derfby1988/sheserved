@@ -427,7 +427,7 @@ class _CoachFilterSheetBodyState extends State<_CoachFilterSheetBody> {
         Row(
           children: [
             Expanded(
-              child: Slider(
+              child: NeumorphicSlider(
                 value: _minRating10 ?? 0,
                 min: 0,
                 max: 10,
