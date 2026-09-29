@@ -64,6 +64,7 @@ void main() {
       await _pumpIndicator(tester, currentPage: 1);
 
       expect(find.byType(LitGlassSurface), findsOneWidget);
+      expect(find.byType(LitGlassTile), findsOneWidget);
       final surface = tester.widget<LitGlassSurface>(
         find.byType(LitGlassSurface),
       );

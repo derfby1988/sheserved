@@ -443,56 +443,13 @@ class _SportsHubPageIndicatorState extends State<SportsHubPageIndicator> {
     );
   }
 
-  /// โทนของแผง drawer ใต้ปุ่ม section header ตามที่แสดงจริง
-  /// (หน้าขาว → scrim `Colors.black54` ของ `Drawer` → กระจกแผง
-  /// `0xFF101827`/0.18) — วัดได้ `#6C7073` ทั้งจากภาพหน้าจอจริงและจากการ
-  /// เรนเดอร์ replica ของ drawer
-  static const _drawerPanelTone = Color(0xFF6C7073);
-
-  /// ผิวปุ่มที่ถูกเลือก — โครงเดียวกับปุ่มเมนูหลักของ section ใน
-  /// `tlz_drawer.dart` (`_buildGroupHeader`): แผ่นกระจก `LitGlassSurface`
-  /// พร้อมแสงขาวตามขอบครบทุกชั้น (diffuse rim, crisp rim ไล่ตามทิศแสง,
-  /// bevel, hotspot, glint) ปรับเฉพาะโทนให้เป็นแก้วขาวใสบนแถบพื้นสว่าง
-  ///
-  /// ใน drawer แผ่นกระจกวางบนแผงเข้มจึงอ่านเป็นเทากลาง บนแถบพื้นขาวให้แผ่น
-  /// กระจกโปร่งจริง — โทนแผง drawer ผสมเพียง 17% พอให้เห็นเป็น tile จาง ๆ
-  /// ส่วนตัวอักษรใช้สีเข้ม (ดู [_buildButtonContent])
-  ///
-  /// `blurSigma: 0` — ใต้กระจกเป็นโทนเรียบ เบลอแล้วได้สีเดิม และกัน
-  /// BackdropFilter ดูดสีขาวของแถบรอบปุ่มเข้ามาจางขอบ (drawer เองก็ใช้ 0 บน iOS)
-  ///
-  /// `rimBoost: 1.4` ดัน alpha ของทุกชั้นแสงตามขอบให้สว่างขึ้น — ปุ่มสูงแค่
-  /// 40px (tile ของ drawer สูง ~48px) แสงชั้นเดียวกันจึงบางกว่าตา
-  ///
-  /// `rimColor` ขาวกว่าสูตร drawer: สูตรเดิม `lerp(ขาว, mint, 0.45)` จูนมาบน
-  /// แผงเข้ม บนแถบพื้นสว่าง (`#E4E8E8`) สีนั้นมืดกว่าพื้นแถบเสมอ ขอบจึงไม่มี
-  /// ทางอ่านเป็นแสง — ลดส่วน mint เหลือ 12% ให้ขอบสว่างกว่าแถบจริง ๆ
+  /// ผิวปุ่มที่ถูกเลือก — [LitGlassTile] แก้วขาวใสพร้อมแสงขาวตามขอบครบทุก
+  /// ชั้น (สูตรแสงเดียวกับปุ่มเมนูหลักของ section ใน `tlz_drawer.dart` ที่จูน
+  /// มาบนแถบพื้นสว่าง)
   Widget _buildActiveSurface() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // แก้วขาวใส — โทนแผง drawer ผสมเพียง 17% ให้เห็นเป็น tile จาง ๆ
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: _drawerPanelTone.withValues(alpha: 0.17),
-            borderRadius: const BorderRadius.all(Radius.circular(16)),
-          ),
-        ),
-        LitGlassSurface(
-          borderRadius: 16,
-          blurSigma: 0,
-          fillOpacity: 0.12,
-          accentColor: AppColors.primary,
-          accentStrength: 0.16,
-          glowOpacity: 0.08,
-          rimWidth: 1,
-          rimBoost: 1.4,
-          rimColor: Color.lerp(Colors.white, AppColors.primary, 0.12),
-          shadowOpacity: 0.10,
-          selected: true,
-          child: const SizedBox.expand(),
-        ),
-      ],
+    return const LitGlassTile(
+      accentColor: AppColors.primary,
+      child: SizedBox.expand(),
     );
   }
 

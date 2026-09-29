@@ -51,8 +51,10 @@ Reusable glassmorphism layer — migrate dialogs gradually, do not restyle the
 whole app at once.
 
 - `glass_primitives.dart`: `LitGlassSurface` (dark translucent glass),
-  `LitGlassSurface.frosted` (light frosted tile preset), `GlassActionButton`,
-  `GlassBadge`, `GlassIconButton`
+  `LitGlassSurface.frosted` (light frosted tile preset), `LitGlassTile`
+  (translucent lit tile with white edge light, for light backdrops —
+  the Sports Hub selected-pill look), `GlassActionButton`, `GlassBadge`,
+  `GlassIconButton`
 - `glass_dialog.dart`: `GlassDialog.show` — bare glass panel shell
 - `glass_confirm_dialog.dart`: `GlassConfirmDialog.show` — 2-button
   cancel/confirm with async loading + error retry

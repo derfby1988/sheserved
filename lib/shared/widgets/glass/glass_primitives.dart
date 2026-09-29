@@ -116,6 +116,74 @@ class LitGlassSurface extends StatelessWidget {
   }
 }
 
+/// Drawer-panel tone measured on device — a faint mix under the glass keeps
+/// the white rim lighting legible on light backdrops.
+const Color _litGlassTileBackdrop = Color(0xFF6C7073);
+
+/// Lit glass tile for LIGHT backdrops — translucent white glass with the full
+/// edge-lighting stack (diffuse rim, directional crisp rim, bevel, specular
+/// hotspots, top glint).
+///
+/// The drawer section headers get the same painter look "for free" because
+/// they sit on the dark panel; on a light backdrop that recipe washes out, so
+/// this tile adds two adjustments: a faint cool-grey tone under the glass
+/// ([backdropOpacity]) so the body still reads as a tile, and a whiter rim
+/// ([rimAccentShare]) so the edge light stays brighter than its surroundings.
+class LitGlassTile extends StatelessWidget {
+  final Widget child;
+  final double borderRadius;
+  final Color accentColor;
+
+  /// Multiplier on the rim light alphas — see [LitGlassSurface.rimBoost].
+  final double rimBoost;
+
+  /// Fraction of the accent mixed into the (otherwise white) rim colour —
+  /// low values keep the rim reading as white light on light backdrops.
+  final double rimAccentShare;
+
+  /// Opacity of the backdrop tone under the glass — raise for a darker tile.
+  final double backdropOpacity;
+
+  const LitGlassTile({
+    super.key,
+    required this.child,
+    required this.accentColor,
+    this.borderRadius = 16,
+    this.rimBoost = 1.4,
+    this.rimAccentShare = 0.12,
+    this.backdropOpacity = 0.17,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: _litGlassTileBackdrop.withValues(alpha: backdropOpacity),
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+        ),
+        LitGlassSurface(
+          borderRadius: borderRadius,
+          blurSigma: 0,
+          fillOpacity: 0.12,
+          accentColor: accentColor,
+          accentStrength: 0.16,
+          glowOpacity: 0.08,
+          rimWidth: 1,
+          rimBoost: rimBoost,
+          rimColor: Color.lerp(Colors.white, accentColor, rimAccentShare),
+          shadowOpacity: 0.10,
+          selected: true,
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
 RRect _glassRRect(Size size, double radius) => RRect.fromRectAndRadius(
   Offset.zero & size,
   Radius.circular(radius.clamp(0.0, size.shortestSide / 2)),
