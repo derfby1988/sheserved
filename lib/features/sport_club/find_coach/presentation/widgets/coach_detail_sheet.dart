@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/health/data/models/health_article_models.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/services/auth_service.dart';
@@ -70,13 +69,13 @@ class _CoachDetailSheetBody extends StatefulWidget {
   });
 
   @override
-  State<_CoachDetailSheetBody> createState() =>
-      _CoachDetailSheetBodyState();
+  State<_CoachDetailSheetBody> createState() => _CoachDetailSheetBodyState();
 }
 
 class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
-  static const _textPrimary = Color(0xFF1E293B);
-  static const _textSecondary = Color(0xFF64748B);
+  static const _textPrimary = NeumorphicTheme.textPrimary;
+  static const _textSecondary = NeumorphicTheme.textSecondary;
+  static const _accent = NeumorphicTheme.primaryBlue;
 
   bool _loading = true;
   String? _error;
@@ -120,10 +119,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
     try {
       final userId = _userId;
       final results = await Future.wait<Object?>([
-        widget.repo.getOfferingBoard(
-          widget.coach.id,
-          viewerId: userId,
-        ),
+        widget.repo.getOfferingBoard(widget.coach.id, viewerId: userId),
         widget.repo.listPublicSlots(widget.coach.id),
         widget.repo.listCoachAvailability(widget.coach.id),
         widget.repo.listPublicLocations(widget.coach.id),
@@ -261,7 +257,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
       context,
       icon: Icons.send_rounded,
       title: 'ส่งคำขอนัด 1:1',
-      accentColor: AppColors.primary,
+      accentColor: _accent,
       cancelLabel: 'ยกเลิก',
       confirmLabel: 'ส่งคำขอ',
       maxWidth: 360,
@@ -353,7 +349,8 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
         coach: widget.coach,
         offering: offering,
         selectedSessions: selectedSessions,
-        wholeCourse: !offering.allowPartialEnrollment ||
+        wholeCourse:
+            !offering.allowPartialEnrollment ||
             selectedSessions.length == offering.sessions.length,
       );
       if (confirmed == null || !mounted) continue;
@@ -386,23 +383,24 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
       context,
       coach: widget.coach,
       loadSummary: () => widget.repo.getReviewSummaryV2(widget.coach.id),
-      loadReviews: ({
-        tagId,
-        minRating10,
-        maxRating10,
-        sort = 'helpful',
-        limit = 20,
-        offset = 0,
-      }) => widget.repo.listReviewsV2(
-        widget.coach.id,
-        tagId: tagId,
-        minRating10: minRating10,
-        maxRating10: maxRating10,
-        sort: sort,
-        limit: limit,
-        offset: offset,
-        viewerId: _userId,
-      ),
+      loadReviews:
+          ({
+            tagId,
+            minRating10,
+            maxRating10,
+            sort = 'helpful',
+            limit = 20,
+            offset = 0,
+          }) => widget.repo.listReviewsV2(
+            widget.coach.id,
+            tagId: tagId,
+            minRating10: minRating10,
+            maxRating10: maxRating10,
+            sort: sort,
+            limit: limit,
+            offset: offset,
+            viewerId: _userId,
+          ),
       onToggleHelpful: _userId == null
           ? null
           : (review, helpful) => widget.repo.setReviewHelpful(
@@ -418,11 +416,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
               );
               if (action == null || !mounted) return;
               try {
-                await widget.repo.moderateReview(
-                  _userId!,
-                  review.id,
-                  action,
-                );
+                await widget.repo.moderateReview(_userId!, review.id, action);
                 _toast('อัปเดตสถานะรีวิวแล้ว');
               } catch (e) {
                 _toast(CoachLabels.mapError(e));
@@ -435,8 +429,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
 
   // =============== Build ===============
 
-  int get _selectedCount =>
-      _selected.values.fold(0, (a, s) => a + s.length);
+  int get _selectedCount => _selected.values.fold(0, (a, s) => a + s.length);
 
   double get _selectedPrice {
     var sum = 0.0;
@@ -444,8 +437,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
       for (final o in _offerings) {
         if (o.id != entry.key) continue;
         if (o.pricingUnit == CoachPricingUnit.package ||
-            (!o.allowPartialEnrollment &&
-                entry.value.isNotEmpty)) {
+            (!o.allowPartialEnrollment && entry.value.isNotEmpty)) {
           sum += o.price ?? 0;
           break;
         }
@@ -479,7 +471,11 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
               _buildHeader(coach),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: NeumorphicTheme.primaryBlue,
+                        ),
+                      )
                     : _error != null
                     ? Center(
                         child: Padding(
@@ -489,14 +485,19 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                             children: [
                               Text(
                                 _error!,
-                                style: TextStyle(
-                                  color: Colors.red.shade700,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFDC2626),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              TextButton(
+                              const SizedBox(height: 12),
+                              NeumorphicPillButton(
+                                text: 'ลองใหม่',
+                                icon: Icons.refresh_rounded,
+                                height: 44,
                                 onPressed: _load,
-                                child: const Text('ลองใหม่'),
                               ),
                             ],
                           ),
@@ -504,14 +505,11 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                       )
                     : RefreshIndicator(
                         onRefresh: _load,
+                        color: NeumorphicTheme.primaryBlue,
+                        backgroundColor: NeumorphicTheme.baseColor,
                         child: ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(
-                            16,
-                            4,
-                            16,
-                            16,
-                          ),
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           children: _buildContent(coach),
                         ),
                       ),
@@ -528,37 +526,34 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
 
   Widget _buildHeader(CoachSummary coach) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 10, 12),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.1),
+            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.25),
           ),
         ),
       ),
       child: Column(
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: NeumorphicTheme.shadowDark.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
+          const Center(child: NeumorphicSheetDragHandle()),
+          const SizedBox(height: 12),
           Row(
             children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundImage: coach.avatarUrl?.isNotEmpty == true
-                    ? NetworkImage(coach.avatarUrl!)
-                    : null,
-                child: coach.avatarUrl?.isNotEmpty == true
-                    ? null
-                    : const Icon(Icons.person, size: 26),
+              NeumorphicContainer(
+                shape: BoxShape.circle,
+                depth: 3,
+                blur: 6,
+                padding: const EdgeInsets.all(3),
+                child: CircleAvatar(
+                  radius: 26,
+                  backgroundImage: coach.avatarUrl?.isNotEmpty == true
+                      ? NetworkImage(coach.avatarUrl!)
+                      : null,
+                  child: coach.avatarUrl?.isNotEmpty == true
+                      ? null
+                      : const Icon(Icons.person, size: 26),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -598,12 +593,12 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                         if (coach.averageRating10 != null &&
                             coach.reviewCount > 0)
                           '★ ${coach.averageRating10!.toStringAsFixed(1)}/10 '
-                          '(${coach.reviewCount} รีวิว)',
+                              '(${coach.reviewCount} รีวิว)',
                       ].join(' · '),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.primaryDark,
+                        color: _accent,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -611,50 +606,21 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                   ],
                 ),
               ),
-              _roundAction(
-                _isFavorite
+              NeumorphicIconButton(
+                icon: _isFavorite
                     ? Icons.favorite_rounded
                     : Icons.favorite_border_rounded,
-                color: _isFavorite
-                    ? const Color(0xFFE53935)
-                    : _textSecondary,
-                onTap: _toggleFavorite,
+                color: _isFavorite ? const Color(0xFFE53935) : _textSecondary,
                 tooltip: 'บันทึกโค้ช',
+                onPressed: _toggleFavorite,
               ),
-              const SizedBox(width: 6),
-              _roundAction(
-                Icons.close_rounded,
-                color: _textSecondary,
-                onTap: () => Navigator.of(context).pop(),
-                tooltip: 'ปิด',
+              const SizedBox(width: 8),
+              NeumorphicSheetCloseButton(
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _roundAction(
-    IconData icon, {
-    required Color color,
-    required VoidCallback onTap,
-    required String tooltip,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: NeumorphicTheme.baseColor,
-            boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
-          ),
-          child: Icon(icon, size: 18, color: color),
-        ),
       ),
     );
   }
@@ -667,36 +633,33 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
       return const SizedBox.shrink();
     }
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
-        color: NeumorphicTheme.baseColor,
         border: Border(
           top: BorderSide(
-            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.1),
+            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.25),
           ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: NeumorphicTheme.shadowDark.withValues(alpha: 0.15),
-            offset: const Offset(0, -4),
-            blurRadius: 10,
-          ),
-        ],
       ),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (canEnroll)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+            if (canEnroll) ...[
+              NeumorphicInsetBox(
+                height: null,
+                borderRadius: 14,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.checklist_rounded,
                       size: 16,
-                      color: AppColors.primaryDark,
+                      color: _accent,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -710,84 +673,65 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                         ),
                       ),
                     ),
-                    GestureDetector(
-                      onTap: () => setState(_selected.clear),
-                      child: const Text(
-                        'ล้าง',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: _textSecondary,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
+                    NeumorphicPillButton(
+                      text: 'ล้าง',
+                      height: 30,
+                      fontSize: 11.5,
+                      depth: 3,
+                      blur: 6,
+                      onPressed: () => setState(_selected.clear),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
                 if (canEnroll)
                   Expanded(
                     flex: 2,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryDark,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                      ),
+                    child: NeumorphicVerifyButton(
                       onPressed: _busy ? null : _enrollSelected,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.how_to_reg_rounded, size: 18),
-                      label: Text(
-                        'สมัคร $selected รอบ',
-                        style: const TextStyle(fontSize: 14),
+                      isEnabled: !_busy,
+                      isLoading: _busy,
+                      text: 'สมัคร $selected รอบ',
+                      height: 52,
+                      fitTextToWidth: true,
+                      icon: const Icon(
+                        Icons.how_to_reg_rounded,
+                        color: Colors.white,
                       ),
                     ),
                   ),
                 if (canEnroll && canRequest) const SizedBox(width: 10),
                 if (canRequest)
                   Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primaryDark,
-                        side: const BorderSide(
-                          color: AppColors.primaryDark,
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                      ),
-                      onPressed:
-                          _busy || widget.onRequest == null
+                    child: NeumorphicPillButton(
+                      text: 'ขอนัดกับโค้ช',
+                      icon: Icons.send_rounded,
+                      iconSize: 16,
+                      fontSize: 13.5,
+                      height: 52,
+                      onPressed: _busy || widget.onRequest == null
                           ? null
                           : widget.onRequest,
-                      icon: const Icon(Icons.send_rounded, size: 16),
-                      label: const Text(
-                        'ขอนัดกับโค้ช',
-                        style: TextStyle(fontSize: 13.5),
-                      ),
                     ),
                   ),
               ],
             ),
             if (widget.onOpenMyEnrollments != null)
               Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: GestureDetector(
-                  onTap: widget.onOpenMyEnrollments,
-                  child: Text(
-                    'ดูการสมัครและคำขอของฉัน →',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _textSecondary,
-                    ),
-                  ),
+                padding: const EdgeInsets.only(top: 8),
+                child: NeumorphicPillButton(
+                  text: 'ดูการสมัครและคำขอของฉัน',
+                  icon: Icons.arrow_forward_rounded,
+                  iconSize: 16,
+                  fontSize: 12,
+                  height: 38,
+                  depth: 3,
+                  blur: 6,
+                  onPressed: widget.onOpenMyEnrollments,
                 ),
               ),
           ],
@@ -829,10 +773,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
             if (coach.skillLevels.isNotEmpty)
               Text(
                 'ระดับผู้เรียน: ${coach.skillLevels.map(CoachLabels.level).join(', ')}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: _textSecondary,
-                ),
+                style: const TextStyle(fontSize: 12, color: _textSecondary),
               ),
             if (coach.specialties.isNotEmpty)
               Padding(
@@ -842,24 +783,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                   runSpacing: 6,
                   children: [
                     for (final s in coach.specialties)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        child: Text(
-                          s,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryDark,
-                          ),
-                        ),
-                      ),
+                      NeumorphicTagChip(label: s),
                   ],
                 ),
               ),
@@ -881,12 +805,12 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
               for (final a in coach.serviceAreas)
                 _bullet(
                   [
-                    if (a.district != null) a.district!,
-                    if (a.province != null) a.province!,
-                  ].join(', ') +
-                  (a.radiusKm != null
-                      ? ' (รัศมี ${a.radiusKm!.toStringAsFixed(0)} กม.)'
-                      : ''),
+                        if (a.district != null) a.district!,
+                        if (a.province != null) a.province!,
+                      ].join(', ') +
+                      (a.radiusKm != null
+                          ? ' (รัศมี ${a.radiusKm!.toStringAsFixed(0)} กม.)'
+                          : ''),
                 ),
               for (final l in _locations)
                 _bullet(
@@ -904,24 +828,10 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
             runSpacing: 6,
             children: [
               for (final w in _windows)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Text(
-                    '${CoachLabels.dayOfWeek(w.dayOfWeek)} '
-                    '${w.startTime}–${w.endTime}',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: _textPrimary,
-                    ),
-                  ),
+                NeumorphicTagChip(
+                  label:
+                      '${CoachLabels.dayOfWeek(w.dayOfWeek)} '
+                      '${w.startTime}–${w.endTime}',
                 ),
             ],
           ),
@@ -935,30 +845,24 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
   }
 
   Widget _offeringsSection() {
-    final active = _offerings
-        .where((o) => !o.isDone && !o.isOneOnOne)
-        .toList();
-    final done = _offerings
-        .where((o) => o.isDone && !o.isOneOnOne)
-        .toList();
+    final active = _offerings.where((o) => !o.isDone && !o.isOneOnOne).toList();
+    final done = _offerings.where((o) => o.isDone && !o.isOneOnOne).toList();
     if (active.isEmpty && done.isEmpty) return const SizedBox.shrink();
     return _card(
       icon: Icons.class_outlined,
       title: 'คลาสและหลักสูตร',
       trailing: done.isNotEmpty
-          ? GestureDetector(
-              onTap: () => CoachOfferingHistoryDialog.show(
+          ? NeumorphicPillButton(
+              text: 'ประวัติ',
+              icon: Icons.history_rounded,
+              iconSize: 14,
+              fontSize: 11.5,
+              height: 32,
+              depth: 3,
+              blur: 6,
+              onPressed: () => CoachOfferingHistoryDialog.show(
                 context,
                 offering: done.first,
-              ),
-              child: const Text(
-                'ประวัติ',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryDark,
-                  decoration: TextDecoration.underline,
-                ),
               ),
             )
           : null,
@@ -994,101 +898,95 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
               _slidableAction(
                 label: 'ประวัติ',
                 icon: Icons.history_rounded,
-                color: const Color(0xFF64748B),
-                onTap: () => CoachOfferingHistoryDialog.show(
-                  context,
-                  offering: o,
-                ),
+                color: _textSecondary,
+                onTap: () =>
+                    CoachOfferingHistoryDialog.show(context, offering: o),
               ),
           ],
         ),
-        child: Container(
+        child: NeumorphicContainer(
+          borderRadius: 14,
+          depth: 3,
+          blur: 6,
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.8),
-            ),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () => setState(
-                  () => expanded
-                      ? _expandedOfferings.remove(o.id)
-                      : _expandedOfferings.add(o.id),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  o.title,
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: _textPrimary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withValues(
-                                    alpha: 0.12,
-                                  ),
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                                child: Text(
-                                  CoachLabels.offeringStatus(o.status),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: statusColor,
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => setState(
+                    () => expanded
+                        ? _expandedOfferings.remove(o.id)
+                        : _expandedOfferings.add(o.id),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    o.title,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            [
-                              CoachLabels.offeringType(o.type),
-                              if (o.price != null)
-                                '${CoachLabels.formatBaht(o.price)} '
-                                '${CoachLabels.pricingUnit(o.pricingUnit)}',
-                              '${activeSessions.length} รอบว่าง',
-                              if (o.minEnrollment > 0)
-                                'ขั้นต่ำ ${o.minEnrollment} คน',
-                            ].join(' · '),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: _textSecondary,
+                                const SizedBox(width: 6),
+                                NeumorphicInsetBox(
+                                  height: null,
+                                  borderRadius: 8,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  child: Text(
+                                    CoachLabels.offeringStatus(o.status),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 3),
+                            Text(
+                              [
+                                CoachLabels.offeringType(o.type),
+                                if (o.price != null)
+                                  '${CoachLabels.formatBaht(o.price)} '
+                                      '${CoachLabels.pricingUnit(o.pricingUnit)}',
+                                '${activeSessions.length} รอบว่าง',
+                                if (o.minEnrollment > 0)
+                                  'ขั้นต่ำ ${o.minEnrollment} คน',
+                              ].join(' · '),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Icon(
-                      expanded
-                          ? Icons.expand_less_rounded
-                          : Icons.expand_more_rounded,
-                      color: _textSecondary,
-                    ),
-                  ],
+                      Icon(
+                        expanded
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        color: _textSecondary,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               if (expanded) ...[
@@ -1122,24 +1020,20 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
                       'คุณมีการสมัครรายการนี้แล้ว — ดูใน "การสมัครของฉัน"',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
-                        color: Colors.green.shade800,
+                        color: Color(0xFF2E7D32),
                       ),
                     ),
                   ),
                 if (activeSessions.isEmpty)
                   const Text(
                     'ไม่มีรอบที่เปิดรับแล้ว',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: _textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 11.5, color: _textSecondary),
                   )
                 else
-                  for (final s in activeSessions)
-                    _sessionRow(o, s),
+                  for (final s in activeSessions) _sessionRow(o, s),
               ],
             ],
           ),
@@ -1150,89 +1044,90 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
 
   Widget _sessionRow(CoachOffering o, CoachOfferingSession s) {
     final selected = _selected[o.id]?.contains(s.id) == true;
-    final alreadyIn = s.myEnrollmentStatus != null &&
+    final alreadyIn =
+        s.myEnrollmentStatus != null &&
         s.myEnrollmentStatus != 'cancelled' &&
         s.myEnrollmentStatus != 'rejected';
     final selectable =
         o.isOpen && !s.isFull && s.isFuture && !alreadyIn && !_isSelf;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(
-        onTap: selectable ? () => _toggleSession(o, s) : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 8,
-          ),
-          decoration: BoxDecoration(
-            color: selected
-                ? AppColors.primary.withValues(alpha: 0.18)
-                : Colors.white.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected
-                  ? AppColors.primaryDark
-                  : Colors.white.withValues(alpha: 0.8),
-            ),
-          ),
-          child: Row(
+    const padding = EdgeInsets.symmetric(horizontal: 10, vertical: 8);
+    final content = Row(
+      children: [
+        Icon(
+          selected
+              ? Icons.check_circle_rounded
+              : alreadyIn
+              ? Icons.check_circle_outline_rounded
+              : s.isFull
+              ? Icons.block_rounded
+              : Icons.circle_outlined,
+          size: 17,
+          color: selected
+              ? _accent
+              : alreadyIn
+              ? const Color(0xFF2E7D32)
+              : _textSecondary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : alreadyIn
-                    ? Icons.check_circle_outline_rounded
-                    : s.isFull
-                    ? Icons.block_rounded
-                    : Icons.circle_outlined,
-                size: 17,
-                color: selected
-                    ? AppColors.primaryDark
-                    : alreadyIn
-                    ? const Color(0xFF2E7D32)
-                    : _textSecondary,
+              Text(
+                'รอบ ${s.seq} · ${formatThaiSessionRange(s.startsAt.toLocal(), s.endsAt.toLocal())}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? _accent : _textPrimary,
+                ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'รอบ ${s.seq} · ${formatThaiSessionRange(s.startsAt.toLocal(), s.endsAt.toLocal())}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _textPrimary,
-                      ),
-                    ),
-                    Text(
-                      [
-                        if (alreadyIn)
-                          switch (s.myEnrollmentStatus) {
-                            'confirmed' => 'ยืนยันแล้ว',
-                            'pending' => 'รออนุมัติ',
-                            _ => s.myEnrollmentStatus!,
-                          }
-                        else if (s.isFull)
-                          'เต็มแล้ว'
-                        else if (s.capacity != null)
-                          'เหลือ ${s.capacity! - s.confirmedCount}/${s.capacity} ที่',
-                        if (s.price != null)
-                          CoachLabels.formatBaht(s.price),
-                      ].join(' · '),
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: alreadyIn
-                            ? const Color(0xFF2E7D32)
-                            : _textSecondary,
-                      ),
-                    ),
-                  ],
+              Text(
+                [
+                  if (alreadyIn)
+                    switch (s.myEnrollmentStatus) {
+                      'confirmed' => 'ยืนยันแล้ว',
+                      'pending' => 'รออนุมัติ',
+                      _ => s.myEnrollmentStatus!,
+                    }
+                  else if (s.isFull)
+                    'เต็มแล้ว'
+                  else if (s.capacity != null)
+                    'เหลือ ${s.capacity! - s.confirmedCount}/${s.capacity} ที่',
+                  if (s.price != null) CoachLabels.formatBaht(s.price),
+                ].join(' · '),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: alreadyIn ? const Color(0xFF2E7D32) : _textSecondary,
                 ),
               ),
             ],
           ),
+        ),
+      ],
+    );
+    // สถานะเลือกเป็นรางจม (Inset) และสถานะปกติเป็นปุ่มนูน โดยใช้ padding
+    // ชุดเดียวกันทั้งสองสถานะ เพื่อไม่ให้ความสูงของแถวขยับเมื่อเลือก
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: selectable ? () => _toggleSession(o, s) : null,
+          borderRadius: BorderRadius.circular(12),
+          child: selected
+              ? NeumorphicInsetBox(
+                  height: null,
+                  borderRadius: 12,
+                  padding: padding,
+                  child: content,
+                )
+              : NeumorphicContainer(
+                  borderRadius: 12,
+                  depth: 3,
+                  blur: 6,
+                  padding: padding,
+                  child: content,
+                ),
         ),
       ),
     );
@@ -1259,54 +1154,54 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                     _slidableAction(
                       label: 'ขอนัด',
                       icon: Icons.send_rounded,
-                      color: AppColors.primaryDark,
+                      color: _accent,
                       onTap: () => _requestSlot(s),
                     ),
                   ],
                 ),
-                child: GestureDetector(
-                  onTap: _isSelf ? null : () => _requestSlot(s),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.8),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _isSelf ? null : () => _requestSlot(s),
+                    borderRadius: BorderRadius.circular(12),
+                    child: NeumorphicContainer(
+                      borderRadius: 12,
+                      depth: 3,
+                      blur: 6,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.event_available_rounded,
-                          size: 16,
-                          color: AppColors.primaryDark,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            formatThaiSessionRange(
-                              s.startsAt.toLocal(),
-                              s.endsAt.toLocal(),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _textPrimary,
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.event_available_rounded,
+                            size: 16,
+                            color: _accent,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formatThaiSessionRange(
+                                s.startsAt.toLocal(),
+                                s.endsAt.toLocal(),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _textPrimary,
+                              ),
                             ),
                           ),
-                        ),
-                        Text(
-                          'ปัดซ้ายเพื่อขอนัด',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade500,
+                          Text(
+                            'ปัดซ้ายเพื่อขอนัด',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: _textSecondary.withValues(alpha: 0.75),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1325,17 +1220,13 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
       badge: summary != null && summary.reviewCount > 0
           ? '${summary.reviewCount}'
           : null,
-      trailing: GestureDetector(
-        onTap: _openReviews,
-        child: const Text(
-          'ดูทั้งหมด',
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w700,
-            color: AppColors.primaryDark,
-            decoration: TextDecoration.underline,
-          ),
-        ),
+      trailing: NeumorphicPillButton(
+        text: 'ดูทั้งหมด',
+        fontSize: 11.5,
+        height: 32,
+        depth: 3,
+        blur: 6,
+        onPressed: _openReviews,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1354,10 +1245,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                 const SizedBox(width: 6),
                 Text(
                   '/10 · ${summary.reviewCount} รีวิว',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: _textSecondary,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: _textSecondary),
                 ),
               ],
             ),
@@ -1448,7 +1336,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.primaryDark,
+                        color: _accent,
                       ),
                     ),
                   ],
@@ -1482,46 +1370,45 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
           for (final a in _articles)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pushNamed(
-                  '/health/article',
-                  arguments: a,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.article_outlined,
-                        size: 16,
-                        color: _textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          a.title,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: _textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed('/health/article', arguments: a),
+                  child: NeumorphicContainer(
+                    borderRadius: 12,
+                    depth: 3,
+                    blur: 6,
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.article_outlined,
+                          size: 16,
+                          color: _accent,
                         ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: _textSecondary,
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            a.title,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: _textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: _textSecondary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1552,31 +1439,15 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
                 : const Text(
                     'ช่องทางติดต่อแสดงเฉพาะผู้เรียนที่มีนัด/การสมัคร'
                     'ที่ยืนยันแล้ว',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: _textSecondary),
                   ))
-          : GestureDetector(
-              onTap: _revealContact,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.lock_outline_rounded,
-                    size: 15,
-                    color: Colors.grey.shade600,
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'แตะเพื่อดูช่องทางติดต่อ',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primaryDark,
-                    ),
-                  ),
-                ],
-              ),
+          : NeumorphicPillButton(
+              text: 'แตะเพื่อดูช่องทางติดต่อ',
+              icon: Icons.lock_outline_rounded,
+              iconSize: 16,
+              fontSize: 12.5,
+              height: 44,
+              onPressed: _revealContact,
             ),
     );
   }
@@ -1593,10 +1464,9 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
     return NeumorphicContainer(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      borderRadius: 18,
+      borderRadius: 20,
       depth: 4,
       blur: 8,
-      border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1604,7 +1474,7 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
             Row(
               children: [
                 if (icon != null) ...[
-                  Icon(icon, size: 17, color: AppColors.primaryDark),
+                  Icon(icon, size: 17, color: _accent),
                   const SizedBox(width: 7),
                 ],
                 Expanded(
@@ -1647,7 +1517,10 @@ class _CoachDetailSheetBodyState extends State<_CoachDetailSheetBody> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('• ', style: TextStyle(fontSize: 12.5)),
+        const Text(
+          '• ',
+          style: TextStyle(fontSize: 12.5, color: _textSecondary),
+        ),
         Expanded(
           child: Text(
             text,

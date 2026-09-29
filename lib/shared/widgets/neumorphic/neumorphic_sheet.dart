@@ -51,21 +51,7 @@ class NeumorphicSheetShell extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD4DAE3),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.white,
-                    offset: Offset(0, 1),
-                    blurRadius: 1,
-                  ),
-                ],
-              ),
-            ),
+            const NeumorphicSheetDragHandle(),
             const SizedBox(height: 12),
             _header,
             const SizedBox(height: 12),
@@ -137,6 +123,175 @@ class NeumorphicSheetShell extends StatelessWidget {
   }
 }
 
+/// แถบจับลาก (drag handle) มาตรฐานของ bottom sheet ในระบบ Neumorphic.
+class NeumorphicSheetDragHandle extends StatelessWidget {
+  const NeumorphicSheetDragHandle({
+    super.key,
+    this.width = 44,
+    this.height = 5,
+  });
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4DAE3),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(color: Colors.white, offset: Offset(0, 1), blurRadius: 1),
+        ],
+      ),
+    );
+  }
+}
+
+/// โครง bottom sheet สำหรับฟอร์มสั้น: สูงตามเนื้อหาและขยับหนีคีย์บอร์ด
+///
+/// ต่างจาก [NeumorphicSheetShell] ตรงที่ไม่ได้ล็อกความสูงที่ [NeumorphicSheetShell.heightFactor]
+/// และไม่ครอบเนื้อหาด้วยแผงนูนทั้งก้อน — เหมาะกับ sheet ที่มีคอนโทรลไม่กี่กลุ่ม
+/// (เช่น ฟอร์มขอนัด) โดยยังใช้ drag handle, badge ไอคอนนูน และปุ่มในระบบเดียวกัน
+class NeumorphicFormSheetShell extends StatelessWidget {
+  const NeumorphicFormSheetShell({
+    super.key,
+    required this.title,
+    this.icon = Icons.tune_rounded,
+    this.subtitle,
+    this.onClose,
+    this.children = const <Widget>[],
+    this.footer,
+  });
+
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final VoidCallback? onClose;
+  final List<Widget> children;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Center(child: NeumorphicSheetDragHandle()),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                NeumorphicContainer(
+                  width: 40,
+                  height: 40,
+                  shape: BoxShape.circle,
+                  depth: 3,
+                  blur: 6,
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.2,
+                          color: NeumorphicTheme.textPrimary,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: NeumorphicTheme.primaryBlue,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (onClose != null) ...[
+                  const SizedBox(width: 8),
+                  NeumorphicSheetCloseButton(onPressed: onClose!),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...children,
+            if (footer != null) ...[const SizedBox(height: 16), footer!],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ปุ่มไอคอนวงกลมนูน (Raised) พร้อม tooltip — ใช้กับ action ใน header ของ sheet.
+class NeumorphicIconButton extends StatelessWidget {
+  const NeumorphicIconButton({
+    super.key,
+    required this.icon,
+    required this.onPressed,
+    this.tooltip,
+    this.size = 36,
+    this.iconSize = 18,
+    this.color = NeumorphicTheme.textSecondary,
+  });
+
+  final IconData icon;
+  final VoidCallback onPressed;
+  final String? tooltip;
+  final double size;
+  final double iconSize;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(size / 2),
+        child: NeumorphicContainer(
+          width: size,
+          height: size,
+          shape: BoxShape.circle,
+          depth: 3,
+          blur: 6,
+          child: Icon(icon, size: iconSize, color: color),
+        ),
+      ),
+    );
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
+  }
+}
+
 /// ปุ่มปิด sheet แบบวงกลมนูน พร้อม tooltip (ค่าเริ่มต้น "ปิด").
 class NeumorphicSheetCloseButton extends StatelessWidget {
   const NeumorphicSheetCloseButton({
@@ -152,27 +307,11 @@ class NeumorphicSheetCloseButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(size / 2),
-          child: NeumorphicContainer(
-            width: size,
-            height: size,
-            shape: BoxShape.circle,
-            depth: 3,
-            blur: 6,
-            child: const Icon(
-              Icons.close_rounded,
-              size: 18,
-              color: NeumorphicTheme.textSecondary,
-            ),
-          ),
-        ),
-      ),
+    return NeumorphicIconButton(
+      icon: Icons.close_rounded,
+      tooltip: tooltip,
+      size: size,
+      onPressed: onPressed,
     );
   }
 }
@@ -432,6 +571,10 @@ class NeumorphicPillButton extends StatelessWidget {
     this.icon,
     this.active = false,
     this.height = 48,
+    this.fontSize = 14.5,
+    this.iconSize = 18,
+    this.depth = 5,
+    this.blur = 10,
   });
 
   final String text;
@@ -439,6 +582,14 @@ class NeumorphicPillButton extends StatelessWidget {
   final IconData? icon;
   final bool active;
   final double height;
+
+  /// ขนาดตัวอักษร — ลดลงได้เมื่อใช้เป็นปุ่มลิงก์ขนาดเล็กในบรรทัด
+  final double fontSize;
+  final double iconSize;
+
+  /// ความหนาของเงา — ลดลงเมื่อทำปุ่มเตี้ย (เช่น height 32) เพื่อไม่ให้ดูหนัก
+  final double depth;
+  final double blur;
 
   @override
   Widget build(BuildContext context) {
@@ -454,8 +605,8 @@ class NeumorphicPillButton extends StatelessWidget {
           child: NeumorphicContainer(
             height: height,
             borderRadius: height / 2,
-            depth: 5,
-            blur: 10,
+            depth: depth,
+            blur: blur,
             isPressed: active,
             color: active
                 ? Color.alphaBlend(
@@ -470,7 +621,7 @@ class NeumorphicPillButton extends StatelessWidget {
                   if (icon != null) ...[
                     Icon(
                       icon,
-                      size: 18,
+                      size: iconSize,
                       color: active ? accent : NeumorphicTheme.textSecondary,
                     ),
                     const SizedBox(width: 6),
@@ -481,7 +632,7 @@ class NeumorphicPillButton extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14.5,
+                        fontSize: fontSize,
                         fontWeight: FontWeight.w600,
                         color: active ? accent : NeumorphicTheme.textSecondary,
                       ),

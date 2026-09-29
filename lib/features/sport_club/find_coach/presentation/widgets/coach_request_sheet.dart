@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/coach_models.dart';
 
 /// Request draft returned by [CoachRequestSheet.show].
-typedef CoachRequestDraft =
-    ({
-      String sportId,
-      TeachingMode teachingMode,
-      DateTime startsAt,
-      DateTime endsAt,
-      String? message,
-    });
+typedef CoachRequestDraft = ({
+  String sportId,
+  TeachingMode teachingMode,
+  DateTime startsAt,
+  DateTime endsAt,
+  String? message,
+});
 
 /// Bottom sheet for composing a coach booking request: sport, teaching
 /// mode (limited to what the coach offers), slot and message. Returns the
@@ -29,6 +27,10 @@ class CoachRequestSheet {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (sheetContext) => _CoachRequestSheetBody(
         coach: coach,
         sports: sports,
@@ -50,8 +52,7 @@ class _CoachRequestSheetBody extends StatefulWidget {
   });
 
   @override
-  State<_CoachRequestSheetBody> createState() =>
-      _CoachRequestSheetBodyState();
+  State<_CoachRequestSheetBody> createState() => _CoachRequestSheetBodyState();
 }
 
 class _CoachRequestSheetBodyState extends State<_CoachRequestSheetBody> {
@@ -59,9 +60,7 @@ class _CoachRequestSheetBodyState extends State<_CoachRequestSheetBody> {
       widget.preferredSportId != null &&
           widget.coach.sportIds.contains(widget.preferredSportId)
       ? widget.preferredSportId
-      : (widget.coach.sportIds.isNotEmpty
-            ? widget.coach.sportIds.first
-            : null);
+      : (widget.coach.sportIds.isNotEmpty ? widget.coach.sportIds.first : null);
   late TeachingMode _mode = widget.coach.teachingMode == TeachingMode.online
       ? TeachingMode.online
       : TeachingMode.onsite;
@@ -97,187 +96,161 @@ class _CoachRequestSheetBodyState extends State<_CoachRequestSheetBody> {
     if (picked != null) setState(() => _start = picked);
   }
 
+  void _submit() {
+    final start = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      _start!.hour,
+      _start!.minute,
+    );
+    Navigator.pop(context, (
+      sportId: _sportId!,
+      teachingMode: _mode,
+      startsAt: start,
+      endsAt: start.add(Duration(hours: _hours)),
+      message: _message.text.trim().isEmpty ? null : _message.text.trim(),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final coach = widget.coach;
     final coachSports = widget.sports
         .where((s) => coach.sportIds.contains(s['id']?.toString()))
         .toList();
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'ขอนัดกับ ${coach.displayName}',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (coach.hourlyRate != null)
-                Text(
-                  '${coach.hourlyRate!.toStringAsFixed(0)} บาท/ชั่วโมง',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primaryDark,
-                  ),
-                ),
-              const SizedBox(height: 16),
-
-              if (coachSports.length > 1) ...[
-                const Text(
-                  'กีฬา',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final sport in coachSports)
-                      ChoiceChip(
-                        label: Text(
-                          sport['name_th']?.toString() ??
-                              sport['name']?.toString() ??
-                              '',
-                        ),
-                        selected: _sportId == sport['id']?.toString(),
-                        onSelected: (sel) => setState(
-                          () => _sportId = sel
-                              ? sport['id']?.toString()
-                              : _sportId,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              if (coach.teachingMode == TeachingMode.both) ...[
-                const Text(
-                  'รูปแบบการสอน',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<TeachingMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: TeachingMode.onsite,
-                      label: Text('ออนไซต์'),
-                    ),
-                    ButtonSegment(
-                      value: TeachingMode.online,
-                      label: Text('ออนไลน์'),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (sel) =>
-                      setState(() => _mode = sel.first),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickDate,
-                      icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                      label: Text(
-                        '${_date.day}/${_date.month}/${_date.year + 543}',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickStart,
-                      icon: const Icon(Icons.schedule_rounded, size: 18),
-                      label: Text(
-                        _start == null
-                            ? 'เวลาเริ่ม'
-                            : _start!.format(context),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final h in [1, 2, 3])
-                    ChoiceChip(
-                      label: Text('$h ชม.'),
-                      selected: _hours == h,
-                      onSelected: (sel) =>
-                          setState(() => _hours = sel ? h : _hours),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _message,
-                maxLength: 500,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: 'ข้อความถึงโค้ช (ไม่บังคับ)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  onPressed: _valid
-                      ? () {
-                          final start = DateTime(
-                            _date.year,
-                            _date.month,
-                            _date.day,
-                            _start!.hour,
-                            _start!.minute,
-                          );
-                          Navigator.pop(context, (
-                            sportId: _sportId!,
-                            teachingMode: _mode,
-                            startsAt: start,
-                            endsAt: start.add(Duration(hours: _hours)),
-                            message: _message.text.trim().isEmpty
-                                ? null
-                                : _message.text.trim(),
-                          ));
-                        }
-                      : null,
-                  child: const Text('ส่งคำขอ'),
-                ),
-              ),
-            ],
-          ),
+    return NeumorphicFormSheetShell(
+      title: 'ขอนัดกับ ${coach.displayName}',
+      icon: Icons.send_rounded,
+      subtitle: coach.hourlyRate == null
+          ? null
+          : '${coach.hourlyRate!.toStringAsFixed(0)} บาท/ชั่วโมง',
+      onClose: () => Navigator.pop(context),
+      footer: SizedBox(
+        width: double.infinity,
+        child: NeumorphicVerifyButton(
+          onPressed: _valid ? _submit : null,
+          isEnabled: _valid,
+          text: 'ส่งคำขอ',
+          height: 52,
+          icon: const Icon(Icons.send_rounded, color: Colors.white),
         ),
       ),
+      children: [
+        if (coachSports.length > 1) ...[
+          const Text('กีฬา', style: NeumorphicTheme.sectionLabel),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final sport in coachSports)
+                NeumorphicChoiceChip(
+                  label:
+                      sport['name_th']?.toString() ??
+                      sport['name']?.toString() ??
+                      '',
+                  selected: _sportId == sport['id']?.toString(),
+                  onSelected: (sel) => setState(
+                    () => _sportId = sel ? sport['id']?.toString() : _sportId,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+        ],
+
+        if (coach.teachingMode == TeachingMode.both) ...[
+          const Text('รูปแบบการสอน', style: NeumorphicTheme.sectionLabel),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final (mode, label) in [
+                (TeachingMode.onsite, 'ออนไซต์'),
+                (TeachingMode.online, 'ออนไลน์'),
+              ])
+                NeumorphicChoiceChip(
+                  label: label,
+                  selected: _mode == mode,
+                  onSelected: (sel) =>
+                      setState(() => _mode = sel ? mode : _mode),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+        ],
+
+        const Text('วันและเวลา', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: NeumorphicPillButton(
+                text: '${_date.day}/${_date.month}/${_date.year + 543}',
+                icon: Icons.calendar_today_rounded,
+                active: true,
+                onPressed: _pickDate,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: NeumorphicPillButton(
+                text: _start == null ? 'เวลาเริ่ม' : _start!.format(context),
+                icon: Icons.schedule_rounded,
+                active: _start != null,
+                onPressed: _pickStart,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
+        const Text('ระยะเวลา', style: NeumorphicTheme.sectionLabel),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final h in [1, 2, 3])
+              NeumorphicChoiceChip(
+                label: '$h ชม.',
+                selected: _hours == h,
+                onSelected: (sel) => setState(() => _hours = sel ? h : _hours),
+              ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
+        NeumorphicInsetBox(
+          height: null,
+          borderRadius: 14,
+          child: TextField(
+            controller: _message,
+            maxLength: 500,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: 'ข้อความถึงโค้ช (ไม่บังคับ)',
+              filled: true,
+              fillColor: Colors.transparent,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              counterStyle: TextStyle(
+                fontSize: 10.5,
+                color: NeumorphicTheme.textSecondary.withValues(alpha: 0.8),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
