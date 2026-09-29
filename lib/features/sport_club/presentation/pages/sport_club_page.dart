@@ -171,15 +171,15 @@ class _SportClubPageState extends State<SportClubPage> {
   // bar layout: 16 padding + 40 sport-chips row + 10 gap, with the button
   // centred inside the 44-high quick-filter row when expanded. In embedded
   // mode the chips row lives in the shell's shared bar, so the quick-filter
-  // row starts at bar height + 16 padding.
+  // row starts at bar height + 8 padding.
   static const double _filterButtonTopExpanded = 69;
-  static const double _filterButtonTopEmbeddedExpanded = 76;
+  static const double _filterButtonTopEmbeddedExpanded = 68;
   static const double _filterButtonTopCollapsed = 17;
 
   // Inset used before the filter bar is measured, so the first frame already
   // matches the usual bar height and the feed does not flash.
   static const double _filterBarFallbackHeight = 110;
-  static const double _embeddedFilterBarFallbackHeight = 60;
+  static const double _embeddedFilterBarFallbackHeight = 52;
 
   String? get _sportId => _filter.sportId;
   String get _q => _filter.q;
@@ -1010,7 +1010,12 @@ class _SportClubPageState extends State<SportClubPage> {
                   key: _filterBarKey,
                   width: double.infinity,
                   color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    _sharedBarActive ? 8 : 16,
+                    16,
+                    0,
+                  ),
                   child: Column(
                     children: [
                       if (!_sharedBarActive) ...[

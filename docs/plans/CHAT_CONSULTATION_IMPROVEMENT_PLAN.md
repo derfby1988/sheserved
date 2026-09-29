@@ -6048,8 +6048,8 @@ lib/features/consultation/presentation/widgets/
 - เมื่อ orieเครื่อง, split-screen, resize/fold/unfold) ให้คำนวณ strategy และขนาดใหม่จาก constraints ในเฟรม layout ถัดไป; ไม่ cache ขนาดจอเพื่อรอเปิดหน้าใหม่
 - แอปล็อก portrait เป็นค่าเริ่มต้นใน `main.dart`; เฉพาะช่วงที่ Radial UI เปิดบน Android/iOS ให้ override preference เพื่ออนุญาต portrait/landscape ที่ platform รองรับ และ restore portrait preference เมื่อปิด/ตอบสำเร็จ/dispose; web/desktop ใช้ window constraints โดยไม่เรียก `SystemChrome`
 - การสลับ radial ↔ compact ต้องคง question id, selected draft, submit/confirmation state และสถานะ loading/error ไว้ใน owner/controller; เปลี่ยนเฉพาะ subtree ของ layout โดยไม่ reset คำตอบหรือ required status
-- เลือก radial เมื่อ usable area หลังหัก inset ของ controls/safe area กว้างอย่างน้อย 320 dp; ความสูงขั้นต่ำ 200 dp สำหรับตัวเลือกสั้น/ตัวเลข, 240 dp เมื่อมี label มากกว่า 3 grapheme clusters และ 320 dp เมื่อมี label มากกว่า 8 grapheme clusters; aspect ratio ไม่เกิน 2:1, มี 1–5 ตัวเลือก, คำถามไม่เกิน 10 grapheme clusters, label ไม่เกิน 12 grapheme clusters และ text scale ไม่เกิน 1.3; วัดด้วย `String.characters.length` ไม่ใช่ UTF-16 `String.length`; ปรับจากภาพทดสอบจริงที่ chat overlay สูงไม่ถึง 560 dp จึงถูกบังคับเป็น compact ทั้งที่วง radial ขนาดย่อยังวางได้; คง compact fallback เมื่อพื้นที่วงจริงไม่พอ
-- เงื่อนไขอื่นทั้งหมด (รวม 6–10 ตัวเลือก, label/คำถามยาว, จอแคบ/landscape, split-screen ที่ usable radial area ต่ำกว่าเกณฑ์ หรือ text scale สูง) สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
+- เลือก radial เมื่อ usable area หลังหัก inset ของ controls/safe area กว้างอย่างน้อย 320 dp; ความสูงขั้นต่ำ 200 dp สำหรับตัวเลือกสั้น, 240 dp สำหรับ quantitative 10 ระดับหรือ label ที่ยาวกว่า 3 grapheme clusters และ 320 dp เมื่อ label ยาวกว่า 8 grapheme clusters; aspect ratio ไม่เกิน 2:1, quantitative รองรับ 3/5/10 ตัวเลือก (ระดับ 10 ต้องมี usable radial side ≥240 dp เพื่อเว้นระยะ tile), qualitative รองรับ 2–5 ตัวเลือก, คำถามไม่เกิน 10 grapheme clusters, label ไม่เกิน 12 grapheme clusters และ text scale ไม่เกิน 1.3; วัดด้วย `String.characters.length` ไม่ใช่ UTF-16 `String.length`; ปรับจากภาพทดสอบจริงที่ chat overlay สูงไม่ถึง 560 dp จึงถูกบังคับเป็น compact ทั้งที่วง radial ขนาดย่อยังวางได้; คง compact fallback เมื่อพื้นที่วงจริงไม่พอ
+- เงื่อนไขอื่นทั้งหมด (รวม qualitative 6–10 ตัวเลือก, quantitative 10 ระดับเมื่อพื้นที่วงไม่พอ, label/คำถามยาว, จอแคบ/landscape, split-screen ที่ usable radial area ต่ำกว่าเกณฑ์ หรือ text scale สูง) สลับเป็น responsive scroll layout: คำถามด้านบนและตัวเลือกเป็น grid/list ที่เลื่อนได้ โดยรักษาลำดับและ selection behavior เดิม; ห้ามบีบตัวเลือกจนทับกันหรือเล็กกว่าพื้นที่แตะขั้นต่ำ 44×44 dp
 - ใช้ `SafeArea` + `SingleChildScrollView`/slivers เมื่อความสูงไม่พอ; ตัวเลือกข้อความขึ้นหลายบรรทัดได้และไม่ตัดข้อความสำคัญด้วย ellipsis
 - คำนวณขนาดตัวอักษร/ไอคอนด้วย constraints และ `TextScaler` อย่างเหมาะสม แต่ไม่ override การตั้ง accessibility ของผู้ใช้; หากเนื้อหายังไม่พอให้เลื่อนแทนการย่อเกินค่าที่อ่านได้
 - Animation ลด/ปิดได้เมื่อ `MediaQuery.disableAnimations` เปิด และต้องไม่ขัดขวางการแตะ/keyboard navigation
@@ -6077,7 +6077,7 @@ lib/features/consultation/presentation/widgets/
 - แต่ละตัวเลือกคือ `QuantitativeAnswerOption` บน `LitGlassSurface` (backdrop blur σ20, `borderRadius = size × 0.26`) — สีของตัวเลือกใช้เป็น **accent tint + rim glow** บนพื้นกระจกโปร่งใส ไม่ใช่พื้นทึบ
 - Palette 10 เฉด เขียว → เหลือง → แดง → ชมพู/ม่วง (`_colors` = `4CAF50, 8BC34A, CDDC39, FFEB3B, FFC107, FF9800, FF5722, F44336, E91E63, 9C27B0`); `colorForIndex(index, count)` map `index/(count−1)` เข้า palette — ทิศทางเดียวน้อย→มากเสมอ ไม่มีโหมดกลับด้าน
 - ตัวอักษร `SukhumvitSet` w800 สีขาว ขนาด `size × 0.38` พร้อมเงาดำและเงาสี accent (เข้มขึ้นเมื่อ selected)
-- **Radial mode:** ขนาด `side × 0.14` clamp 48–112 dp; วางครบ 360°/N เริ่มจากด้านบน (`startAngle = −π/2`) พร้อม fly-in แบบ stagger (`elasticOut`, delay ~80ms/ตัว)
+- **Radial mode:** ขนาด `side × 0.14` clamp 48–112 dp; วางครบ 360°/N เริ่มจากด้านบน (`startAngle = −π/2`) พร้อม fly-in แบบ stagger (`elasticOut`, delay ~80ms/ตัว); quantitative 10 ระดับใช้ radial เมื่อ usable side ≥240 dp เพื่อให้ tile ขั้นต่ำ 48 dp ไม่ทับกัน
 - **Compact mode:** `Wrap` จัดกึ่งกลาง spacing 12; ขนาด `(contentWidth − 36) / 4` clamp 48–72 dp (≈4 ตัว/แถว)
 - แตะตัวเลือก → `HapticFeedback.mediumImpact` + glow animation 400 ms: scale `1 + t×0.15`, `accentStrength` 0.16→0.36, `fillOpacity` 0.07→0.14, `glowOpacity` 0→`0.35 + t×0.35`; เส้น spoke ของตัวที่เลือกหนาเป็น 2.2 เรืองแสงตามสี option + node ปลายเส้นใหญ่ขึ้น
 - การเลือกเป็น **draft เท่านั้น** — แตะแล้วเปิด `ClosedEndedConfirmationDialog` (ปุ่ม `เปลี่ยน`/`ยืนยัน`); เขียนคำตอบลง DB เฉพาะเมื่อกดยืนยันและ RPC สำเร็จ ไม่ส่งคำตอบทันทีที่แตะ
@@ -6181,13 +6181,13 @@ lib/features/consultation/presentation/widgets/
 | `presentation/widgets/closed_ended/closed_ended_confirmation_dialog.dart` | NEW | ยืนยัน/เปลี่ยนตัวเลือกแยกจากการเขียนฐานข้อมูล |
 | `presentation/widgets/closed_ended/closed_ended_glass_primitives.dart` | NEW (optional) | shared visual primitives; เพิ่มเมื่อมีการใช้ซ้ำจริง ไม่รวมหน้า/layout/options |
 | `message_bubble.dart` | MODIFY | แสดง badge/border สำหรับ `type='closed_ended_question'` และ answer projection โดยไม่กระทบชนิดเดิม |
-| Widget/unit/integration tests | NEW/MODIFY | แยก tests ต่อ root/layout/quantitative/qualitative widget; เพิ่ม config validation, state, RPC errors/retry/race, responsive overflow, Hive/legacy serialization และ realtime |
+| Widget/unit/integration tests | NEW/MODIFY | แยก tests ต่อ root/layout/quantitative/qualitative widget; เพิ่ม quantitative 10-level radial placement/non-overlap, 240 dp fallback, config validation, state, RPC errors/retry/race, responsive overflow, Hive/legacy serialization และ realtime |
 
 ### ⚠️ Risks & Edge Cases
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| ตัวเลือก 6–10/ข้อความยาว/พื้นที่แคบ | radial nodes ทับกันหรือ overflow | LayoutBuilder + radial เฉพาะพื้นที่เหมาะสม; fallback scroll grid/list; test text scale, landscape, split-screen |
+| Quantitative 10 ตัวเลือก/qualitative 6–10/ข้อความยาว/พื้นที่แคบ | radial nodes ทับกันหรือ overflow | Quantitative 10 ใช้ radial เมื่อ usable side ≥240 dp; qualitative 6–10 และพื้นที่/ข้อความที่ไม่ผ่านเกณฑ์ใช้ compact scroll fallback; test text scale, landscape, split-screen |
 | ผู้ป่วยกดผิดหรือเปลี่ยนใจ | บันทึกคำตอบผิด | Confirm ทุกครั้ง; ก่อน RPC เป็น draft ยกเลิก/เลือกใหม่ได้ |
 | Double tap, retry หรือ concurrent write | duplicate/คำตอบไม่ตรง status | RPC transaction + unique(question_message_id) + lock/conditional write; `ALREADY_ANSWERED` ไม่ overwrite |
 | คำถามปลายปิดถูกส่งเป็น optional | ไม่เข้า required queue/จบงานผิดเงื่อนไข | บังคับ `is_required=true` ที่ write path; ไม่มี UI toggle |

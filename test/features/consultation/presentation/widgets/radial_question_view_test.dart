@@ -415,6 +415,140 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+    test('allows ten choices radially only when enough space is available', () {
+      final options = List.generate(10, (index) => '${index + 1}');
+
+      expect(
+        AdaptiveClosedEndedLayout.canUseRadialLayout(
+          size: const Size(390, 844),
+          questionText: 'ปวดไหม',
+          options: options,
+          textScale: 1,
+        ),
+        isFalse,
+      );
+      expect(
+        AdaptiveClosedEndedLayout.canUseRadialLayout(
+          size: const Size(390, 239),
+          questionText: 'ปวดไหม',
+          options: options,
+          textScale: 1,
+          maxRadialOptionCount: 10,
+        ),
+        isFalse,
+      );
+      expect(
+        AdaptiveClosedEndedLayout.canUseRadialLayout(
+          size: const Size(390, 240),
+          questionText: 'ปวดไหม',
+          options: options,
+          textScale: 1,
+          maxRadialOptionCount: 10,
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('keeps ten qualitative choices in compact layout', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final options = List.generate(10, (index) => 'Level ${index + 1}');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RadialQuestionView(
+              questionText: 'Mood',
+              config: ClosedEndedConfig.qualitative(options),
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('closed-ended-compact-layout')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('closed-ended-radial-layout')),
+        findsNothing,
+      );
+      expect(find.text(options.first), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'places ten quantitative choices around the question without overlap',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 844);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RadialQuestionView(
+                questionText: 'ปวดไหม',
+                config: ClosedEndedConfig.quantitative(10),
+                onClose: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 900));
+
+        expect(
+          find.byKey(const ValueKey('closed-ended-radial-layout')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('closed-ended-compact-layout')),
+          findsNothing,
+        );
+        for (var index = 0; index < 10; index++) {
+          expect(
+            find.byKey(ValueKey('closed-ended-option-$index')),
+            findsOneWidget,
+          );
+          expect(find.text('${index + 1}'), findsOneWidget);
+        }
+
+        final centerRect = tester.getRect(
+          find.byKey(const ValueKey('closed-ended-question-center')),
+        );
+        final optionRects = List<Rect>.generate(
+          10,
+          (index) => tester.getRect(
+            find.byKey(ValueKey('closed-ended-option-$index')),
+          ),
+        );
+        expect(optionRects.first.center.dy, lessThan(centerRect.center.dy));
+        expect(optionRects[5].center.dy, greaterThan(centerRect.center.dy));
+        for (var index = 0; index < optionRects.length; index++) {
+          expect(
+            centerRect.overlaps(optionRects[index]),
+            isFalse,
+            reason: 'Option ${index + 1} overlaps the question card',
+          );
+          for (var other = index + 1; other < optionRects.length; other++) {
+            expect(
+              optionRects[index].overlaps(optionRects[other]),
+              isFalse,
+              reason: 'Options ${index + 1} and ${other + 1} overlap',
+            );
+          }
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
 

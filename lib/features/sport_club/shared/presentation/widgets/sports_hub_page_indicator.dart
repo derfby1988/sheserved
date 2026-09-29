@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 class SportsHubPageIndicator extends StatefulWidget {
   final int currentPage;
@@ -411,72 +412,26 @@ class _SportsHubPageIndicatorState extends State<SportsHubPageIndicator> {
               child: SizedBox(
                 width: double.infinity,
                 height: 44,
-                child: AnimatedContainer(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: isActive ? 1 : 0),
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOutCubic,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 1,
-                    vertical: 2,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    gradient: isActive
-                        ? LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.38),
-                              Colors.white.withValues(alpha: 0.20),
-                            ],
-                          )
-                        : null,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isActive
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : Colors.transparent,
-                      width: 0.8,
+                  builder: (context, t, _) => Container(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 1,
+                      vertical: 2,
                     ),
-                    boxShadow: isActive
-                        ? [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : const [],
-                  ),
-                  child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            destination.icon,
-                            size: 18,
-                            color: isActive
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            destination.shortTitle,
-                            maxLines: 1,
-                            softWrap: false,
-                            style: TextStyle(
-                              color: isActive
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                              fontSize: 12,
-                              fontWeight: isActive
-                                  ? FontWeight.w700
-                                  : FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      // ปล่อยให้ rim glow/เงาของผิวปุ่มล้นออกจากช่องปุ่มได้
+                      // (แถบด้านนอกมี ClipRRect ของตัวเองอยู่แล้ว)
+                      clipBehavior: Clip.none,
+                      children: [
+                        if (t > 0.001)
+                          Opacity(opacity: t, child: _buildActiveSurface()),
+                        Center(child: _buildButtonContent(destination, t)),
+                      ],
                     ),
                   ),
                 ),
@@ -484,6 +439,85 @@ class _SportsHubPageIndicatorState extends State<SportsHubPageIndicator> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// โทนของแผง drawer ใต้ปุ่ม section header ตามที่แสดงจริง
+  /// (หน้าขาว → scrim `Colors.black54` ของ `Drawer` → กระจกแผง
+  /// `0xFF101827`/0.18) — วัดได้ `#6C7073` ทั้งจากภาพหน้าจอจริงและจากการ
+  /// เรนเดอร์ replica ของ drawer
+  static const _drawerPanelTone = Color(0xFF6C7073);
+
+  /// ผิวปุ่มที่ถูกเลือก — โครงเดียวกับปุ่มเมนูหลักของ section ใน
+  /// `tlz_drawer.dart` (`_buildGroupHeader`): แผ่นกระจก `LitGlassSurface`
+  /// พร้อมแสงขาวตามขอบครบทุกชั้น (diffuse rim, crisp rim ไล่ตามทิศแสง,
+  /// bevel, hotspot, glint) ปรับเฉพาะโทนให้เป็นแก้วขาวใสบนแถบพื้นสว่าง
+  ///
+  /// ใน drawer แผ่นกระจกวางบนแผงเข้มจึงอ่านเป็นเทากลาง บนแถบพื้นขาวให้แผ่น
+  /// กระจกโปร่งจริง — โทนแผง drawer ผสมเพียง 17% พอให้เห็นเป็น tile จาง ๆ
+  /// ส่วนตัวอักษรใช้สีเข้ม (ดู [_buildButtonContent])
+  ///
+  /// `blurSigma: 0` — ใต้กระจกเป็นโทนเรียบ เบลอแล้วได้สีเดิม และกัน
+  /// BackdropFilter ดูดสีขาวของแถบรอบปุ่มเข้ามาจางขอบ (drawer เองก็ใช้ 0 บน iOS)
+  ///
+  /// `rimBoost: 1.4` ดัน alpha ของทุกชั้นแสงตามขอบให้สว่างขึ้น — ปุ่มสูงแค่
+  /// 40px (tile ของ drawer สูง ~48px) แสงชั้นเดียวกันจึงบางกว่าตา
+  ///
+  /// `rimColor` ขาวกว่าสูตร drawer: สูตรเดิม `lerp(ขาว, mint, 0.45)` จูนมาบน
+  /// แผงเข้ม บนแถบพื้นสว่าง (`#E4E8E8`) สีนั้นมืดกว่าพื้นแถบเสมอ ขอบจึงไม่มี
+  /// ทางอ่านเป็นแสง — ลดส่วน mint เหลือ 12% ให้ขอบสว่างกว่าแถบจริง ๆ
+  Widget _buildActiveSurface() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // แก้วขาวใส — โทนแผง drawer ผสมเพียง 17% ให้เห็นเป็น tile จาง ๆ
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: _drawerPanelTone.withValues(alpha: 0.17),
+            borderRadius: const BorderRadius.all(Radius.circular(16)),
+          ),
+        ),
+        LitGlassSurface(
+          borderRadius: 16,
+          blurSigma: 0,
+          fillOpacity: 0.12,
+          accentColor: AppColors.primary,
+          accentStrength: 0.16,
+          glowOpacity: 0.08,
+          rimWidth: 1,
+          rimBoost: 1.4,
+          rimColor: Color.lerp(Colors.white, AppColors.primary, 0.12),
+          shadowOpacity: 0.10,
+          selected: true,
+          child: const SizedBox.expand(),
+        ),
+      ],
+    );
+  }
+
+  /// เนื้อปุ่ม (ไอคอน + ชื่อย่อ) — สีและน้ำหนักตัวอักษรไล่ตาม [t] ของอนิเมชัน
+  /// เพื่อให้ปุ่มที่ถูกเลือกเป็นตัวอักษรเข้มบนแก้วขาวใสโดยไม่กระตุก
+  Widget _buildButtonContent(_SportsHubDestination destination, double t) {
+    final color = Color.lerp(AppColors.textSecondary, AppColors.textPrimary, t)!;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(destination.icon, size: 18, color: color),
+          const SizedBox(width: 2),
+          Text(
+            destination.shortTitle,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.lerp(FontWeight.w600, FontWeight.w700, t),
+            ),
+          ),
+        ],
       ),
     );
   }

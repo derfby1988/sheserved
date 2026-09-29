@@ -12,6 +12,7 @@ typedef AdaptiveClosedEndedLayoutBuilder =
 class AdaptiveClosedEndedLayout extends StatelessWidget {
   final String questionText;
   final List<String> options;
+  final int maxRadialOptionCount;
   final double radialTopInset;
   final double radialBottomInset;
   final AdaptiveClosedEndedLayoutBuilder builder;
@@ -20,6 +21,7 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
     super.key,
     required this.questionText,
     required this.options,
+    this.maxRadialOptionCount = 5,
     this.radialTopInset = 0,
     this.radialBottomInset = 0,
     required this.builder,
@@ -30,6 +32,7 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
     required String questionText,
     required List<String> options,
     required double textScale,
+    int maxRadialOptionCount = 5,
     double radialTopInset = 0,
     double radialBottomInset = 0,
   }) {
@@ -39,11 +42,12 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
       return false;
     }
     if (size.width / radialHeight > 2) return false;
-    if (options.isEmpty || options.length > 5) return false;
+    if (options.isEmpty || options.length > maxRadialOptionCount) return false;
     if (questionText.characters.length > 10 ||
         options.any((option) => option.characters.length > 12)) {
       return false;
     }
+    if (options.length > 5 && radialHeight < 240) return false;
     final minimumRadialHeight =
         options.any((option) => option.characters.length > 8)
         ? 320
@@ -65,6 +69,7 @@ class AdaptiveClosedEndedLayout extends StatelessWidget {
               questionText: questionText,
               options: options,
               textScale: textScale,
+              maxRadialOptionCount: maxRadialOptionCount,
               radialTopInset: radialTopInset,
               radialBottomInset: radialBottomInset,
             )

@@ -23,6 +23,17 @@ class LitGlassSurface extends StatelessWidget {
   final double accentStrength;
   final double glowOpacity;
   final double rimWidth;
+
+  /// Multiplier on every rim light alpha (diffuse, crisp, bevel, hotspots,
+  /// glint). 1 keeps the painter default; >1 brightens the edge lighting for
+  /// small surfaces where the default rim reads too faint.
+  final double rimBoost;
+
+  /// Rim base colour. Null keeps the standard formula (white, blended 45%
+  /// toward the accent when selected) tuned for the dark drawer panel. On a
+  /// light backdrop pass a whiter colour, otherwise the rim stays darker than
+  /// its surroundings and never reads as reflected light.
+  final Color? rimColor;
   final double shadowOpacity;
   final bool selected;
 
@@ -37,6 +48,8 @@ class LitGlassSurface extends StatelessWidget {
     this.accentStrength = 0,
     this.glowOpacity = 0,
     this.rimWidth = 2,
+    this.rimBoost = 1.0,
+    this.rimColor,
     this.shadowOpacity = 0.20,
     this.selected = false,
   });
@@ -51,11 +64,13 @@ class LitGlassSurface extends StatelessWidget {
     this.fillOpacity = 0.85,
     this.surfaceColor = Colors.white,
     this.rimWidth = 1.4,
+    this.rimBoost = 1.0,
     this.shadowOpacity = 0.15,
     this.selected = false,
   }) : accentColor = null,
        accentStrength = 0,
-       glowOpacity = 0;
+       glowOpacity = 0,
+       rimColor = null;
 
   @override
   Widget build(BuildContext context) {
@@ -70,9 +85,11 @@ class LitGlassSurface extends StatelessWidget {
       foregroundPainter: _GlassRimPainter(
         radius: borderRadius,
         rimWidth: rimWidth,
-        rimColor: selected && accentColor != null
-            ? Color.lerp(Colors.white, accentColor, 0.45)!
-            : Colors.white,
+        rimBoost: rimBoost,
+        rimColor: rimColor ??
+            (selected && accentColor != null
+                ? Color.lerp(Colors.white, accentColor, 0.45)!
+                : Colors.white),
       ),
       child: child,
     );
@@ -292,11 +309,13 @@ class _GlassBodyPainter extends CustomPainter {
 class _GlassRimPainter extends CustomPainter {
   final double radius;
   final double rimWidth;
+  final double rimBoost;
   final Color rimColor;
 
   const _GlassRimPainter({
     required this.radius,
     required this.rimWidth,
+    required this.rimBoost,
     required this.rimColor,
   });
 
@@ -308,7 +327,7 @@ class _GlassRimPainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           colors: [
-            Colors.white.withValues(alpha: alpha),
+            Colors.white.withValues(alpha: alpha.clamp(0.0, 1.0)),
             Colors.white.withValues(alpha: 0),
           ],
         ).createShader(Rect.fromCircle(center: center, radius: r)),
@@ -322,7 +341,7 @@ class _GlassRimPainter extends CustomPainter {
     final rect = rrect.outerRect;
     final d = size.shortestSide;
     final r = rrect.tlRadiusX;
-    Color rim(double a) => rimColor.withValues(alpha: a);
+    Color rim(double a) => rimColor.withValues(alpha: (a * rimBoost).clamp(0.0, 1.0));
 
     // Diffuse inner rim glow — light soaking into the glass from the edge.
     final diffuseW = (d * 0.09).clamp(4.0, 12.0);
@@ -364,8 +383,9 @@ class _GlassRimPainter extends CustomPainter {
     );
 
     // Specular hotspots — main light top-right, secondary top-left.
-    _hotspot(canvas, Offset(size.width - r * 0.55, r * 0.45), r * 0.95, 0.55);
-    _hotspot(canvas, Offset(r * 0.5, r * 0.5), r * 0.6, 0.30);
+    _hotspot(canvas, Offset(size.width - r * 0.55, r * 0.45), r * 0.95,
+        0.55 * rimBoost);
+    _hotspot(canvas, Offset(r * 0.5, r * 0.5), r * 0.6, 0.30 * rimBoost);
 
     // Glint running along the top edge.
     final glintLength = size.width - r * 2;
@@ -379,8 +399,10 @@ class _GlassRimPainter extends CustomPainter {
           ..shader = LinearGradient(
             colors: [
               Colors.white.withValues(alpha: 0),
-              Colors.white.withValues(alpha: 0.55),
-              Colors.white.withValues(alpha: 0.75),
+              Colors.white
+                  .withValues(alpha: (0.55 * rimBoost).clamp(0.0, 1.0)),
+              Colors.white
+                  .withValues(alpha: (0.75 * rimBoost).clamp(0.0, 1.0)),
               Colors.white.withValues(alpha: 0),
             ],
             stops: const [0.0, 0.45, 0.8, 1.0],
@@ -394,6 +416,7 @@ class _GlassRimPainter extends CustomPainter {
   bool shouldRepaint(_GlassRimPainter old) =>
       old.radius != radius ||
       old.rimWidth != rimWidth ||
+      old.rimBoost != rimBoost ||
       old.rimColor != rimColor;
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
+import 'package:sheserved/shared/widgets/glass/glass_date_time_picker.dart';
 import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 import 'package:uuid/uuid.dart';
@@ -963,15 +964,15 @@ class _SessionTimingDialogState extends State<_SessionTimingDialog> {
 
   Future<void> _pick(bool isStart) async {
     final initial = isStart ? _start : _end;
-    final date = await showDatePicker(
-      context: context,
+    final date = await GlassDatePicker.show(
+      context,
       initialDate: initial,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
+    final time = await GlassTimePicker.show(
+      context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
     if (time == null || !mounted) return;
@@ -1198,15 +1199,15 @@ class _CoachSlotEditorDialogState extends State<CoachSlotEditorDialog> {
 
   Future<void> _pick(bool isStart) async {
     final initial = isStart ? _start : _end;
-    final date = await showDatePicker(
-      context: context,
+    final date = await GlassDatePicker.show(
+      context,
       initialDate: initial,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
+    final time = await GlassTimePicker.show(
+      context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
     if (time == null || !mounted) return;
@@ -1578,8 +1579,8 @@ class _AvailabilityWindowDialogState
       _end.hour * 60 + _end.minute > _start.hour * 60 + _start.minute;
 
   Future<void> _pick(bool isStart) async {
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await GlassTimePicker.show(
+      context,
       initialTime: isStart ? _start : _end,
     );
     if (picked == null || !mounted) return;
@@ -2652,15 +2653,15 @@ class _CoachProposeScheduleChangeDialogState
 
   Future<void> _pick(bool isStart) async {
     final initial = isStart ? _start : _end;
-    final date = await showDatePicker(
-      context: context,
+    final date = await GlassDatePicker.show(
+      context,
       initialDate: initial,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
+    final time = await GlassTimePicker.show(
+      context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
     if (time == null || !mounted) return;

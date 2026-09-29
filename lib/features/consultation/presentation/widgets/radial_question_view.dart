@@ -349,6 +349,8 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
               child: AdaptiveClosedEndedLayout(
                 questionText: widget.questionText,
                 options: options,
+                maxRadialOptionCount:
+                    widget.config.type == ClosedEndedType.quantitative ? 10 : 5,
                 radialTopInset: media.padding.top + 64,
                 radialBottomInset: media.padding.bottom + 16,
                 builder: (context, constraints, mode) {
@@ -543,7 +545,6 @@ class _RadialQuestionViewState extends State<RadialQuestionView>
       },
     );
   }
-
 
   double _qualitativeOptionWidth(
     BuildContext context,
