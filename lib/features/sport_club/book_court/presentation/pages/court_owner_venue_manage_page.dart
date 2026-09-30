@@ -257,7 +257,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     hasSports: _venueSports.isNotEmpty,
     hoursComplete: _hoursComplete,
     amenitiesDone: _amenities.isNotEmpty || _amenitiesConfirmed,
-    termsDone: _terms != null || _usesPlatformTerms,
+    termsDone: !_setupMissing.contains('terms'),
     hasActiveCourts: _hasActiveCourts,
     venueStatus: _venueStatus,
   );
@@ -311,8 +311,8 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     }
   }
 
-  /// Terms choice: platform base terms (version 0) are a valid explicit
-  /// selection; custom terms publish a new active version.
+  /// Terms choice: platform-managed terms are an explicit selection; custom
+  /// terms publish a new active version.
   Future<void> _editTerms(String userId) async {
     final hasCustom = _terms != null;
     if (!hasCustom) {
@@ -524,6 +524,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       // Never claim success when the post-mutation state failed to load.
       if (reloaded && ok.isNotEmpty) _toast(ok);
     } catch (e) {
+      debugPrint('CourtOwnerVenueManagePage._persist failed: $e');
       _toast(_mapError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -922,6 +923,16 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
 
   static String _mapError(Object e) {
     final raw = e.toString();
+    if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
+      return 'ทีมงานยังไม่ได้ตั้งเงื่อนไขมาตรฐานสนาม กรุณาลองใหม่ภายหลัง';
+    }
+    if (raw.contains('PGRST202')) {
+      return 'ระบบฐานข้อมูลยังไม่พร้อม กรุณาอัปเดต Supabase migrations แล้วลองใหม่';
+    }
+    if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
+    if (raw.contains('INVALID_CUTOFF')) {
+      return 'กรุณาระบุเวลายกเลิกเป็นจำนวนนาทีที่ไม่ติดลบ';
+    }
     if (raw.contains('NOT_VENUE_MANAGER')) {
       return 'คุณไม่มีสิทธิ์จัดการสนามนี้';
     }

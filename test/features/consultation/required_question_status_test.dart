@@ -87,23 +87,20 @@ void main() {
       expect(RequiredQuestionStatus.canEditInPlace(null), isFalse);
     });
 
-    test(
-      'expert can start composing from unread or reading questions only',
-      () {
-        expect(
-          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.unread),
-          isTrue,
-        );
-        expect(
-          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.reading),
-          isTrue,
-        );
-        expect(
-          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.answered),
-          isFalse,
-        );
-        expect(RequiredQuestionStatus.canStartExpertEdit(null), isFalse);
-      },
-    );
+    test('expert can start editing unread questions only', () {
+      expect(
+        RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.unread),
+        isTrue,
+      );
+      expect(
+        RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.reading),
+        isFalse,
+      );
+      expect(
+        RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.answered),
+        isFalse,
+      );
+      expect(RequiredQuestionStatus.canStartExpertEdit(null), isFalse);
+    });
   });
 }

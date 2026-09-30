@@ -4774,11 +4774,11 @@ Widget overlay แสดงในตำแหน่งเดียวกับ `
 - **Expert Edit Flow:**
   1. แตะปุ่มคำถาม → โหลดสถานะล่าสุดจาก server ก่อนเปิด edit mode
   2. `unread` → prefill ข้อความและเปิดช่องให้แก้ได้จริง (TextField ต้อง enabled); แสดงแถบสีส้ม "แก้ไขคำถาม"
-  3. `reading` → เปิดข้อความเป็นต้นฉบับสำหรับเขียนต่อ แต่การกดส่งจะสร้างคำถามใหม่; `answered` → ไม่เข้า edit modeและ scroll ไปคำถาม/คำตอบเดิม
+  3. `reading` → ไม่เปิด edit mode และแจ้งว่าอีกฝั่งกำลังตอบ; `answered` → ไม่เข้า edit modeและ scroll ไปคำถาม/คำตอบเดิม
   4. ตอนกดส่ง โหลดสถานะล่าสุดซ้ำ; แก้ข้อความเดิมได้เฉพาะเมื่อยังเป็น `unread`
 - **Atomic status guard:** ส่งแก้ผ่าน backend route `POST /api/chat/required/:questionMessageId/edit` และ RPC ที่ lock แถว ตรวจ `required_status='unread'` แล้ว update content/owner กับ insert `required_question_edits` ใน transaction เดียว
 - หากสถานะเปลี่ยนเป็น `reading`/`answered` หลังเปิด edit แต่ก่อนบันทึก หรือ RPC ตอบ `STATUS_CHANGED` → ห้าม overwrite; สร้าง message ใหม่พร้อมปุ่มใหม่ และคงปุ่มเดิมตามสถานะผู้ป่วย
-- หากอ่านสถานะ/ส่งแก้ไม่ได้เพราะ network หรือ authorization → คงข้อความและ edit mode ไว้ให้ลองใหม่ ห้ามปิด UI ราวกับบันทึกสำเร็จ
+- หากอ่านสถานะ/ส่งแก้ไม่ได้เพราะ network หรือ authorization → คงข้อความและ edit mode ไว้ให้ลองใหม่ ห้ามปิด UI ราวกับบันทึกสำเร็จ; หาก backend หา RPC ไม่พบ ให้คืน `RPC_UNAVAILABLE` พร้อมแจ้งว่าต้องตรวจ deployment/migration แทน generic failure
 - **คำถามปลายปิด:** ปุ่ม "แก้ไขตัวเลือก" ในแถบ edit เปิด `ClosedEndedConfigDialog` ที่ prefill config เดิม; config ที่ส่งแล้ว immutable. ถ้าเปลี่ยน config ให้ส่ง `closed_ended_question` ใหม่เสมอ (แม้สถานะเดิมยัง `unread`); ถ้าแก้เฉพาะ promptและสถานะยัง `unread` จึงแก้ข้อความเดิมได้. หากสถานะเป็น `reading`/`answered` ให้ส่งคำถามใหม่ผ่าน trusted send RPC โดยคง config/`bodyPart` เดิม เว้นแต่ expert เลือก config ใหม่ และห้าม downgrade เป็น `required_question`
 
 ### 🎨 UI แสดงประวัติการแก้ไข (Optional)

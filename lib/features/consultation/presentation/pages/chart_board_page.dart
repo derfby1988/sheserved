@@ -1748,6 +1748,8 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       if (!result.statusChanged) {
         final message = switch (result.code) {
           RequiredQuestionEditCode.invalidContent => 'กรุณากรอกคำถาม',
+          RequiredQuestionEditCode.rpcUnavailable =>
+            'ระบบแก้ไขคำถามยังไม่พร้อม กรุณาตรวจสอบ migration/backend แล้วลองใหม่',
           RequiredQuestionEditCode.invalidConfig =>
             'คำถามปลายปิดนี้มีตัวเลือกไม่ถูกต้อง',
           RequiredQuestionEditCode.forbidden => 'ไม่มีสิทธิ์แก้ไขคำถามนี้',
@@ -4536,6 +4538,14 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     _upsertMessage(current);
     if (current.requiredStatus == RequiredStatus.answered) {
       _scrollToQuestion(current);
+      return;
+    }
+    if (current.requiredStatus == RequiredStatus.reading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ผู้ป่วยกำลังตอบคำถามนี้ จึงเปิดแก้ไขไม่ได้'),
+        ),
+      );
       return;
     }
     if (!RequiredQuestionStatus.canStartExpertEdit(current.requiredStatus)) {

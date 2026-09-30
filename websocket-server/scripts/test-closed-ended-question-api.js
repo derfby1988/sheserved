@@ -33,6 +33,7 @@ let message = {
 };
 const calls = [];
 let forceEditStatusChanged = false;
+let forceEditRpcUnavailable = false;
 const supabaseForSync = {
   rpc: async (name, params) => {
     calls.push({ name, params });
@@ -40,6 +41,15 @@ const supabaseForSync = {
       return { data: { code: 'OK', message_id: questionId }, error: null };
     }
     if (name === 'edit_required_question_backend') {
+      if (forceEditRpcUnavailable) {
+        return {
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find edit_required_question_backend',
+          },
+        };
+      }
       if (forceEditStatusChanged) {
         return {
           data: {
@@ -187,6 +197,17 @@ async function main() {
     assert.equal(staleEdit.body.message.required_status, 'reading');
     assert.equal(calls[3].name, 'edit_required_question_backend');
 
+    forceEditStatusChanged = false;
+    forceEditRpcUnavailable = true;
+    const unavailableEdit = await requestJson(
+      port,
+      `/api/chat/required/${questionId}/edit`,
+      { content: 'Retry after deploying the database RPC' },
+    );
+    assert.equal(unavailableEdit.status, 503);
+    assert.equal(unavailableEdit.body.code, 'RPC_UNAVAILABLE');
+    assert.equal(calls[4].name, 'edit_required_question_backend');
+
     const answer = await requestJson(
       port,
       `/api/chat/closed-ended/${questionId}/answer`,
@@ -194,9 +215,9 @@ async function main() {
     );
     assert.equal(answer.status, 200);
     assert.equal(answer.body.selected_value, '2');
-    assert.equal(calls[4].name, 'answer_closed_ended_question_with_history_backend');
-    assert.equal(calls[4].params.p_caller_id, callerId);
-    assert.equal(calls[4].params.p_selected_index, 1);
+    assert.equal(calls[5].name, 'answer_closed_ended_question_with_history_backend');
+    assert.equal(calls[5].params.p_caller_id, callerId);
+    assert.equal(calls[5].params.p_selected_index, 1);
 
     const history = await requestJson(
       port,
@@ -207,8 +228,8 @@ async function main() {
     assert.equal(history.status, 200);
     assert.equal(history.body.code, 'OK');
     assert.deepEqual(history.body.options, ['ใช่', 'ไม่ใช่']);
-    assert.equal(calls[5].name, 'get_expert_closed_ended_option_history_backend');
-    assert.equal(calls[5].params.p_expert_id, callerId);
+    assert.equal(calls[6].name, 'get_expert_closed_ended_option_history_backend');
+    assert.equal(calls[6].params.p_expert_id, callerId);
 
     identitySource = 'legacy_header';
     const callCount = calls.length;
@@ -220,7 +241,7 @@ async function main() {
     assert.equal(legacy.status, 401);
     assert.equal(calls.length, callCount);
 
-    console.log('Passed 7 chat question API tests.');
+    console.log('Passed 8 chat question API tests.');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

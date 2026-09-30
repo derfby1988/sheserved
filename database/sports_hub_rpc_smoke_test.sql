@@ -20,6 +20,17 @@
 
 \set ON_ERROR_STOP off
 
+DO $roles$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'CREATE ROLE anon NOLOGIN';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'CREATE ROLE authenticated NOLOGIN';
+  END IF;
+END
+$roles$;
+
 -- ---------------------------------------------------------------------
 -- Prerequisite stubs (skipped automatically on a real Supabase database)
 -- ---------------------------------------------------------------------
@@ -70,6 +81,7 @@ END $$;
 \ir ../supabase/migrations/20260925130000_sports_hub_venue_review_readiness.sql
 \ir ../supabase/migrations/20260926100000_sports_hub_review_scoring_10pt.sql
 \ir ../supabase/migrations/20260928120000_sports_hub_sport_usage.sql
+\ir ../supabase/migrations/20261001120000_sports_hub_platform_venue_terms.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -110,9 +122,11 @@ DECLARE
   v_sport uuid := 'eeeeeeee-0000-0000-0000-000000000005';
   v_mail  uuid := 'ffffffff-0000-0000-0000-000000000006';
   v_mgr   uuid := '99999999-0000-0000-0000-000000000007';
-  v_app uuid; v_venue uuid; v_venue2 uuid; v_court uuid; v_terms int;
-  v_b1 uuid; v_b2 uuid; v_b3 uuid; v_b4 uuid; v_review uuid;
-  v_missing text[];
+  v_app uuid; v_venue uuid; v_venue2 uuid; v_court uuid; v_court2 uuid;
+  v_court3 uuid; v_terms int; v_platform_version int;
+  v_platform_terms jsonb; v_platform_booking uuid;
+  v_platform_booking2 uuid; v_b1 uuid; v_b2 uuid; v_b3 uuid;
+  v_b4 uuid; v_b5 uuid; v_review uuid; v_missing text[];
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
     (v_admin,'Admin','A','admin'), (v_owner,'Owner','O','user'),
@@ -154,6 +168,30 @@ BEGIN
   PERFORM pg_temp.expect(NOT EXISTS(
     SELECT 1 FROM public.sports_venues_public WHERE id = v_venue),
     'draft venue hidden from public view');
+  PERFORM pg_temp.expect_raise('platform terms cannot be selected before admin setup',
+    format('SELECT public.confirm_sports_venue_platform_terms(%L, %L)',
+      v_owner, v_venue), 'PLATFORM_TERMS_NOT_CONFIGURED');
+  v_platform_terms := public.get_sports_venue_platform_terms(v_admin);
+  PERFORM pg_temp.expect(
+    (v_platform_terms->>'version')::int = 0
+      AND (v_platform_terms->>'is_configured')::boolean = false,
+    'platform terms start at unconfigured legacy version 0');
+  PERFORM pg_temp.expect_raise('non-admin cannot read platform terms',
+    format('SELECT public.get_sports_venue_platform_terms(%L)', v_owner),
+    'NOT_ADMIN');
+  v_platform_terms := public.set_sports_venue_platform_terms(
+    v_admin, 'Standard venue terms v1', 120);
+  v_platform_version := (v_platform_terms->>'version')::int;
+  PERFORM pg_temp.expect(v_platform_version = 1
+      AND (v_platform_terms->>'is_configured')::boolean,
+    'admin configures platform terms version 1');
+  v_platform_terms := public.set_sports_venue_platform_terms(
+    v_admin, 'Standard venue terms v1', 120);
+  PERFORM pg_temp.expect((v_platform_terms->>'version')::int = 1,
+    'saving unchanged platform terms does not bump version');
+  PERFORM pg_temp.expect_raise('non-admin cannot edit platform terms',
+    format('SELECT public.set_sports_venue_platform_terms(%L, %L, 120)',
+      v_owner, 'unauthorized edit'), 'NOT_ADMIN');
 
   -- admin cannot approve a draft or an incomplete venue
   PERFORM pg_temp.expect_raise('admin cannot approve a draft venue',
@@ -465,6 +503,78 @@ BEGIN
   PERFORM public.review_sports_venue(v_admin, v_venue2, 'approved');
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venues
     WHERE id = v_venue2) = 'approved', 'resubmitted venue approved');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_terms_public
+    WHERE venue_id = v_venue2
+      AND version = v_platform_version
+      AND terms_text = 'Standard venue terms v1'
+      AND cancellation_cutoff_minutes = 120),
+    'public effective-terms view resolves the configured platform version');
+
+  SELECT id INTO v_court2 FROM public.sports_venue_courts
+  WHERE venue_id = v_venue2 AND is_active LIMIT 1;
+  v_platform_booking := public.create_sports_venue_booking(
+    v_cust, v_court2, pg_temp.bkk_ts(8, '10:00'),
+    pg_temp.bkk_ts(8, '11:00'), v_platform_version, 'platform-v1');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_platform_booking
+      AND accepted_terms_version = v_platform_version
+      AND terms_text_snapshot = 'Standard venue terms v1'
+      AND cancellation_cutoff_minutes_snapshot = 120),
+    'platform booking stores current standard-terms snapshot');
+
+  v_platform_terms := public.set_sports_venue_platform_terms(
+    v_admin, 'Standard venue terms v2', 180);
+  v_platform_version := (v_platform_terms->>'version')::int;
+  PERFORM pg_temp.expect(v_platform_version = 2,
+    'changing standard terms increments global version');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_platform_booking
+      AND accepted_terms_version = 1
+      AND terms_text_snapshot = 'Standard venue terms v1'
+      AND cancellation_cutoff_minutes_snapshot = 120),
+    'existing booking keeps its accepted terms snapshot');
+  PERFORM pg_temp.expect_raise('stale platform terms version rejected',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(9, '10:00'), pg_temp.bkk_ts(9, '11:00'),
+      1, 'platform-v1-stale')$$, v_cust, v_court2),
+    'TERMS_VERSION_CHANGED');
+  v_platform_booking2 := public.create_sports_venue_booking(
+    v_cust, v_court2, pg_temp.bkk_ts(9, '10:00'),
+    pg_temp.bkk_ts(9, '11:00'), v_platform_version, 'platform-v2');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_platform_booking2
+      AND accepted_terms_version = 2
+      AND terms_text_snapshot = 'Standard venue terms v2'
+      AND cancellation_cutoff_minutes_snapshot = 180),
+    'new booking requires and snapshots latest standard terms');
+
+  v_court3 := public.upsert_sports_venue_court(
+    v_owner, NULL, v_venue2, v_sport, 'Pending platform court',
+    1, NULL, 'hour', NULL, NULL, 'owner_approval', NULL, true);
+  v_b5 := public.create_sports_venue_booking(
+    v_cust2, v_court3, pg_temp.bkk_ts(10, '10:00'),
+    pg_temp.bkk_ts(10, '11:00'), v_platform_version, 'platform-pending');
+  v_platform_terms := public.set_sports_venue_platform_terms(
+    v_admin, 'Standard venue terms v3', 240);
+  v_platform_version := (v_platform_terms->>'version')::int;
+  PERFORM pg_temp.expect_raise('pending slot change requires new standard terms consent',
+    format($$SELECT public.change_pending_venue_booking_slot(%L, %L,
+      pg_temp.bkk_ts(11, '10:00'), pg_temp.bkk_ts(11, '11:00'), 2)$$,
+      v_cust2, v_b5), 'TERMS_VERSION_CHANGED');
+  PERFORM public.change_pending_venue_booking_slot(
+    v_cust2, v_b5, pg_temp.bkk_ts(11, '10:00'),
+    pg_temp.bkk_ts(11, '11:00'), v_platform_version);
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_b5
+      AND accepted_terms_version = v_platform_version
+      AND terms_text_snapshot = 'Standard venue terms v3'
+      AND cancellation_cutoff_minutes_snapshot = 240),
+    'pending slot change updates snapshot after new terms consent');
 
   PERFORM public.review_sports_venue(
     v_admin, v_venue2, 'suspended', 'ผิดนัดตรวจ');

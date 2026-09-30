@@ -117,10 +117,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   Future<void> _openReviewsPage() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => CourtReviewsPage(
-          venue: widget.venue,
-          repo: widget.repo,
-        ),
+        builder: (_) =>
+            CourtReviewsPage(venue: widget.venue, repo: widget.repo),
       ),
     );
     if (mounted) _load();
@@ -343,8 +341,6 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
   }
 
-  /// Small neumorphic pill carrying the sheet's secondary "write a review"
-  /// action so it reads as a control instead of a bare text link.
   Widget _reviewButton() {
     return NeumorphicContainer(
       borderRadius: 14,
@@ -416,8 +412,6 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
   }
 
-  /// Explains the hidden swipe actions once per section instead of leaving
-  /// the affordance discoverable only by accident.
   Widget _swipeHint({required bool canBook}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -671,13 +665,11 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
             ],
           ),
         ),
-        if (trailing != null) trailing,
+        ?trailing,
       ],
     );
   }
 
-  /// Action pane button that keeps icon + label legible on narrow screens
-  /// (same shape as the group detail sheet's swipe actions).
   Widget _responsiveSlidableAction({
     required void Function(BuildContext) onPressed,
     required Color backgroundColor,

@@ -491,8 +491,38 @@ class BookCourtRepository {
     );
   }
 
-  /// Confirm the platform base terms (version 0) for a venue instead of
-  /// publishing custom terms.
+  Future<PlatformVenueTerms> getPlatformVenueTerms(String adminId) async {
+    _assertCurrentUser(adminId);
+    final result = await _client.rpc(
+      'get_sports_venue_platform_terms',
+      params: {'p_admin_id': adminId},
+    );
+    return PlatformVenueTerms.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  Future<PlatformVenueTerms> setPlatformVenueTerms({
+    required String adminId,
+    required String termsText,
+    required int cancellationCutoffMinutes,
+  }) async {
+    _assertCurrentUser(adminId);
+    final result = await _client.rpc(
+      'set_sports_venue_platform_terms',
+      params: {
+        'p_admin_id': adminId,
+        'p_terms_text': termsText,
+        'p_cancellation_cutoff_minutes': cancellationCutoffMinutes,
+      },
+    );
+    return PlatformVenueTerms.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  /// Confirm that the venue uses the active platform-managed terms instead
+  /// of publishing venue-specific terms.
   Future<void> confirmPlatformTerms(String userId, String venueId) async {
     _assertCurrentUser(userId);
     await _client.rpc(

@@ -627,6 +627,9 @@ class _BookCourtPageState extends State<BookCourtPage> {
 
   static String _mapBookingError(Object e) {
     final raw = e.toString();
+    if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
+      return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
+    }
     if (raw.contains('TERMS_VERSION_CHANGED')) {
       return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาลองใหม่';
     }

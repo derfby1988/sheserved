@@ -15,7 +15,7 @@ class RequiredQuestionStatus {
   RequiredQuestionStatus._();
 
   static bool canStartExpertEdit(RequiredStatus? status) =>
-      status == RequiredStatus.unread || status == RequiredStatus.reading;
+      status == RequiredStatus.unread;
 
   static bool canEditInPlace(RequiredStatus? status) =>
       status == RequiredStatus.unread;

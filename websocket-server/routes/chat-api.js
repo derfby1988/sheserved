@@ -30,6 +30,7 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
     OK: 200,
     ALREADY_ANSWERED: 200,
     STATUS_CHANGED: 409,
+    RPC_UNAVAILABLE: 503,
     INVALID_CONFIG: 400,
     INVALID_CONTENT: 400,
     INVALID_INDEX: 400,
@@ -42,6 +43,13 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
       return res.status(502).json({ code: 'FAILED' });
     }
     return res.status(statusForCode(result.code)).json(result);
+  };
+  const sendRequiredQuestionRpcFailure = (res, error) => {
+    console.error('[Required-question API] Edit RPC failed:', error.message);
+    const unavailable = ['PGRST202', '42883'].includes(error.code);
+    return res
+      .status(unavailable ? 503 : 502)
+      .json({ code: unavailable ? 'RPC_UNAVAILABLE' : 'FAILED' });
   };
   const attachMessage = async (result, messageId) => {
     if (
@@ -92,14 +100,10 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
             p_caller_id: req.userId,
           },
         );
-        if (error) {
-          console.error('[Required-question API] Edit RPC failed:', error.message);
-          return res.status(502).json({ code: 'FAILED' });
-        }
+        if (error) return sendRequiredQuestionRpcFailure(res, error);
         return sendRpcResult(res, await attachMessage(data, questionMessageId));
       } catch (error) {
-        console.error('[Required-question API] Edit RPC failed:', error.message);
-        return res.status(502).json({ code: 'FAILED' });
+        return sendRequiredQuestionRpcFailure(res, error);
       }
     },
   );

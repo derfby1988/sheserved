@@ -11,6 +11,7 @@ import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 import '../../../../sport_club/book_court/data/book_court_repository.dart';
 import '../../../../sport_club/book_court/presentation/pages/admin_court_owner_review_page.dart';
+import '../../../../sport_club/book_court/presentation/widgets/admin_platform_venue_terms_panel.dart';
 
 class ReviewProposedSportsPage extends ConsumerStatefulWidget {
   const ReviewProposedSportsPage({super.key});
@@ -272,7 +273,7 @@ class _ReviewProposedSportsPageState
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: AppColors.primary,
         extendBody: true,
@@ -344,12 +345,14 @@ class _ReviewProposedSportsPageState
                 child: Column(
                   children: [
                     TabBar(
+                      isScrollable: true,
                       labelColor: AppColors.primaryDark,
                       unselectedLabelColor: Colors.grey.shade600,
                       indicatorColor: AppColors.primaryDark,
                       tabs: const [
                         Tab(text: 'เพิ่มประเภทกีฬา'),
                         Tab(text: 'ลงทะเบียนสนาม'),
+                        Tab(text: 'เงื่อนไขมาตรฐานสนาม'),
                       ],
                     ),
                     Expanded(
@@ -358,6 +361,10 @@ class _ReviewProposedSportsPageState
                           children: [
                             _buildBody(),
                             AdminCourtOwnerReviewPanel(repo: _courtRepo),
+                            AdminPlatformVenueTermsPanel(
+                              repo: _courtRepo,
+                              adminId: AuthService.instance.currentUser?.id,
+                            ),
                           ],
                         ),
                       ),

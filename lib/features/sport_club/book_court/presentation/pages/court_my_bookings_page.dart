@@ -9,6 +9,7 @@ import '../../data/book_court_repository.dart';
 import '../widgets/court_booking_action_dialogs.dart';
 import '../widgets/court_booking_sheet.dart';
 import '../widgets/court_review_sheet.dart';
+import '../widgets/court_usage_terms_dialog.dart';
 
 /// Booker-side booking list: upcoming/pending/confirmed plus history,
 /// with cancel / change-slot / review actions.
@@ -108,15 +109,35 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       venueName: b.venueName ?? '',
       initialDate: b.startsAt,
     );
-    if (slot == null) return;
+    if (slot == null || !mounted) return;
     try {
-      await _booking.movePendingSlot(
-        userId: _userId,
-        booking: b,
-        startsAt: slot.start,
-        endsAt: slot.end,
-        termsVersion: b.termsVersion,
-      );
+      try {
+        await _booking.movePendingSlot(
+          userId: _userId,
+          booking: b,
+          startsAt: slot.start,
+          endsAt: slot.end,
+          termsVersion: b.termsVersion,
+        );
+      } catch (error) {
+        if (!error.toString().contains('TERMS_VERSION_CHANGED')) rethrow;
+        final terms = await widget.repo.getActiveVenueTerms(b.venueId);
+        if (!mounted) return;
+        final accepted = await CourtUsageTermsDialog.show(
+          context,
+          terms: terms,
+          venueName: b.venueName ?? '',
+          acceptLabel: 'ยอมรับและเปลี่ยนเวลา',
+        );
+        if (accepted == null || !mounted) return;
+        await _booking.movePendingSlot(
+          userId: _userId,
+          booking: b,
+          startsAt: slot.start,
+          endsAt: slot.end,
+          termsVersion: accepted.version,
+        );
+      }
       _toast('เปลี่ยนเวลาแล้ว รอเจ้าของอนุมัติ');
       await _load();
     } catch (e) {
@@ -406,6 +427,9 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
 
   static String _mapError(Object e) {
     final raw = e.toString();
+    if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
+      return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
+    }
     if (raw.contains('TERMS_VERSION_CHANGED')) {
       return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาอ่านและยอมรับเวอร์ชันใหม่';
     }

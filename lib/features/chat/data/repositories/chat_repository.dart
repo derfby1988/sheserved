@@ -680,6 +680,7 @@ class ChatRepository {
     return switch (result?.toString()) {
       'OK' => RequiredQuestionEditCode.updated,
       'STATUS_CHANGED' => RequiredQuestionEditCode.statusChanged,
+      'RPC_UNAVAILABLE' => RequiredQuestionEditCode.rpcUnavailable,
       'INVALID_CONFIG' => RequiredQuestionEditCode.invalidConfig,
       'INVALID_CONTENT' => RequiredQuestionEditCode.invalidContent,
       'FORBIDDEN' => RequiredQuestionEditCode.forbidden,
@@ -946,6 +947,7 @@ class ClosedEndedAnswerResult {
 enum RequiredQuestionEditCode {
   updated,
   statusChanged,
+  rpcUnavailable,
   invalidConfig,
   invalidContent,
   forbidden,

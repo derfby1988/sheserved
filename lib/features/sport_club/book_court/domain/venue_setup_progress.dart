@@ -7,7 +7,7 @@ import '../data/book_court_models.dart';
 /// persisted data — partial rows never count as configured:
 ///   * hours  = all 7 weekdays explicitly set (open window or closed)
 ///   * amenities = at least one amenity OR the owner confirmed "ไม่มี"
-///   * terms  = a custom active version OR confirmed platform base terms (v0)
+///   * terms  = a custom active version OR configured platform terms
 ///   * courts = at least one ACTIVE court (inactive-only does not count)
 enum VenueSetupStepId {
   ownerApproved,

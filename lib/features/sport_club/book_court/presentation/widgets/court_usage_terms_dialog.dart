@@ -16,6 +16,7 @@ class CourtUsageTermsDialog {
     BuildContext context, {
     required VenueTerms? terms,
     required String venueName,
+    String acceptLabel = 'ยอมรับและจอง',
   }) {
     return GlassDialog.show<VenueTerms>(
       context: context,
@@ -26,6 +27,7 @@ class CourtUsageTermsDialog {
       builder: (dialogContext) => _CourtUsageTermsDialogBody(
         terms: terms,
         venueName: venueName,
+        acceptLabel: acceptLabel,
       ),
     );
   }
@@ -34,19 +36,17 @@ class CourtUsageTermsDialog {
 class _CourtUsageTermsDialogBody extends StatelessWidget {
   final VenueTerms? terms;
   final String venueName;
+  final String acceptLabel;
 
-  const _CourtUsageTermsDialogBody({required this.terms, required this.venueName});
+  const _CourtUsageTermsDialogBody({
+    required this.terms,
+    required this.venueName,
+    required this.acceptLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final effective = terms ??
-        const VenueTerms(
-          id: '',
-          venueId: '',
-          version: VenueTerms.baseVersion,
-          termsText: VenueTerms.baseTermsText,
-          cancellationCutoffMinutes: VenueTerms.baseCutoffMinutes,
-        );
+    final effective = terms;
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: 400,
@@ -85,7 +85,8 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        effective.termsText,
+                        effective?.termsText ??
+                            'สนามนี้ยังไม่ได้ตั้งค่าเงื่อนไขมาตรฐาน จึงยังจองไม่ได้ กรุณากลับมาลองใหม่ภายหลัง',
                         style: const TextStyle(
                           fontSize: 14,
                           height: 1.4,
@@ -97,52 +98,65 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            LitGlassSurface.frosted(
-              borderRadius: 10,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.timer_outlined,
-                      size: 18,
-                      color: Colors.orange.shade800,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'ยกเลิกได้ฟรีถึง ${effective.cancellationCutoffMinutes} นาทีก่อนเวลาเริ่ม',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.orange.shade900,
+            if (effective != null) ...[
+              const SizedBox(height: 12),
+              LitGlassSurface.frosted(
+                borderRadius: 10,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 18,
+                        color: Colors.orange.shade800,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'ยกเลิกได้ฟรีถึง ${effective.cancellationCutoffMinutes} นาทีก่อนเวลาเริ่ม',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.orange.shade900,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: GlassActionButton(
-                    label: 'ไม่ยอมรับ',
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
+            if (effective == null)
+              SizedBox(
+                width: double.infinity,
+                child: GlassActionButton(
+                  label: 'ปิด',
+                  isFilled: true,
+                  fillColor: AppColors.primaryDark,
+                  onTap: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GlassActionButton(
-                    label: 'ยอมรับและจอง',
-                    isFilled: true,
-                    fillColor: AppColors.primaryDark,
-                    onTap: () => Navigator.of(context).pop(effective),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: GlassActionButton(
+                      label: 'ไม่ยอมรับ',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GlassActionButton(
+                      label: acceptLabel,
+                      isFilled: true,
+                      fillColor: AppColors.primaryDark,
+                      onTap: () => Navigator.of(context).pop(effective),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),

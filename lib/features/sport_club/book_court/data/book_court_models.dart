@@ -265,7 +265,7 @@ class VenueTerms {
     required this.cancellationCutoffMinutes,
   });
 
-  /// Platform base terms used when a venue has not published its own.
+  /// Legacy defaults mirrored by the unconfigured platform-terms seed.
   static const int baseVersion = 0;
   static const int baseCutoffMinutes = 60;
   static const String baseTermsText = 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม';
@@ -278,6 +278,32 @@ class VenueTerms {
     cancellationCutoffMinutes:
         (j['cancellation_cutoff_minutes'] as num?)?.toInt() ?? 60,
   );
+}
+
+class PlatformVenueTerms {
+  final int version;
+  final String termsText;
+  final int cancellationCutoffMinutes;
+  final bool isConfigured;
+  final DateTime? updatedAt;
+
+  const PlatformVenueTerms({
+    required this.version,
+    required this.termsText,
+    required this.cancellationCutoffMinutes,
+    required this.isConfigured,
+    this.updatedAt,
+  });
+
+  factory PlatformVenueTerms.fromJson(Map<String, dynamic> json) =>
+      PlatformVenueTerms(
+        version: (json['version'] as num?)?.toInt() ?? 0,
+        termsText: json['terms_text']?.toString() ?? '',
+        cancellationCutoffMinutes:
+            (json['cancellation_cutoff_minutes'] as num?)?.toInt() ?? 60,
+        isConfigured: json['is_configured'] == true,
+        updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? ''),
+      );
 }
 
 class VenueBooking {

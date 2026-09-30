@@ -7,6 +7,11 @@
 - Run tests: `flutter test`
 - iOS build (no signing, fast check): `flutter build ios --no-codesign --debug`
 
+Note: on this machine `flutter analyze` crashes ("Could not find a command named
+.../dart-sdk/bin/snapshots/analysis_server.dart.snapshot" — the SDK cache only
+ships the AOT snapshot). Use `dart analyze lib test` instead; it reports the same
+lints (the repo carries ~2.3k pre-existing info-level ones, so filter by path).
+
 ## iOS / CocoaPods
 
 The iOS project uses CocoaPods with the CDN trunk source. The local CDN specs
