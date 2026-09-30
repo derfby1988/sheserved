@@ -4770,17 +4770,16 @@ Widget overlay แสดงในตำแหน่งเดียวกับ `
 
 ### 🎨 UI ฝั่ง Expert — แก้ไขคำถาม
 
+- **ตำแหน่ง implementation หลัก:** `ChartBoardPage` ใน `chart_board_page.dart` เป็นเจ้าของ floating buttons, edit state, validation และการส่ง; `ExpertChatRoomPage` ไม่ใช่ flow ที่ใช้งานจริงในแอป
 - **Expert Edit Flow:**
-  1. Expert แตะปุ่มลอยที่มีสถานะ `unread` (แดง)
-  2. คำถามปรากฏในช่องกรอกข้อความแชท (สีเทา + เบลอ)
-  3. ปุ่มลอยสีส้ม "แก้ไขคำถาม" ปรากฏด้านบน
-  4. Expert แก้ไขข้อความ → กดส่ง
-- เมื่อ expert แก้ไขและกดส่ง → `required_owner_id` เปลี่ยนเป็น expert คนนั้น บันทึกประวัติใน `required_question_edits`
-- **กรณีคำถามที่สถานะเปลี่ยนแล้ว (ผู้ป่วยแตะ/ตอบไปแล้ว):**
-  - ยังให้ส่งได้และถือว่าเป็นคำถามใหม่แบบปกติ (สร้าง message ใหม่ + ปุ่มลอยใหม่)
-  - **ปุ่มเก่าไม่หายไปไหน** — การเปลี่ยนสียังขึ้นอยู่กับสถานะฝั่งผู้ป่วยเหมือนเดิม (เช่น ถ้า patient ตอบแล้ว ปุ่มเก่าเป็นเขียว ค้างเขียว)
-- **กรณีคำถามสีแดง (ยังไม่ถูกแตะ):**
-  - แก้ไขแล้วส่ง → แทนที่คำถามเดิม (ไม่สร้างปุ่มใหม่) แต่เปลี่ยน `required_owner_id` และบันทึกประวัติ
+  1. แตะปุ่มคำถาม → โหลดสถานะล่าสุดจาก server ก่อนเปิด edit mode
+  2. `unread` → prefill ข้อความและเปิดช่องให้แก้ได้จริง (TextField ต้อง enabled); แสดงแถบสีส้ม "แก้ไขคำถาม"
+  3. `reading` → เปิดข้อความเป็นต้นฉบับสำหรับเขียนต่อ แต่การกดส่งจะสร้างคำถามใหม่; `answered` → ไม่เข้า edit modeและ scroll ไปคำถาม/คำตอบเดิม
+  4. ตอนกดส่ง โหลดสถานะล่าสุดซ้ำ; แก้ข้อความเดิมได้เฉพาะเมื่อยังเป็น `unread`
+- **Atomic status guard:** ส่งแก้ผ่าน backend route `POST /api/chat/required/:questionMessageId/edit` และ RPC ที่ lock แถว ตรวจ `required_status='unread'` แล้ว update content/owner กับ insert `required_question_edits` ใน transaction เดียว
+- หากสถานะเปลี่ยนเป็น `reading`/`answered` หลังเปิด edit แต่ก่อนบันทึก หรือ RPC ตอบ `STATUS_CHANGED` → ห้าม overwrite; สร้าง message ใหม่พร้อมปุ่มใหม่ และคงปุ่มเดิมตามสถานะผู้ป่วย
+- หากอ่านสถานะ/ส่งแก้ไม่ได้เพราะ network หรือ authorization → คงข้อความและ edit mode ไว้ให้ลองใหม่ ห้ามปิด UI ราวกับบันทึกสำเร็จ
+- **คำถามปลายปิด:** ปุ่ม "แก้ไขตัวเลือก" ในแถบ edit เปิด `ClosedEndedConfigDialog` ที่ prefill config เดิม; config ที่ส่งแล้ว immutable. ถ้าเปลี่ยน config ให้ส่ง `closed_ended_question` ใหม่เสมอ (แม้สถานะเดิมยัง `unread`); ถ้าแก้เฉพาะ promptและสถานะยัง `unread` จึงแก้ข้อความเดิมได้. หากสถานะเป็น `reading`/`answered` ให้ส่งคำถามใหม่ผ่าน trusted send RPC โดยคง config/`bodyPart` เดิม เว้นแต่ expert เลือก config ใหม่ และห้าม downgrade เป็น `required_question`
 
 ### 🎨 UI แสดงประวัติการแก้ไข (Optional)
 
@@ -4789,14 +4788,21 @@ Widget overlay แสดงในตำแหน่งเดียวกับ `
   - แสดงชื่อ expert ที่แก้ไข + เวลา + ข้อความเดิม (ก่อนแก้)
 - สามารถซ่อน/แสดงได้ด้วยปุ่ม "ดูประวัติ" ใน overlay
 
-### 🛠️ Files ที่แก้ไขหลัก
+### 🛠️ Files ที่เกี่ยวข้องกับ implementation จริง
 
 - `lib/features/chat/data/models/chat_models.dart` — model + enum `RequiredStatus`
-- `lib/features/chat/data/repositories/chat_repository.dart` — CRUD required fields + edit history
-- `lib/features/consultation/presentation/pages/expert_chat_room_page.dart` — toggle + send + edit
-- `lib/features/consultation/presentation/pages/chart_board_page.dart` — floating buttons + overlay + block + typing check
+- `lib/features/chat/data/repositories/chat_repository.dart` — fresh status read, trusted edit RPC, cache update/status conflict และโหลดประวัติตัวเลือกปลายปิดของ expert
+- `lib/features/consultation/presentation/pages/chart_board_page.dart` — floating buttons, edit/send flow, status validation, required overlay และ block/typing check
+- `lib/features/consultation/presentation/widgets/chat_input_bar_widget.dart` — input mode; field ต้องแก้ข้อความได้ขณะ edit
+- `lib/features/consultation/presentation/widgets/closed_ended_dialog.dart` — config builder รองรับ prefill เพื่อแก้ตัวเลือกผ่านการสร้าง question ใหม่
 - `lib/features/consultation/presentation/widgets/health_data/message_bubble.dart` — render required question
 - `lib/features/consultation/presentation/widgets/health_data/body_map_chat_bar.dart` — disable tap ขณะคำถามค้าง
+- `supabase/migrations/20260930100000_atomic_required_question_edit.sql` — lock/status guard + update/history transaction
+- `supabase/migrations/20260930110000_expert_closed_ended_option_history.sql` — เก็บ/อ่านตัวเลือก qualitative ล่าสุดแยกตาม expert
+- `websocket-server/routes/chat-api.js` — authenticated routes สำหรับ edit RPC และ option history
+- `test/features/consultation/required_question_status_test.dart`, `test/features/consultation/presentation/widgets/chat_input_bar_widget_test.dart`, `test/features/consultation/closed_ended_question_test.dart` และ `websocket-server/scripts/test-closed-ended-question-api.js` — regression coverage
+
+`ExpertChatRoomPage` ไม่มี call site ใน source ของแอป ณ วันที่ตรวจ และ dashboard ระบุให้ใช้ `ChartBoardPage`; จึง mark เป็น deprecated และไม่ถือเป็น implementation path (ยังคงไฟล์ไว้ ไม่ลบโดยอัตโนมัติ)
 
 ### ⚠️ Risks & Edge Cases
 
@@ -4805,8 +4811,8 @@ Widget overlay แสดงในตำแหน่งเดียวกับ `
 | มีคำถามบังคับหลายข้อพร้อมกัน | ปุ่มลอยเต็มจอ | จำกัด max 3 ปุ่ม + scrollable |
 | Patient ปิด app ระหว่างตอบ | status ค้างที่ 'reading' | ใช้ `onDispose` reset เป็น 'unread' |
 | Expert ส่งคำถามซ้ำ | ปุ่มซ้อนกัน | deduplicate โดย message_id |
-| Expert แก้ไขคำถามที่สถานะเปลี่ยนแล้ว | ถือเป็นคำถามใหม่ ไม่แทนที่ปุ่มเดิม | สร้าง message ใหม่ + ปุ่มลอยใหม่ ปุ่มเก่าค้างตามสถานะฝั่งผู้ป่วย |
-| Expert แก้ไขคำถามสีแดง | เจ้าของคำถามเปลี่ยนเป็น expert ที่แก้ไขล่าสุด | บันทึกประวัติใน `required_question_edits` แทนที่คำถามเดิม |
+| สถานะเปลี่ยนระหว่าง expert แก้ไข | ห้าม overwrite คำถามที่ผู้ป่วยกำลังตอบ | โหลดสถานะตอนเปิด/ส่ง; RPC lock แถวและแก้ได้เฉพาะ unread; STATUS_CHANGED สร้างคำถามใหม่และคงปุ่มเดิม |
+| Expert แก้ไขคำถามสีแดง | เจ้าของคำถามเปลี่ยนเป็น expert ที่แก้ไขล่าสุด | atomic edit RPC ตรวจสถานะ + บันทึกประวัติใน `required_question_edits` พร้อมแทนที่คำถามเดิม |
 | Patient กำลังพิมพ์คำตอบแล้ว expert แก้ไขคำถาม | คำตอบที่พิมพ์อยู่อาจไม่ตรงกับคำถามใหม่ | แจ้งเตือน expert ว่า patient กำลังตอบอยู่ หรือยอมให้ patient ส่งคำตอบเดิมได้ |
 | Backward compatibility | ข้อความเก่าไม่มี required fields | default `is_required=false` |
 
@@ -5803,7 +5809,7 @@ double _modelXRatio(List<BodyLandmark> lm, double x2d) {
 ## 🎯 Phase 6.14: Closed-ended Question System (ระบบคำถามปลายปิด)
 
 > **วันที่บันทึก:** 23 กันยายน 2569
-> **สถานะ:** 🚧 Implemented + migrated — migration apply กับฐานจริงแล้ว (Supabase SQL editor: "Success. No rows returned"); เหลือ integration/golden/accessibility tests ที่ยังไม่ได้ทำ
+> **สถานะ:** 🚧 Base flow implemented + migrated; เพิ่ม atomic edit-guard และ expert option-history migrations ซึ่งต้อง apply ก่อน deploy; เหลือ integration/golden/accessibility tests ที่ยังไม่ได้ทำ
 > **ที่มา:** ขยายจาก Phase 6.7 (Required Questions) — ให้ Expert สามารถส่งคำถามแบบปลายปิด (Closed-ended) ที่มีตัวเลือกคำตอบสำเร็จรูปให้ผู้ป่วยเลือก แทนการพิมพ์คำตอบเอง
 > **ความเกี่ยวข้อง:** ต่อยอดจากระบบ "คำถามบังคับ" (Phase 6.7) และเครื่องมือแชท (Phase 6.2 Collapsible Chat Tools)
 
@@ -5887,7 +5893,7 @@ CREATE TABLE public.closed_ended_question_answers (
 - เพิ่ม RPC `answer_closed_ended_question(question_message_id, selected_index)` เป็นเส้นทางเขียนคำตอบเดียว: ตรวจ `auth.uid()`, ผู้ตอบเป็น patient ที่ผูกกับ consultation/room นั้น (ไม่พอเพียงเป็น participant ทั่วไป), message เป็น `closed_ended_question`, `is_required=true`, config ถูกต้อง, index อยู่ในขอบเขต, และยังไม่มี answer
 - RPC ทำ insert answer และ update `chat_messages.required_answer`, `required_answered_at`, `required_status` ใน transaction เดียว; ใช้ row lock/conditional update และ unique constraint กัน double tap, concurrent request และ replay; ถ้าตอบแล้วให้คืนผล `ALREADY_ANSWERED` โดยไม่เปลี่ยนคำตอบเดิม
 - เนื่องจาก policy เดิมของ `chat_messages` อาจเปิด write ให้ feature อื่น ห้ามเปลี่ยน policy กว้างทั้งตาราง; เพิ่ม guard/permission เฉพาะ `type='closed_ended_question'` เพื่อให้ create/answer/status/config เปลี่ยนผ่าน RPC ที่กำหนดเท่านั้น ส่วนชนิดข้อความเดิมต้องผ่านโดยไม่เปลี่ยน behavior
-- จำกัดการแก้ `closed_ended_config` หลังส่งคำถาม; หากยังไม่ได้ตอบและผู้เชี่ยวชาญต้องแก้ config ให้สร้าง message ใหม่ตามแนวทาง edit required question เดิม ไม่ mutate ตัวเลือกที่ผู้ป่วยกำลังตอบ
+- `closed_ended_config` immutable หลังส่ง: edit banner เปิด `ClosedEndedConfigDialog` โดย prefill config เดิม; เปลี่ยน prompt ใน message เดิมได้เฉพาะเมื่อ server ยืนยัน `required_status='unread'` และ config ไม่เปลี่ยน. หากเปลี่ยนตัวเลือก/config ต้องสร้าง `closed_ended_question` ใหม่แม้ยัง `unread`; หากสถานะเป็น `reading`/`answered` ให้สร้างคำถามใหม่พร้อม config ที่เลือก (หรือ config เดิม) และ `bodyPart` เดิม
 - เปิด RLS เฉพาะตาราง answer ใหม่และกำหนด policy ให้ผู้ป่วยเจ้าของคำตอบกับผู้เชี่ยวชาญใน consultation ที่เกี่ยวข้องอ่านได้; ไม่เพิ่ม policy กว้างหรือเปลี่ยน policy ของ `chat_messages`
 - RPC ใช้ `SECURITY DEFINER` อย่างรัดกุม: qualify object names, ตั้ง `search_path` คงที่, ตรวจผู้เรียกภายใน function, จำกัด `EXECUTE` ให้ `authenticated`, และไม่เปิดให้ client insert/update answer table โดยตรง
 - เพิ่ม index เฉพาะที่ query จริงต้องใช้; ไม่เพิ่ม trigger ที่แก้ behavior ทั่วไปของ `chat_messages`
@@ -5947,6 +5953,7 @@ CREATE TABLE public.closed_ended_question_answers (
 | สถานะ required | ตั้ง `is_required=true` เสมอ; UI ไม่มี toggle เปลี่ยนเป็นคำถามปกติ |
 | ยกเลิก dialog | ไม่ตั้ง pending config และไม่เปลี่ยน input mode |
 | ส่งคำถามสำเร็จ | บันทึก config ไปพร้อม message `type='closed_ended_question'`; ล้าง chip/config หลังได้รับผลสำเร็จเท่านั้น |
+| Recent option history | แสดงตัวเลือก qualitative ล่าสุดของ expert ไม่เกิน 5 รายการเป็น suggestion; เลือกแล้วเติมช่องว่าง/เพิ่มตัวเลือก, history บันทึกหลังคำตอบสำเร็จ และแยกตาม expert |
 
 #### 4. Chip Indicator (เหนือช่องแชท)
 
@@ -5963,7 +5970,7 @@ CREATE TABLE public.closed_ended_question_answers (
 - คำถามปลายปิดเป็น required เสมอ จึงไม่มี toggle ปิด required
 - `[✕]` ยกเลิก pending config และคืนช่องพิมพ์สู่แชทปกติ
 - เมื่อส่งล้มเหลวให้คงข้อความ/config และแสดง retry/error; ล้าง chip เฉพาะเมื่อยืนยันว่าบันทึก message สำเร็จ
-- config ที่ส่งแล้ว immutable; การแก้คำถามหลังผู้ป่วยเริ่มอ่านให้สร้างคำถามใหม่ โดยเก็บ audit/history ตามแนวทาง Phase 6.7
+- config ที่ส่งแล้ว immutable; edit banner เปิด builder พร้อม prefill ตัวเลือกเดิม. prompt เปลี่ยนในที่เดิมได้เฉพาะสถานะ `unread` และ config ไม่เปลี่ยน ผ่าน atomic edit RPC ที่บันทึก audit; config ใหม่หรือสถานะ `reading`/`answered` ให้สร้างคำถามปลายปิดใหม่ผ่าน RPC พร้อม config ที่เลือกและ `bodyPart` เดิม
 
 ### 🎨 UI ฝั่ง Expert — การแสดงผลคำตอบ
 

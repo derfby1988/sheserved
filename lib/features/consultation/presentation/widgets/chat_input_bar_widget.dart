@@ -125,7 +125,7 @@ class ChatInputBarWidget extends StatelessWidget {
         : const Color(0xFF4A8B2C).withOpacity(0.3);
     final inputBgColor = isEditingMode ? Colors.grey.shade100 : Colors.white;
     final inputTextColor = isEditingMode
-        ? Colors.grey.shade500
+        ? Colors.grey.shade800
         : Colors.black87;
     final hintText = isEditingMode
         ? 'แก้ไขคำถาม...'
@@ -202,7 +202,6 @@ class ChatInputBarWidget extends StatelessWidget {
                           child: TextField(
                             controller: controller,
                             focusNode: focusNode,
-                            enabled: !isEditingMode,
                             style: TextStyle(
                               color: inputTextColor,
                               fontSize: 14,

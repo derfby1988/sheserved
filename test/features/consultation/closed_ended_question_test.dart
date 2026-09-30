@@ -238,6 +238,29 @@ void main() {
   });
 
   group('ClosedEndedConfigDialog', () {
+    Future<void> openQualitativeDialog(
+      WidgetTester tester, {
+      List<String> recentOptions = const [],
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => ClosedEndedConfigDialog.show(
+                context,
+                recentOptionsFuture: Future.value(recentOptions),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('เชิงคุณภาพ'));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('keeps prominent answer-type icons visible while selected', (
       tester,
     ) async {
@@ -271,7 +294,7 @@ void main() {
       expect(qualitativeIcon, findsOneWidget);
     });
 
-    testWidgets('applies the keyboard inset once so content is not obscured', (
+    testWidgets('limits scrolling to answer fields while keyboard is open', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(390, 844);
@@ -291,17 +314,44 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('เชิงคุณภาพ'));
+      await tester.pumpAndSettle();
 
-      final dialogRect = tester.getRect(find.byType(Dialog));
-      final scrollRect = tester.getRect(
-        find.descendant(
-          of: find.byType(Dialog),
-          matching: find.byType(SingleChildScrollView),
+      final dialogFinder = find.byType(Dialog);
+      final dialogPanelFinder = find.descendant(
+        of: dialogFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Material && widget.type == MaterialType.card,
         ),
       );
-      // Dialog already offsets for the keyboard; the scroll view must fill the
-      // dialog instead of losing another keyboard-height at the bottom.
-      expect(scrollRect.bottom, closeTo(dialogRect.bottom, 2));
+      final dialogRect = tester.getRect(dialogPanelFinder);
+      final fieldsScrollFinder = find.byKey(
+        const ValueKey('closed-ended-option-scrollbar'),
+      );
+      final fieldsScrollRect = tester.getRect(fieldsScrollFinder);
+      expect(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: fieldsScrollFinder,
+          matching: find.byType(ReorderableListView),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: fieldsScrollFinder,
+          matching: find.text('เพิ่มคำตอบ'),
+        ),
+        findsOneWidget,
+      );
+      expect(fieldsScrollRect.top, greaterThan(dialogRect.top));
+      expect(fieldsScrollRect.bottom, lessThan(dialogRect.bottom));
       expect(dialogRect.bottom, lessThanOrEqualTo(844 - 300 + 0.5));
     });
 
@@ -333,7 +383,13 @@ void main() {
       expect(tester.testTextInput.isVisible, isTrue);
 
       // แตะพื้นที่ว่างด้านล่างของ dialog (ใน padding) → ซ่อนแป้นพิมพ์
-      final dialogRect = tester.getRect(find.byType(Dialog));
+      final dialogPanelFinder = find.descendant(
+        of: find.byType(Dialog),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Material && widget.type == MaterialType.card,
+        ),
+      );
+      final dialogRect = tester.getRect(dialogPanelFinder);
       await tester.tapAt(Offset(dialogRect.center.dx, dialogRect.bottom - 6));
       await tester.pumpAndSettle();
 
@@ -429,6 +485,170 @@ void main() {
 
       expect(result, ClosedEndedConfig.qualitative(const ['ใช่', 'ไม่ใช่']));
     });
+
+    testWidgets('editing opens with the saved options prefilled', (
+      tester,
+    ) async {
+      ClosedEndedConfig? result;
+      final initialConfig = ClosedEndedConfig.qualitative([
+        'ปวดมาก',
+        'ปวดน้อย',
+      ]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async {
+                result = await ClosedEndedConfigDialog.show(
+                  context,
+                  initialConfig: initialConfig,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final options = find.byType(TextField);
+      expect(
+        tester.widget<TextField>(options.at(0)).controller?.text,
+        'ปวดมาก',
+      );
+      expect(
+        tester.widget<TextField>(options.at(1)).controller?.text,
+        'ปวดน้อย',
+      );
+      await tester.enterText(options.at(1), 'ปวดปานกลาง');
+      await tester.tap(find.text('ยืนยัน'));
+      await tester.pumpAndSettle();
+
+      expect(
+        result,
+        ClosedEndedConfig.qualitative(const ['ปวดมาก', 'ปวดปานกลาง']),
+      );
+    });
+
+    testWidgets('shows five distinct recent options and filters entered text', (
+      tester,
+    ) async {
+      await openQualitativeDialog(
+        tester,
+        recentOptions: const [
+          'alpha',
+          'beta',
+          'gamma',
+          'delta',
+          'epsilon',
+          'zeta',
+          'BETA',
+        ],
+      );
+
+      final fieldsScrollFinder = find.byKey(
+        const ValueKey('closed-ended-option-scrollbar'),
+      );
+      expect(find.byType(ActionChip), findsNWidgets(5));
+      expect(
+        find.descendant(
+          of: fieldsScrollFinder,
+          matching: find.text('ตัวเลือกที่ใช้ล่าสุด'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: fieldsScrollFinder,
+          matching: find.byType(ActionChip),
+        ),
+        findsNWidgets(5),
+      );
+      expect(
+        find.byKey(const ValueKey('closed-ended-recent-option-zeta')),
+        findsNothing,
+      );
+
+      await tester.enterText(find.byType(TextField).first, 'ALPHA');
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('closed-ended-recent-option-alpha')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('closed-ended-recent-option-zeta')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byType(TextField).first, 'custom');
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('closed-ended-recent-option-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('closed-ended-recent-option-zeta')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'fills blank fields, appends when full, and restores on delete',
+      (tester) async {
+        await openQualitativeDialog(
+          tester,
+          recentOptions: const ['Alpha', 'Beta', 'Gamma'],
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('closed-ended-recent-option-alpha')),
+        );
+        await tester.pump();
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).first)
+              .controller!
+              .text,
+          'Alpha',
+        );
+        expect(
+          find.byKey(const ValueKey('closed-ended-recent-option-alpha')),
+          findsNothing,
+        );
+
+        await tester.enterText(find.byType(TextField).at(1), 'custom');
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('closed-ended-recent-option-beta')),
+        );
+        await tester.pump();
+
+        expect(find.byType(TextField), findsNWidgets(3));
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).last)
+              .controller!
+              .text,
+          'Beta',
+        );
+        expect(
+          find.byKey(const ValueKey('closed-ended-recent-option-beta')),
+          findsNothing,
+        );
+
+        await tester.tap(find.byTooltip('ลบตัวเลือก').last);
+        await tester.pump();
+
+        expect(find.byType(TextField), findsNWidgets(2));
+        expect(
+          find.byKey(const ValueKey('closed-ended-recent-option-beta')),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('cancel returns null', (tester) async {
       ClosedEndedConfig? result = ClosedEndedConfig.quantitative(3);

@@ -22,24 +22,50 @@ const { chatApiRoutes } = require('../routes/chat-api');
 const callerId = '11111111-2222-3333-4444-555555555555';
 const spoofedId = '99999999-8888-7777-6666-555555555555';
 const questionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const message = {
+let message = {
   id: questionId,
   room_id: 'consult_test',
   sender_id: callerId,
   content: 'How are you feeling?',
   type: 'closed_ended_question',
   is_required: true,
-  required_status: 'reading',
+  required_status: 'unread',
 };
 const calls = [];
+let forceEditStatusChanged = false;
 const supabaseForSync = {
   rpc: async (name, params) => {
     calls.push({ name, params });
     if (name === 'send_closed_ended_question_backend') {
       return { data: { code: 'OK', message_id: questionId }, error: null };
     }
+    if (name === 'edit_required_question_backend') {
+      if (forceEditStatusChanged) {
+        return {
+          data: {
+            code: 'STATUS_CHANGED',
+            status: message.required_status,
+            message_id: questionId,
+          },
+          error: null,
+        };
+      }
+      message = {
+        ...message,
+        content: params.p_content,
+        required_owner_id: params.p_caller_id,
+      };
+      return { data: { code: 'OK', message_id: questionId }, error: null };
+    }
     if (name === 'mark_closed_ended_question_reading_backend') {
+      message = { ...message, required_status: 'reading' };
       return { data: { code: 'OK', status: 'reading' }, error: null };
+    }
+    if (name === 'get_expert_closed_ended_option_history_backend') {
+      return {
+        data: { code: 'OK', options: ['ใช่', 'ไม่ใช่'] },
+        error: null,
+      };
     }
     return {
       data: { code: 'OK', selected_index: 1, selected_value: '2' },
@@ -65,15 +91,15 @@ const verifyTokenMw = (req, _res, next) => {
   next();
 };
 
-function requestJson(port, path, body) {
+function requestJson(port, path, body, method = 'POST') {
   return new Promise((resolve, reject) => {
     const request = http.request(
       {
         host: '127.0.0.1',
         port,
         path,
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        method,
+        headers: method === 'GET' ? {} : { 'content-type': 'application/json' },
       },
       (response) => {
         let text = '';
@@ -90,7 +116,11 @@ function requestJson(port, path, body) {
       },
     );
     request.on('error', reject);
-    request.end(JSON.stringify(body));
+    if (body == null) {
+      request.end();
+    } else {
+      request.end(JSON.stringify(body));
+    }
   });
 }
 
@@ -123,6 +153,19 @@ async function main() {
     assert.equal(calls[0].params.p_caller_id, callerId);
     assert.notEqual(calls[0].params.p_caller_id, spoofedId);
 
+    const edited = await requestJson(
+      port,
+      `/api/chat/required/${questionId}/edit`,
+      { content: 'Updated question', callerId: spoofedId },
+    );
+    assert.equal(edited.status, 200);
+    assert.equal(edited.body.code, 'OK');
+    assert.equal(edited.body.message.content, 'Updated question');
+    assert.equal(calls[1].name, 'edit_required_question_backend');
+    assert.equal(calls[1].params.p_caller_id, callerId);
+    assert.equal(calls[1].params.p_content, 'Updated question');
+    assert.notEqual(calls[1].params.p_caller_id, spoofedId);
+
     const reading = await requestJson(
       port,
       `/api/chat/closed-ended/${questionId}/reading`,
@@ -130,8 +173,19 @@ async function main() {
     );
     assert.equal(reading.status, 200);
     assert.equal(reading.body.code, 'OK');
-    assert.equal(calls[1].name, 'mark_closed_ended_question_reading_backend');
-    assert.equal(calls[1].params.p_caller_id, callerId);
+    assert.equal(calls[2].name, 'mark_closed_ended_question_reading_backend');
+    assert.equal(calls[2].params.p_caller_id, callerId);
+
+    forceEditStatusChanged = true;
+    const staleEdit = await requestJson(
+      port,
+      `/api/chat/required/${questionId}/edit`,
+      { content: 'Must become a new question' },
+    );
+    assert.equal(staleEdit.status, 409);
+    assert.equal(staleEdit.body.code, 'STATUS_CHANGED');
+    assert.equal(staleEdit.body.message.required_status, 'reading');
+    assert.equal(calls[3].name, 'edit_required_question_backend');
 
     const answer = await requestJson(
       port,
@@ -140,9 +194,21 @@ async function main() {
     );
     assert.equal(answer.status, 200);
     assert.equal(answer.body.selected_value, '2');
-    assert.equal(calls[2].name, 'answer_closed_ended_question_backend');
-    assert.equal(calls[2].params.p_caller_id, callerId);
-    assert.equal(calls[2].params.p_selected_index, 1);
+    assert.equal(calls[4].name, 'answer_closed_ended_question_with_history_backend');
+    assert.equal(calls[4].params.p_caller_id, callerId);
+    assert.equal(calls[4].params.p_selected_index, 1);
+
+    const history = await requestJson(
+      port,
+      `/api/chat/closed-ended/options/history?expertId=${spoofedId}`,
+      undefined,
+      'GET',
+    );
+    assert.equal(history.status, 200);
+    assert.equal(history.body.code, 'OK');
+    assert.deepEqual(history.body.options, ['ใช่', 'ไม่ใช่']);
+    assert.equal(calls[5].name, 'get_expert_closed_ended_option_history_backend');
+    assert.equal(calls[5].params.p_expert_id, callerId);
 
     identitySource = 'legacy_header';
     const callCount = calls.length;
@@ -154,7 +220,7 @@ async function main() {
     assert.equal(legacy.status, 401);
     assert.equal(calls.length, callCount);
 
-    console.log('Passed 4 closed-ended question API tests.');
+    console.log('Passed 7 chat question API tests.');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

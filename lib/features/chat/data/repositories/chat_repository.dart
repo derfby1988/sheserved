@@ -298,6 +298,33 @@ class ChatRepository {
   // MESSAGES
   // =====================================================
 
+  Future<ChatMessage?> getMessageFresh(
+    String messageId, {
+    required String callerId,
+  }) async {
+    final roomRow = await _supabase
+        .from('chat_messages')
+        .select('room_id')
+        .eq('id', messageId)
+        .maybeSingle();
+    if (roomRow == null) return null;
+
+    final roomId = roomRow['room_id']?.toString();
+    if (roomId == null || roomId.isEmpty) return null;
+    await _verifyParticipant(roomId, callerId);
+
+    final response = await _supabase
+        .from('chat_messages')
+        .select()
+        .eq('id', messageId)
+        .maybeSingle();
+    if (response == null) return null;
+
+    final message = ChatMessage.fromJson(response);
+    await _cacheMessageSafely(message.id, message);
+    return message;
+  }
+
   Future<List<ChatMessage>> getMessages(
     String roomId, {
     required String callerId,
@@ -590,89 +617,26 @@ class ChatRepository {
     }
   }
 
-  /// Edit a required question (red status) - update owner and save history
-  Future<bool> editRequiredQuestion(
+  Future<RequiredQuestionEditResult> editRequiredQuestion(
     String messageId,
     String newContent,
-    String editorId,
   ) async {
     try {
-      // 1. Get current message
-      final currentMsg = _messageBox.get(messageId);
-      if (currentMsg == null) {
-        debugPrint('ChatRepository: Message not found for edit');
-        return false;
-      }
-      // BOLA: Verify editor is participant in the message's room
-      await _verifyParticipant(currentMsg.roomId, editorId);
-
-      // 2. Save edit history
-      await _supabase.from('required_question_edits').insert({
-        'message_id': messageId,
-        'previous_content': currentMsg.content,
-        'edited_by': editorId,
-        'edited_at': DateTime.now().toIso8601String(),
-      });
-
-      // 3. Update message content and owner
-      final response = await _supabase
-          .from('chat_messages')
-          .update({'content': newContent, 'required_owner_id': editorId})
-          .eq('id', messageId)
-          .select()
-          .single();
-
-      final updated = ChatMessage.fromJson(response);
-      await _cacheMessageSafely(messageId, updated);
-
-      return true;
+      final result = await _closedEndedRequest(
+        '/api/chat/required/$messageId/edit',
+        {'content': newContent},
+      );
+      final code = _requiredQuestionEditCode(result['code']);
+      final message =
+          result['message'] is Map || code == RequiredQuestionEditCode.updated
+          ? await _cacheMessageFromRpc(result, messageId: messageId)
+          : null;
+      return RequiredQuestionEditResult(code: code, message: message);
     } catch (e) {
       debugPrint('ChatRepository: Error editing required question: $e');
-      return false;
-    }
-  }
-
-  /// Create a new required question when editing an already-touched one
-  Future<ChatMessage?> createNewRequiredQuestion(
-    ChatMessage original,
-    String newContent,
-    String editorId,
-  ) async {
-    try {
-      // 1. Save edit history for original
-      await _supabase.from('required_question_edits').insert({
-        'message_id': original.id,
-        'previous_content': original.content,
-        'edited_by': editorId,
-        'edited_at': DateTime.now().toIso8601String(),
-      });
-
-      // 2. Create new message
-      final newMessage = ChatMessage(
-        id: '${DateTime.now().millisecondsSinceEpoch}_${editorId}',
-        roomId: original.roomId,
-        senderId: editorId,
-        content: newContent,
-        createdAt: DateTime.now(),
-        type: 'required_question',
-        isRequired: true,
-        requiredStatus: RequiredStatus.unread,
-        bodyPart: original.bodyPart,
-        requiredOwnerId: editorId,
+      return const RequiredQuestionEditResult(
+        code: RequiredQuestionEditCode.failed,
       );
-
-      final response = await _supabase
-          .from('chat_messages')
-          .insert(newMessage.toJson())
-          .select()
-          .single();
-      final sentMessage = ChatMessage.fromJson(response);
-      await _cacheMessageSafely(sentMessage.id, sentMessage);
-
-      return sentMessage;
-    } catch (e) {
-      debugPrint('ChatRepository: Error creating new required question: $e');
-      return null;
     }
   }
 
@@ -710,6 +674,19 @@ class ChatRepository {
       (c) => c.name == _codeToName(code),
       orElse: () => ClosedEndedRpcCode.failed,
     );
+  }
+
+  static RequiredQuestionEditCode _requiredQuestionEditCode(Object? result) {
+    return switch (result?.toString()) {
+      'OK' => RequiredQuestionEditCode.updated,
+      'STATUS_CHANGED' => RequiredQuestionEditCode.statusChanged,
+      'INVALID_CONFIG' => RequiredQuestionEditCode.invalidConfig,
+      'INVALID_CONTENT' => RequiredQuestionEditCode.invalidContent,
+      'FORBIDDEN' => RequiredQuestionEditCode.forbidden,
+      'UNAUTHORIZED' => RequiredQuestionEditCode.unauthorized,
+      'NOT_FOUND' => RequiredQuestionEditCode.notFound,
+      _ => RequiredQuestionEditCode.failed,
+    };
   }
 
   static String _codeToName(String? code) {
@@ -751,12 +728,13 @@ class ChatRepository {
 
   Future<Map<String, dynamic>> _closedEndedRequest(
     String path,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    String method = 'POST',
+  }) async {
     final response = await AuthenticatedHttpClient.instance.request(
-      'POST',
+      method,
       path,
-      body: jsonEncode(body),
+      body: method == 'GET' ? null : jsonEncode(body),
     );
     try {
       final decoded = jsonDecode(response.body);
@@ -785,7 +763,33 @@ class ChatRepository {
     }
   }
 
-  Future<ChatMessage?> _cacheClosedEndedMessage(
+  Future<List<String>> getClosedEndedOptionHistory() async {
+    try {
+      final result = await _closedEndedRequest(
+        '/api/chat/closed-ended/options/history',
+        const {},
+        method: 'GET',
+      );
+      final options = result['options'];
+      if (result['code'] != 'OK' || options is! List) return const [];
+
+      final seen = <String>{};
+      return options
+          .map((value) => value.toString().trim())
+          .where(
+            (option) => option.isNotEmpty && seen.add(option.toLowerCase()),
+          )
+          .take(ClosedEndedConfig.maxOptions + 5)
+          .toList();
+    } catch (e) {
+      debugPrint(
+        'ChatRepository: Error loading closed-ended option history: $e',
+      );
+      return const [];
+    }
+  }
+
+  Future<ChatMessage?> _cacheMessageFromRpc(
     Map<String, dynamic> result, {
     String? messageId,
   }) async {
@@ -828,7 +832,7 @@ class ChatRepository {
       if (code != ClosedEndedRpcCode.ok) {
         return ClosedEndedSendResult(code: code);
       }
-      final message = await _cacheClosedEndedMessage(result);
+      final message = await _cacheMessageFromRpc(result);
       return ClosedEndedSendResult(code: code, message: message);
     } catch (e) {
       debugPrint('ChatRepository: Error sending closed-ended question: $e');
@@ -850,7 +854,7 @@ class ChatRepository {
       final code = _closedEndedCode(result);
       if (code == ClosedEndedRpcCode.ok ||
           code == ClosedEndedRpcCode.alreadyAnswered) {
-        await _cacheClosedEndedMessage(result, messageId: messageId);
+        await _cacheMessageFromRpc(result, messageId: messageId);
       }
       return code;
     } catch (e) {
@@ -872,7 +876,7 @@ class ChatRepository {
       );
       final code = _closedEndedCode(result);
       if (code == ClosedEndedRpcCode.ok) {
-        await _cacheClosedEndedMessage(result, messageId: messageId);
+        await _cacheMessageFromRpc(result, messageId: messageId);
       }
       return code;
     } catch (e) {
@@ -896,7 +900,7 @@ class ChatRepository {
       final selectedValue = result['selected_value']?.toString();
       if (code == ClosedEndedRpcCode.ok ||
           code == ClosedEndedRpcCode.alreadyAnswered) {
-        await _cacheClosedEndedMessage(result, messageId: messageId);
+        await _cacheMessageFromRpc(result, messageId: messageId);
       }
       return ClosedEndedAnswerResult(code: code, selectedValue: selectedValue);
     } catch (e) {
@@ -937,4 +941,25 @@ class ClosedEndedAnswerResult {
   bool get isSuccess =>
       code == ClosedEndedRpcCode.ok ||
       code == ClosedEndedRpcCode.alreadyAnswered;
+}
+
+enum RequiredQuestionEditCode {
+  updated,
+  statusChanged,
+  invalidConfig,
+  invalidContent,
+  forbidden,
+  unauthorized,
+  notFound,
+  failed,
+}
+
+class RequiredQuestionEditResult {
+  final RequiredQuestionEditCode code;
+  final ChatMessage? message;
+
+  const RequiredQuestionEditResult({required this.code, this.message});
+
+  bool get isSuccess => code == RequiredQuestionEditCode.updated;
+  bool get statusChanged => code == RequiredQuestionEditCode.statusChanged;
 }

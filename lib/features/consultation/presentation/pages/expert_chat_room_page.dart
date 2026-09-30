@@ -18,6 +18,7 @@ import '../../data/models/expert_completion_status.dart';
 import '../../data/models/consultation_entry.dart';
 import '../../data/models/local_chat_message.dart';
 
+@Deprecated('Use ChartBoardPage for consultation rooms.')
 class ExpertChatRoomPage extends StatefulWidget {
   final ConsultationEntry entry;
   const ExpertChatRoomPage({super.key, required this.entry});

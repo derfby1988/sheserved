@@ -29,6 +29,7 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
   const statusForCode = (code) => ({
     OK: 200,
     ALREADY_ANSWERED: 200,
+    STATUS_CHANGED: 409,
     INVALID_CONFIG: 400,
     INVALID_CONTENT: 400,
     INVALID_INDEX: 400,
@@ -47,7 +48,7 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
       !result ||
       typeof result !== 'object' ||
       !messageId ||
-      !['OK', 'ALREADY_ANSWERED'].includes(result.code)
+      !['OK', 'ALREADY_ANSWERED', 'STATUS_CHANGED'].includes(result.code)
     ) {
       return result;
     }
@@ -63,6 +64,69 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
     }
     return result;
   };
+
+  router.post(
+    '/chat/required/:questionMessageId/edit',
+    ...closedEndedAuth,
+    async (req, res) => {
+      if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+      if (!isUuid(req.userId)) {
+        return res.status(401).json({ code: 'UNAUTHORIZED' });
+      }
+
+      const { questionMessageId } = req.params;
+      const { content } = req.body || {};
+      if (!isUuid(questionMessageId)) {
+        return sendRpcResult(res, { code: 'NOT_FOUND' });
+      }
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        return sendRpcResult(res, { code: 'INVALID_CONTENT' });
+      }
+
+      try {
+        const { data, error } = await supabaseForSync.rpc(
+          'edit_required_question_backend',
+          {
+            p_question_message_id: questionMessageId,
+            p_content: content,
+            p_caller_id: req.userId,
+          },
+        );
+        if (error) {
+          console.error('[Required-question API] Edit RPC failed:', error.message);
+          return res.status(502).json({ code: 'FAILED' });
+        }
+        return sendRpcResult(res, await attachMessage(data, questionMessageId));
+      } catch (error) {
+        console.error('[Required-question API] Edit RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+    },
+  );
+
+  router.get(
+    '/chat/closed-ended/options/history',
+    ...closedEndedAuth,
+    async (req, res) => {
+      if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
+      if (!isUuid(req.userId)) return res.status(401).json({ code: 'UNAUTHORIZED' });
+
+      try {
+        const { data, error } = await supabaseForSync.rpc(
+          'get_expert_closed_ended_option_history_backend',
+          { p_expert_id: req.userId },
+        );
+        if (error) {
+          console.error('[Closed-ended API] Option history RPC failed:', error.message);
+          return res.status(502).json({ code: 'FAILED' });
+        }
+        return sendRpcResult(res, data);
+      } catch (error) {
+        console.error('[Closed-ended API] Option history RPC failed:', error.message);
+        return res.status(502).json({ code: 'FAILED' });
+      }
+    },
+  );
 
   router.post('/chat/closed-ended/send', ...closedEndedAuth, async (req, res) => {
     if (!supabaseForSync) return res.status(503).json({ code: 'FAILED' });
@@ -192,7 +256,7 @@ function chatApiRoutes({ pool, supabaseForSync, verifyTokenMw }) {
 
       try {
         const { data, error } = await supabaseForSync.rpc(
-          'answer_closed_ended_question_backend',
+          'answer_closed_ended_question_with_history_backend',
           {
             p_question_message_id: questionMessageId,
             p_selected_index: selectedIndex,

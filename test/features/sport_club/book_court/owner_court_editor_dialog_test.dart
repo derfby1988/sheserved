@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_models.dart';
-import 'package:sheserved/features/sport_club/book_court/presentation/widgets/owner_court_editor_sheet.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/widgets/owner_court_editor_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 Map<String, dynamic>? _result;
 
@@ -14,7 +15,7 @@ Widget _host({
     body: Builder(
       builder: (context) => TextButton(
         onPressed: () async {
-          _result = await OwnerCourtEditorSheet.show(
+          _result = await OwnerCourtEditorDialog.show(
             context,
             court: court,
             sportId: sportId,
@@ -52,8 +53,15 @@ VenueCourt _court({
   isActive: isActive,
 );
 
-FilledButton _save(WidgetTester tester) =>
-    tester.widget<FilledButton>(find.byType(FilledButton));
+/// The filled save action — 'บันทึก' when editing, 'เพิ่มสนาม' when adding.
+Finder get _saveButton => find.byWidgetPredicate(
+  (widget) =>
+      widget is GlassActionButton &&
+      (widget.label == 'บันทึก' || widget.label == 'เพิ่มสนาม'),
+);
+
+GlassActionButton _save(WidgetTester tester) =>
+    tester.widget<GlassActionButton>(_saveButton);
 
 void main() {
   setUp(() => _result = null);
@@ -78,7 +86,7 @@ void main() {
     // The missing sport is shown as an explicit warning, never silently
     // swapped to the first choice.
     expect(find.textContaining('กีฬาเดิมถูกเอาออก'), findsOneWidget);
-    expect(_save(tester).onPressed, isNull);
+    expect(_save(tester).onTap, isNull);
   });
 
   testWidgets('is_active is preserved and toggleable when editing', (
@@ -99,7 +107,7 @@ void main() {
     // Re-enable and submit -> draft carries is_active through.
     await tester.tap(find.widgetWithText(SwitchListTile, 'เปิดใช้งานคอร์ท'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(FilledButton));
+    await tester.tap(_saveButton);
     await tester.pumpAndSettle();
     expect(_result?['is_active'], isTrue);
     expect(_result?['sport_id'], 's1');
@@ -116,7 +124,7 @@ void main() {
       'Court X',
     );
     await tester.pump();
-    await tester.tap(find.byType(FilledButton));
+    await tester.tap(_saveButton);
     await tester.pumpAndSettle();
     expect(_result?['is_active'], isTrue);
   });
@@ -131,13 +139,13 @@ void main() {
       '0',
     );
     await tester.pump();
-    expect(_save(tester).onPressed, isNull);
+    expect(_save(tester).onTap, isNull);
     await tester.enterText(
       find.widgetWithText(TextField, 'จำนวนการจองซ้ำได้'),
       '101',
     );
     await tester.pump();
-    expect(_save(tester).onPressed, isNull);
+    expect(_save(tester).onTap, isNull);
   });
 
   testWidgets('malformed price disables save', (tester) async {
@@ -148,9 +156,9 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'ราคา (บาท)'), 'abc');
     await tester.pump();
     expect(find.text('ราคาไม่ถูกต้อง'), findsOneWidget);
-    expect(_save(tester).onPressed, isNull);
+    expect(_save(tester).onTap, isNull);
     await tester.enterText(find.widgetWithText(TextField, 'ราคา (บาท)'), '-10');
     await tester.pump();
-    expect(_save(tester).onPressed, isNull);
+    expect(_save(tester).onTap, isNull);
   });
 }

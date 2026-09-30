@@ -22,7 +22,7 @@ import '../../data/models/consultation_request_model.dart';
 import '../../data/models/consultation_entry.dart';
 import '../../../../features/chat/data/models/chat_models.dart';
 import '../../../../features/chat/data/repositories/chat_repository.dart'
-    show ClosedEndedRpcCode;
+    show ClosedEndedRpcCode, RequiredQuestionEditCode;
 import '../../data/models/consultation_package.dart';
 import '../widgets/package_wheel_selector.dart';
 import '../../../../features/admin/models/profession.dart';
@@ -173,6 +173,9 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   // Expert-side required question state
   bool _isRequiredToggle = false;
   String? _editingQuestionId;
+  bool _editingClosedEndedQuestion = false;
+  ClosedEndedConfig? _editingClosedEndedConfig;
+  ClosedEndedConfig? _originalEditingClosedEndedConfig;
 
   // --- Closed-ended Questions (Phase 6.14) ---
   /// Pending expert config waiting for the question text to be sent.
@@ -1508,6 +1511,13 @@ class _ChartBoardPageState extends State<ChartBoardPage>
 
     final roomId = _consultationRoomId ?? 'consultation_demo';
 
+    // ─── Expert: Edit Required Question ──────────────────────────
+    if (_isProvider && _editingQuestionId != null) {
+      await _editRequiredQuestion(text);
+      if (mounted) _isSendingNotifier.value = false;
+      return;
+    }
+
     // ─── Expert: Closed-ended Question (Phase 6.14) ────────────
     if (_isProvider && _pendingClosedEndedConfig != null) {
       await _sendClosedEndedQuestion(text, roomId);
@@ -1518,13 +1528,6 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     // ─── Expert: Required Question ─────────────────────────────
     if (_isProvider && _isRequiredToggle) {
       await _sendRequiredQuestion(text, roomId);
-      if (mounted) _isSendingNotifier.value = false;
-      return;
-    }
-
-    // ─── Expert: Edit Required Question ──────────────────────────
-    if (_isProvider && _editingQuestionId != null) {
-      await _editRequiredQuestion(text);
       if (mounted) _isSendingNotifier.value = false;
       return;
     }
@@ -1646,46 +1649,252 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     }
   }
 
-  /// Expert edits an existing required question
-  Future<void> _editRequiredQuestion(String text) async {
-    if (_editingQuestionId == null) return;
+  void _upsertMessage(ChatMessage message) {
+    final messages = List<ChatMessage>.from(_messagesNotifier.value);
+    final index = messages.indexWhere((item) => item.id == message.id);
+    if (index == -1) {
+      messages.add(message);
+    } else {
+      messages[index] = message;
+    }
+    _messagesNotifier.value = messages;
+  }
 
-    final existing = _requiredQuestions.firstWhere(
-      (q) => q.id == _editingQuestionId,
-      orElse: () => ChatMessage(
-        id: '',
-        roomId: '',
-        senderId: '',
-        content: '',
-        createdAt: DateTime.now(),
+  Future<void> _editRequiredQuestion(String text) async {
+    final messageId = _editingQuestionId;
+    final callerId = _currentUser?.id;
+    if (messageId == null) return;
+    if (callerId == null || callerId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบใหม่อีกครั้ง')),
+      );
+      return;
+    }
+
+    ChatMessage? latest;
+    try {
+      latest = await _chatRepository.getMessageFresh(
+        messageId,
+        callerId: callerId,
+      );
+    } catch (e) {
+      debugPrint('Could not verify required question before edit: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ตรวจสอบสถานะคำถามไม่สำเร็จ กรุณาลองใหม่'),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final current = latest;
+    if (current == null || !current.isRequired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่พบคำถามนี้แล้ว กรุณาลองใหม่')),
+      );
+      return;
+    }
+    if (current.requiredStatus == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ตรวจสอบสถานะคำถามไม่สำเร็จ กรุณาลองใหม่'),
+        ),
+      );
+      return;
+    }
+
+    final configForNewQuestion = _editingClosedEndedQuestion
+        ? _editingClosedEndedConfig
+        : null;
+    final configChanged =
+        current.isClosedEndedQuestion &&
+        configForNewQuestion != null &&
+        configForNewQuestion != current.closedEndedConfig;
+    if (configChanged) {
+      final sentAsNew = await _sendQuestionAsNew(
+        current,
+        text,
+        callerId,
+        closedEndedConfig: configForNewQuestion,
+      );
+      if (!sentAsNew || !mounted) return;
+      _clearQuestionEdit();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('เปลี่ยนตัวเลือกแล้ว จึงส่งคำถามปลายปิดใหม่'),
+        ),
+      );
+      return;
+    }
+
+    var replacementSource = current;
+    if (RequiredQuestionStatus.canEditInPlace(current.requiredStatus)) {
+      final result = await _chatRepository.editRequiredQuestion(
+        messageId,
+        text,
+      );
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        if (result.message != null) _upsertMessage(result.message!);
+        _clearQuestionEdit();
+        _loadExpertCompletionStatus();
+        return;
+      }
+
+      if (!result.statusChanged) {
+        final message = switch (result.code) {
+          RequiredQuestionEditCode.invalidContent => 'กรุณากรอกคำถาม',
+          RequiredQuestionEditCode.invalidConfig =>
+            'คำถามปลายปิดนี้มีตัวเลือกไม่ถูกต้อง',
+          RequiredQuestionEditCode.forbidden => 'ไม่มีสิทธิ์แก้ไขคำถามนี้',
+          RequiredQuestionEditCode.unauthorized =>
+            'กรุณาเข้าสู่ระบบใหม่อีกครั้ง',
+          RequiredQuestionEditCode.notFound => 'ไม่พบคำถามนี้แล้ว กรุณาลองใหม่',
+          _ => 'แก้ไขคำถามไม่สำเร็จ กรุณาลองใหม่',
+        };
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        return;
+      }
+
+      replacementSource = result.message ?? current;
+      if (result.message == null) {
+        try {
+          final refreshed = await _chatRepository.getMessageFresh(
+            messageId,
+            callerId: callerId,
+          );
+          if (refreshed != null) replacementSource = refreshed;
+        } catch (e) {
+          debugPrint('Could not reload changed required question: $e');
+        }
+      }
+      if (!mounted) return;
+      if (!replacementSource.isRequired ||
+          replacementSource.requiredStatus == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ตรวจสอบคำถามล่าสุดไม่สำเร็จ กรุณาลองใหม่'),
+          ),
+        );
+        return;
+      }
+    } else if (current.requiredStatus != RequiredStatus.reading &&
+        current.requiredStatus != RequiredStatus.answered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ตรวจสอบสถานะคำถามไม่สำเร็จ กรุณาลองใหม่'),
+        ),
+      );
+      return;
+    }
+
+    final sentAsNew = await _sendQuestionAsNew(
+      replacementSource,
+      text,
+      callerId,
+      closedEndedConfig: configForNewQuestion,
+    );
+    if (!sentAsNew || !mounted) return;
+
+    _clearQuestionEdit();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('สถานะคำถามเปลี่ยนแล้ว จึงส่งเป็นคำถามใหม่แทน'),
       ),
     );
+  }
 
-    if (existing.id.isEmpty) {
-      setState(() => _editingQuestionId = null);
-      return;
-    }
-
-    // If patient has already seen it (status != unread), create new question
-    if (existing.requiredStatus != RequiredStatus.unread) {
-      await _sendRequiredQuestion(text, existing.roomId);
-      setState(() => _editingQuestionId = null);
-      return;
-    }
-
-    // Otherwise edit in-place
-    try {
-      await _chatRepository.editRequiredQuestion(
-        _editingQuestionId!,
-        text,
-        _currentUser?.id ?? '',
-      );
-      _msgController.clear();
-      if (mounted) {
-        setState(() => _editingQuestionId = null);
+  Future<bool> _sendQuestionAsNew(
+    ChatMessage source,
+    String text,
+    String callerId, {
+    ClosedEndedConfig? closedEndedConfig,
+  }) async {
+    if (source.isClosedEndedQuestion) {
+      final config = closedEndedConfig ?? source.closedEndedConfig;
+      if (config == null || !config.isValid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่สามารถสร้างคำถามปลายปิดใหม่ได้')),
+        );
+        return false;
       }
+
+      final result = await _chatRepository.sendClosedEndedQuestion(
+        roomId: source.roomId,
+        content: text,
+        config: config,
+        bodyPart: source.bodyPart,
+      );
+      if (!mounted) return false;
+      if (!result.isSuccess) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(switch (result.code) {
+              ClosedEndedRpcCode.forbidden ||
+              ClosedEndedRpcCode.unauthorized => 'ไม่มีสิทธิ์ส่งคำถามปลายปิด',
+              ClosedEndedRpcCode.invalidConfig ||
+              ClosedEndedRpcCode.invalidContent => 'รูปแบบคำถามไม่ถูกต้อง',
+              _ => 'ส่งคำถามปลายปิดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+            }),
+            backgroundColor: Colors.red.shade400,
+          ),
+        );
+        return false;
+      }
+      if (result.message != null) {
+        _upsertMessage(result.message!);
+        _scrollToBottom();
+      }
+      _loadExpertCompletionStatus();
+      return true;
+    }
+
+    final message = ChatMessage(
+      id: const Uuid().v4(),
+      roomId: source.roomId,
+      senderId: callerId,
+      content: text,
+      createdAt: DateTime.now(),
+      type: 'required_question',
+      status: MessageStatus.sent,
+      isRequired: true,
+      requiredStatus: RequiredStatus.unread,
+      requiredOwnerId: callerId,
+      bodyPart: source.bodyPart,
+    );
+
+    try {
+      final sent = await _chatRepository.sendMessage(
+        message,
+        callerId: callerId,
+      );
+      if (!sent) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ส่งคำถามใหม่ไม่สำเร็จ กรุณาลองใหม่')),
+          );
+        }
+        return false;
+      }
+      if (!mounted) return false;
+      _upsertMessage(message);
+      _scrollToBottom();
+      _loadExpertCompletionStatus();
+      return true;
     } catch (e) {
-      debugPrint('Edit required question error: $e');
+      debugPrint('Send replacement required question error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ส่งคำถามใหม่ไม่สำเร็จ กรุณาลองใหม่')),
+        );
+      }
+      return false;
     }
   }
 
@@ -2936,18 +3145,35 @@ class _ChartBoardPageState extends State<ChartBoardPage>
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'แก้ไขคำถาม',
+                      _editingClosedEndedQuestion
+                          ? (_editingClosedEndedConfig !=
+                                    _originalEditingClosedEndedConfig
+                                ? 'คำถามปลายปิด · สร้างข้อใหม่'
+                                : 'แก้ไขคำถามปลายปิด')
+                          : 'แก้ไขคำถาม',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.orange.shade700,
                       ),
                     ),
                   ),
+                  if (_editingClosedEndedQuestion)
+                    IconButton(
+                      tooltip: 'แก้ไขตัวเลือก',
+                      onPressed: _openClosedEndedEditConfigDialog,
+                      constraints: const BoxConstraints(
+                        minWidth: 44,
+                        minHeight: 44,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        Icons.tune,
+                        size: 18,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
                   GestureDetector(
-                    onTap: () => setState(() {
-                      _editingQuestionId = null;
-                      _msgController.clear();
-                    }),
+                    onTap: _clearQuestionEdit,
                     child: Icon(
                       Icons.close,
                       size: 16,
@@ -3033,7 +3259,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
             },
             isRequiredMode: _isProvider && _isRequiredToggle,
             isEditingMode: _isProvider && _editingQuestionId != null,
-            isClosedEndedMode: _isProvider && _pendingClosedEndedConfig != null,
+            isClosedEndedMode:
+                _isProvider &&
+                (_pendingClosedEndedConfig != null ||
+                    _editingClosedEndedQuestion),
           ),
         ],
       ),
@@ -3349,7 +3578,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
   /// Opens the closed-ended question builder. The returned config stays
   /// pending while the expert types the question text in the chat input.
   Future<void> _openClosedEndedConfigDialog() async {
-    final config = await ClosedEndedConfigDialog.show(context);
+    final config = await ClosedEndedConfigDialog.show(
+      context,
+      recentOptionsFuture: _chatRepository.getClosedEndedOptionHistory(),
+    );
     if (!mounted || config == null) return;
 
     setState(() {
@@ -3358,8 +3590,34 @@ class _ChartBoardPageState extends State<ChartBoardPage>
       // toggle/edit session must not interfere.
       _isRequiredToggle = false;
       _editingQuestionId = null;
+      _editingClosedEndedQuestion = false;
+      _editingClosedEndedConfig = null;
+      _originalEditingClosedEndedConfig = null;
     });
     FocusScope.of(context).requestFocus(_msgFocusNode);
+  }
+
+  Future<void> _openClosedEndedEditConfigDialog() async {
+    if (!_editingClosedEndedQuestion) return;
+    final config = await ClosedEndedConfigDialog.show(
+      context,
+      initialConfig: _editingClosedEndedConfig,
+      recentOptionsFuture: _chatRepository.getClosedEndedOptionHistory(),
+    );
+    if (!mounted || config == null) return;
+
+    setState(() => _editingClosedEndedConfig = config);
+    FocusScope.of(context).requestFocus(_msgFocusNode);
+  }
+
+  void _clearQuestionEdit() {
+    _msgController.clear();
+    setState(() {
+      _editingQuestionId = null;
+      _editingClosedEndedQuestion = false;
+      _editingClosedEndedConfig = null;
+      _originalEditingClosedEndedConfig = null;
+    });
   }
 
   Future<void> _startVideoCall() async {
@@ -3981,13 +4239,10 @@ class _ChartBoardPageState extends State<ChartBoardPage>
               final isUnread = q.requiredStatus == RequiredStatus.unread;
               Widget button = GestureDetector(
                 onTap: () {
-                  // Green (answered) buttons: scroll to question+answer in messages
-                  if (q.requiredStatus == RequiredStatus.answered) {
-                    _scrollToQuestion(q);
-                    return;
-                  }
                   if (_isProvider) {
                     _onExpertTapQuestion(q);
+                  } else if (q.requiredStatus == RequiredStatus.answered) {
+                    _scrollToQuestion(q);
                   } else {
                     _onPatientTapRequiredQuestion(q);
                   }
@@ -4245,20 +4500,66 @@ class _ChartBoardPageState extends State<ChartBoardPage>
     );
   }
 
-  /// Expert taps a required question button to edit it
-  void _onExpertTapQuestion(ChatMessage question) {
+  Future<void> _onExpertTapQuestion(ChatMessage question) async {
     if (!_isProvider) return;
 
+    final callerId = _currentUser?.id;
+    if (callerId == null || callerId.isEmpty) return;
+
+    ChatMessage? latest;
+    try {
+      latest = await _chatRepository.getMessageFresh(
+        question.id,
+        callerId: callerId,
+      );
+    } catch (e) {
+      debugPrint('Could not verify required question before opening edit: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ตรวจสอบสถานะคำถามไม่สำเร็จ กรุณาลองใหม่'),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final current = latest;
+    if (current == null || !current.isRequired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่พบคำถามนี้แล้ว กรุณาลองใหม่')),
+      );
+      return;
+    }
+
+    _upsertMessage(current);
+    if (current.requiredStatus == RequiredStatus.answered) {
+      _scrollToQuestion(current);
+      return;
+    }
+    if (!RequiredQuestionStatus.canStartExpertEdit(current.requiredStatus)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ตรวจสอบสถานะคำถามไม่สำเร็จ กรุณาลองใหม่'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
-      _editingQuestionId = question.id;
-      _msgController.text = question.content;
+      _editingQuestionId = current.id;
+      _pendingClosedEndedConfig = null;
+      _editingClosedEndedQuestion = current.isClosedEndedQuestion;
+      _editingClosedEndedConfig = current.closedEndedConfig;
+      _originalEditingClosedEndedConfig = current.closedEndedConfig;
+      _msgController.value = TextEditingValue(
+        text: current.content,
+        selection: TextSelection.collapsed(offset: current.content.length),
+      );
       _isRequiredToggle = false;
     });
-
-    // Move cursor to end
-    _msgController.selection = TextSelection.fromPosition(
-      TextPosition(offset: _msgController.text.length),
-    );
+    _msgFocusNode.requestFocus();
   }
 
   /// Scroll messages list to show the given required question

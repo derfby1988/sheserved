@@ -14,6 +14,12 @@ import '../../../chat/data/models/chat_models.dart';
 class RequiredQuestionStatus {
   RequiredQuestionStatus._();
 
+  static bool canStartExpertEdit(RequiredStatus? status) =>
+      status == RequiredStatus.unread || status == RequiredStatus.reading;
+
+  static bool canEditInPlace(RequiredStatus? status) =>
+      status == RequiredStatus.unread;
+
   /// Questions that must return to `unread` because the patient moved on to
   /// [keepId] (or closed the answer UI when [keepId] is null).
   static List<ChatMessage> staleReadingQuestions(

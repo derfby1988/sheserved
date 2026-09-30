@@ -14,13 +14,13 @@ import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_r
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/venue_setup_progress.dart';
-import '../widgets/owner_court_editor_sheet.dart';
-import '../widgets/venue_amenities_editor_sheet.dart';
-import '../widgets/venue_hours_editor_sheet.dart';
+import '../widgets/owner_court_editor_dialog.dart';
+import '../widgets/venue_amenities_editor_dialog.dart';
+import '../widgets/venue_hours_editor_dialog.dart';
 import '../widgets/venue_profile_editor_sheet.dart';
 import '../widgets/venue_setup_checklist_card.dart';
-import '../widgets/venue_sports_editor_sheet.dart';
-import '../widgets/venue_terms_editor_sheet.dart';
+import '../widgets/venue_sports_editor_dialog.dart';
+import '../widgets/venue_terms_editor_dialog.dart';
 import 'court_owner_bookings_page.dart';
 
 /// Per-venue management page (Phase 21.7.11): setup progress checklist for
@@ -267,7 +267,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     if (userId == null || _saving) return;
     switch (step) {
       case VenueSetupStepId.sports:
-        final draft = await VenueSportsEditorSheet.show(
+        final draft = await VenueSportsEditorDialog.show(
           context,
           sports: _sportCatalog,
           selectedUnits: {
@@ -283,7 +283,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
           'บันทึกกีฬาของสนามแล้ว',
         );
       case VenueSetupStepId.hours:
-        final draft = await VenueHoursEditorSheet.show(
+        final draft = await VenueHoursEditorDialog.show(
           context,
           current: _hours,
         );
@@ -293,7 +293,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
           'บันทึกเวลาเปิด–ปิดแล้ว',
         );
       case VenueSetupStepId.amenities:
-        final draft = await VenueAmenitiesEditorSheet.show(
+        final draft = await VenueAmenitiesEditorDialog.show(
           context,
           selected: _amenities,
         );
@@ -358,7 +358,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       }
     }
     if (!mounted) return;
-    final draft = await VenueTermsEditorSheet.show(
+    final draft = await VenueTermsEditorDialog.show(
       context,
       currentText: _terms?['terms_text']?.toString(),
       currentCutoffMinutes: (_terms?['cancellation_cutoff_minutes'] as num?)
@@ -487,7 +487,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       _toast('กรุณาตั้งค่ากีฬาของสนามก่อนเพิ่มคอร์ท');
       return;
     }
-    final draft = await OwnerCourtEditorSheet.show(
+    final draft = await OwnerCourtEditorDialog.show(
       context,
       court: court,
       sportId: court?.sportId ?? _venueSports.first['sport_id'].toString(),

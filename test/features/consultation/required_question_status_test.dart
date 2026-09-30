@@ -70,5 +70,40 @@ void main() {
 
       expect(RequiredQuestionStatus.staleReadingQuestions(questions), isEmpty);
     });
+
+    test('only unread questions can be edited in place', () {
+      expect(
+        RequiredQuestionStatus.canEditInPlace(RequiredStatus.unread),
+        isTrue,
+      );
+      expect(
+        RequiredQuestionStatus.canEditInPlace(RequiredStatus.reading),
+        isFalse,
+      );
+      expect(
+        RequiredQuestionStatus.canEditInPlace(RequiredStatus.answered),
+        isFalse,
+      );
+      expect(RequiredQuestionStatus.canEditInPlace(null), isFalse);
+    });
+
+    test(
+      'expert can start composing from unread or reading questions only',
+      () {
+        expect(
+          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.unread),
+          isTrue,
+        );
+        expect(
+          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.reading),
+          isTrue,
+        );
+        expect(
+          RequiredQuestionStatus.canStartExpertEdit(RequiredStatus.answered),
+          isFalse,
+        );
+        expect(RequiredQuestionStatus.canStartExpertEdit(null), isFalse);
+      },
+    );
   });
 }
