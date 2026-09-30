@@ -1,12 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/sports_hub_page_indicator.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic_inset.dart';
 
-/// Host ที่เปลี่ยนหน้าได้จริง เพื่อทดสอบว่าผิวปุ่มย้ายตามหน้าที่ถูกเลือก
+/// Host ที่เลียนแบบ `SportsHubPager`: `page` เป็นค่าต่อเนื่อง และแยก callback
+/// ระหว่างแตะ (selected) กับลาก ruler (scrubbed) เพื่อทดสอบ snap ระหว่างลาก
 class _IndicatorHost extends StatefulWidget {
-  const _IndicatorHost({required this.initialPage});
+  const _IndicatorHost({super.key, required this.initialPage});
 
   final int initialPage;
 
@@ -15,13 +19,22 @@ class _IndicatorHost extends StatefulWidget {
 }
 
 class _IndicatorHostState extends State<_IndicatorHost> {
-  late int _page = widget.initialPage;
+  late double _page = widget.initialPage.toDouble();
+  final List<int> selected = [];
+  final List<int> scrubbed = [];
 
   @override
   Widget build(BuildContext context) {
     return SportsHubPageIndicator(
-      currentPage: _page,
-      onPageSelected: (page) => setState(() => _page = page),
+      page: _page,
+      onPageSelected: (page) {
+        selected.add(page);
+        setState(() => _page = page.toDouble());
+      },
+      onPageScrubbed: (page) {
+        scrubbed.add(page);
+        setState(() => _page = page.toDouble());
+      },
     );
   }
 }
@@ -29,9 +42,34 @@ class _IndicatorHostState extends State<_IndicatorHost> {
 Color _labelColor(WidgetTester tester, String label) =>
     tester.widget<Text>(find.text(label)).style!.color!;
 
+/// หัวหมุดแก้วขาว (Container 32×12) — ใช้ดูว่าหัวหมุดวิ่งตาม `page`
+Finder _thumbFinder() => find.byWidgetPredicate(
+  (widget) =>
+      widget is Container &&
+      widget.constraints == BoxConstraints.tightFor(width: 32, height: 12),
+);
+
+/// รางจม — CustomPaint ที่ใช้ [NeumorphicInsetPainter] ตัวเดียวกับ slider
+Finder _grooveFinder() => find.byWidgetPredicate(
+  (widget) => widget is CustomPaint && widget.painter is NeumorphicInsetPainter,
+);
+
+Finder _rulerFinder() => find.bySemanticsLabel('แถบเลื่อนเปลี่ยนหน้า');
+
+Finder _shakeFinder() => find.byKey(SportsHubPageIndicator.shakeKey);
+
+/// มุมเอียง (เรเดียน) ของอนิเมชันเขย่า (0 = ไม่ได้เขย่า)
+double _shakeAngle(WidgetTester tester) {
+  final finder = _shakeFinder();
+  if (finder.evaluate().isEmpty) return 0;
+  final matrix = tester.widget<Transform>(finder).transform;
+  return math.atan2(matrix.storage[1], matrix.storage[0]);
+}
+
 Future<void> _pumpIndicator(
   WidgetTester tester, {
   required int currentPage,
+  GlobalKey<_IndicatorHostState>? hostKey,
 }) async {
   tester.view.physicalSize = const Size(390 * 3, 844 * 3);
   tester.view.devicePixelRatio = 3;
@@ -43,7 +81,7 @@ Future<void> _pumpIndicator(
         backgroundColor: Colors.white,
         body: Align(
           alignment: Alignment.topCenter,
-          child: _IndicatorHost(initialPage: currentPage),
+          child: _IndicatorHost(key: hostKey, initialPage: currentPage),
         ),
       ),
     ),
@@ -51,10 +89,43 @@ Future<void> _pumpIndicator(
   await tester.pumpAndSettle();
 }
 
-Finder _pillOpacity() => find.ancestor(
-  of: find.byType(LitGlassSurface),
-  matching: find.byType(Opacity),
-);
+/// เหมือน [_pumpPage] แต่ pump เฟรมเดียว ไม่ settle — ใช้คุมจังหวะอนิเมชัน
+Future<void> _pumpPageOnce(WidgetTester tester, double page) async {
+  tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: SportsHubPageIndicator(page: page, onPageSelected: (_) {}),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpPage(WidgetTester tester, double page) async {
+  tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: SportsHubPageIndicator(page: page, onPageSelected: (_) {}),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
 
 void main() {
   group('SportsHubPageIndicator selected button', () {
@@ -177,4 +248,174 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('SportsHubPageIndicator ruler', () {
+    testWidgets('renders a neumorphic groove with the white glass thumb', (
+      tester,
+    ) async {
+      await _pumpIndicator(tester, currentPage: 0);
+
+      expect(_grooveFinder(), findsOneWidget);
+      expect(_thumbFinder(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('moves the thumb continuously with the page value', (
+      tester,
+    ) async {
+      await _pumpPage(tester, 0);
+      final atZero = tester.getCenter(_thumbFinder()).dx;
+      await _pumpPage(tester, 1);
+      final atOne = tester.getCenter(_thumbFinder()).dx;
+      await _pumpPage(tester, 2);
+      final atTwo = tester.getCenter(_thumbFinder()).dx;
+
+      expect(atZero, lessThan(atOne));
+      expect(atOne, lessThan(atTwo));
+
+      // ค่ากลาง ๆ (เช่นตอนปัดค้าง) หัวหมุดต้องอยู่ระหว่างหน้า ไม่กระโดด
+      await _pumpPage(tester, 0.5);
+      final atHalf = tester.getCenter(_thumbFinder()).dx;
+      expect(atHalf, closeTo((atZero + atOne) / 2, 1));
+    });
+
+    testWidgets('puts the arrows on the same line as the ruler', (
+      tester,
+    ) async {
+      await _pumpIndicator(tester, currentPage: 1);
+
+      final rulerRect = tester.getRect(_rulerFinder());
+      final leftArrow = tester.getRect(
+        find.byTooltip('ไปหน้าสนาม: จองสนามเล่นกีฬา'),
+      );
+      final rightArrow = tester.getRect(
+        find.byTooltip('ไปหน้าโค้ช: หาโค้ช/เทรนเนอร์'),
+      );
+
+      // ลูกศรอยู่บรรทัดเดียวกับ ruler (กึ่งกลางแนวตั้งตรงกัน)
+      expect(leftArrow.center.dy, closeTo(rulerRect.center.dy, 0.5));
+      expect(rightArrow.center.dy, closeTo(rulerRect.center.dy, 0.5));
+      // และอยู่คนละข้างของ ruler
+      expect(leftArrow.right, lessThanOrEqualTo(rulerRect.left + 0.5));
+      expect(rightArrow.left, greaterThanOrEqualTo(rulerRect.right - 0.5));
+    });
+
+    testWidgets('snaps page by page while dragging the ruler', (tester) async {
+      final hostKey = GlobalKey<_IndicatorHostState>();
+      await _pumpIndicator(tester, currentPage: 0, hostKey: hostKey);
+
+      final rulerRect = tester.getRect(_rulerFinder());
+      // เริ่มจากฝั่งซ้าย (หน้า 0) แล้วลากผ่านกึ่งกลาง (หน้า 1) ไปสุดขวา (หน้า 2)
+      // เป็นขั้น ๆ ให้ snap ทีละหน้า ไม่ใช่ครั้งเดียวตอนปล่อยนิ้ว
+      final gesture = await tester.startGesture(
+        Offset(rulerRect.left + 12, rulerRect.center.dy),
+      );
+      await gesture.moveTo(Offset(rulerRect.center.dx - 40, rulerRect.center.dy));
+      await tester.pump();
+      await gesture.moveTo(Offset(rulerRect.center.dx, rulerRect.center.dy));
+      await tester.pump();
+      await gesture.moveTo(Offset(rulerRect.right - 12, rulerRect.center.dy));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(hostKey.currentState!.scrubbed, containsAllInOrder([1, 2]));
+      // ใช้ scrub สด ๆ ระหว่างลาก จึงไม่ commit ซ้ำตอนปล่อยนิ้ว
+      expect(hostKey.currentState!.selected, isEmpty);
+      expect(find.text('หาโค้ช/เทรนเนอร์'), findsOneWidget);
+    });
+
+    testWidgets('selects the nearest page when tapping the ruler', (
+      tester,
+    ) async {
+      final hostKey = GlobalKey<_IndicatorHostState>();
+      await _pumpIndicator(tester, currentPage: 0, hostKey: hostKey);
+
+      final rulerRect = tester.getRect(_rulerFinder());
+      await tester.tapAt(Offset(rulerRect.right - 6, rulerRect.center.dy));
+      await tester.pumpAndSettle();
+
+      expect(hostKey.currentState!.selected, [2]);
+      expect(find.text('หาโค้ช/เทรนเนอร์'), findsOneWidget);
+    });
+  });
+
+  group('SportsHubPageIndicator button shake', () {
+    testWidgets('shakes the newly selected button and then settles', (
+      tester,
+    ) async {
+      await _pumpIndicator(tester, currentPage: 0);
+      expect(_shakeFinder(), findsNothing);
+
+      await tester.tap(find.text('โค้ช'));
+      await tester.pump();
+      // เขย่าปุ่มที่เพิ่งถูกเลือก และเริ่มจากนิ่ง (มุม 0) ก่อน
+      expect(
+        find.ancestor(of: find.text('โค้ช'), matching: _shakeFinder()),
+        findsOneWidget,
+      );
+      expect(_shakeAngle(tester).abs(), lessThan(0.001));
+
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_shakeAngle(tester).abs(), greaterThan(0.01));
+
+      await tester.pumpAndSettle();
+      expect(_shakeAngle(tester).abs(), lessThan(0.001));
+    });
+
+    testWidgets('does not shake until the page settles on an integer', (
+      tester,
+    ) async {
+      await _pumpPageOnce(tester, 0);
+      // ค้างอยู่ระหว่างทาง (ปัดค้าง) — ยังไม่เข้าที่จึงยังไม่เขย่า
+      await _pumpPageOnce(tester, 1.4);
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_shakeFinder(), findsNothing);
+
+      // เข้าที่หน้า 2 แล้ว — เริ่มเขย่า
+      await _pumpPageOnce(tester, 2);
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_shakeAngle(tester).abs(), greaterThan(0.01));
+
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('does not shake when the page does not change', (
+      tester,
+    ) async {
+      await _pumpIndicator(tester, currentPage: 1);
+      await tester.tap(find.text('ก๊วน'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_shakeFinder(), findsNothing);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('does not shake mid-drag, only after the ruler is released', (
+      tester,
+    ) async {
+      await _pumpIndicator(tester, currentPage: 0);
+
+      final rulerRect = tester.getRect(_rulerFinder());
+      final gesture = await tester.startGesture(rulerRect.center);
+      await gesture.moveBy(const Offset(60, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(60, 0));
+      await tester.pump();
+      // ระหว่างลาก (snap ไปหน้า 2 แล้ว) ต้องยังไม่เขย่า
+      expect(_shakeFinder(), findsNothing);
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(_shakeAngle(tester).abs(), greaterThan(0.01));
+
+      await tester.pumpAndSettle();
+    });
+  });
 }
+
+Finder _pillOpacity() => find.ancestor(
+  of: find.byType(LitGlassSurface),
+  matching: find.byType(Opacity),
+);

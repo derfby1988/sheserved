@@ -198,7 +198,7 @@ void main() {
         const MaterialApp(
           home: Scaffold(
             body: SportsHubPageIndicator(
-              currentPage: 1,
+              page: 1,
               onPageSelected: _ignorePageSelection,
             ),
           ),
@@ -210,9 +210,10 @@ void main() {
       expect(find.byTooltip('หาเพื่อนออกกำลังกาย'), findsOneWidget);
       expect(find.byTooltip('หาโค้ช/เทรนเนอร์'), findsOneWidget);
       expect(find.byType(SingleChildScrollView), findsNothing);
+      // แถบบน (ปุ่ม 44) + แถบล่าง (ลูกศร + ruler 44) + ป้ายชื่อหน้า
       expect(
         tester.getSize(find.byType(SportsHubPageIndicator)).height,
-        lessThanOrEqualTo(100),
+        lessThanOrEqualTo(120),
       );
       expect(tester.takeException(), isNull);
 
@@ -229,7 +230,7 @@ void main() {
         const MaterialApp(
           home: Scaffold(
             body: SportsHubPageIndicator(
-              currentPage: 1,
+              page: 1,
               onPageSelected: _ignorePageSelection,
             ),
           ),

@@ -335,15 +335,35 @@ class _SportsHubPagerState extends State<SportsHubPager> {
     widget.onPageChanged?.call(page);
   }
 
+  /// ลาก ruler — กระโดดไปหน้าทันทีระหว่างลาก (ไม่เล่นอนิเมชัน) เพื่อให้หัวหมุด
+  /// กับเนื้อหาตรงกันแบบเรียลไทม์และไม่ snap กลับไปหน้าเดิมก่อน
+  void _scrubToPage(int page) {
+    if (page < 0 || page > 2) return;
+    if (!_pageController.hasClients) {
+      if (_currentPage != page) setState(() => _currentPage = page);
+      return;
+    }
+    if (_pageController.page?.round() == page) return;
+    _pageController.jumpToPage(page);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-          child: SportsHubPageIndicator(
-            currentPage: _currentPage,
-            onPageSelected: _animateToPage,
+          child: AnimatedBuilder(
+            animation: _pageController,
+            builder: (context, _) => SportsHubPageIndicator(
+              // ส่งตำแหน่งหน้าแบบต่อเนื่อง เพื่อให้หัวหมุด/ปุ่มที่เลือกขยับตาม
+              // การปัดหรืออนิเมชันของ PageView ทันที (ไม่หน่วงรอ onPageChanged)
+              page: _pageController.hasClients && _pageController.page != null
+                  ? _pageController.page!
+                  : _currentPage.toDouble(),
+              onPageSelected: _animateToPage,
+              onPageScrubbed: _scrubToPage,
+            ),
           ),
         ),
         Expanded(

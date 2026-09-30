@@ -174,7 +174,11 @@ class _SportClubPageState extends State<SportClubPage> {
   // row starts at bar height + 8 padding.
   static const double _filterButtonTopExpanded = 69;
   static const double _filterButtonTopEmbeddedExpanded = 68;
-  static const double _filterButtonTopCollapsed = 17;
+
+  // Collapsed: the button parks on the shared bar's content row so its centre
+  // lines up with the sport chips / "เพิ่มกีฬา" trailing (bar 56 - 8 padding
+  // → row 8..48, centre 28; button is 38 high → top = 28 - 19).
+  static const double _filterButtonTopCollapsed = 9;
 
   // Inset used before the filter bar is measured, so the first frame already
   // matches the usual bar height and the feed does not flash.
