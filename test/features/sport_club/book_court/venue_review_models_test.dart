@@ -114,4 +114,35 @@ void main() {
       expect(covered, 10);
     });
   });
+
+  group('VenueBooking.fromJson', () {
+    test('reads the venue timezone from booking RPC data', () {
+      final booking = VenueBooking.fromJson({
+        'id': 'booking-1',
+        'courtId': 'court-1',
+        'venueId': 'venue-1',
+        'sportId': 'sport-1',
+        'startsAt': '2026-09-30T18:00:00Z',
+        'endsAt': '2026-09-30T19:00:00Z',
+        'status': 'pending',
+        'timezone': 'Asia/Bangkok',
+      });
+
+      expect(booking.timezone, 'Asia/Bangkok');
+    });
+
+    test('defaults legacy booking payloads to Bangkok timezone', () {
+      final booking = VenueBooking.fromJson({
+        'id': 'booking-1',
+        'courtId': 'court-1',
+        'venueId': 'venue-1',
+        'sportId': 'sport-1',
+        'startsAt': '2026-09-30T18:00:00Z',
+        'endsAt': '2026-09-30T19:00:00Z',
+        'status': 'pending',
+      });
+
+      expect(booking.timezone, 'Asia/Bangkok');
+    });
+  });
 }

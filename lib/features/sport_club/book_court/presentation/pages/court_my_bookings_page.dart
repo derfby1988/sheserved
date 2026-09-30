@@ -6,6 +6,7 @@ import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
+import '../../domain/venue_local_time.dart';
 import '../widgets/court_booking_action_dialogs.dart';
 import '../widgets/court_booking_sheet.dart';
 import '../widgets/court_review_sheet.dart';
@@ -107,7 +108,8 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       context,
       court: court,
       venueName: b.venueName ?? '',
-      initialDate: b.startsAt,
+      timezone: b.timezone,
+      initialDate: VenueLocalTime.dateOfInstant(b.startsAt, b.timezone),
     );
     if (slot == null || !mounted) return;
     try {

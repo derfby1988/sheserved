@@ -81,7 +81,8 @@ BEGIN
     RAISE EXCEPTION 'NOT_ADMIN';
   END IF;
   v_terms_text := btrim(COALESCE(p_terms_text, ''));
-  IF length(v_terms_text) NOT BETWEEN 1 AND 10000 THEN
+  IF length(v_terms_text) NOT BETWEEN 1 AND 10000
+     OR v_terms_text = 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม' THEN
     RAISE EXCEPTION 'INVALID_PLATFORM_TERMS';
   END IF;
   IF p_cancellation_cutoff_minutes IS NULL

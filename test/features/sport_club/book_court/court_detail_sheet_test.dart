@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_models.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_repository.dart';
+import 'package:sheserved/features/sport_club/book_court/domain/venue_local_time.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_detail_sheet.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -19,6 +20,9 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   List<VenueOperatingHours> hours = const [];
   List<VenueReview> reviews = const [];
   CourtAvailability? availability;
+  Object? availabilityError;
+  DateTime? availabilityFrom;
+  DateTime? availabilityTo;
   final List<String> availabilityCourtIds = [];
 
   @override
@@ -45,6 +49,9 @@ class _FakeBookCourtRepository extends BookCourtRepository {
     DateTime to,
   ) async {
     availabilityCourtIds.add(courtId);
+    availabilityFrom = from;
+    availabilityTo = to;
+    if (availabilityError != null) throw availabilityError!;
     return availability ?? CourtAvailability(courtId: courtId);
   }
 }
@@ -190,5 +197,41 @@ void main() {
 
     expect(repo.availabilityCourtIds, ['court-1']);
     expect(find.text('ตารางเวลา'), findsOneWidget);
+  });
+
+  testWidgets('availability requests use venue-local day boundaries', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    final date = VenueLocalTime.today(_venue.timezone);
+    final nextDate = VenueLocalTime.addCalendarDays(date, 1);
+    expect(
+      repo.availabilityFrom!.toUtc(),
+      VenueLocalTime.atWallTime(date, _venue.timezone, 0).toUtc(),
+    );
+    expect(
+      repo.availabilityTo!.toUtc(),
+      VenueLocalTime.atWallTime(nextDate, _venue.timezone, 0).toUtc(),
+    );
+  });
+
+  testWidgets('availability failures show an explicit retry instead of slots', (
+    tester,
+  ) async {
+    repo.availabilityError = StateError('offline');
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('โหลดตารางว่างไม่สำเร็จ'), findsOneWidget);
+    expect(find.text('ตารางเวลา'), findsNothing);
+    expect(find.text('ลองใหม่'), findsOneWidget);
   });
 }

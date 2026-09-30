@@ -182,7 +182,7 @@ class BookCourtRepository {
         .from('sports_venue_operating_hours_public')
         .select()
         .eq('venue_id', venueId)
-        .order('day_of_week');
+        .order('day_of_week', ascending: true);
     return (res as List)
         .map((e) => VenueOperatingHours.fromJson(Map<String, dynamic>.from(e)))
         .toList();
@@ -211,10 +211,10 @@ class BookCourtRepository {
         'p_to': to.toUtc().toIso8601String(),
       },
     );
-    if (res is Map) {
-      return CourtAvailability.fromJson(Map<String, dynamic>.from(res));
+    if (res is! Map) {
+      throw const FormatException('Invalid court availability response');
     }
-    return CourtAvailability(courtId: courtId);
+    return CourtAvailability.fromJson(Map<String, dynamic>.from(res));
   }
 
   Future<List<VenueReview>> listVenueReviews(
@@ -772,8 +772,7 @@ class BookCourtRepository {
         .toList();
     final total = list.isEmpty
         ? 0
-        : (list.first['total_count'] as num?)?.toInt() ??
-            offset + rows.length;
+        : (list.first['total_count'] as num?)?.toInt() ?? offset + rows.length;
     return VenueReviewListPage(
       reviews: rows,
       totalCount: total,

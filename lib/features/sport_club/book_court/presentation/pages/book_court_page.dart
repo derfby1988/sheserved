@@ -338,6 +338,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       context,
       court: court,
       venueName: venue.name,
+      timezone: venue.timezone,
       initialDate: _filter.date,
     );
     if (slot == null || !mounted) return;

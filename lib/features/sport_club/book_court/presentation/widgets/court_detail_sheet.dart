@@ -5,6 +5,7 @@ import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
+import '../../domain/venue_local_time.dart';
 import '../pages/court_reviews_page.dart';
 import 'court_availability_picker.dart';
 import 'court_review_rating_card.dart';
@@ -80,13 +81,17 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   List<VenueOperatingHours> _hours = [];
   List<VenueReview> _reviews = [];
   bool _loading = true;
+  bool _availabilityLoading = false;
   String? _selectedCourtId;
+  String? _availabilityError;
   CourtAvailability? _availability;
-  DateTime _availabilityDate = DateTime.now();
+  late DateTime _availabilityDate;
+  int _availabilityRequestId = 0;
 
   @override
   void initState() {
     super.initState();
+    _availabilityDate = VenueLocalTime.today(widget.venue.timezone);
     _load();
   }
 
@@ -125,37 +130,51 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   }
 
   Future<void> _loadAvailability(VenueCourt court) async {
+    final requestId = ++_availabilityRequestId;
     setState(() {
       _selectedCourtId = court.id;
       _availability = null;
+      _availabilityError = null;
+      _availabilityLoading = true;
     });
     try {
-      final dayStart = DateTime(
-        _availabilityDate.year,
-        _availabilityDate.month,
-        _availabilityDate.day,
-      );
+      final nextDate = VenueLocalTime.addCalendarDays(_availabilityDate, 1);
       final availability = await widget.repo.getCourtAvailability(
         court.id,
-        dayStart,
-        dayStart.add(const Duration(days: 1)),
+        VenueLocalTime.atWallTime(_availabilityDate, widget.venue.timezone, 0),
+        VenueLocalTime.atWallTime(nextDate, widget.venue.timezone, 0),
       );
-      if (!mounted || _selectedCourtId != court.id) return;
-      setState(() => _availability = availability);
+      if (!mounted ||
+          requestId != _availabilityRequestId ||
+          _selectedCourtId != court.id) {
+        return;
+      }
+      setState(() {
+        _availability = availability;
+        _availabilityLoading = false;
+      });
     } catch (_) {
-      if (mounted && _selectedCourtId == court.id) {
-        setState(() => _availability = CourtAvailability(courtId: court.id));
+      if (mounted &&
+          requestId == _availabilityRequestId &&
+          _selectedCourtId == court.id) {
+        setState(() {
+          _availabilityError = 'โหลดตารางว่างไม่สำเร็จ';
+          _availabilityLoading = false;
+        });
       }
     }
   }
 
   Future<void> _pickAvailabilityDate() async {
     final courtId = _selectedCourtId;
+    final today = VenueLocalTime.today(widget.venue.timezone);
     final picked = await showDatePicker(
       context: context,
-      initialDate: _availabilityDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 90)),
+      initialDate: _availabilityDate.isBefore(today)
+          ? today
+          : _availabilityDate,
+      firstDate: today,
+      lastDate: VenueLocalTime.addCalendarDays(today, 90),
     );
     if (picked == null || courtId == null || !mounted) return;
     final court = _courts.where((c) => c.id == courtId).firstOrNull;
@@ -164,9 +183,41 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     await _loadAvailability(court);
   }
 
+  Widget _buildAvailabilityLoading() => _frostedCard(
+    child: const Row(
+      children: [
+        SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        SizedBox(width: 10),
+        Text('กำลังโหลดตารางว่าง'),
+      ],
+    ),
+  );
+
+  Widget _buildAvailabilityError(VenueCourt court) => _frostedCard(
+    child: Row(
+      children: [
+        Icon(Icons.error_outline_rounded, color: Colors.red.shade600),
+        const SizedBox(width: 8),
+        const Expanded(child: Text('โหลดตารางว่างไม่สำเร็จ')),
+        TextButton.icon(
+          onPressed: () => _loadAvailability(court),
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('ลองใหม่'),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final venue = widget.venue;
+    final selectedCourt = _courts
+        .where((court) => court.id == _selectedCourtId)
+        .firstOrNull;
     return Container(
       decoration: BoxDecoration(
         color: NeumorphicTheme.baseColor,
@@ -322,6 +373,14 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                     )
                   else
                     for (final court in _courts) _buildCourtTile(court),
+                  if (_availabilityLoading) ...[
+                    const SizedBox(height: 4),
+                    _buildAvailabilityLoading(),
+                  ],
+                  if (_availabilityError != null && selectedCourt != null) ...[
+                    const SizedBox(height: 4),
+                    _buildAvailabilityError(selectedCourt),
+                  ],
                   if (_availability != null) ...[
                     const SizedBox(height: 4),
                     _buildAvailabilityCard(_availability!),
@@ -483,9 +542,18 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
             ],
           ),
           const SizedBox(height: 4),
+          Text(
+            'เวลาท้องถิ่นของสนาม (${widget.venue.timezone})',
+            style: const TextStyle(
+              fontSize: 11,
+              color: NeumorphicTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
           CourtAvailabilityPicker(
             availability: availability,
             date: _availabilityDate,
+            timezone: widget.venue.timezone,
           ),
         ],
       ),

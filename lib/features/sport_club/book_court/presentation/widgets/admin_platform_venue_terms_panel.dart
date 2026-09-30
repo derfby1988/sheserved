@@ -39,6 +39,7 @@ class _AdminPlatformVenueTermsPanelState
   bool get _valid =>
       _termsController.text.trim().isNotEmpty &&
       _termsController.text.trim().length <= 10000 &&
+      _termsController.text.trim() != VenueTerms.baseTermsText &&
       _cutoffValue != null;
 
   @override
@@ -70,7 +71,7 @@ class _AdminPlatformVenueTermsPanelState
     try {
       final terms = await widget.repo.getPlatformVenueTerms(adminId);
       if (!mounted) return;
-      _termsController.text = terms.termsText;
+      _termsController.text = terms.isConfigured ? terms.termsText : '';
       _cutoffController.text = terms.cancellationCutoffMinutes.toString();
       setState(() {
         _terms = terms;
@@ -139,11 +140,12 @@ class _AdminPlatformVenueTermsPanelState
 
   String _messageFor(Object error) {
     final raw = error.toString();
-    if (raw.contains('NOT_ADMIN'))
+    if (raw.contains('NOT_ADMIN')) {
       return 'บัญชีนี้ไม่มีสิทธิ์จัดการเงื่อนไขมาตรฐาน';
+    }
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบผู้ดูแลระบบใหม่';
     if (raw.contains('INVALID_PLATFORM_TERMS')) {
-      return 'เงื่อนไขต้องมีข้อความ 1–10,000 ตัวอักษร';
+      return 'กรุณากรอกเงื่อนไขจริง 1–10,000 ตัวอักษร ไม่ใช้ข้อความตัวอย่าง';
     }
     if (raw.contains('INVALID_CUTOFF')) {
       return 'กรุณาระบุเวลายกเลิกเป็นจำนวนนาทีที่ไม่ติดลบ';

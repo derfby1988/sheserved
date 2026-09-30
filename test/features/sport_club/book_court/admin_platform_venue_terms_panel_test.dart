@@ -62,6 +62,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      tester.widget<FilledButton>(
+        find.byKey(const ValueKey('platform-venue-terms-save')),
+      ).onPressed,
+      isNull,
+    );
+    expect(
+      tester.widget<TextField>(
+        find.byKey(const ValueKey('platform-venue-terms-text')),
+      ).controller!.text,
+      isEmpty,
+    );
     await tester.enterText(
       find.byKey(const ValueKey('platform-venue-terms-text')),
       'ยกเลิกล่วงหน้าได้ตามเงื่อนไขของสนาม',

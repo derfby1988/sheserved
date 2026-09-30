@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/book_court_models.dart';
+import '../../domain/venue_local_time.dart';
 
 /// Read-only availability view for one court on a given venue-local date.
 ///
@@ -10,22 +11,30 @@ import '../../data/book_court_models.dart';
 class CourtAvailabilityPicker extends StatelessWidget {
   final CourtAvailability availability;
   final DateTime date;
+  final String timezone;
+  final DateTime? now;
   final void Function(DateTime start, DateTime end)? onSlotTap;
 
   const CourtAvailabilityPicker({
     super.key,
     required this.availability,
     required this.date,
+    required this.timezone,
+    this.now,
     this.onSlotTap,
   });
 
   /// One-hour candidate slots between 06:00 and 23:00 venue-local time.
-  static List<({DateTime start, DateTime end})> hourlySlots(DateTime day) {
-    final base = DateTime(day.year, day.month, day.day);
+  static List<({DateTime start, DateTime end})> hourlySlots(
+    DateTime day, {
+    required String timezone,
+  }) {
     return [
       for (var h = 6; h < 23; h++)
-        (start: base.add(Duration(hours: h)),
-         end: base.add(Duration(hours: h + 1))),
+        (
+          start: VenueLocalTime.atWallTime(day, timezone, h),
+          end: VenueLocalTime.atWallTime(day, timezone, h + 1),
+        ),
     ];
   }
 
@@ -34,11 +43,12 @@ class CourtAvailabilityPicker extends StatelessWidget {
     DateTime end,
     List<({DateTime startsAt, DateTime endsAt})> ranges,
   ) {
-    return ranges.any((r) => r.startsAt.isBefore(end) && r.endsAt.isAfter(start));
+    return ranges.any(
+      (r) => r.startsAt.isBefore(end) && r.endsAt.isAfter(start),
+    );
   }
 
   bool _withinHours(DateTime start, DateTime end) {
-    if (availability.hours.isEmpty) return true;
     final dow = start.weekday % 7; // DateTime weekday: Mon=1..Sun=7 -> 0-6
     for (final h in availability.hours) {
       if (h.dayOfWeek != dow || h.isClosed) continue;
@@ -65,7 +75,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final slots = hourlySlots(date);
+    final slots = hourlySlots(date, timezone: timezone);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -89,11 +99,14 @@ class CourtAvailabilityPicker extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 4,
           children: [
             _legend(Colors.green.shade100, 'ว่าง'),
-            const SizedBox(width: 12),
-            _legend(Colors.red.shade100, 'ถูกจอง/ปิด'),
+            _legend(Colors.red.shade100, 'ถูกจอง'),
+            _legend(Colors.grey.shade300, 'ปิด'),
+            _legend(Colors.orange.shade100, 'ไม่พร้อม'),
           ],
         ),
       ],
@@ -102,6 +115,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
 
   Widget _legend(Color color, String label) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 12,
@@ -118,19 +132,17 @@ class CourtAvailabilityPicker extends StatelessWidget {
   }
 
   _SlotState _slotState(DateTime start, DateTime end) {
-    if (end.isBefore(DateTime.now())) return _SlotState.unavailable;
-    if (!_withinHours(start, end)) return _SlotState.unavailable;
-    if (_overlaps(start, end, availability.blocked)) {
+    if (!_withinHours(start, end)) return _SlotState.closed;
+    if (_overlaps(start, end, availability.booked)) return _SlotState.booked;
+    if (_overlaps(start, end, availability.blocked) ||
+        !end.isAfter(now ?? VenueLocalTime.now(timezone))) {
       return _SlotState.unavailable;
-    }
-    if (_overlaps(start, end, availability.booked)) {
-      return _SlotState.booked;
     }
     return _SlotState.free;
   }
 }
 
-enum _SlotState { free, booked, unavailable }
+enum _SlotState { free, booked, closed, unavailable }
 
 class _SlotChip extends StatelessWidget {
   final ({DateTime start, DateTime end}) slot;
@@ -142,28 +154,51 @@ class _SlotChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final free = state == _SlotState.free;
-    final label =
-        '${slot.start.hour.toString().padLeft(2, '0')}:00';
+    final (background, border, foreground, message) = switch (state) {
+      _SlotState.free => (
+        Colors.green.shade100,
+        Colors.green.shade400,
+        Colors.green.shade900,
+        'ว่าง',
+      ),
+      _SlotState.booked => (
+        Colors.red.shade100,
+        Colors.red.shade300,
+        Colors.red.shade900,
+        'ถูกจอง',
+      ),
+      _SlotState.closed => (
+        Colors.grey.shade300,
+        Colors.grey.shade500,
+        Colors.grey.shade800,
+        'ปิด',
+      ),
+      _SlotState.unavailable => (
+        Colors.orange.shade100,
+        Colors.orange.shade400,
+        Colors.orange.shade900,
+        'ไม่พร้อมให้จอง',
+      ),
+    };
+    final label = '${slot.start.hour.toString().padLeft(2, '0')}:00';
     return Tooltip(
-      message: free ? 'ว่าง' : 'ไม่ว่าง',
+      message: message,
       child: InkWell(
         onTap: free ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: free ? Colors.green.shade100 : Colors.red.shade100,
+            color: background,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: free ? Colors.green.shade400 : Colors.red.shade300,
-            ),
+            border: Border.all(color: border),
           ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: free ? Colors.green.shade900 : Colors.red.shade900,
+              color: foreground,
             ),
           ),
         ),

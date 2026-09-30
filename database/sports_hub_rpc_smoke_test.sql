@@ -82,6 +82,8 @@ END $$;
 \ir ../supabase/migrations/20260926100000_sports_hub_review_scoring_10pt.sql
 \ir ../supabase/migrations/20260928120000_sports_hub_sport_usage.sql
 \ir ../supabase/migrations/20261001120000_sports_hub_platform_venue_terms.sql
+\ir ../supabase/migrations/20261001130000_sports_hub_fail_closed_missing_hours.sql
+\ir ../supabase/migrations/20261001140000_sports_hub_booking_venue_timezone.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -179,6 +181,10 @@ BEGIN
   PERFORM pg_temp.expect_raise('non-admin cannot read platform terms',
     format('SELECT public.get_sports_venue_platform_terms(%L)', v_owner),
     'NOT_ADMIN');
+  PERFORM pg_temp.expect_raise('legacy placeholder cannot be published as standard terms',
+    format('SELECT public.set_sports_venue_platform_terms(%L, %L, 60)',
+      v_admin, 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม'),
+    'INVALID_PLATFORM_TERMS');
   v_platform_terms := public.set_sports_venue_platform_terms(
     v_admin, 'Standard venue terms v1', 120);
   v_platform_version := (v_platform_terms->>'version')::int;
@@ -235,6 +241,19 @@ BEGIN
     v_owner, NULL, v_venue, v_sport, 'Court 1',
     1, 200, 'hour', 'synthetic', true, 'instant', NULL, true);
 
+  DELETE FROM public.sports_venue_operating_hours
+  WHERE venue_id = v_venue;
+  PERFORM pg_temp.expect(
+    public.sports_venue_slot_blocked(
+      v_court,
+      now() + interval '7 days',
+      now() + interval '7 days 1 hour'),
+    'venue without operating hours is closed for booking');
+  PERFORM public.set_sports_venue_operating_hours(v_owner, v_venue, (
+    SELECT jsonb_agg(jsonb_build_object(
+      'day', d, 'open', '08:00', 'close', '22:00', 'closed', false))
+    FROM generate_series(0, 6) d));
+
   v_missing := public.sports_venue_setup_missing(v_venue);
   PERFORM pg_temp.expect(COALESCE(array_length(v_missing, 1), 0) = 0,
     'setup complete after all items persisted');
@@ -275,6 +294,14 @@ BEGIN
   v_b1 := public.create_sports_venue_booking(
     v_cust, v_court, pg_temp.bkk_ts(2, '10:00'),
     pg_temp.bkk_ts(2, '11:00'), v_terms, 'idem-1');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1
+    FROM jsonb_array_elements(
+      public.list_my_sports_venue_bookings(v_cust)
+    ) AS bookings(booking)
+    WHERE booking->>'id' = v_b1::text
+      AND booking->>'timezone' = 'Asia/Bangkok'),
+    'booking list includes venue timezone');
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
     WHERE id = v_b1) = 'confirmed', 'instant booking confirmed');
   PERFORM pg_temp.expect((SELECT accepted_terms_version FROM public.sports_venue_bookings

@@ -3,6 +3,7 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
+import '../../domain/venue_local_time.dart';
 
 /// Bottom sheet for choosing a booking slot on a court.
 ///
@@ -14,6 +15,7 @@ class CourtBookingSheet {
     BuildContext context, {
     required VenueCourt court,
     required String venueName,
+    required String timezone,
     DateTime? initialDate,
   }) {
     return showModalBottomSheet<({DateTime start, DateTime end})>(
@@ -24,6 +26,7 @@ class CourtBookingSheet {
       builder: (sheetContext) => _CourtBookingSheetBody(
         court: court,
         venueName: venueName,
+        timezone: timezone,
         initialDate: initialDate,
       ),
     );
@@ -33,31 +36,54 @@ class CourtBookingSheet {
 class _CourtBookingSheetBody extends StatefulWidget {
   final VenueCourt court;
   final String venueName;
+  final String timezone;
   final DateTime? initialDate;
 
   const _CourtBookingSheetBody({
     required this.court,
     required this.venueName,
+    required this.timezone,
     this.initialDate,
   });
 
   @override
-  State<_CourtBookingSheetBody> createState() =>
-      _CourtBookingSheetBodyState();
+  State<_CourtBookingSheetBody> createState() => _CourtBookingSheetBodyState();
 }
 
 class _CourtBookingSheetBodyState extends State<_CourtBookingSheetBody> {
-  late DateTime _date = widget.initialDate ?? DateTime.now();
+  late DateTime _date;
   TimeOfDay? _start;
   int _hours = 1;
 
+  @override
+  void initState() {
+    super.initState();
+    final today = VenueLocalTime.today(widget.timezone);
+    final lastDate = VenueLocalTime.addCalendarDays(today, 90);
+    final requested = widget.initialDate;
+    final requestedDate = requested == null
+        ? today
+        : DateTime(requested.year, requested.month, requested.day);
+    _date = requestedDate.isBefore(today)
+        ? today
+        : requestedDate.isAfter(lastDate)
+        ? lastDate
+        : requestedDate;
+  }
+
   Future<void> _pickDate() async {
-    final now = DateTime.now();
+    final today = VenueLocalTime.today(widget.timezone);
+    final lastDate = VenueLocalTime.addCalendarDays(today, 90);
+    final initialDate = _date.isBefore(today)
+        ? today
+        : _date.isAfter(lastDate)
+        ? lastDate
+        : _date;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 90)),
+      initialDate: initialDate,
+      firstDate: today,
+      lastDate: lastDate,
     );
     if (picked != null) setState(() => _date = picked);
   }
@@ -106,6 +132,10 @@ class _CourtBookingSheetBodyState extends State<_CourtBookingSheetBody> {
                 widget.venueName,
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
+              Text(
+                'เวลาท้องถิ่นของสนาม (${widget.timezone})',
+                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -124,9 +154,7 @@ class _CourtBookingSheetBodyState extends State<_CourtBookingSheetBody> {
                       onPressed: _pickStart,
                       icon: const Icon(Icons.schedule_rounded, size: 18),
                       label: Text(
-                        _start == null
-                            ? 'เวลาเริ่ม'
-                            : _start!.format(context),
+                        _start == null ? 'เวลาเริ่ม' : _start!.format(context),
                       ),
                     ),
                   ),
@@ -188,10 +216,9 @@ class _CourtBookingSheetBodyState extends State<_CourtBookingSheetBody> {
                   onPressed: _start == null
                       ? null
                       : () {
-                          final start = DateTime(
-                            _date.year,
-                            _date.month,
-                            _date.day,
+                          final start = VenueLocalTime.atWallTime(
+                            _date,
+                            widget.timezone,
                             _start!.hour,
                             _start!.minute,
                           );

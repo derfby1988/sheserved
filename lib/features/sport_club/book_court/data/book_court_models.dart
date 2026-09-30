@@ -315,6 +315,7 @@ class VenueBooking {
   final DateTime endsAt;
   final VenueBookingStatus status;
   final String? venueName;
+  final String timezone;
   final String? courtName;
   final String? unitLabel;
   final double? priceAmount;
@@ -336,6 +337,7 @@ class VenueBooking {
     required this.endsAt,
     required this.status,
     this.venueName,
+    this.timezone = 'Asia/Bangkok',
     this.courtName,
     this.unitLabel,
     this.priceAmount,
@@ -378,6 +380,10 @@ class VenueBooking {
         DateTime.now(),
     status: venueBookingStatusFrom(j['status']?.toString()),
     venueName: j['venueName']?.toString() ?? j['venue_name']?.toString(),
+    timezone:
+        j['timezone']?.toString() ??
+        j['venue_timezone']?.toString() ??
+        'Asia/Bangkok',
     courtName: j['courtName']?.toString() ?? j['court_name']?.toString(),
     unitLabel: j['unitLabel']?.toString() ?? j['unit_label']?.toString(),
     priceAmount:
