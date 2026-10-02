@@ -463,6 +463,194 @@ async function main() {
     assert.strictEqual(claimedActorMismatch({ userId: null }, OTHER_USER), false);
   });
 
+  // ── 6. Refresh rotation cache/session consistency ────────────────────
+  console.log('\n6. Refresh rotation cache/session consistency:');
+
+  const Module = require('module');
+  const fakeRedisValues = new Map();
+  class FakeRedis {
+    on() { return this; }
+    async get(key) { return fakeRedisValues.get(key) || null; }
+    async set(key, value, ...options) {
+      if (options.includes('NX') && fakeRedisValues.has(key)) return null;
+      fakeRedisValues.set(key, value);
+      return 'OK';
+    }
+    async exists(key) { return fakeRedisValues.has(key) ? 1 : 0; }
+    async del(key) { return fakeRedisValues.delete(key) ? 1 : 0; }
+    async quit() {}
+  }
+
+  let sessionQuery = async () => ({ rows: [] });
+  const originalWithTransaction = gateway.withTransaction;
+  gateway.withTransaction = async (_userId, callback) =>
+    callback({ query: (sql, params) => sessionQuery(sql, params) });
+  delete require.cache[require.resolve('../lib/session')];
+  const sessionModule = require('../lib/session');
+  gateway.withTransaction = originalWithTransaction;
+
+  async function withFakeRedis(callback) {
+    const originalModuleLoad = Module._load;
+    Module._load = function (request, parent, isMain) {
+      if (request === 'ioredis') return FakeRedis;
+      return originalModuleLoad.call(this, request, parent, isMain);
+    };
+    try {
+      return await callback();
+    } finally {
+      Module._load = originalModuleLoad;
+      await sessionModule.closeSessionResources();
+    }
+  }
+
+  await test('active grace-cache session returns the idempotent result', async () => {
+    const oldRefreshToken = 'active-cache-refresh-token';
+    const oldHash = sessionModule.hashToken(oldRefreshToken);
+    const resultKey = `refresh:result:${oldHash}`;
+    fakeRedisValues.clear();
+    fakeRedisValues.set(resultKey, JSON.stringify({
+      refreshToken: 'rotated-active-refresh-token',
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      familyId: SESSION_ID,
+      reused: false,
+    }));
+    sessionQuery = async (sql) => {
+      if (sql.includes('JOIN public.sessions AS target_session')) {
+        return {
+          rows: [{
+            source_user_id: USER_ID,
+            source_rotated_at: new Date(),
+            source_expires_at: new Date(Date.now() + 60_000),
+            source_revoked_at: null,
+            target_user_id: USER_ID,
+            target_family_id: SESSION_ID,
+            target_prev_token_hash: oldHash,
+            target_revoked_at: null,
+          }],
+        };
+      }
+      return { rows: [] };
+    };
+
+    const result = await withFakeRedis(() =>
+      sessionModule.rotateRefreshToken(oldRefreshToken)
+    );
+    assert.strictEqual(result.cached, true);
+    assert.strictEqual(result.refreshToken, 'rotated-active-refresh-token');
+  });
+
+  await test('revoked grace-cache session is not returned as a successful refresh', async () => {
+    const oldRefreshToken = 'revoked-cache-refresh-token';
+    const oldHash = sessionModule.hashToken(oldRefreshToken);
+    const rootSessionId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+    const resultKey = `refresh:result:${oldHash}`;
+    fakeRedisValues.clear();
+    fakeRedisValues.set(resultKey, JSON.stringify({
+      refreshToken: 'rotated-revoked-refresh-token',
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      familyId: rootSessionId,
+      reused: false,
+    }));
+    sessionQuery = async (sql) => {
+      if (sql.includes('JOIN public.sessions AS target_session')) {
+        return {
+          rows: [{
+            source_user_id: USER_ID,
+            source_rotated_at: new Date(),
+            source_expires_at: new Date(Date.now() + 60_000),
+            source_revoked_at: null,
+            target_user_id: USER_ID,
+            target_family_id: rootSessionId,
+            target_prev_token_hash: oldHash,
+            target_revoked_at: new Date(),
+          }],
+        };
+      }
+      if (sql.includes('WHERE token_hash = $1 FOR UPDATE')) {
+        return {
+          rows: [{
+            id: rootSessionId,
+            user_id: USER_ID,
+            family_id: rootSessionId,
+            rotated_at: new Date(),
+            expires_at: new Date(Date.now() + 60_000),
+            revoked_at: null,
+          }],
+        };
+      }
+      if (sql.includes('WHERE prev_token_hash = $1')) {
+        return {
+          rows: [{
+            id: SESSION_ID,
+            user_id: USER_ID,
+            family_id: rootSessionId,
+            rotated_at: new Date(),
+          }],
+        };
+      }
+      return { rows: [] };
+    };
+
+    const result = await withFakeRedis(() =>
+      sessionModule.rotateRefreshToken(oldRefreshToken)
+    );
+    assert.strictEqual(result.alreadyRotated, true);
+    assert.strictEqual(result.refreshToken, undefined);
+    assert.strictEqual(fakeRedisValues.has(resultKey), false);
+  });
+
+  await test('revoked source session cannot replay a grace-cache result', async () => {
+    const oldRefreshToken = 'revoked-source-cache-refresh-token';
+    const oldHash = sessionModule.hashToken(oldRefreshToken);
+    const rootSessionId = 'cccccccc-dddd-eeee-ffff-000000000000';
+    const resultKey = `refresh:result:${oldHash}`;
+    fakeRedisValues.clear();
+    fakeRedisValues.set(resultKey, JSON.stringify({
+      refreshToken: 'rotated-source-refresh-token',
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      familyId: rootSessionId,
+      reused: false,
+    }));
+    sessionQuery = async (sql) => {
+      if (sql.includes('JOIN public.sessions AS target_session')) {
+        return {
+          rows: [{
+            source_user_id: USER_ID,
+            source_rotated_at: new Date(),
+            source_expires_at: new Date(Date.now() + 60_000),
+            source_revoked_at: new Date(),
+            target_user_id: USER_ID,
+            target_family_id: rootSessionId,
+            target_prev_token_hash: oldHash,
+            target_revoked_at: null,
+          }],
+        };
+      }
+      if (sql.includes('WHERE token_hash = $1 FOR UPDATE')) {
+        return {
+          rows: [{
+            id: rootSessionId,
+            user_id: USER_ID,
+            family_id: rootSessionId,
+            rotated_at: new Date(),
+            expires_at: new Date(Date.now() + 60_000),
+            revoked_at: new Date(),
+          }],
+        };
+      }
+      return { rows: [] };
+    };
+
+    await assert.rejects(
+      () => withFakeRedis(() => sessionModule.rotateRefreshToken(oldRefreshToken)),
+      /Refresh token revoked/
+    );
+    assert.strictEqual(fakeRedisValues.has(resultKey), false);
+  });
+
   // ── Summary ──────────────────────────────────────────────────────────
   const passed = results.filter((r) => r.status === 'PASS').length;
   const failed = results.filter((r) => r.status === 'FAIL').length;

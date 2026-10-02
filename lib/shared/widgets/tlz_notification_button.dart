@@ -81,7 +81,11 @@ class _TlzNotificationButtonState extends ConsumerState<TlzNotificationButton>
       data,
     ) {
       debugPrint('[TlzNotificationButton] application-notification received');
-      if (mounted) _wiggle.forward(from: 0);
+      if (!mounted) return;
+      _wiggle.forward(from: 0);
+      if (widget.badgeCount == null && widget.category == null) {
+        ref.read(notificationProvider.notifier).scheduleUnreadCountRefresh();
+      }
     });
   }
 

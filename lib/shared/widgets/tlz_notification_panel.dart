@@ -595,10 +595,24 @@ class _TlzNotificationPanelState extends ConsumerState<TlzNotificationPanel> {
       (total, room) => total + ((room['unreadCount'] as num?)?.toInt() ?? 0),
     );
     final localSportUnreadCount = _sportProposalNotifications.length;
-    final selectedAppUnreadCount = _selectedCategory == null
-        ? allSummary.unreadCount + localSportUnreadCount
-        : selectedSummary.unreadCount +
-              (_selectedCategory == 'sport' ? localSportUnreadCount : 0);
+    final selectedSummaryUnreadCount = _selectedCategory == null
+        ? allSummary.unreadCount
+        : selectedSummary.unreadCount;
+    final loadedUnreadCount = state.notifications
+        .where(
+          (notification) =>
+              !notification.isRead &&
+              (_selectedCategory == null ||
+                  notification.category == _selectedCategory),
+        )
+        .length;
+    final selectedAppUnreadCount =
+        (selectedSummaryUnreadCount > loadedUnreadCount
+            ? selectedSummaryUnreadCount
+            : loadedUnreadCount) +
+        ((_selectedCategory == null || _selectedCategory == 'sport')
+            ? localSportUnreadCount
+            : 0);
     final totalUnread =
         selectedAppUnreadCount + (_showsChat ? chatUnreadCount : 0);
     final latestChatAt = _latestChatAt();

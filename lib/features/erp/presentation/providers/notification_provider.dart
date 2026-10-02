@@ -72,11 +72,13 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   late final StreamSubscription<Map<String, dynamic>>
   _applicationNotificationSubscription;
   RealtimeChannel? _sportResultChannel;
+  Timer? _unreadRefreshTimer;
+  final Map<String?, int> _unreadRefreshGenerations = {};
 
   NotificationNotifier(this._repo) : super(const NotificationState()) {
     _applicationNotificationSubscription = WebSocketService()
         .applicationNotificationStream
-        .listen(_receiveApplicationNotification);
+        .listen(receiveApplicationNotification);
     if (!_repo.usesGateway) _subscribeSportResults();
   }
 
@@ -98,12 +100,22 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
         .length;
   }
 
-  void _receiveApplicationNotification(Map<String, dynamic> data) {
+  void receiveApplicationNotification(Map<String, dynamic> data) {
     try {
+      _repo.invalidateCurrentUserCache();
       receiveLocalNotification(AppNotification.fromJson(data));
+      scheduleUnreadCountRefresh();
     } catch (_) {
       // Ignore malformed realtime payloads; the next gateway refresh repairs state.
     }
+  }
+
+  void scheduleUnreadCountRefresh() {
+    _unreadRefreshTimer?.cancel();
+    _unreadRefreshTimer = Timer(const Duration(milliseconds: 150), () {
+      _unreadRefreshTimer = null;
+      unawaited(refreshUnreadCount(forceRefresh: true));
+    });
   }
 
   /// โหมด legacy ใช้ Supabase Realtime ที่มีอยู่แล้วเพื่อแจ้งผลคำขอให้ผู้ยื่น
@@ -240,6 +252,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   @override
   void dispose() {
+    _unreadRefreshTimer?.cancel();
     _applicationNotificationSubscription.cancel();
     _sportResultChannel?.unsubscribe();
     super.dispose();
@@ -273,8 +286,17 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     );
   }
 
-  Future<void> refreshUnreadCount({String? category}) async {
-    final count = await _repo.getUnreadCount(category: category);
+  Future<void> refreshUnreadCount({
+    String? category,
+    bool forceRefresh = false,
+  }) async {
+    final generation = (_unreadRefreshGenerations[category] ?? 0) + 1;
+    _unreadRefreshGenerations[category] = generation;
+    final count = await _repo.getUnreadCount(
+      category: category,
+      forceRefresh: forceRefresh,
+    );
+    if (_unreadRefreshGenerations[category] != generation) return;
     _dropPersistedLocalNotifications();
     state = state.copyWith(
       unreadCount: count,
@@ -330,7 +352,10 @@ final notificationUnreadCountProvider = StreamProvider.family<int, String?>((
 
   await for (final event in WebSocketService().applicationNotificationStream) {
     if (category == null || event['category']?.toString() == category) {
-      yield await repository.getUnreadCount(category: category);
+      yield await repository.getUnreadCount(
+        category: category,
+        forceRefresh: true,
+      );
     }
   }
 });

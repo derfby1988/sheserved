@@ -132,6 +132,14 @@ class NotificationRepository {
     }
   }
 
+  void invalidateCurrentUserCache() {
+    final userId = _appUserId;
+    if (userId == null) return;
+    final prefix = '$userId:';
+    _notificationsCache.removeWhere((key, _) => key.startsWith(prefix));
+    _unreadCache.removeWhere((key, _) => key.startsWith(prefix));
+  }
+
   /// Logs the resolved notification identity once per user so a mismatched
   /// owner account (badge stays 0 while rows exist for someone else) is
   /// visible in the device log without spamming every refresh tick.
@@ -141,18 +149,21 @@ class NotificationRepository {
     final userId = _appUserId ?? '-';
     if (_loggedUserId == userId) return;
     _loggedUserId = userId;
-    debugPrint(
-      '[NotificationRepo] identity user=$userId gateway=$_useGateway',
-    );
+    debugPrint('[NotificationRepo] identity user=$userId gateway=$_useGateway');
   }
 
-  Future<int> getUnreadCount({String? category}) async {
+  Future<int> getUnreadCount({
+    String? category,
+    bool forceRefresh = false,
+  }) async {
     _logIdentity();
     try {
       if (_useGateway) {
         final userId = _appUserId;
         final cacheKey = userId == null ? null : '$userId:${category ?? '*'}';
-        final cached = cacheKey == null ? null : _unreadCache[cacheKey];
+        final cached = forceRefresh || cacheKey == null
+            ? null
+            : _unreadCache[cacheKey];
         if (cached != null &&
             DateTime.now().difference(cached.at) < _cacheTtl) {
           return cached.count;

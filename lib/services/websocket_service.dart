@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../core/network/authenticated_http_client.dart';
 import 'auth_service.dart';
+import 'socket_reconnect_policy.dart';
 
 /// WebSocket Service for Real-time Communication
 /// Self-hosted WebSocket Server Connection
@@ -18,10 +19,13 @@ class WebSocketService {
   int _connectionAttempts = 0;
   int _connectionErrorLogCount = 0;
   DateTime? _lastConnectionErrorLogAt;
+  DateTime? _lastNotConnectedLogAt;
   static const int _maxConnectionAttempts = 3;
   static const int _socketReconnectionAttempts = 10;
   Timer? _heartbeatTimer;
   Timer? _authRetryTimer;
+  Timer? _transportRetryTimer;
+  int _transportRetryCount = 0;
 
   // socket.io bakes `auth` into the options at construction, so token changes
   // must rebuild the socket instead of relying on its internal reconnect.
@@ -237,6 +241,36 @@ class WebSocketService {
     _lastConnectionErrorLogAt = null;
   }
 
+  void _logConnectionError(String message, {bool showServerTip = false}) {
+    _connectionErrorLogCount++;
+    final now = DateTime.now();
+    final shouldLog =
+        _connectionErrorLogCount <= 3 ||
+        _lastConnectionErrorLogAt == null ||
+        now.difference(_lastConnectionErrorLogAt!) >=
+            const Duration(seconds: 30);
+    if (!shouldLog) return;
+    _lastConnectionErrorLogAt = now;
+    debugPrint(message);
+    if (showServerTip) {
+      debugPrint(
+        'Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)',
+      );
+    }
+  }
+
+  void _logNotConnected() {
+    final now = DateTime.now();
+    if (_lastNotConnectedLogAt != null &&
+        now.difference(_lastNotConnectedLogAt!) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastNotConnectedLogAt = now;
+    debugPrint(
+      'WebSocket not connected (requested=$_connectionRequested, enabled=$_isEnabled, socket=${_socket != null})',
+    );
+  }
+
   /// Connect to WebSocket Server
   Future<void> connect({String? userId, String? authToken}) async {
     if (!_isEnabled) {
@@ -244,12 +278,18 @@ class WebSocketService {
       return;
     }
     authToken ??= AuthenticatedHttpClient.instance.accessToken;
-    if (AppConfig.useBackendAuth && userId != null && authToken == null) {
+    if (AppConfig.useBackendAuth &&
+        userId != null &&
+        (authToken == null || authToken.trim().isEmpty)) {
+      debugPrint(
+        'WebSocket: refusing backend-auth connection without an access token',
+      );
       _errorController.add('Verified login required for realtime updates');
       disconnect();
       return;
     }
     _connectionRequested = true;
+    _cancelTransportRetry();
     _authRetryTimer?.cancel();
     _authRetryTimer = null;
 
@@ -278,14 +318,14 @@ class WebSocketService {
     _watchTokenLifecycle();
     _watchAuthUserLifecycle();
 
-    // Check connection attempts to prevent infinite retry
     if (_connectionAttempts >= _maxConnectionAttempts) {
       debugPrint(
-        'WebSocket: Max connection attempts reached. Call resetConnectionAttempts() to retry.',
+        'WebSocket: initial connection limit reached; scheduling recovery',
       );
       _errorController.add(
-        'Max connection attempts reached. Server may not be running.',
+        'Initial connection attempts exhausted; retry scheduled',
       );
+      _scheduleTransportRetry(reason: 'initial connection attempts exhausted');
       return;
     }
 
@@ -314,6 +354,8 @@ class WebSocketService {
         debugPrint('WebSocket connected');
         _isConnected = true;
         _connectionAttempts = 0;
+        _cancelTransportRetry(resetCount: true);
+        _lastNotConnectedLogAt = null;
         _authRecoveryAttempts = 0;
         _authRetryCount = 0;
         _authRetryTimer?.cancel();
@@ -339,30 +381,35 @@ class WebSocketService {
         }
       });
 
-      socket.onDisconnect((_) {
+      socket.onDisconnect((reason) {
         if (!identical(_socket, socket)) return;
-        debugPrint('WebSocket disconnected');
+        debugPrint('WebSocket disconnected: $reason');
         _isConnected = false;
         _connectionController.add(false);
+        if (reason == 'io server disconnect') {
+          _scheduleTransportRetry(reason: 'server disconnected the socket');
+        }
+      });
+
+      socket.onReconnectError((error) {
+        if (!identical(_socket, socket)) return;
+        _logConnectionError('WebSocket reconnect error: $error');
+      });
+
+      socket.onReconnectFailed((_) {
+        if (!identical(_socket, socket)) return;
+        _scheduleTransportRetry(
+          reason: 'Socket.IO automatic reconnection attempts exhausted',
+        );
       });
 
       socket.onConnectError((error) {
         if (!identical(_socket, socket)) return;
         _isConnected = false;
-        _connectionErrorLogCount++;
-        final now = DateTime.now();
-        final shouldLog =
-            _connectionErrorLogCount <= 3 ||
-            _lastConnectionErrorLogAt == null ||
-            now.difference(_lastConnectionErrorLogAt!) >=
-                const Duration(seconds: 30);
-        if (shouldLog) {
-          _lastConnectionErrorLogAt = now;
-          debugPrint('WebSocket connection error: $error');
-          debugPrint(
-            'Tip: Make sure the WebSocket server is running (cd websocket-server && npm start)',
-          );
-        }
+        _logConnectionError(
+          'WebSocket connection error: $error',
+          showServerTip: true,
+        );
         _errorController.add('Connection error: $error');
 
         if (_isSocketAuthError(error)) {
@@ -525,6 +572,8 @@ class WebSocketService {
         _errorController.add('Error: $error');
         if (_isSocketAuthError(error)) {
           unawaited(_handleSocketAuthFailure(source: socket));
+        } else if (!socket.connected && !_isConnected) {
+          _scheduleTransportRetry(reason: 'Socket.IO handshake was rejected');
         }
       });
 
@@ -535,6 +584,7 @@ class WebSocketService {
         debugPrint('Failed to connect WebSocket: $e');
       }
       _errorController.add('Failed to connect: $e');
+      _scheduleTransportRetry(reason: 'socket initialization failed');
     }
   }
 
@@ -548,7 +598,7 @@ class WebSocketService {
     double? heading,
   }) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -568,7 +618,7 @@ class WebSocketService {
   /// Subscribe to specific user's location
   void subscribeToUser(String userId) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -578,7 +628,7 @@ class WebSocketService {
   /// Unsubscribe from user's location
   void unsubscribeFromUser(String userId) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -588,7 +638,7 @@ class WebSocketService {
   /// Join a room (e.g., for group tracking)
   void joinRoom(String roomId) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -598,7 +648,7 @@ class WebSocketService {
   /// Leave a room
   void leaveRoom(String roomId) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -660,7 +710,7 @@ class WebSocketService {
     String? incidentId, // ✅ สำหรับเชื่อมโยงภาพไทยมุงกับเหตุการณ์หลัก
   }) {
     if (!_isConnected || _socket == null) {
-      debugPrint('WebSocket not connected');
+      _logNotConnected();
       return;
     }
 
@@ -871,6 +921,7 @@ class WebSocketService {
       final userId = _userId;
       _authToken = token;
       _cancelAuthRetry(resetCount: true);
+      _cancelTransportRetry(resetCount: true);
       if (_connectionRequested && _isEnabled && userId != null) {
         _disposeSocket();
         unawaited(connect(userId: userId, authToken: token));
@@ -891,6 +942,7 @@ class WebSocketService {
     final shouldReconnect =
         _connectionRequested && userId != null && _isEnabled;
     _cancelAuthRetry(resetCount: true);
+    _cancelTransportRetry(resetCount: true);
     _disposeSocket();
     _userId = userId;
     _authToken = AuthenticatedHttpClient.instance.accessToken;
@@ -909,6 +961,61 @@ class WebSocketService {
     _authRetryTimer?.cancel();
     _authRetryTimer = null;
     if (resetCount) _authRetryCount = 0;
+  }
+
+  void _cancelTransportRetry({bool resetCount = false}) {
+    _transportRetryTimer?.cancel();
+    _transportRetryTimer = null;
+    if (resetCount) _transportRetryCount = 0;
+  }
+
+  void _scheduleTransportRetry({required String reason}) {
+    final userId = _userId;
+    if (_transportRetryTimer != null ||
+        !_connectionRequested ||
+        !_isEnabled ||
+        (AppConfig.useBackendAuth &&
+            userId != null &&
+            AuthService.instance.currentUser?.id != userId)) {
+      return;
+    }
+
+    final delay = SocketReconnectPolicy.delayForAttempt(_transportRetryCount);
+    _transportRetryCount++;
+    debugPrint(
+      'WebSocket reconnect scheduled: $reason; retry in ${delay.inSeconds}s',
+    );
+    _errorController.add('Realtime connection unavailable; retry scheduled');
+    _transportRetryTimer = Timer(delay, () {
+      _transportRetryTimer = null;
+      if (!_connectionRequested ||
+          !_isEnabled ||
+          _isConnected ||
+          _userId != userId) {
+        return;
+      }
+      if (AppConfig.useBackendAuth &&
+          userId != null &&
+          AuthService.instance.currentUser?.id != userId) {
+        return;
+      }
+
+      final latestToken = AuthenticatedHttpClient.instance.accessToken;
+      if (AppConfig.useBackendAuth &&
+          userId != null &&
+          (latestToken == null || latestToken.trim().isEmpty)) {
+        debugPrint(
+          'WebSocket reconnect stopped: backend access token unavailable',
+        );
+        disconnect();
+        return;
+      }
+
+      final token = AppConfig.useBackendAuth ? latestToken : _authToken;
+      _disposeSocket();
+      _connectionAttempts = 0;
+      unawaited(connect(userId: userId, authToken: token));
+    });
   }
 
   void _scheduleAuthRetry() {
@@ -957,8 +1064,12 @@ class WebSocketService {
         return;
       }
 
+      debugPrint(
+        'WebSocket: handshake authentication rejected; refreshing tokens',
+      );
       final client = AuthenticatedHttpClient.instance;
       final result = await client.refreshTokens();
+      debugPrint('WebSocket: token refresh result=${result.name}');
       final token = client.accessToken;
       if (result == TokenRefreshResult.refreshed &&
           token != null &&
@@ -1033,14 +1144,15 @@ class WebSocketService {
 
   void _disposeSocket() {
     _stopHeartbeat();
+    _cancelTransportRetry();
     final socket = _socket;
     final wasConnected = _isConnected;
     _socket = null;
     _isConnected = false;
+    _connectionAttempts = 0;
     if (socket != null) {
       socket.disconnect();
       socket.dispose();
-      resetConnectionAttempts();
     }
     if (socket != null || wasConnected) _connectionController.add(false);
   }
@@ -1049,6 +1161,7 @@ class WebSocketService {
   void disconnect() {
     _connectionRequested = false;
     _cancelAuthRetry(resetCount: true);
+    _cancelTransportRetry(resetCount: true);
     _authRecoveryAttempts = 0;
     _userId = null;
     _authToken = null;

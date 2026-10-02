@@ -2705,6 +2705,40 @@ ALTER TABLE public.fitness_group_bookings
 - Sport Club regression suite: **58 tests ผ่าน**, `flutter analyze` 0 issues ในไฟล์ที่แก้, `git diff --check` ผ่าน
 - Manual QA บน device (2026-09-19): badge อัปเดตถูกต้องหลัง hot restart; WebSocket timeout ไม่กระทบความถูกต้องเพราะ polling ทำงานแทน
 
+### Incident: `application-notification` มาถึงแต่ badge ฝั่งเจ้าของสนามไม่ขยับ (2026-10-02)
+
+#### อาการที่พบ
+
+- ผู้จองสร้าง booking แล้วเครื่องเจ้าของได้รับ event จริง — log แสดง `[TlzNotificationToast] received: venue_booking.requested` และ `[TlzNotificationButton] application-notification received` ซ้ำหลายครั้ง แต่ตัวเลขบน badge ไม่เพิ่ม
+- ผู้ใช้ต้องกดปุ่มกระดิ่งเองจึงเห็นรายการแจ้งเตือนใน `TlzNotificationPanel` — รายการถูก persist ใน `app_notifications` ครบ ปัญหาอยู่ฝั่ง client refresh เท่านั้น
+
+#### สาเหตุ (2 ชั้น)
+
+1. **listener ทำแค่ animation** — `TlzNotificationButton` subscribe `applicationNotificationStream` แล้วทำเพียงสั่นกระดิ่ง; ไม่เคยเรียก refresh unread count หรือนำ payload เข้า provider state ตัวเลขจึงไม่เปลี่ยนจนกว่าจะมี trigger อื่น
+2. **repository cache 10 วินาทีคืนค่าเก่า** — `NotificationRepository.getUnreadCount` cache ผลไว้ 10 วินาทีและไม่มีทางบังคับอ่านใหม่ แม้มีการเรียก refresh ก็อาจได้ตัวเลขเดิมกลับมา; `notificationUnreadCountProvider` ใช้ path cache เดียวกัน
+
+#### วิธีแก้ไข — event ต้องอัปเดต state + บังคับอ่าน count ใหม่
+
+- `NotificationRepository.getUnreadCount({String? category, bool forceRefresh = false})` เพิ่ม flag ข้าม cache และ `invalidateCurrentUserCache()` ล้าง notification/unread cache ของผู้ใช้ปัจจุบัน
+- `NotificationNotifier.receiveApplicationNotification(payload)` parse payload เป็น `AppNotification` → เพิ่ม/อัปเดตใน state ทันที → invalidate cache → schedule forced refresh แบบ **debounce 150 ms** (event ที่มาถี่รวมเป็นคำขอเดียว)
+- `refreshUnreadCount` ใช้ **generation guard ต่อ category** กัน response เก่าที่ resolve ช้ากว่าเขียนทับ state ใหม่
+- gateway mode เพิ่ม badge แบบ optimistic ทันที แล้วแทนด้วยค่า authoritative หลัง forced refresh (กัน double-count เมื่อ server นับรายการเดิม)
+- `TlzNotificationButton` listener เรียก `receiveApplicationNotification` (ปุ่ม general ไม่มี category) ควบคู่กับ animation เดิม; `TlzNotificationPanel` รวม provider live state เข้ากับ feed/unread ที่แสดงเพื่อไม่แสดงค่า stale ระหว่างรอ refresh
+- ฝั่ง server ไม่เปลี่ยน: recipient resolution ยังเป็น authoritative จาก booking/venue managers ใน DB — client ส่ง recipient เองไม่ได้
+
+#### ข้อควรระวังเพื่อไม่ให้เกิดซ้ำ
+
+- event realtime ที่มาถึงต้องทำ 2 อย่างเสมอ: **อัปเดต provider state** และ **invalidate cache แล้ว force refresh count** — animation/toast อย่างเดียวไม่ถือว่า badge ทำงาน
+- ทุก cache ของ unread/notification list ต้องมี path `forceRefresh` สำหรับ realtime event; อย่าให้ TTL cache เป็นตัวกั้นตัวเลขที่เพิ่งเปลี่ยน
+- event burst (server emit ซ้ำหลายครั้งต่อ booking) ต้อง debounce และ async refresh ต้องมี generation/version guard เสมอ
+- เมื่อเพิ่ม notification category ใหม่ ให้ทดสอบว่า badge เพิ่มทันทีโดยไม่ต้องเปิด panel — ดู test "refreshes the badge after a realtime venue booking notification" ใน `notification_button_test.dart` เป็นแบบ
+
+#### Test และ Verification
+
+- `test/features/sport_club/presentation/notification_button_test.dart`: realtime event → badge เพิ่มทันที, forced refresh ถูกเรียก, cache invalidated, optimistic increment ใน gateway mode, generation guard, category/routing เดิมไม่เสีย — **21 tests ผ่าน**
+- `dart analyze` ไม่มี error ในไฟล์ที่แก้ (เหลือ info lint เดิม), `git diff --check` ผ่าน
+- Manual QA บน device (2026-10-02): เจ้าของสนามได้รับ `venue_booking.requested`/`venue_booking.cancelled` แล้ว badge และรายการอัปเดตอัตโนมัติโดยไม่ต้องกดเปิด panel
+
 ---
 
 ## Phase 19 — ความสมบูรณ์และรัดกุมของ Flow เข้าร่วมก๊วนและการอนุมัติ (Join & Approval Flow Integrity) ⏳ รอ implement

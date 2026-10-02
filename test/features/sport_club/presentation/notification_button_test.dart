@@ -26,11 +26,24 @@ class _FakeNotificationRepository extends NotificationRepository {
       );
 
   int unreadCountCalls = 0;
+  int forcedUnreadCountCalls = 0;
+  int cacheInvalidationCalls = 0;
+  int unreadCountValue = 4;
+  int forcedUnreadCountValue = 4;
 
   @override
-  Future<int> getUnreadCount({String? category}) async {
+  void invalidateCurrentUserCache() {
+    cacheInvalidationCalls++;
+  }
+
+  @override
+  Future<int> getUnreadCount({
+    String? category,
+    bool forceRefresh = false,
+  }) async {
     unreadCountCalls++;
-    return 4;
+    if (forceRefresh) forcedUnreadCountCalls++;
+    return forceRefresh ? forcedUnreadCountValue : unreadCountValue;
   }
 }
 
@@ -69,8 +82,12 @@ class _ListBackedNotificationRepository extends NotificationRepository {
 
 class _ZeroNotificationRepository extends _FakeNotificationRepository {
   @override
-  Future<int> getUnreadCount({String? category}) async {
+  Future<int> getUnreadCount({
+    String? category,
+    bool forceRefresh = false,
+  }) async {
     unreadCountCalls++;
+    if (forceRefresh) forcedUnreadCountCalls++;
     return 0;
   }
 }
@@ -372,6 +389,58 @@ void main() {
       await tester.pump();
       expect(repository.unreadCountCalls, 3);
       expect(chatNotifier.refreshCalls, 3);
+    },
+  );
+
+  testWidgets(
+    'refreshes the badge after a realtime venue booking notification',
+    (tester) async {
+      final repository = _GatewayNotificationRepository()
+        ..unreadCountValue = 0
+        ..forcedUnreadCountValue = 1;
+      final chatNotifier = _FakeChatUnreadNotifier();
+      final container = ProviderContainer(
+        overrides: [
+          chatUnreadProvider.overrideWith((ref) => chatNotifier),
+          notificationRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: TlzNotificationButton()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('2'), findsOneWidget);
+      container
+          .read(notificationProvider.notifier)
+          .receiveApplicationNotification({
+            'id': 'venue-booking-1',
+            'profession_id': '',
+            'recipient_id': 'owner-1',
+            'category': 'venue_booking',
+            'event_type': 'venue_booking.requested',
+            'title': 'มีคำขอจองรออนุมัติ',
+            'created_at': DateTime.utc(2026, 10, 3).toIso8601String(),
+            'is_read': false,
+            'payload': {'bookingId': 'booking-1'},
+          });
+      await tester.pump();
+
+      expect(repository.cacheInvalidationCalls, 1);
+      expect(find.text('3'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+
+      expect(repository.forcedUnreadCountCalls, 1);
+      expect(find.text('3'), findsOneWidget);
     },
   );
 

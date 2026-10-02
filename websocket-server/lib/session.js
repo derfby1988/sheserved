@@ -157,6 +157,74 @@ async function findRotatedDescendant(oldHash, client) {
   return result.rows[0];
 }
 
+async function readCachedRotationResult(redis, resultKey, oldHash) {
+  const cached = await redis.get(resultKey);
+  if (!cached) return null;
+
+  let outcome;
+  try {
+    outcome = JSON.parse(cached);
+  } catch (_) {
+    await redis.del(resultKey);
+    return null;
+  }
+
+  if (
+    !outcome ||
+    typeof outcome !== 'object' ||
+    Array.isArray(outcome) ||
+    typeof outcome.refreshToken !== 'string' ||
+    outcome.refreshToken.length === 0 ||
+    typeof outcome.sessionId !== 'string' ||
+    typeof outcome.userId !== 'string' ||
+    typeof outcome.familyId !== 'string'
+  ) {
+    await redis.del(resultKey);
+    return null;
+  }
+
+  const session = await withTransaction(SYSTEM_ACTOR, async (client) => {
+    const result = await client.query(
+      `SELECT
+         source_session.user_id AS source_user_id,
+         source_session.rotated_at AS source_rotated_at,
+         source_session.expires_at AS source_expires_at,
+         source_session.revoked_at AS source_revoked_at,
+         target_session.user_id AS target_user_id,
+         target_session.family_id AS target_family_id,
+         target_session.prev_token_hash AS target_prev_token_hash,
+         target_session.revoked_at AS target_revoked_at
+       FROM public.sessions AS source_session
+       JOIN public.sessions AS target_session ON target_session.id = $2
+       WHERE source_session.token_hash = $1`,
+      [oldHash, outcome.sessionId]
+    );
+    return result.rows[0] || null;
+  });
+
+  const sourceExpiresAt = session
+    ? new Date(session.source_expires_at).getTime()
+    : NaN;
+  const isActiveRotation =
+    session != null &&
+    session.source_revoked_at == null &&
+    session.target_revoked_at == null &&
+    session.source_rotated_at != null &&
+    Number.isFinite(sourceExpiresAt) &&
+    sourceExpiresAt > Date.now() &&
+    `${session.source_user_id}` === `${outcome.userId}` &&
+    `${session.target_user_id}` === `${outcome.userId}` &&
+    `${session.target_family_id}` === `${outcome.familyId}` &&
+    session.target_prev_token_hash === oldHash;
+
+  if (!isActiveRotation) {
+    await redis.del(resultKey);
+    return null;
+  }
+
+  return { ...outcome, cached: true };
+}
+
 /**
  * Rotate a refresh token (Decision Q6 = B).
  *
@@ -180,8 +248,8 @@ async function rotateRefreshToken(oldRefreshToken, meta = {}) {
   // 1) Result cache check FIRST — within grace, the old token must return
   //    the same rotated result (idempotent for parallel/sequential requests).
   if (redis) {
-    const cached = await redis.get(resultKey);
-    if (cached) return { ...JSON.parse(cached), cached: true };
+    const cached = await readCachedRotationResult(redis, resultKey, oldHash);
+    if (cached) return cached;
   }
 
   // 2) Acquire Redis lock (single-flight).  If lock held → wait for result.
@@ -193,8 +261,8 @@ async function rotateRefreshToken(oldRefreshToken, meta = {}) {
     if (!lockAcquired) {
       for (let i = 0; i < 15; i++) {
         await new Promise((r) => setTimeout(r, 200));
-        const retry = await redis.get(resultKey);
-        if (retry) return { ...JSON.parse(retry), cached: true };
+        const retry = await readCachedRotationResult(redis, resultKey, oldHash);
+        if (retry) return retry;
         const stillHeld = await redis.exists(lockKey);
         if (!stillHeld) break; // holder finished — fall through to retry rotate
       }
