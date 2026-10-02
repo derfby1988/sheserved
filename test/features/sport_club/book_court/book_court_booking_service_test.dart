@@ -10,85 +10,92 @@ const _court = VenueCourt(
   name: 'Court 1',
 );
 
-VenueBooking _booking({VenueBookingStatus status = VenueBookingStatus.pending}) =>
-    VenueBooking(
-      id: 'b1',
-      courtId: 'court-1',
-      venueId: 'venue-1',
-      sportId: 'sport-1',
-      startsAt: DateTime(2026, 10, 1, 18),
-      endsAt: DateTime(2026, 10, 1, 19),
-      status: status,
-    );
+VenueBooking _booking({
+  VenueBookingStatus status = VenueBookingStatus.pending,
+}) => VenueBooking(
+  id: 'b1',
+  courtId: 'court-1',
+  venueId: 'venue-1',
+  sportId: 'sport-1',
+  startsAt: DateTime(2026, 10, 1, 18),
+  endsAt: DateTime(2026, 10, 1, 19),
+  status: status,
+);
 
 void main() {
   group('BookCourtBookingService.book', () {
-    test('returns null without calling the data source when user missing',
-        () async {
-      var calls = 0;
-      final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async {
-          calls++;
-          return 'b1';
-        },
-        cancel: (_, _, {reason}) async {},
-        decide: (_, _, _, {reason}) async => 'confirmed',
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {},
-      );
+    test(
+      'returns null without calling the data source when user missing',
+      () async {
+        var calls = 0;
+        final service = BookCourtBookingService(
+          create:
+              ({
+                required userId,
+                required courtId,
+                required startsAt,
+                required endsAt,
+                required termsVersion,
+                idempotencyKey,
+              }) async {
+                calls++;
+                return 'b1';
+              },
+          cancel: (_, _, {reason}) async {},
+          decide: (_, _, _, {reason}) async => 'confirmed',
+          changeSlot:
+              ({
+                required userId,
+                required bookingId,
+                required startsAt,
+                required endsAt,
+                termsVersion,
+              }) async {},
+        );
 
-      final startsAt = DateTime(2026, 10, 1, 18);
-      expect(
-        await service.book(
-          userId: null,
-          court: _court,
-          startsAt: startsAt,
-          endsAt: startsAt.add(const Duration(hours: 1)),
-          termsVersion: 2,
-        ),
-        isNull,
-      );
-      expect(calls, 0);
-    });
+        final startsAt = DateTime(2026, 10, 1, 18);
+        expect(
+          await service.book(
+            userId: null,
+            court: _court,
+            startsAt: startsAt,
+            endsAt: startsAt.add(const Duration(hours: 1)),
+            termsVersion: 2,
+          ),
+          isNull,
+        );
+        expect(calls, 0);
+      },
+    );
 
     test('forwards court, slot, terms version and idempotency key', () async {
       String? gotCourt, gotKey;
       int? gotTerms;
       final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async {
-          gotCourt = courtId;
-          gotTerms = termsVersion;
-          gotKey = idempotencyKey;
-          return 'booking-7';
-        },
+        create:
+            ({
+              required userId,
+              required courtId,
+              required startsAt,
+              required endsAt,
+              required termsVersion,
+              idempotencyKey,
+            }) async {
+              gotCourt = courtId;
+              gotTerms = termsVersion;
+              gotKey = idempotencyKey;
+              return 'booking-7';
+            },
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {},
+        changeSlot:
+            ({
+              required userId,
+              required bookingId,
+              required startsAt,
+              required endsAt,
+              termsVersion,
+            }) async {},
       );
 
       final startsAt = DateTime(2026, 10, 1, 18);
@@ -108,24 +115,25 @@ void main() {
 
     test('server errors (e.g. TERMS_VERSION_CHANGED) propagate', () {
       final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async =>
-            throw StateError('TERMS_VERSION_CHANGED'),
+        create:
+            ({
+              required userId,
+              required courtId,
+              required startsAt,
+              required endsAt,
+              required termsVersion,
+              idempotencyKey,
+            }) async => throw StateError('TERMS_VERSION_CHANGED'),
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {},
+        changeSlot:
+            ({
+              required userId,
+              required bookingId,
+              required startsAt,
+              required endsAt,
+              termsVersion,
+            }) async {},
       );
 
       final startsAt = DateTime(2026, 10, 1, 18);
@@ -142,112 +150,229 @@ void main() {
     });
   });
 
-  group('BookCourtBookingService.decideBooking', () {
-    test('returns null for missing user; approve maps to approve decision',
-        () async {
-      String? gotDecision;
-      final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async =>
-            'b1',
-        cancel: (_, _, {reason}) async {},
-        decide: (_, _, decision, {reason}) async {
-          gotDecision = decision;
-          return 'confirmed';
-        },
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {},
-      );
+  group('BookCourtBookingService.bookSlots', () {
+    test(
+      'stops at failure and resumes remaining slots with original keys',
+      () async {
+        final calls = <String>[];
+        final receivedStarts = <DateTime>[];
+        var failSecond = true;
+        final service = BookCourtBookingService(
+          create:
+              ({
+                required userId,
+                required courtId,
+                required startsAt,
+                required endsAt,
+                required termsVersion,
+                idempotencyKey,
+              }) async {
+                calls.add(idempotencyKey!);
+                receivedStarts.add(startsAt);
+                if (idempotencyKey == 'key-1' && failSecond) {
+                  throw StateError('TERMS_VERSION_CHANGED');
+                }
+                return 'booking-$idempotencyKey';
+              },
+          cancel: (_, _, {reason}) async {},
+          decide: (_, _, _, {reason}) async => 'confirmed',
+          changeSlot:
+              ({
+                required userId,
+                required bookingId,
+                required startsAt,
+                required endsAt,
+                termsVersion,
+              }) async {},
+        );
+        final slots = [
+          for (var i = 0; i < 3; i++)
+            (
+              start: DateTime(2030, 1, 1, 10 + i * 3),
+              end: DateTime(2030, 1, 1, 11 + i * 3),
+              idempotencyKey: 'key-$i',
+            ),
+        ];
+        final first = await service.bookSlots(
+          userId: 'u1',
+          court: _court,
+          slots: slots,
+          termsVersion: 1,
+        );
+        expect(first.completed, 1);
+        expect(first.error.toString(), contains('TERMS_VERSION_CHANGED'));
+        expect(calls, ['key-0', 'key-1']);
+        failSecond = false;
+        final second = await service.bookSlots(
+          userId: 'u1',
+          court: _court,
+          slots: slots.sublist(first.completed),
+          termsVersion: 2,
+        );
+        expect(second.completed, 2);
+        expect(second.error, isNull);
+        expect(calls, ['key-0', 'key-1', 'key-1', 'key-2']);
+        expect(receivedStarts, [
+          slots[0].start,
+          slots[1].start,
+          slots[1].start,
+          slots[2].start,
+        ]);
+      },
+    );
 
-      expect(
-        await service.decideBooking(
-          userId: null,
-          booking: _booking(),
-          approve: true,
-        ),
-        isNull,
+    test('missing user cannot report a successful batch', () async {
+      final service = BookCourtBookingService(
+        create:
+            ({
+              required userId,
+              required courtId,
+              required startsAt,
+              required endsAt,
+              required termsVersion,
+              idempotencyKey,
+            }) async => throw StateError('must not call'),
+        cancel: (_, _, {reason}) async {},
+        decide: (_, _, _, {reason}) async => 'confirmed',
+        changeSlot:
+            ({
+              required userId,
+              required bookingId,
+              required startsAt,
+              required endsAt,
+              termsVersion,
+            }) async {},
       );
-      await service.decideBooking(
-        userId: 'owner-1',
-        booking: _booking(),
-        approve: false,
-        reason: 'full',
+      final result = await service.bookSlots(
+        userId: null,
+        court: _court,
+        slots: [
+          (
+            start: DateTime(2030),
+            end: DateTime(2030, 1, 1, 1),
+            idempotencyKey: 'key',
+          ),
+        ],
+        termsVersion: 1,
       );
-      expect(gotDecision, 'reject');
+      expect(result.completed, 0);
+      expect(result.error.toString(), contains('UNAUTHORIZED'));
     });
   });
 
-  group('BookCourtBookingService.movePendingSlot', () {
-    test('rejects non-pending bookings without calling the data source',
-        () async {
-      var calls = 0;
-      final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async =>
-            'b1',
-        cancel: (_, _, {reason}) async {},
-        decide: (_, _, _, {reason}) async => 'confirmed',
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {
-          calls++;
-        },
-      );
+  group('BookCourtBookingService.decideBooking', () {
+    test(
+      'returns null for missing user; approve maps to approve decision',
+      () async {
+        String? gotDecision;
+        final service = BookCourtBookingService(
+          create:
+              ({
+                required userId,
+                required courtId,
+                required startsAt,
+                required endsAt,
+                required termsVersion,
+                idempotencyKey,
+              }) async => 'b1',
+          cancel: (_, _, {reason}) async {},
+          decide: (_, _, decision, {reason}) async {
+            gotDecision = decision;
+            return 'confirmed';
+          },
+          changeSlot:
+              ({
+                required userId,
+                required bookingId,
+                required startsAt,
+                required endsAt,
+                termsVersion,
+              }) async {},
+        );
 
-      final ok = await service.movePendingSlot(
-        userId: 'u1',
-        booking: _booking(status: VenueBookingStatus.confirmed),
-        startsAt: DateTime(2026, 10, 2, 18),
-        endsAt: DateTime(2026, 10, 2, 19),
-      );
-      expect(ok, isFalse);
-      expect(calls, 0);
-    });
+        expect(
+          await service.decideBooking(
+            userId: null,
+            booking: _booking(),
+            approve: true,
+          ),
+          isNull,
+        );
+        await service.decideBooking(
+          userId: 'owner-1',
+          booking: _booking(),
+          approve: false,
+          reason: 'full',
+        );
+        expect(gotDecision, 'reject');
+      },
+    );
+  });
+
+  group('BookCourtBookingService.movePendingSlot', () {
+    test(
+      'rejects non-pending bookings without calling the data source',
+      () async {
+        var calls = 0;
+        final service = BookCourtBookingService(
+          create:
+              ({
+                required userId,
+                required courtId,
+                required startsAt,
+                required endsAt,
+                required termsVersion,
+                idempotencyKey,
+              }) async => 'b1',
+          cancel: (_, _, {reason}) async {},
+          decide: (_, _, _, {reason}) async => 'confirmed',
+          changeSlot:
+              ({
+                required userId,
+                required bookingId,
+                required startsAt,
+                required endsAt,
+                termsVersion,
+              }) async {
+                calls++;
+              },
+        );
+
+        final ok = await service.movePendingSlot(
+          userId: 'u1',
+          booking: _booking(status: VenueBookingStatus.confirmed),
+          startsAt: DateTime(2026, 10, 2, 18),
+          endsAt: DateTime(2026, 10, 2, 19),
+        );
+        expect(ok, isFalse);
+        expect(calls, 0);
+      },
+    );
 
     test('moves a pending booking to a new slot', () async {
       var calls = 0;
       final service = BookCourtBookingService(
-        create: ({
-          required userId,
-          required courtId,
-          required startsAt,
-          required endsAt,
-          required termsVersion,
-          idempotencyKey,
-        }) async =>
-            'b1',
+        create:
+            ({
+              required userId,
+              required courtId,
+              required startsAt,
+              required endsAt,
+              required termsVersion,
+              idempotencyKey,
+            }) async => 'b1',
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
-        changeSlot: ({
-          required userId,
-          required bookingId,
-          required startsAt,
-          required endsAt,
-          termsVersion,
-        }) async {
-          calls++;
-        },
+        changeSlot:
+            ({
+              required userId,
+              required bookingId,
+              required startsAt,
+              required endsAt,
+              termsVersion,
+            }) async {
+              calls++;
+            },
       );
 
       final ok = await service.movePendingSlot(

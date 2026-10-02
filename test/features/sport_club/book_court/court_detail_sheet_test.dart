@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_models.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_repository.dart';
 import 'package:sheserved/features/sport_club/book_court/domain/venue_local_time.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_availability_picker.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_detail_sheet.dart';
+import 'package:sheserved/shared/widgets/thai_buddhist_date_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class _FakeBookCourtRepository extends BookCourtRepository {
@@ -23,6 +25,7 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   Object? availabilityError;
   DateTime? availabilityFrom;
   DateTime? availabilityTo;
+  final List<CourtAvailability> availabilityResponses = [];
   final List<String> availabilityCourtIds = [];
 
   @override
@@ -52,8 +55,40 @@ class _FakeBookCourtRepository extends BookCourtRepository {
     availabilityFrom = from;
     availabilityTo = to;
     if (availabilityError != null) throw availabilityError!;
+    if (availabilityResponses.isNotEmpty) {
+      return availabilityResponses.removeAt(0);
+    }
     return availability ?? CourtAvailability(courtId: courtId);
   }
+}
+
+CourtAvailability _openAvailability({
+  List<({DateTime startsAt, DateTime endsAt})> booked = const [],
+}) => CourtAvailability(
+  courtId: 'court-1',
+  booked: booked,
+  hours: [
+    for (var day = 0; day < 7; day++)
+      VenueOperatingHours(
+        dayOfWeek: day,
+        openTime: '06:00',
+        closeTime: '23:00',
+      ),
+  ],
+);
+
+Future<void> _selectAvailabilityDate(WidgetTester tester, DateTime date) async {
+  final today = VenueLocalTime.today(_venue.timezone);
+  await tester.tap(find.text(ThaiDateUtils.formatShortDateBE2Digit(today)));
+  await tester.pumpAndSettle();
+  if (today.year != date.year || today.month != date.month) {
+    await tester.tap(find.bySemanticsLabel('เดือนถัดไป'));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(find.text('${date.day}'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('ยืนยัน'));
+  await tester.pumpAndSettle();
 }
 
 const _venue = VenueSummary(
@@ -86,7 +121,7 @@ const _approvalCourt = VenueCourt(
 
 Widget _harness(
   _FakeBookCourtRepository repo, {
-  Future<void> Function(VenueCourt court)? onBookCourt,
+  CourtBookingCallback? onBookCourt,
 }) {
   return MaterialApp(
     home: Builder(
@@ -131,7 +166,12 @@ void main() {
   testWidgets('court actions stay hidden until the row is swiped left', (
     tester,
   ) async {
-    await tester.pumpWidget(_harness(repo, onBookCourt: (_) async {}));
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
     await _openSheet(tester);
 
     expect(find.text('คอร์ท หลังจวนเก่าภูว้า'), findsOneWidget);
@@ -151,7 +191,11 @@ void main() {
   testWidgets('the revealed booking action books that court', (tester) async {
     final booked = <String>[];
     await tester.pumpWidget(
-      _harness(repo, onBookCourt: (court) async => booked.add(court.id)),
+      _harness(
+        repo,
+        onBookCourt: (court, {initialDate, initialSlotStart}) async =>
+            booked.add(court.id),
+      ),
     );
     await _openSheet(tester);
     await _swipeCourt(tester, 'court-1');
@@ -166,7 +210,12 @@ void main() {
     tester,
   ) async {
     repo.courts = [_approvalCourt];
-    await tester.pumpWidget(_harness(repo, onBookCourt: (_) async {}));
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
     await _openSheet(tester);
     await _swipeCourt(tester, 'court-2');
 
@@ -189,7 +238,12 @@ void main() {
   });
 
   testWidgets('tapping a court row loads its availability', (tester) async {
-    await tester.pumpWidget(_harness(repo, onBookCourt: (_) async {}));
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
     await _openSheet(tester);
 
     await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
@@ -197,6 +251,47 @@ void main() {
 
     expect(repo.availabilityCourtIds, ['court-1']);
     expect(find.text('ตารางเวลา'), findsOneWidget);
+  });
+
+  testWidgets('a finished booking reloads only the visible availability', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+    expect(repo.availabilityCourtIds, ['court-1']);
+
+    await _swipeCourt(tester, 'court-1');
+    await tester.tap(find.text('จองเลย'));
+    await tester.pumpAndSettle();
+
+    expect(repo.availabilityCourtIds, ['court-1', 'court-1']);
+    expect(find.text('ตารางเวลา'), findsOneWidget);
+  });
+
+  testWidgets('booking without a visible grid does not load availability', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
+    await _openSheet(tester);
+    await _swipeCourt(tester, 'court-1');
+
+    await tester.tap(find.text('จองเลย'));
+    await tester.pumpAndSettle();
+
+    expect(repo.availabilityCourtIds, isEmpty);
+    expect(find.text('ตารางเวลา'), findsNothing);
   });
 
   testWidgets('availability requests use venue-local day boundaries', (
@@ -219,6 +314,105 @@ void main() {
       VenueLocalTime.atWallTime(nextDate, _venue.timezone, 0).toUtc(),
     );
   });
+
+  testWidgets(
+    'tapping a slot rechecks availability and opens booking with it selected',
+    (tester) async {
+      repo.availability = _openAvailability();
+      final date = VenueLocalTime.addCalendarDays(
+        VenueLocalTime.today(_venue.timezone),
+        1,
+      );
+      final slot = CourtAvailabilityPicker.hourlySlots(
+        date,
+        timezone: _venue.timezone,
+      ).singleWhere((candidate) => candidate.start.hour == 18);
+      final bookingRequests =
+          <({String courtId, DateTime? date, DateTime? start})>[];
+      await tester.pumpWidget(
+        _harness(
+          repo,
+          onBookCourt: (court, {initialDate, initialSlotStart}) async {
+            bookingRequests.add((
+              courtId: court.id,
+              date: initialDate,
+              start: initialSlotStart,
+            ));
+          },
+        ),
+      );
+      await _openSheet(tester);
+      await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+      await tester.pumpAndSettle();
+      await _selectAvailabilityDate(tester, date);
+
+      await tester.tap(find.text('18:00'));
+      await tester.pumpAndSettle();
+
+      expect(bookingRequests, hasLength(1));
+      expect(bookingRequests.single.courtId, 'court-1');
+      expect(bookingRequests.single.date, date);
+      expect(
+        bookingRequests.single.start!.isAtSameMomentAs(slot.start),
+        isTrue,
+      );
+      expect(repo.availabilityCourtIds, [
+        'court-1',
+        'court-1',
+        'court-1',
+        'court-1',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'a slot no longer available is reported and only availability reloads',
+    (tester) async {
+      final date = VenueLocalTime.addCalendarDays(
+        VenueLocalTime.today(_venue.timezone),
+        1,
+      );
+      final slot = CourtAvailabilityPicker.hourlySlots(
+        date,
+        timezone: _venue.timezone,
+      ).singleWhere((candidate) => candidate.start.hour == 18);
+      final free = _openAvailability();
+      final booked = _openAvailability(
+        booked: [(startsAt: slot.start, endsAt: slot.end)],
+      );
+      repo.availability = free;
+      repo.availabilityResponses.addAll([free, free, booked, booked]);
+      var bookingCalls = 0;
+      await tester.pumpWidget(
+        _harness(
+          repo,
+          onBookCourt: (_, {initialDate, initialSlotStart}) async {
+            bookingCalls++;
+          },
+        ),
+      );
+      await _openSheet(tester);
+      await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+      await tester.pumpAndSettle();
+      await _selectAvailabilityDate(tester, date);
+
+      await tester.tap(find.text('18:00'));
+      await tester.pumpAndSettle();
+
+      expect(bookingCalls, 0);
+      expect(repo.availabilityCourtIds, [
+        'court-1',
+        'court-1',
+        'court-1',
+        'court-1',
+      ]);
+      expect(
+        find.text('เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('ถูกจอง'), findsOneWidget);
+    },
+  );
 
   testWidgets('availability failures show an explicit retry instead of slots', (
     tester,

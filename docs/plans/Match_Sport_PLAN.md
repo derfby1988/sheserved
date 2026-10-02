@@ -3169,7 +3169,7 @@ lib/features/sport_club/
 │           ├── court_detail_sheet.dart
 │           ├── court_review_sheet.dart
 │           ├── court_availability_picker.dart
-│           ├── court_booking_sheet.dart
+│           ├── court_booking_dialog.dart
 │           ├── court_usage_terms_dialog.dart
 │           ├── court_booking_action_dialogs.dart
 │           ├── book_court_quick_filter_row.dart
@@ -3475,6 +3475,8 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 
 #### 21.7.5 Book Court — Instant Booking MVP
 
+- `CourtBookingDialog` เปิดซ้อนเหนือ `CourtDetailSheet` โดยไม่ปิด sheet; ทุกครั้งที่ flow จองจบ (สำเร็จ ยกเลิก หรือ error) ให้ reload เฉพาะตาราง availability ที่ sheet กำลังแสดงอยู่ — ห้ามรีเฟรชข้อมูลอื่นของ sheet และ dialog เองต้องโหลด availability สดทุกครั้งที่เปิดหรือเปลี่ยนวัน
+- เมื่อแตะ slot ในตาราง detail ให้เรียก `get_court_availability` ซ้ำตามวันท้องถิ่นก่อนนำทาง; ถ้ายังว่างให้เปิด dialog พร้อม preselect วัน/slot นั้นและคำนวณสรุปใหม่ โดยผู้ใช้ยังแก้หรือเลือก slot เพิ่มได้; ถ้าไม่ว่างหรือยืนยันไม่ได้ ให้แจ้งผู้ใช้และ reload เฉพาะตารางใน detail sheet
 - เปิด booking mode `instant` ก่อน; ทุก resource ใน MVP ต้องตรวจ slot/capacity และสร้าง `confirmed` แบบ atomic ผ่าน trusted RPC
 - ป้องกัน double-submit/concurrent overlap ด้วย idempotency key, lock/constraint และ server-side availability recheck; client ห้ามเป็น source of truth
 - ก่อน submit แสดง `CourtUsageTermsDialog`; consent/version/text/cancellation cutoff snapshot ต้องถูกตรวจและบันทึก transaction เดียวกับ booking; stale terms บังคับอ่านและยอมรับ version ล่าสุดใหม่

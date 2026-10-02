@@ -8,7 +8,7 @@ import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/venue_local_time.dart';
 import '../widgets/court_booking_action_dialogs.dart';
-import '../widgets/court_booking_sheet.dart';
+import '../widgets/court_booking_dialog.dart';
 import '../widgets/court_review_sheet.dart';
 import '../widgets/court_usage_terms_dialog.dart';
 
@@ -104,14 +104,17 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       pricingUnit: b.pricingUnit ?? 'hour',
       approvalMode: b.approvalMode,
     );
-    final slot = await CourtBookingSheet.show(
+    final slots = await CourtBookingDialog.show(
       context,
       court: court,
       venueName: b.venueName ?? '',
       timezone: b.timezone,
+      loadAvailability: widget.repo.getCourtAvailability,
+      allowDisjoint: false,
       initialDate: VenueLocalTime.dateOfInstant(b.startsAt, b.timezone),
     );
-    if (slot == null || !mounted) return;
+    if (slots == null || slots.length != 1 || !mounted) return;
+    final slot = slots.single;
     try {
       try {
         await _booking.movePendingSlot(

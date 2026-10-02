@@ -66,6 +66,69 @@ void main() {
     expect(find.text('ปิด'), findsOneWidget);
   });
 
+  testWidgets('free-only hides booked, blocked, closed and started slots', (
+    tester,
+  ) async {
+    const timezone = 'Asia/Bangkok';
+    final date = DateTime(2040, 1, 1);
+    DateTime at(int hour, [int minute = 0]) =>
+        VenueLocalTime.atWallTime(date, timezone, hour, minute);
+    final availability = CourtAvailability(
+      courtId: 'court-1',
+      booked: [(startsAt: at(15), endsAt: at(16))],
+      blocked: [(startsAt: at(17, 30), endsAt: at(18, 30))],
+      hours: [
+        VenueOperatingHours(
+          dayOfWeek: at(0).weekday % 7,
+          openTime: '14:00',
+          closeTime: '22:00',
+        ),
+      ],
+    );
+    DateTime? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CourtAvailabilityPicker(
+            availability: availability,
+            date: date,
+            timezone: timezone,
+            now: at(14, 30),
+            freeOnly: true,
+            selectedStarts: {at(19)},
+            onSlotTap: (start, end) => tapped = start,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('14:00'), findsNothing);
+    expect(find.text('15:00'), findsNothing);
+    expect(find.text('17:00'), findsNothing);
+    expect(find.text('18:00'), findsNothing);
+    expect(find.byTooltip('ว่าง'), findsNWidgets(4));
+    expect(find.text('ถูกจอง'), findsNothing);
+    expect(find.text('ปิด'), findsNothing);
+    await tester.tap(find.text('19:00'));
+    expect(tapped, at(19));
+  });
+
+  testWidgets('free-only with missing hours shows empty state', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CourtAvailabilityPicker(
+            availability: const CourtAvailability(courtId: 'court-1'),
+            date: DateTime(2040, 1, 1),
+            timezone: 'Asia/Bangkok',
+            freeOnly: true,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('ไม่มีเวลาว่างในวันที่เลือก'), findsOneWidget);
+    expect(find.byTooltip('ว่าง'), findsNothing);
+  });
+
   testWidgets('closed and missing schedules fail closed', (tester) async {
     const timezone = 'Asia/Bangkok';
     final date = DateTime(2040, 1, 1);

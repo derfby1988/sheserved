@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/thai_address_picker/glass_date_time_picker.dart';
+import 'package:sheserved/shared/widgets/thai_buddhist_date_picker.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
@@ -9,6 +11,13 @@ import '../../domain/venue_local_time.dart';
 import '../pages/court_reviews_page.dart';
 import 'court_availability_picker.dart';
 import 'court_review_rating_card.dart';
+
+typedef CourtBookingCallback =
+    Future<void> Function(
+      VenueCourt court, {
+      DateTime? initialDate,
+      DateTime? initialSlotStart,
+    });
 
 /// Venue detail bottom sheet: info, courts, operating hours, availability
 /// and reviews. Booking entry points are delegated to [onBookCourt] so the
@@ -22,7 +31,7 @@ class CourtDetailSheet extends StatefulWidget {
   final BookCourtRepository repo;
   final String? sharedSportId;
   final ScrollController? scrollController;
-  final Future<void> Function(VenueCourt court)? onBookCourt;
+  final CourtBookingCallback? onBookCourt;
   final Future<void> Function()? onWriteReview;
 
   const CourtDetailSheet({
@@ -40,7 +49,7 @@ class CourtDetailSheet extends StatefulWidget {
     required VenueSummary venue,
     required BookCourtRepository repo,
     String? sharedSportId,
-    Future<void> Function(VenueCourt court)? onBookCourt,
+    CourtBookingCallback? onBookCourt,
     Future<void> Function()? onWriteReview,
   }) {
     return showModalBottomSheet(
@@ -82,8 +91,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   List<VenueReview> _reviews = [];
   bool _loading = true;
   bool _availabilityLoading = false;
+  bool _checkingSlot = false;
   String? _selectedCourtId;
   String? _availabilityError;
+  String? _availabilityNotice;
   CourtAvailability? _availability;
   late DateTime _availabilityDate;
   int _availabilityRequestId = 0;
@@ -129,21 +140,33 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     if (mounted) _load();
   }
 
-  Future<void> _loadAvailability(VenueCourt court) async {
+  Future<CourtAvailability> _fetchAvailability(
+    VenueCourt court,
+    DateTime date,
+  ) {
+    final nextDate = VenueLocalTime.addCalendarDays(date, 1);
+    return widget.repo.getCourtAvailability(
+      court.id,
+      VenueLocalTime.atWallTime(date, widget.venue.timezone, 0),
+      VenueLocalTime.atWallTime(nextDate, widget.venue.timezone, 0),
+    );
+  }
+
+  Future<void> _loadAvailability(
+    VenueCourt court, {
+    bool preserveNotice = false,
+  }) async {
     final requestId = ++_availabilityRequestId;
+    final date = _availabilityDate;
     setState(() {
       _selectedCourtId = court.id;
       _availability = null;
       _availabilityError = null;
+      if (!preserveNotice) _availabilityNotice = null;
       _availabilityLoading = true;
     });
     try {
-      final nextDate = VenueLocalTime.addCalendarDays(_availabilityDate, 1);
-      final availability = await widget.repo.getCourtAvailability(
-        court.id,
-        VenueLocalTime.atWallTime(_availabilityDate, widget.venue.timezone, 0),
-        VenueLocalTime.atWallTime(nextDate, widget.venue.timezone, 0),
-      );
+      final availability = await _fetchAvailability(court, date);
       if (!mounted ||
           requestId != _availabilityRequestId ||
           _selectedCourtId != court.id) {
@@ -165,11 +188,88 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     }
   }
 
+  Future<void> _verifySlotAndBook(
+    VenueCourt court,
+    DateTime start,
+    DateTime end,
+  ) async {
+    if (_checkingSlot || widget.onBookCourt == null) return;
+    final requestId = _availabilityRequestId;
+    final date = _availabilityDate;
+    setState(() {
+      _checkingSlot = true;
+      _availabilityNotice = null;
+    });
+
+    CourtAvailability? latestAvailability;
+    var checkFailed = false;
+    try {
+      latestAvailability = await _fetchAvailability(court, date);
+    } catch (_) {
+      checkFailed = true;
+    }
+    if (!mounted) return;
+    final requestIsCurrent =
+        requestId == _availabilityRequestId &&
+        _selectedCourtId == court.id &&
+        _availabilityDate == date;
+    setState(() => _checkingSlot = false);
+    if (!requestIsCurrent) return;
+
+    if (checkFailed) {
+      setState(
+        () => _availabilityNotice = 'ตรวจสอบเวลาว่างไม่สำเร็จ กรุณาลองใหม่',
+      );
+      await _loadAvailability(court, preserveNotice: true);
+      return;
+    }
+
+    final isFree =
+        CourtAvailabilityPicker(
+          availability: latestAvailability!,
+          date: date,
+          timezone: widget.venue.timezone,
+        ).freeSlots.any(
+          (slot) =>
+              slot.start.isAtSameMomentAs(start) &&
+              slot.end.isAtSameMomentAs(end),
+        );
+    if (!isFree) {
+      setState(
+        () => _availabilityNotice = 'เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น',
+      );
+      await _loadAvailability(court, preserveNotice: true);
+      return;
+    }
+
+    await _bookCourt(court, initialDate: date, initialSlotStart: start);
+  }
+
+  /// Delegates booking to [onBookCourt]; the booking dialog stays open on top
+  /// of this sheet, so when the flow finishes (booked, declined or failed)
+  /// the visible availability grid is reloaded — never the rest of the sheet.
+  Future<void> _bookCourt(
+    VenueCourt court, {
+    DateTime? initialDate,
+    DateTime? initialSlotStart,
+  }) async {
+    await widget.onBookCourt!(
+      court,
+      initialDate: initialDate,
+      initialSlotStart: initialSlotStart,
+    );
+    if (!mounted) return;
+    final gridCourt = _courts
+        .where((c) => c.id == (_availability?.courtId ?? _selectedCourtId))
+        .firstOrNull;
+    if (gridCourt != null) await _loadAvailability(gridCourt);
+  }
+
   Future<void> _pickAvailabilityDate() async {
     final courtId = _selectedCourtId;
     final today = VenueLocalTime.today(widget.venue.timezone);
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await GlassDatePicker.show(
+      context,
       initialDate: _availabilityDate.isBefore(today)
           ? today
           : _availabilityDate,
@@ -184,15 +284,28 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   }
 
   Widget _buildAvailabilityLoading() => _frostedCard(
-    child: const Row(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+        const Text('กำลังโหลดตารางว่าง', style: TextStyle(fontSize: 13)),
+        const SizedBox(height: 10),
+        LinearProgressIndicator(
+          minHeight: 4,
+          borderRadius: BorderRadius.circular(2),
+          color: AppColors.primaryDark,
+          backgroundColor: AppColors.primary.withValues(alpha: 0.15),
         ),
-        SizedBox(width: 10),
-        Text('กำลังโหลดตารางว่าง'),
+      ],
+    ),
+  );
+
+  Widget _buildAvailabilityNotice(String message) => _frostedCard(
+    child: Row(
+      children: [
+        Icon(Icons.info_outline_rounded, color: Colors.orange.shade800),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message)),
       ],
     ),
   );
@@ -373,6 +486,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                     )
                   else
                     for (final court in _courts) _buildCourtTile(court),
+                  if (_availabilityNotice != null && selectedCourt != null) ...[
+                    const SizedBox(height: 4),
+                    _buildAvailabilityNotice(_availabilityNotice!),
+                  ],
                   if (_availabilityLoading) ...[
                     const SizedBox(height: 4),
                     _buildAvailabilityLoading(),
@@ -549,11 +666,29 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
               color: NeumorphicTheme.textSecondary,
             ),
           ),
+          if (_checkingSlot) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'กำลังตรวจสอบเวลาว่างจากตารางล่าสุด',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              minHeight: 4,
+              borderRadius: BorderRadius.all(Radius.circular(2)),
+              color: AppColors.primaryDark,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+            ),
+          ],
           const SizedBox(height: 4),
           CourtAvailabilityPicker(
             availability: availability,
             date: _availabilityDate,
             timezone: widget.venue.timezone,
+            onSlotTap:
+                court == null || widget.onBookCourt == null || _checkingSlot
+                ? null
+                : (start, end) => _verifySlotAndBook(court, start, end),
           ),
         ],
       ),
@@ -574,7 +709,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
       ),
       if (widget.onBookCourt != null)
         _responsiveSlidableAction(
-          onPressed: (_) => widget.onBookCourt!(court),
+          onPressed: (_) => _bookCourt(court),
           backgroundColor: AppColors.primaryDark,
           foregroundColor: Colors.white,
           icon: isInstant ? Icons.flash_on_rounded : Icons.send_rounded,
@@ -791,7 +926,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   );
 
   static String _formatDate(DateTime date) =>
-      '${date.day}/${date.month}/${date.year + 543}';
+      ThaiDateUtils.formatShortDateBE2Digit(date);
 
   static String _dayLabel(int dow) => switch (dow) {
     0 => 'อาทิตย์',

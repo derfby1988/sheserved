@@ -75,6 +75,35 @@ class BookCourtBookingService {
     );
   }
 
+  Future<({int completed, Object? error})> bookSlots({
+    required String? userId,
+    required VenueCourt court,
+    required List<({DateTime start, DateTime end, String idempotencyKey})>
+    slots,
+    required int termsVersion,
+  }) async {
+    var completed = 0;
+    for (final slot in slots) {
+      try {
+        final id = await book(
+          userId: userId,
+          court: court,
+          startsAt: slot.start,
+          endsAt: slot.end,
+          termsVersion: termsVersion,
+          idempotencyKey: slot.idempotencyKey,
+        );
+        if (id == null) {
+          return (completed: completed, error: StateError('UNAUTHORIZED'));
+        }
+        completed++;
+      } catch (error) {
+        return (completed: completed, error: error);
+      }
+    }
+    return (completed: completed, error: null);
+  }
+
   /// Cancels a booking. Booker path enforces the snapshot cutoff
   /// server-side; the manager path requires [reason].
   Future<bool> cancelBooking({

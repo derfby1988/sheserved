@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sheserved/shared/widgets/glass/glass_date_time_picker.dart';
+import 'package:sheserved/shared/widgets/thai_address_picker/glass_date_time_picker.dart';
 
 void main() {
   testWidgets('date picker returns the tapped day at midnight', (tester) async {

@@ -11,6 +11,8 @@ import 'package:sheserved/features/sport_club/shared/application/sports_hub_spor
 import 'package:sheserved/features/sport_club/shared/domain/sports_discovery_filter.dart';
 import 'package:sheserved/features/sport_club/shared/presentation/widgets/shared_sport_filter_bar.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
+import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../application/book_court_query.dart';
@@ -19,7 +21,7 @@ import '../../data/book_court_repository.dart';
 import '../../domain/book_court_filter.dart';
 import '../widgets/book_court_filter_sheet.dart';
 import '../widgets/book_court_quick_filter_row.dart';
-import '../widgets/court_booking_sheet.dart';
+import '../widgets/court_booking_dialog.dart';
 import '../widgets/court_card.dart';
 import '../widgets/court_detail_sheet.dart';
 import '../widgets/court_owner_register_sheet.dart';
@@ -315,7 +317,12 @@ class _BookCourtPageState extends State<BookCourtPage> {
       venue: venue,
       repo: _repo,
       sharedSportId: _hub?.shared.sportId,
-      onBookCourt: (court) => _startBooking(venue, court),
+      onBookCourt: (court, {initialDate, initialSlotStart}) => _startBooking(
+        venue,
+        court,
+        initialDate: initialDate,
+        initialSlotStart: initialSlotStart,
+      ),
       onWriteReview: _userId == null
           ? null
           : () => _openMyBookings(reviewVenueId: venue.id),
@@ -325,59 +332,172 @@ class _BookCourtPageState extends State<BookCourtPage> {
   /// Booking flow: pick slot -> accept venue terms -> trusted RPC create.
   /// On `TERMS_VERSION_CHANGED` the fresh terms are fetched and the consent
   /// dialog is shown once more with the new version.
-  Future<void> _startBooking(VenueSummary venue, VenueCourt court) async {
+  Future<void> _startBooking(
+    VenueSummary venue,
+    VenueCourt court, {
+    DateTime? initialDate,
+    DateTime? initialSlotStart,
+  }) async {
     final userId = _userId;
     if (userId == null) {
       await _requireLogin();
       if (_userId == null) return;
     }
     if (!mounted) return;
-    Navigator.of(context).maybePop(); // close detail sheet
 
-    final slot = await CourtBookingSheet.show(
+    final ranges = await CourtBookingDialog.show(
       context,
       court: court,
       venueName: venue.name,
       timezone: venue.timezone,
-      initialDate: _filter.date,
+      loadAvailability: _repo.getCourtAvailability,
+      initialDate: initialDate ?? _filter.date,
+      initialSlotStart: initialSlotStart,
     );
-    if (slot == null || !mounted) return;
+    if (ranges == null || ranges.isEmpty || !mounted) return;
 
-    var terms = await _repo.getActiveVenueTerms(venue.id);
-    final idempotencyKey = const Uuid().v4();
-    for (var attempt = 0; attempt < 2; attempt++) {
-      if (!mounted) return;
-      final accepted = await CourtUsageTermsDialog.show(
-        context,
-        terms: terms,
-        venueName: venue.name,
-      );
-      if (accepted == null || !mounted) return;
-      try {
-        await _booking.book(
-          userId: _userId,
-          court: court,
-          startsAt: slot.start,
-          endsAt: slot.end,
-          termsVersion: accepted.version,
-          idempotencyKey: idempotencyKey,
+    final slots = [
+      for (final range in ranges)
+        (start: range.start, end: range.end, idempotencyKey: const Uuid().v4()),
+    ];
+    var completed = 0;
+    try {
+      var terms = await _repo.getActiveVenueTerms(venue.id);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (!mounted) return;
+        final accepted = await CourtUsageTermsDialog.show(
+          context,
+          terms: terms,
+          venueName: venue.name,
+          acceptLabel: slots.length > 1
+              ? 'ยอมรับและจอง ${slots.length - completed} ช่วง'
+              : 'ยอมรับและจอง',
         );
         if (!mounted) return;
-        _toast(
-          court.approvalMode == BookingApprovalMode.instant
-              ? 'จองสนามสำเร็จ'
-              : 'ส่งคำขอจองแล้ว รอเจ้าของอนุมัติ',
+        if (accepted == null) {
+          if (completed > 0) {
+            await _showBookingResults(
+              court,
+              ranges,
+              completed,
+              'ยกเลิกการจองช่วงที่เหลือ',
+            );
+          }
+          return;
+        }
+        final result = await _booking.bookSlots(
+          userId: _userId,
+          court: court,
+          slots: slots.sublist(completed),
+          termsVersion: accepted.version,
         );
-        return;
-      } catch (e) {
-        if (e.toString().contains('TERMS_VERSION_CHANGED') && attempt == 0) {
+        completed += result.completed;
+        if (!mounted) return;
+        final error = result.error;
+        if (error == null) {
+          if (ranges.length == 1) {
+            _toast(
+              court.approvalMode == BookingApprovalMode.instant
+                  ? 'จองสนามสำเร็จ'
+                  : 'ส่งคำขอจองแล้ว รอเจ้าของอนุมัติ',
+            );
+          } else {
+            await _showBookingResults(court, ranges, completed, null);
+          }
+          return;
+        }
+        if (error.toString().contains('TERMS_VERSION_CHANGED') &&
+            attempt == 0) {
           terms = await _repo.getActiveVenueTerms(venue.id);
           continue;
         }
-        _toast(_mapBookingError(e));
+        await _showBookingResults(
+          court,
+          ranges,
+          completed,
+          _mapBookingError(error),
+        );
         return;
       }
+    } catch (error) {
+      if (mounted) {
+        await _showBookingResults(
+          court,
+          ranges,
+          completed,
+          _mapBookingError(error),
+        );
+      }
     }
+  }
+
+  Future<void> _showBookingResults(
+    VenueCourt court,
+    List<({DateTime start, DateTime end})> ranges,
+    int completed,
+    String? error,
+  ) {
+    String time(DateTime value) =>
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    return GlassDialog.show<void>(
+      context: context,
+      builder: (context) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 400,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'สำเร็จ $completed/${ranges.length} รายการ',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              LitGlassSurface.frosted(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < ranges.length; i++)
+                        Text(
+                          '${time(ranges[i].start)}–${time(ranges[i].end)}: ${i < completed
+                              ? court.approvalMode == BookingApprovalMode.instant
+                                    ? 'จองสำเร็จ'
+                                    : 'รอเจ้าของอนุมัติ'
+                              : 'ยังไม่ยืนยันการจอง'}',
+                        ),
+                      if (error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(error),
+                      ],
+                      if (completed < ranges.length) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'รายการที่สำเร็จยังคงอยู่ หากการเชื่อมต่อขัดข้อง กรุณาตรวจสอบการจองของฉันก่อนจองซ้ำ',
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              GlassActionButton(
+                label: 'ปิด',
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openMyBookings({String? reviewVenueId}) async {

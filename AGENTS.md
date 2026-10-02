@@ -63,6 +63,9 @@ whole app at once.
 - `glass_dialog.dart`: `GlassDialog.show` — bare glass panel shell
 - `glass_confirm_dialog.dart`: `GlassConfirmDialog.show` — 2-button
   cancel/confirm with async loading + error retry
+- `GlassDatePicker`/`GlassTimePicker` live in
+  `thai_address_picker/glass_date_time_picker.dart` (grouped with the other
+  Thai pickers; they are glass-styled and import back into `glass/`)
 - ERP pages keep using `showGlassDialog` (adapts dashboard theme to the shell)
 
 ### Migration checklist (pick before converting a dialog)
@@ -78,3 +81,15 @@ whole app at once.
 Rule of thumb: the panel is always dark translucent glass (like the
 closed-ended confirm dialog). Light-themed inner content rides on frosted
 tiles — never raise `panelFillOpacity` to make the panel itself light/milky.
+
+## Court booking availability
+
+- `CourtBookingDialog.show` takes `loadAvailability` (pass the repository's
+  `getCourtAvailability` method) and returns a list of start/end ranges.
+- Reuse `CourtAvailabilityPicker` with `freeOnly: true` and `selectedStarts`
+  for booking selection; the detail sheet keeps the full status view.
+- Adjacent selected hours merge into one range; disjoint ranges create separate
+  bookings through the existing RPC. `bookSlots` stops on the first error and
+  reports the confirmed prefix; terms retries reuse the remaining ranges' keys.
+- Moving an existing pending booking uses `allowDisjoint: false` and keeps the
+  single-booking change-slot RPC. Multi-range creation is not atomic.

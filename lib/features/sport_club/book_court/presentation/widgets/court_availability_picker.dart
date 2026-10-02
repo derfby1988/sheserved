@@ -7,12 +7,14 @@ import '../../domain/venue_local_time.dart';
 ///
 /// Discovery phase contract: this widget displays booked/blocked ranges and
 /// operating hours only; it never creates or holds bookings. Booking is
-/// started separately via [CourtBookingSheet].
+/// started separately via [CourtBookingDialog].
 class CourtAvailabilityPicker extends StatelessWidget {
   final CourtAvailability availability;
   final DateTime date;
   final String timezone;
   final DateTime? now;
+  final bool freeOnly;
+  final Set<DateTime> selectedStarts;
   final void Function(DateTime start, DateTime end)? onSlotTap;
 
   const CourtAvailabilityPicker({
@@ -21,6 +23,8 @@ class CourtAvailabilityPicker extends StatelessWidget {
     required this.date,
     required this.timezone,
     this.now,
+    this.freeOnly = false,
+    this.selectedStarts = const {},
     this.onSlotTap,
   });
 
@@ -73,9 +77,18 @@ class CourtAvailabilityPicker extends StatelessWidget {
     return h * 60 + m;
   }
 
+  List<({DateTime start, DateTime end})> get freeSlots =>
+      hourlySlots(date, timezone: timezone)
+          .where(
+            (slot) =>
+                _slotState(slot.start, slot.end) == _SlotState.free &&
+                !slot.start.isBefore(now ?? VenueLocalTime.now(timezone)),
+          )
+          .toList();
+
   @override
   Widget build(BuildContext context) {
-    final slots = hourlySlots(date, timezone: timezone);
+    final slots = freeOnly ? freeSlots : hourlySlots(date, timezone: timezone);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -84,6 +97,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
         const SizedBox(height: 8),
+        if (slots.isEmpty) const Text('ไม่มีเวลาว่างในวันที่เลือก'),
         Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -92,23 +106,26 @@ class CourtAvailabilityPicker extends StatelessWidget {
               _SlotChip(
                 slot: slot,
                 state: _slotState(slot.start, slot.end),
+                selected: selectedStarts.contains(slot.start),
                 onTap: onSlotTap == null
                     ? null
                     : () => onSlotTap!(slot.start, slot.end),
               ),
           ],
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 4,
-          children: [
-            _legend(Colors.green.shade100, 'ว่าง'),
-            _legend(Colors.red.shade100, 'ถูกจอง'),
-            _legend(Colors.grey.shade300, 'ปิด'),
-            _legend(Colors.orange.shade100, 'ไม่พร้อม'),
-          ],
-        ),
+        if (!freeOnly) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              _legend(Colors.green.shade100, 'ว่าง'),
+              _legend(Colors.red.shade100, 'ถูกจอง'),
+              _legend(Colors.grey.shade300, 'ปิด'),
+              _legend(Colors.orange.shade100, 'ไม่พร้อม'),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -147,9 +164,15 @@ enum _SlotState { free, booked, closed, unavailable }
 class _SlotChip extends StatelessWidget {
   final ({DateTime start, DateTime end}) slot;
   final _SlotState state;
+  final bool selected;
   final VoidCallback? onTap;
 
-  const _SlotChip({required this.slot, required this.state, this.onTap});
+  const _SlotChip({
+    required this.slot,
+    required this.state,
+    this.selected = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -183,22 +206,26 @@ class _SlotChip extends StatelessWidget {
     final label = '${slot.start.hour.toString().padLeft(2, '0')}:00';
     return Tooltip(
       message: message,
-      child: InkWell(
-        onTap: free ? onTap : null,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: border),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: foreground,
+      child: Semantics(
+        selected: selected,
+        button: onTap != null,
+        child: InkWell(
+          onTap: free ? onTap : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: selected ? Colors.green.shade700 : background,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: border),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : foreground,
+              ),
             ),
           ),
         ),
