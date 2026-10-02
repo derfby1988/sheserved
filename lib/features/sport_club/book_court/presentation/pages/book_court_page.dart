@@ -91,6 +91,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       hydrateVenues: _repo.hydrateVenueCards,
       bookedVenueIds: _repo.listMyBookedVenueIds,
       managedVenueIds: _repo.listMyManagedVenueIds,
+      quoteVenueSlotPrices: _repo.quoteVenuePricesForLocalSlot,
       pageSize: _pageSize,
     );
     _booking = BookCourtBookingService(
@@ -175,10 +176,24 @@ class _BookCourtPageState extends State<BookCourtPage> {
       });
     } on StateError catch (e) {
       if (e.message != 'STALE_FILTER_REQUEST' && mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _venues = [];
+          _loading = false;
+        });
+        if (e.message == 'PRICE_FILTER_REQUIRES_SLOT') {
+          _toast('เลือกวัน เวลาเริ่ม และระยะเวลาเพื่อกรองราคา');
+        } else if (e.message == 'PRICE_FILTER_CROSSES_DAY') {
+          _toast('ช่วงราคาและระยะเวลาต้องอยู่ภายในวันเดียวกัน');
+        }
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _loading = false);
+        if ((_filter.minPrice != null || _filter.maxPrice != null) &&
+            error.toString().contains('PGRST202')) {
+          _toast('ระบบฐานข้อมูลยังไม่พร้อม กรุณาอัปเดต Supabase migrations');
+        }
+      }
     }
   }
 
@@ -317,6 +332,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       venue: venue,
       repo: _repo,
       sharedSportId: _hub?.shared.sportId,
+      userId: _userId,
       onBookCourt: (court, {initialDate, initialSlotStart}) => _startBooking(
         venue,
         court,
@@ -326,6 +342,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       onWriteReview: _userId == null
           ? null
           : () => _openMyBookings(reviewVenueId: venue.id),
+      onOpenMyBookings: () => _openMyBookings(),
     );
   }
 
@@ -351,6 +368,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       venueName: venue.name,
       timezone: venue.timezone,
       loadAvailability: _repo.getCourtAvailability,
+      quotePrice: _repo.quoteCourtPrice,
       initialDate: initialDate ?? _filter.date,
       initialSlotStart: initialSlotStart,
     );
@@ -358,7 +376,12 @@ class _BookCourtPageState extends State<BookCourtPage> {
 
     final slots = [
       for (final range in ranges)
-        (start: range.start, end: range.end, idempotencyKey: const Uuid().v4()),
+        (
+          start: range.start,
+          end: range.end,
+          idempotencyKey: const Uuid().v4(),
+          priceScheduleVersion: range.priceQuote.priceScheduleVersion,
+        ),
     ];
     var completed = 0;
     try {
@@ -433,7 +456,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
 
   Future<void> _showBookingResults(
     VenueCourt court,
-    List<({DateTime start, DateTime end})> ranges,
+    List<CourtBookingSelection> ranges,
     int completed,
     String? error,
   ) {
@@ -754,6 +777,15 @@ class _BookCourtPageState extends State<BookCourtPage> {
     if (raw.contains('TERMS_VERSION_CHANGED')) {
       return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาลองใหม่';
     }
+    if (raw.contains('PRICE_CHANGED')) {
+      return 'ราคาสนามเปลี่ยนแล้ว กรุณาเลือกเวลาใหม่เพื่อตรวจสอบราคา';
+    }
+    if (raw.contains('PRICE_VERSION_REQUIRED')) {
+      return 'กรุณาอัปเดตแอปก่อนจองสนามที่กำหนดราคาแยกช่วงเวลา';
+    }
+    if (raw.contains('PRICE_NOT_CONFIGURED')) {
+      return 'สนามยังไม่ได้กำหนดราคาในช่วงเวลานี้';
+    }
     if (raw.contains('SLOT_TAKEN') ||
         raw.contains('OVERLAP') ||
         raw.contains('CAPACITY')) {
@@ -761,6 +793,11 @@ class _BookCourtPageState extends State<BookCourtPage> {
     }
     if (raw.contains('VENUE_NOT_APPROVED') || raw.contains('COURT_INACTIVE')) {
       return 'สนามนี้ไม่เปิดรับจองแล้ว';
+    }
+    if (raw.contains('PGRST202') ||
+        raw.contains('PGRST203') ||
+        raw.contains('PGRST204')) {
+      return 'ระบบจองสนามยังไม่พร้อม กรุณาอัปเดต Supabase migrations แล้วลองใหม่';
     }
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
     return 'จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';

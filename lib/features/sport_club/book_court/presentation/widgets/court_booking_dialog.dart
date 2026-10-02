@@ -11,11 +11,23 @@ import 'court_availability_picker.dart';
 
 /// Glass dialog for choosing a booking slot on a court.
 ///
-/// Returns `({DateTime start, DateTime end})` when confirmed, or null when
-/// dismissed. Terms consent happens afterwards via [CourtUsageTermsDialog];
+/// Returns selected ranges and their price quotes when confirmed, or null
+/// when dismissed. Terms consent happens afterwards via [CourtUsageTermsDialog];
 /// this dialog never submits the booking itself.
+class CourtBookingSelection {
+  final DateTime start;
+  final DateTime end;
+  final VenueCourtPriceQuote priceQuote;
+
+  const CourtBookingSelection({
+    required this.start,
+    required this.end,
+    required this.priceQuote,
+  });
+}
+
 class CourtBookingDialog {
-  static Future<List<({DateTime start, DateTime end})>?> show(
+  static Future<List<CourtBookingSelection>?> show(
     BuildContext context, {
     required VenueCourt court,
     required String venueName,
@@ -26,11 +38,17 @@ class CourtBookingDialog {
       DateTime to,
     )
     loadAvailability,
+    required Future<VenueCourtPriceQuote> Function(
+      VenueCourt court,
+      DateTime startsAt,
+      DateTime endsAt,
+    )
+    quotePrice,
     DateTime? initialDate,
     DateTime? initialSlotStart,
     bool allowDisjoint = true,
   }) {
-    return GlassDialog.show<List<({DateTime start, DateTime end})>>(
+    return GlassDialog.show<List<CourtBookingSelection>>(
       context: context,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       panelAccentColor: AppColors.primary,
@@ -40,6 +58,7 @@ class CourtBookingDialog {
         venueName: venueName,
         timezone: timezone,
         loadAvailability: loadAvailability,
+        quotePrice: quotePrice,
         initialDate: initialDate,
         initialSlotStart: initialSlotStart,
         allowDisjoint: allowDisjoint,
@@ -75,6 +94,12 @@ class _CourtBookingDialogBody extends StatefulWidget {
     DateTime to,
   )
   loadAvailability;
+  final Future<VenueCourtPriceQuote> Function(
+    VenueCourt court,
+    DateTime startsAt,
+    DateTime endsAt,
+  )
+  quotePrice;
   final bool allowDisjoint;
 
   const _CourtBookingDialogBody({
@@ -82,6 +107,7 @@ class _CourtBookingDialogBody extends StatefulWidget {
     required this.venueName,
     required this.timezone,
     required this.loadAvailability,
+    required this.quotePrice,
     required this.allowDisjoint,
     this.initialDate,
     this.initialSlotStart,
@@ -100,7 +126,11 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
   bool _initialSlotResolved = false;
   String? _error;
   String? _initialSlotNotice;
+  List<VenueCourtPriceQuote> _priceQuotes = const [];
+  bool _priceLoading = false;
+  String? _priceError;
   int _requestId = 0;
+  int _priceRequestId = 0;
 
   @override
   void initState() {
@@ -154,11 +184,15 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
 
   Future<void> _loadAvailability() async {
     final requestId = ++_requestId;
+    ++_priceRequestId;
     setState(() {
       _loading = true;
       _error = null;
       _initialSlotNotice = null;
       _availability = null;
+      _priceLoading = false;
+      _priceError = null;
+      _priceQuotes = const [];
       _selectedStarts.clear();
     });
     try {
@@ -177,6 +211,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
         _loading = false;
         _applyInitialSlot(availability);
       });
+      await _refreshPriceQuotes();
     } catch (_) {
       if (!mounted || requestId != _requestId) return;
       setState(() {
@@ -217,16 +252,75 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
     );
   }
 
+  Future<void> _refreshPriceQuotes() async {
+    final ranges = _ranges;
+    final requestId = ++_priceRequestId;
+    if (ranges.isEmpty) {
+      setState(() {
+        _priceLoading = false;
+        _priceError = null;
+        _priceQuotes = const [];
+      });
+      return;
+    }
+
+    setState(() {
+      _priceLoading = true;
+      _priceError = null;
+      _priceQuotes = const [];
+    });
+    try {
+      final quotes = await Future.wait(
+        ranges.map(
+          (range) => widget.quotePrice(widget.court, range.start, range.end),
+        ),
+      );
+      if (!mounted || requestId != _priceRequestId) return;
+      setState(() {
+        _priceQuotes = quotes;
+        _priceLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _priceRequestId) return;
+      setState(() {
+        _priceError = 'คำนวณราคาไม่สำเร็จ กรุณาลองใหม่';
+        _priceLoading = false;
+      });
+    }
+  }
+
+  String? get _priceQuoteError {
+    if (_priceError != null) return _priceError;
+    if (_priceQuotes.any((quote) => quote.errorCode != null)) {
+      return 'สนามยังไม่ได้กำหนดราคาครบในช่วงเวลาที่เลือก';
+    }
+    return null;
+  }
+
   String _time(DateTime instant) =>
       '${instant.hour.toString().padLeft(2, '0')}:${instant.minute.toString().padLeft(2, '0')}';
 
+  String _money(double amount) =>
+      amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2);
+
   void _confirm() {
     final ranges = _ranges;
-    if (ranges.isEmpty || (!widget.allowDisjoint && ranges.length > 1)) {
+    if (ranges.isEmpty ||
+        _priceLoading ||
+        _priceQuoteError != null ||
+        _priceQuotes.length != ranges.length ||
+        (!widget.allowDisjoint && ranges.length > 1)) {
       setState(() => _selectedStarts.clear());
       return;
     }
-    Navigator.pop(context, ranges);
+    Navigator.pop(context, [
+      for (var i = 0; i < ranges.length; i++)
+        CourtBookingSelection(
+          start: ranges[i].start,
+          end: ranges[i].end,
+          priceQuote: _priceQuotes[i],
+        ),
+    ]);
   }
 
   @override
@@ -241,6 +335,9 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
         60;
     final canConfirm =
         !_loading &&
+        !_priceLoading &&
+        _priceQuoteError == null &&
+        _priceQuotes.length == ranges.length &&
         ranges.isNotEmpty &&
         (widget.allowDisjoint || ranges.length == 1);
     return ConstrainedBox(
@@ -286,27 +383,38 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _pickDate,
-                        icon: const Icon(
-                          Icons.calendar_today_rounded,
-                          size: 18,
-                        ),
-                        label: Text(
-                          ThaiDateUtils.formatShortDateBE2Digit(_date),
+                      Center(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickDate,
+                          icon: const Icon(
+                            Icons.calendar_today_rounded,
+                            size: 18,
+                          ),
+                          label: Text(
+                            ThaiDateUtils.formatShortDateBE2Digit(_date),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Text(
-                        widget.allowDisjoint
-                            ? 'เลือกเวลาว่างได้หลายช่อง แตะซ้ำเพื่อยกเลิก'
-                            : 'เลือกเวลาว่างที่ต่อเนื่องกันเพื่อเปลี่ยนเวลา',
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          widget.allowDisjoint
+                              ? 'เลือกเวลาว่างได้หลายช่อง แตะซ้ำเพื่อยกเลิก'
+                              : 'เลือกเวลาว่างที่ต่อเนื่องกันเพื่อเปลี่ยนเวลา',
+                          textAlign: TextAlign.left,
+                          style: TextStyle(color: Colors.black54),
+                        ),
                       ),
                       if (_initialSlotNotice != null) ...[
                         const SizedBox(height: 8),
-                        Text(
-                          _initialSlotNotice!,
-                          style: const TextStyle(color: Colors.red),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            _initialSlotNotice!,
+                            textAlign: TextAlign.left,
+                            style: const TextStyle(color: Colors.red),
+                          ),
                         ),
                       ],
                       const SizedBox(height: 10),
@@ -335,41 +443,97 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
                           date: _date,
                           timezone: widget.timezone,
                           freeOnly: true,
+                          centered: true,
                           selectedStarts: _selectedStarts,
-                          onSlotTap: (start, end) => setState(() {
-                            _initialSlotNotice = null;
-                            if (!_selectedStarts.remove(start)) {
-                              _selectedStarts.add(start);
-                            }
-                          }),
+                          onSlotTap: (start, end) {
+                            setState(() {
+                              _initialSlotNotice = null;
+                              if (!_selectedStarts.remove(start)) {
+                                _selectedStarts.add(start);
+                              }
+                            });
+                            _refreshPriceQuotes();
+                          },
                         ),
                       const SizedBox(height: 12),
-                      if (ranges.isEmpty)
-                        const Text('ยังไม่ได้เลือกเวลา')
-                      else ...[
-                        Text(
-                          'รวม ${hours == hours.roundToDouble() ? hours.toInt() : hours} ชั่วโมง • ${ranges.length} ช่วงเวลา',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (ranges.isEmpty)
+                              const Text(
+                                'ยังไม่ได้เลือกเวลา',
+                                style: TextStyle(color: Colors.black54),
+                              )
+                            else ...[
+                              Text(
+                                'รวม ${hours == hours.roundToDouble() ? hours.toInt() : hours} ชั่วโมง • ${ranges.length} ช่วงเวลา',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              for (var i = 0; i < ranges.length; i++)
+                                Text(
+                                  '${_time(ranges[i].start)}–${_time(ranges[i].end)}'
+                                  '${_priceQuotes.length == ranges.length && _priceQuotes[i].totalAmount != null ? ' • ${_money(_priceQuotes[i].totalAmount!)} บาท' : ''}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              if (widget.allowDisjoint && ranges.length > 1)
+                                Text(
+                                  'จะสร้าง ${ranges.length} รายการจองแยกกัน ไม่จองเวลาคั่นกลาง',
+                                  textAlign: TextAlign.left,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              if (!widget.allowDisjoint && ranges.length > 1)
+                                const Text(
+                                  'กรุณาเลือกเวลาต่อเนื่องกัน',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                            ],
+                          ],
                         ),
-                        for (final range in ranges)
-                          Text('${_time(range.start)}–${_time(range.end)}'),
-                        if (widget.allowDisjoint && ranges.length > 1)
-                          Text(
-                            'จะสร้าง ${ranges.length} รายการจองแยกกัน ไม่จองเวลาคั่นกลาง',
-                          ),
-                        if (!widget.allowDisjoint && ranges.length > 1)
-                          const Text(
-                            'กรุณาเลือกเวลาต่อเนื่องกัน',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                      ],
-                      if (court.priceAmount != null) ...[
+                      ),
+                      if (_priceLoading) ...[
+                        const SizedBox(height: 10),
+                        const Text('กำลังคำนวณราคา...'),
+                      ] else if (_priceQuoteError != null) ...[
                         const SizedBox(height: 10),
                         Text(
-                          'ราคา ${court.priceAmount!.toStringAsFixed(0)} บาท/${_pricingUnitLabel(court.pricingUnit)}',
+                          _priceQuoteError!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                        if (_priceError != null)
+                          TextButton.icon(
+                            onPressed: _refreshPriceQuotes,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('ลองคำนวณใหม่'),
+                          ),
+                      ] else if (_priceQuotes.isNotEmpty &&
+                          _priceQuotes.every(
+                            (quote) => quote.totalAmount != null,
+                          )) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'ราคารวมประมาณ ${_money(_priceQuotes.fold<double>(0, (sum, quote) => sum + quote.totalAmount!))} บาท',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ] else if (court.priceAmount != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'ราคา ${_money(court.priceAmount!)} บาท/${_pricingUnitLabel(court.pricingUnit)}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black54,
                           ),
                         ),
                       ],

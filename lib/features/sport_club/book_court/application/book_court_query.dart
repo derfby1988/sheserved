@@ -30,6 +30,14 @@ typedef BookCourtHydrate =
     Future<List<VenueSummary>> Function(List<VenueSummary> venues);
 
 typedef BookCourtPersonalIds = Future<Set<String>> Function(String userId);
+typedef BookCourtSlotPrices =
+    Future<Map<String, List<double>>> Function({
+      required List<String> venueIds,
+      required String? sportId,
+      required DateTime localDate,
+      required int startTimeMinutes,
+      required int durationMinutes,
+    });
 
 /// Feed query/pagination logic for the Book Court venue list.
 ///
@@ -43,6 +51,7 @@ class BookCourtQuery {
   final BookCourtHydrate hydrateVenues;
   final BookCourtPersonalIds bookedVenueIds;
   final BookCourtPersonalIds managedVenueIds;
+  final BookCourtSlotPrices? quoteVenueSlotPrices;
   final int pageSize;
 
   const BookCourtQuery({
@@ -50,6 +59,7 @@ class BookCourtQuery {
     required this.hydrateVenues,
     required this.bookedVenueIds,
     required this.managedVenueIds,
+    this.quoteVenueSlotPrices,
     this.pageSize = 20,
   });
 
@@ -67,6 +77,20 @@ class BookCourtQuery {
     double? userLng,
     bool Function()? isStale,
   }) async {
+    final filterByPrice = filter.minPrice != null || filter.maxPrice != null;
+    if (filterByPrice &&
+        (filter.date == null ||
+            filter.startTime == null ||
+            filter.duration == null)) {
+      throw StateError('PRICE_FILTER_REQUIRES_SLOT');
+    }
+    if (filterByPrice && !filter.priceSlotFitsDay) {
+      throw StateError('PRICE_FILTER_CROSSES_DAY');
+    }
+    if (filterByPrice && quoteVenueSlotPrices == null) {
+      throw StateError('PRICE_QUERY_UNAVAILABLE');
+    }
+
     var nextOffset = offset;
     var hasMore = true;
     final visible = <VenueSummary>[];
@@ -127,6 +151,28 @@ class BookCourtQuery {
         }
         return true;
       }).toList();
+
+      if (filterByPrice && batch.isNotEmpty) {
+        final prices = await quoteVenueSlotPrices!(
+          venueIds: batch.map((venue) => venue.id).toList(),
+          sportId: shared.sportId,
+          localDate: filter.date!,
+          startTimeMinutes:
+              filter.startTime!.hour * 60 + filter.startTime!.minute,
+          durationMinutes: filter.duration!.inMinutes,
+        );
+        if (isStale?.call() == true) {
+          throw StateError('STALE_FILTER_REQUEST');
+        }
+        batch = batch.where((venue) {
+          final amounts = prices[venue.id] ?? const <double>[];
+          return amounts.any(
+            (amount) =>
+                (filter.minPrice == null || amount >= filter.minPrice!) &&
+                (filter.maxPrice == null || amount <= filter.maxPrice!),
+          );
+        }).toList();
+      }
 
       if (batch.isNotEmpty) {
         final hydrated = await hydrateVenues(batch);

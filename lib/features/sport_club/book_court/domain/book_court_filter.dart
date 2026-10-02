@@ -40,6 +40,14 @@ class BookCourtFilter {
   /// Personal filters that require a logged-in user.
   bool get hasPersonalFilter => bookedByMeOnly || ownerOnly;
 
+  bool get priceSlotFitsDay {
+    final time = startTime;
+    final bookingDuration = duration;
+    if (time == null || bookingDuration == null) return false;
+    return bookingDuration.inMinutes > 0 &&
+        time.hour * 60 + time.minute + bookingDuration.inMinutes <= 1440;
+  }
+
   int get activeCount => [
     date != null,
     startTime != null,
@@ -148,9 +156,7 @@ class BookCourtFilter {
       bookedByMeOnly: json['bookedByMeOnly'] == true,
       ownerOnly: json['ownerOnly'] == true,
       amenityIds:
-          (json['amenityIds'] as List?)
-              ?.map((e) => e.toString())
-              .toSet() ??
+          (json['amenityIds'] as List?)?.map((e) => e.toString()).toSet() ??
           const {},
       courtType: json['courtType']?.toString(),
       indoorOnly: json['indoorOnly'] == true,

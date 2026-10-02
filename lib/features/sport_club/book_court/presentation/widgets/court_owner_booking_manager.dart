@@ -4,6 +4,7 @@ import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
+import '../../domain/venue_local_time.dart';
 
 /// A booking row in the owner queue with approve/reject/cancel actions.
 class CourtOwnerBookingManager extends StatelessWidget {
@@ -30,74 +31,82 @@ class CourtOwnerBookingManager extends StatelessWidget {
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    b.venueName ?? b.courtName ?? 'การจอง',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  b.venueName ?? b.courtName ?? 'การจอง',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
-                _statusChip(b.status),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${b.courtName ?? ''} • ${_fmtRange(b.startsAt, b.endsAt)}',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            Text(
-              'ผู้จอง: ${b.bookerName ?? 'ผู้ใช้'}',
-              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
-            ),
-            if (b.priceAmount != null)
-              Text(
-                '${b.priceAmount!.toStringAsFixed(0)} บาท/${b.pricingUnit}',
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
               ),
-            if (b.isPending || b.isConfirmed) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (b.isPending) ...[
-                    if (onReject != null)
-                      TextButton(
-                        onPressed: () => _askReason(context, onReject!),
-                        child: const Text(
-                          'ปฏิเสธ',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    if (onApprove != null)
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                        ),
-                        onPressed: onApprove,
-                        child: const Text('อนุมัติ'),
-                      ),
-                  ] else if (onCancel != null)
+              _statusChip(b.status),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${b.courtName ?? ''} • ${_fmtRange(b)}',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          Text(
+            'ผู้จอง: ${b.bookerName ?? 'ผู้ใช้'}',
+            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+          ),
+          if (b.priceTotal != null)
+            Text(
+              'ราคารวม ${b.priceTotal!.toStringAsFixed(2)} บาท',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else if (b.priceAmount != null)
+            Text(
+              '${b.priceAmount!.toStringAsFixed(0)} บาท/${b.pricingUnit}',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          if (b.isPending || b.isConfirmed) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (b.isPending) ...[
+                  if (onReject != null)
                     TextButton(
-                      onPressed: () => _askReason(context, onCancel!),
+                      onPressed: () => _askReason(context, onReject!),
                       child: const Text(
-                        'ยกเลิกการจอง',
+                        'ปฏิเสธ',
                         style: TextStyle(color: Colors.red),
                       ),
                     ),
-                ],
-              ),
-            ],
+                  const SizedBox(width: 8),
+                  if (onApprove != null)
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                      ),
+                      onPressed: onApprove,
+                      child: const Text('อนุมัติ'),
+                    ),
+                ] else if (onCancel != null)
+                  TextButton(
+                    onPressed: () => _askReason(context, onCancel!),
+                    child: const Text(
+                      'ยกเลิกการจอง',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+              ],
+            ),
           ],
-        ),
+        ],
+      ),
     );
   }
 
@@ -139,8 +148,17 @@ class CourtOwnerBookingManager extends StatelessWidget {
     );
   }
 
-  static String _fmtRange(DateTime start, DateTime end) {
+  /// Booking instants are stored UTC — render them in the venue's timezone.
+  static String _fmtRange(VenueBooking booking) {
     String two(int n) => n.toString().padLeft(2, '0');
+    final start = VenueLocalTime.wallTimeOfInstant(
+      booking.startsAt,
+      booking.timezone,
+    );
+    final end = VenueLocalTime.wallTimeOfInstant(
+      booking.endsAt,
+      booking.timezone,
+    );
     return '${start.day}/${start.month} ${two(start.hour)}:${two(start.minute)}'
         '–${two(end.hour)}:${two(end.minute)}';
   }

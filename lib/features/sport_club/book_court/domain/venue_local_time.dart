@@ -25,6 +25,14 @@ class VenueLocalTime {
     return DateTime(local.year, local.month, local.day);
   }
 
+  /// Wall-clock instant in the venue's timezone. Booking timestamps are
+  /// stored as UTC, so their UTC fields must never be rendered directly —
+  /// 21:00 in Asia/Bangkok would otherwise show up as 14:00.
+  static timezone.TZDateTime wallTimeOfInstant(
+    DateTime instant,
+    String timeZone,
+  ) => timezone.TZDateTime.from(instant, _location(timeZone));
+
   static timezone.TZDateTime atWallTime(
     DateTime date,
     String timeZone,

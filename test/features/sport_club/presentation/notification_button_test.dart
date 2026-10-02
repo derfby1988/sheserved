@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/config/app_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:sheserved/features/chat/data/models/chat_models.dart';
@@ -38,8 +39,34 @@ class _GatewayNotificationRepository extends _FakeNotificationRepository {
   bool get usesGateway => true;
 }
 
-/// จำลองโหมด legacy ที่อ่าน `app_notifications` ตรงไม่ได้ (ไม่มี Supabase
-/// Auth session) → นับ unread จาก repository ได้ 0 เสมอ
+class _ListBackedNotificationRepository extends NotificationRepository {
+  _ListBackedNotificationRepository(this.notifications)
+    : super(
+        SupabaseClient(
+          'https://example.com',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      );
+
+  final List<AppNotification> notifications;
+  String? requestedCategory;
+  bool? requestedUnreadOnly;
+  int? requestedLimit;
+
+  @override
+  Future<List<AppNotification>> getNotifications({
+    String? category,
+    bool unreadOnly = false,
+    int limit = 50,
+  }) async {
+    requestedCategory = category;
+    requestedUnreadOnly = unreadOnly;
+    requestedLimit = limit;
+    return notifications;
+  }
+}
+
 class _ZeroNotificationRepository extends _FakeNotificationRepository {
   @override
   Future<int> getUnreadCount({String? category}) async {
@@ -98,6 +125,48 @@ AppNotification _sportProposalResultNotification(
 );
 
 void main() {
+  test(
+    'counts direct-auth unread notifications from the list without a Supabase session',
+    () async {
+      final repository = _ListBackedNotificationRepository([
+        AppNotification(
+          id: 'unread-1',
+          professionId: '',
+          recipientId: 'owner-1',
+          category: 'venue_booking',
+          eventType: 'venue_booking.requested',
+          title: 'มีคำขอจองรออนุมัติ',
+          createdAt: DateTime.utc(2026, 10, 2),
+        ),
+        AppNotification(
+          id: 'read-1',
+          professionId: '',
+          recipientId: 'owner-1',
+          category: 'venue_booking',
+          eventType: 'venue_booking.requested',
+          title: 'มีคำขอจองรออนุมัติ',
+          isRead: true,
+          createdAt: DateTime.utc(2026, 10, 2),
+        ),
+        AppNotification(
+          id: 'unread-2',
+          professionId: '',
+          recipientId: 'owner-1',
+          category: 'venue_booking',
+          eventType: 'venue_booking.requested',
+          title: 'มีคำขอจองรออนุมัติ',
+          createdAt: DateTime.utc(2026, 10, 2),
+        ),
+      ]);
+
+      expect(await repository.getUnreadCount(category: 'venue_booking'), 2);
+      expect(repository.requestedCategory, 'venue_booking');
+      expect(repository.requestedUnreadOnly, isTrue);
+      expect(repository.requestedLimit, 200);
+    },
+    skip: AppConfig.useBackendAuth,
+  );
+
   test('builds the Sport Club route for a group reply toast', () {
     final notification = AppNotification(
       id: 'notification-1',
@@ -199,6 +268,50 @@ void main() {
     );
     // การ์ดนี้ไม่ใช่แชทก๊วน จึงไม่ควรได้อาร์กิวเมนต์เปิดแชท
     expect(groupChatNotificationRouteArguments(notification), isNull);
+  });
+
+  test('routes a booker venue booking card to the booker booking list', () {
+    final notification = AppNotification(
+      id: 'booking-1',
+      professionId: '',
+      recipientId: 'booker-1',
+      category: 'venue_booking',
+      eventType: 'venue_booking.requested',
+      title: 'ส่งคำขอจองสนามแล้ว',
+      createdAt: DateTime.utc(2026, 10, 2),
+      payload: const {
+        'route': '/community/sports/courts/venue-1',
+        'bookingId': 'booking-1',
+        'venueId': 'venue-1',
+      },
+    );
+
+    expect(
+      notificationPayloadRoute(notification),
+      '/community/sports/courts/my-bookings',
+    );
+  });
+
+  test('keeps the owner dashboard route for venue booking requests', () {
+    final notification = AppNotification(
+      id: 'booking-2',
+      professionId: '',
+      recipientId: 'owner-1',
+      category: 'venue_booking',
+      eventType: 'venue_booking.requested',
+      title: 'มีคำขอจองรออนุมัติ',
+      createdAt: DateTime.utc(2026, 10, 2),
+      payload: const {
+        'route': '/community/sports/courts/owner/dashboard',
+        'bookingId': 'booking-2',
+        'venueId': 'venue-1',
+      },
+    );
+
+    expect(
+      notificationPayloadRoute(notification),
+      '/community/sports/courts/owner/dashboard',
+    );
   });
 
   test('ignores payload routes that are not in-app routes', () {

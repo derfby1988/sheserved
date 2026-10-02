@@ -131,6 +131,31 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
     (duration: Duration(minutes: 180), label: '3 ชม.'),
   ];
 
+  bool get _hasPriceInput =>
+      _minPrice.text.trim().isNotEmpty || _maxPrice.text.trim().isNotEmpty;
+
+  bool get _hasPriceSlot =>
+      _date != null && _startTime != null && _duration != null;
+
+  bool get _priceSlotFitsDay =>
+      _startTime != null &&
+      _duration != null &&
+      _startTime!.hour * 60 + _startTime!.minute + _duration!.inMinutes <= 1440;
+
+  bool get _validPriceInputs {
+    final minRaw = _minPrice.text.trim();
+    final maxRaw = _maxPrice.text.trim();
+    final min = minRaw.isEmpty ? null : double.tryParse(minRaw);
+    final max = maxRaw.isEmpty ? null : double.tryParse(maxRaw);
+    return (minRaw.isEmpty || min != null && min >= 0) &&
+        (maxRaw.isEmpty || max != null && max >= 0) &&
+        (min == null || max == null || min <= max);
+  }
+
+  bool get _canApply =>
+      _validPriceInputs &&
+      (!_hasPriceInput || (_hasPriceSlot && _priceSlotFitsDay));
+
   @override
   void initState() {
     super.initState();
@@ -284,7 +309,10 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
           const SizedBox(width: 12),
           Expanded(
             child: NeumorphicVerifyButton(
-              onPressed: () => Navigator.pop(context, _buildResult()),
+              onPressed: _canApply
+                  ? () => Navigator.pop(context, _buildResult())
+                  : null,
+              isEnabled: _canApply,
               text: 'ใช้ตัวกรอง',
               height: 48,
             ),
@@ -322,7 +350,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
           borderRadius: 14,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: DropdownButtonFormField<String>(
-            value: _currentProvince ?? '',
+            initialValue: _currentProvince ?? '',
             menuMaxHeight: 320,
             isExpanded: true,
             decoration: InputDecoration(
@@ -367,7 +395,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
           borderRadius: 14,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: DropdownButtonFormField<String>(
-            value: _currentDistrict ?? '',
+            initialValue: _currentDistrict ?? '',
             menuMaxHeight: 320,
             isExpanded: true,
             decoration: InputDecoration(
@@ -481,6 +509,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
                       vertical: 14,
                     ),
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ),
@@ -507,10 +536,29 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
                       vertical: 14,
                     ),
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          !_validPriceInputs
+              ? 'กรุณาตรวจสอบช่วงราคาที่กรอก'
+              : _hasPriceInput && !_hasPriceSlot
+              ? 'เลือกวันที่ เวลาเริ่ม และระยะเวลาเพื่อกรองราคาของช่วงที่เลือก'
+              : _hasPriceInput && !_priceSlotFitsDay
+              ? 'เวลาและระยะเวลาต้องสิ้นสุดภายในวันเดียวกัน'
+              : 'ราคาเทียบกับยอดรวม ณ วันและเวลาที่เลือก ตามเวลาท้องถิ่นของแต่ละสนาม',
+          style: TextStyle(
+            fontSize: 12,
+            color:
+                !_validPriceInputs ||
+                    (_hasPriceInput && (!_hasPriceSlot || !_priceSlotFitsDay))
+                ? Colors.red.shade700
+                : NeumorphicTheme.textSecondary,
+          ),
         ),
         const SizedBox(height: 18),
 

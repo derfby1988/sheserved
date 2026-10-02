@@ -5,13 +5,29 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sheserved/config/app_config.dart';
 
+enum TokenRefreshResult {
+  refreshed,
+  rejected,
+  unavailable,
+  missingRefreshToken;
+
+  static TokenRefreshResult fromHttpStatus(int statusCode) {
+    if (statusCode == 200) return TokenRefreshResult.refreshed;
+    if (statusCode == 400 || statusCode == 401 || statusCode == 403) {
+      return TokenRefreshResult.rejected;
+    }
+    return TokenRefreshResult.unavailable;
+  }
+}
+
 /// Authenticated HTTP client with refresh-once / single-flight pattern.
 ///
 /// Phase 13.2 (Decision Q6 = B):
 /// - Stores access + refresh tokens in flutter_secure_storage
 /// - Automatically adds Authorization: Bearer header
 /// - On 401, attempts token refresh (single-flight: parallel 401s share one refresh)
-/// - If refresh fails, logs out user
+/// - Clears tokens only when the refresh endpoint definitively rejects them
+/// - Preserves the session on transient network/server errors
 /// - Never logs token strings
 class AuthenticatedHttpClient {
   static final AuthenticatedHttpClient _instance =
@@ -23,9 +39,10 @@ class AuthenticatedHttpClient {
   String? _accessToken;
   String? _refreshToken;
   String? _baseUrl;
+  int _tokenRevision = 0;
 
   // Single-flight refresh: parallel 401s share one refresh attempt.
-  Completer<bool>? _refreshCompleter;
+  Completer<TokenRefreshResult>? _refreshCompleter;
 
   /// W3.6 — token lifecycle broadcast: emits the new access token on every
   /// login/refresh, and `null` when tokens are cleared (logout/revoke).
@@ -50,33 +67,54 @@ class AuthenticatedHttpClient {
 
   /// Load stored tokens on app start.
   Future<void> loadTokens() async {
-    _accessToken = await _storage.read(key: 'access_token');
-    _refreshToken = await _storage.read(key: 'refresh_token');
+    final revision = ++_tokenRevision;
+    final accessToken = await _storage.read(key: 'access_token');
+    final refreshToken = await _storage.read(key: 'refresh_token');
+    if (revision != _tokenRevision) return;
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
   }
 
   /// Save tokens after login/refresh.
-  Future<void> _saveTokens(String accessToken, String refreshToken) async {
+  Future<bool> _saveTokens(
+    String accessToken,
+    String refreshToken, {
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != _tokenRevision) {
+      return false;
+    }
+    final revision = ++_tokenRevision;
     _accessToken = accessToken;
     _refreshToken = refreshToken;
     await _storage.write(key: 'access_token', value: accessToken);
+    if (revision != _tokenRevision) return false;
     await _storage.write(key: 'refresh_token', value: refreshToken);
+    if (revision != _tokenRevision) return false;
     _tokenChangeController.add(accessToken);
+    return true;
   }
 
   /// Clear tokens on logout.
   Future<void> clearTokens() async {
+    final revision = ++_tokenRevision;
     _accessToken = null;
     _refreshToken = null;
-    await _storage.delete(key: 'access_token');
-    await _storage.delete(key: 'refresh_token');
-    _tokenChangeController.add(null);
+    try {
+      await _storage.delete(key: 'access_token');
+      if (revision != _tokenRevision) return;
+      await _storage.delete(key: 'refresh_token');
+    } finally {
+      if (revision == _tokenRevision) _tokenChangeController.add(null);
+    }
   }
 
-  /// W3.6 — refresh outside the HTTP-401 path (e.g. socket handshake rejected
-  /// an expired access token). Single-flight shared with the HTTP path.
-  /// Returns false when there is no refresh token or the session is revoked.
-  Future<bool> refreshTokens() async {
-    if (_refreshToken == null) return false;
+  /// Refresh outside the HTTP-401 path (e.g. a socket handshake rejected an
+  /// expired access token). Single-flight shared with the HTTP path.
+  Future<TokenRefreshResult> refreshTokens() async {
+    final inFlight = _refreshCompleter;
+    if (inFlight != null) return inFlight.future;
+    if (_refreshToken == null) return TokenRefreshResult.missingRefreshToken;
     return _refreshOnce();
   }
 
@@ -91,7 +129,8 @@ class AuthenticatedHttpClient {
   /// Make an authenticated HTTP request.
   ///
   /// Automatically adds Authorization header. On 401, attempts refresh
-  /// (single-flight) and retries once. If refresh fails, clears tokens.
+  /// (single-flight) and retries once. Tokens are cleared only when the refresh
+  /// endpoint rejects them; transient failures preserve the session.
   Future<http.Response> request(
     String method,
     String path, {
@@ -145,8 +184,8 @@ class AuthenticatedHttpClient {
 
     // On 401, attempt refresh + retry once.
     if (response.statusCode == 401 && _refreshToken != null) {
-      final refreshed = await _refreshOnce();
-      if (refreshed) {
+      final refreshResult = await _refreshOnce();
+      if (refreshResult == TokenRefreshResult.refreshed) {
         // Retry with new token.
         reqHeaders['Authorization'] = 'Bearer $_accessToken';
         switch (method.toUpperCase()) {
@@ -163,9 +202,6 @@ class AuthenticatedHttpClient {
           default:
             throw ArgumentError('Unsupported HTTP method: $method');
         }
-      } else {
-        // Refresh failed — clear tokens (caller should redirect to login).
-        await clearTokens();
       }
     }
 
@@ -191,13 +227,11 @@ class AuthenticatedHttpClient {
     var response = await request.send();
 
     if (response.statusCode == 401 && _refreshToken != null) {
-      final refreshed = await _refreshOnce();
-      if (refreshed) {
+      final refreshResult = await _refreshOnce();
+      if (refreshResult == TokenRefreshResult.refreshed) {
         request = await buildRequest();
         _applyAuthHeaders(request.headers);
         response = await request.send();
-      } else {
-        await clearTokens();
       }
     }
     return response;
@@ -212,39 +246,65 @@ class AuthenticatedHttpClient {
 
   /// Single-flight refresh: if multiple requests get 401 simultaneously,
   /// only one refresh attempt is made; others share the result.
-  Future<bool> _refreshOnce() async {
-    // If a refresh is already in progress, wait for it.
-    if (_refreshCompleter != null) {
-      return _refreshCompleter!.future;
-    }
+  Future<TokenRefreshResult> _refreshOnce() async {
+    final existing = _refreshCompleter;
+    if (existing != null) return existing.future;
 
-    _refreshCompleter = Completer<bool>();
+    final refreshRevision = _tokenRevision;
+    final oldRefreshToken = _refreshToken;
+    final completer = Completer<TokenRefreshResult>();
+    _refreshCompleter = completer;
+    var result = TokenRefreshResult.unavailable;
     try {
-      final refreshUri = Uri.parse('$_baseUrl/api/auth/refresh');
-      final response = await http.post(
-        refreshUri,
-        headers: _baseHeaders,
-        body: jsonEncode({'refreshToken': _refreshToken}),
-      );
+      final baseUrl = _baseUrl;
+      if (oldRefreshToken == null) {
+        result = TokenRefreshResult.missingRefreshToken;
+      } else if (baseUrl != null) {
+        final response = await http.post(
+          Uri.parse('$baseUrl/api/auth/refresh'),
+          headers: _baseHeaders,
+          body: jsonEncode({'refreshToken': oldRefreshToken}),
+        );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        await _saveTokens(data['accessToken'], data['refreshToken']);
-        _refreshCompleter!.complete(true);
-        return true;
-      } else {
-        debugPrint('[AuthHttpClient] Refresh failed: ${response.statusCode}');
-        _refreshCompleter!.complete(false);
-        return false;
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final accessToken = data['accessToken'];
+          final refreshToken = data['refreshToken'];
+          if (accessToken is! String ||
+              accessToken.isEmpty ||
+              refreshToken is! String ||
+              refreshToken.isEmpty) {
+            throw const FormatException('Invalid token refresh response');
+          }
+          final saved = await _saveTokens(
+            accessToken,
+            refreshToken,
+            expectedRevision: refreshRevision,
+          );
+          result = saved
+              ? TokenRefreshResult.refreshed
+              : TokenRefreshResult.unavailable;
+        } else {
+          debugPrint('[AuthHttpClient] Refresh failed: ${response.statusCode}');
+          final isCurrentAttempt =
+              refreshRevision == _tokenRevision &&
+              oldRefreshToken == _refreshToken;
+          result = isCurrentAttempt
+              ? TokenRefreshResult.fromHttpStatus(response.statusCode)
+              : TokenRefreshResult.unavailable;
+          if (isCurrentAttempt && result == TokenRefreshResult.rejected) {
+            await clearTokens();
+          }
+        }
       }
     } catch (err) {
       debugPrint('[AuthHttpClient] Refresh error: $err');
-      _refreshCompleter!.complete(false);
-      return false;
+      result = TokenRefreshResult.unavailable;
     } finally {
-      // Reset completer so future 401s can attempt refresh again.
-      _refreshCompleter = null;
+      if (!completer.isCompleted) completer.complete(result);
+      if (identical(_refreshCompleter, completer)) _refreshCompleter = null;
     }
+    return result;
   }
 
   /// Submit a profession change and application atomically through the gateway.
@@ -484,19 +544,23 @@ class AuthenticatedHttpClient {
 
   /// Logout — revokes session and clears tokens.
   Future<void> logout() async {
-    if (_refreshToken == null) return;
-
-    try {
-      await http.post(
-        Uri.parse('$_baseUrl/api/auth/logout'),
-        headers: _baseHeaders,
-        body: jsonEncode({'refreshToken': _refreshToken}),
-      );
-    } catch (_) {
-      // Best-effort logout — clear tokens regardless.
+    final refreshToken = _refreshToken;
+    final revision = _tokenRevision;
+    if (refreshToken != null) {
+      try {
+        await http.post(
+          Uri.parse('$_baseUrl/api/auth/logout'),
+          headers: _baseHeaders,
+          body: jsonEncode({'refreshToken': refreshToken}),
+        );
+      } catch (_) {
+        // Best-effort logout — clear tokens regardless.
+      }
     }
 
-    await clearTokens();
+    if (revision == _tokenRevision && refreshToken == _refreshToken) {
+      await clearTokens();
+    }
   }
 }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sheserved/features/sport_club/book_court/application/book_court_query.dart';
@@ -38,6 +39,7 @@ void main() {
       listVenues,
       Set<String> bookedIds = const {},
       Set<String> managedIds = const {},
+      BookCourtSlotPrices? quoteVenueSlotPrices,
       int pageSize = 20,
     }) {
       return BookCourtQuery(
@@ -45,6 +47,7 @@ void main() {
         hydrateVenues: (venues) async => venues,
         bookedVenueIds: (_) async => bookedIds,
         managedVenueIds: (_) async => managedIds,
+        quoteVenueSlotPrices: quoteVenueSlotPrices,
         pageSize: pageSize,
       );
     }
@@ -52,20 +55,21 @@ void main() {
     test('passes shared filter values to the data source', () async {
       String? gotSport, gotProvince, gotDistrict, gotQuery;
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async {
-          gotSport = sportId;
-          gotProvince = province;
-          gotDistrict = district;
-          gotQuery = query;
-          return [];
-        },
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async {
+              gotSport = sportId;
+              gotProvince = province;
+              gotDistrict = district;
+              gotQuery = query;
+              return [];
+            },
       );
 
       await query.fetch(
@@ -84,52 +88,142 @@ void main() {
       expect(gotQuery, 'court');
     });
 
-    test('domain filter fields are never sent to the venue list query',
-        () async {
+    test('price range uses the selected local slot price', () async {
       var calls = 0;
+      DateTime? quotedDate;
+      String? quotedSport;
+      int? quotedStart;
+      int? quotedDuration;
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async {
-          calls++;
-          return [_venue('v1')];
-        },
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async {
+              calls++;
+              return [_venue('v1'), _venue('v2')];
+            },
+        quoteVenueSlotPrices:
+            ({
+              required venueIds,
+              required sportId,
+              required localDate,
+              required startTimeMinutes,
+              required durationMinutes,
+            }) async {
+              quotedDate = localDate;
+              quotedSport = sportId;
+              quotedStart = startTimeMinutes;
+              quotedDuration = durationMinutes;
+              return {
+                'v1': [100],
+                'v2': [50],
+              };
+            },
       );
 
       // BookCourtFilter.date/minPrice exist in the domain filter but are
       // applied client-side; the list RPC receives only shared fields.
+      final date = DateTime(2026, 1, 1);
       final page = await query.fetch(
-        shared: const SportsDiscoveryFilter(),
+        shared: const SportsDiscoveryFilter(sportId: 's1'),
         filter: BookCourtFilter(
-          date: DateTime(2026, 1, 1),
+          date: date,
+          startTime: const TimeOfDay(hour: 18, minute: 30),
+          duration: const Duration(minutes: 90),
           minPrice: 100,
           courtType: 'grass',
         ),
         offset: 0,
       );
       expect(calls, greaterThan(0));
-      expect(page.venues, hasLength(1));
+      expect(quotedDate, date);
+      expect(quotedSport, 's1');
+      expect(quotedStart, 1110);
+      expect(quotedDuration, 90);
+      expect(page.venues.map((venue) => venue.id), ['v1']);
+    });
+
+    test('price range requires a date, start time and duration', () async {
+      final query = buildQuery(
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [],
+      );
+      await expectLater(
+        query.fetch(
+          shared: const SportsDiscoveryFilter(),
+          filter: const BookCourtFilter(minPrice: 100),
+          offset: 0,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'PRICE_FILTER_REQUIRES_SLOT',
+          ),
+        ),
+      );
+    });
+
+    test('price range cannot cross the selected local day', () async {
+      final query = buildQuery(
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [],
+      );
+      await expectLater(
+        query.fetch(
+          shared: const SportsDiscoveryFilter(),
+          filter: BookCourtFilter(
+            date: DateTime(2026, 1, 1),
+            startTime: const TimeOfDay(hour: 23, minute: 0),
+            duration: const Duration(hours: 2),
+            minPrice: 100,
+          ),
+          offset: 0,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'PRICE_FILTER_CROSSES_DAY',
+          ),
+        ),
+      );
     });
 
     test('stale requests throw and discard the page', () async {
       var stale = false;
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async {
-          stale = true; // a newer request superseded this one mid-flight
-          return [_venue('v1')];
-        },
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async {
+              stale = true; // a newer request superseded this one mid-flight
+              return [_venue('v1')];
+            },
       );
 
       expect(
@@ -151,15 +245,15 @@ void main() {
 
     test('bookedByMeOnly keeps only venues the user booked', () async {
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async =>
-            [_venue('v1'), _venue('v2'), _venue('v3')],
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [_venue('v1'), _venue('v2'), _venue('v3')],
         bookedIds: {'v2'},
       );
 
@@ -175,15 +269,15 @@ void main() {
     test('personal filters yield an empty page without a user id', () async {
       var bookedLookups = 0;
       final query = BookCourtQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async =>
-            [_venue('v1'), _venue('v2')],
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [_venue('v1'), _venue('v2')],
         hydrateVenues: (venues) async => venues,
         bookedVenueIds: (_) async {
           bookedLookups++;
@@ -205,18 +299,19 @@ void main() {
 
     test('radius filter drops venues outside the shared radius', () async {
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async => [
-          _venue('near', lat: 13.756, lng: 100.502), // ~1 km away
-          _venue('far', lat: 14.5, lng: 100.5), // ~80 km away
-          _venue('no-geo'),
-        ],
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [
+              _venue('near', lat: 13.756, lng: 100.502), // ~1 km away
+              _venue('far', lat: 14.5, lng: 100.5), // ~80 km away
+              _venue('no-geo'),
+            ],
       );
 
       final page = await query.fetch(
@@ -234,18 +329,19 @@ void main() {
 
     test('amenity and rating filters apply to hydrated venues', () async {
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async => [
-          _venue('a', rating: 9.2, amenities: {'parking', 'shower'}),
-          _venue('b', rating: 9.6, amenities: {'parking'}),
-          _venue('c', rating: 6.0, amenities: {'parking', 'shower'}),
-        ],
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async => [
+              _venue('a', rating: 9.2, amenities: {'parking', 'shower'}),
+              _venue('b', rating: 9.6, amenities: {'parking'}),
+              _venue('c', rating: 6.0, amenities: {'parking', 'shower'}),
+            ],
       );
 
       final page = await query.fetch(
@@ -263,22 +359,22 @@ void main() {
       // 8 venues; the rating filter drops every second row so a single
       // upstream page can never fill a 4-slot visible page.
       final all = [
-        for (var i = 0; i < 8; i++)
-          _venue('v$i', rating: i.isEven ? 9.0 : 2.0),
+        for (var i = 0; i < 8; i++) _venue('v$i', rating: i.isEven ? 9.0 : 2.0),
       ];
       final offsets = <int>[];
       final query = buildQuery(
-        listVenues: ({
-          sportId,
-          province,
-          district,
-          query,
-          limit = 50,
-          offset = 0,
-        }) async {
-          offsets.add(offset);
-          return all.skip(offset).take(limit).toList();
-        },
+        listVenues:
+            ({
+              sportId,
+              province,
+              district,
+              query,
+              limit = 50,
+              offset = 0,
+            }) async {
+              offsets.add(offset);
+              return all.skip(offset).take(limit).toList();
+            },
         pageSize: 4,
       );
 

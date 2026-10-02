@@ -153,12 +153,59 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await _open(tester, court: _court(), choices: {'s1': 'Badminton'});
-    await tester.enterText(find.widgetWithText(TextField, 'ราคา (บาท)'), 'abc');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ราคาเริ่มต้น (บาท/ชม.)'),
+      'abc',
+    );
     await tester.pump();
     expect(find.text('ราคาไม่ถูกต้อง'), findsOneWidget);
     expect(_save(tester).onTap, isNull);
-    await tester.enterText(find.widgetWithText(TextField, 'ราคา (บาท)'), '-10');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ราคาเริ่มต้น (บาท/ชม.)'),
+      '-10',
+    );
     await tester.pump();
     expect(_save(tester).onTap, isNull);
+  });
+
+  testWidgets('saves owner-defined hourly price windows', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _open(tester, choices: {'s1': 'Badminton'});
+    final nameField = find.widgetWithText(TextField, 'ชื่อสนาม/คอร์ท *');
+    await tester.enterText(nameField, 'Court X');
+
+    await tester.ensureVisible(find.text('เพิ่มช่วงราคา'));
+    await tester.tap(find.text('เพิ่มช่วงราคา'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ราคา/ชั่วโมง'),
+      '125.50',
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'ราคา/ชั่วโมง'))
+          .controller
+          ?.text,
+      '125.50',
+    );
+    expect(find.text('กรุณากรอกราคา/ชั่วโมงไม่เกิน 2 ตำแหน่ง'), findsNothing);
+    expect(find.text('เวลาเริ่มต้องน้อยกว่าเวลาสิ้นสุด'), findsNothing);
+    expect(find.text('ช่วงเวลาราคาทับซ้อนกัน'), findsNothing);
+    await tester.ensureVisible(_saveButton);
+    expect(_save(tester).onTap, isNotNull);
+    await tester.tap(_saveButton);
+    await tester.pumpAndSettle();
+
+    final rules = _result?['price_rules'] as List?;
+    expect(rules, hasLength(1));
+    expect(rules!.single, {
+      'day_of_week': null,
+      'start_time': '18:00',
+      'end_time': '22:00',
+      'price_per_hour': 125.5,
+    });
   });
 }

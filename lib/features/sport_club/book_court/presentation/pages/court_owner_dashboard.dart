@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/services/websocket_service.dart';
 import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
@@ -27,7 +30,9 @@ class CourtOwnerDashboard extends StatefulWidget {
 class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
   VenueOwnerProfile? _ownerProfile;
   List<VenueSummary> _venues = [];
+  Map<String, int> _pendingCounts = {};
   bool _loading = true;
+  StreamSubscription<Map<String, dynamic>>? _notificationSub;
 
   String? get _userId => AuthService.instance.currentUser?.id;
 
@@ -44,6 +49,19 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
   void initState() {
     super.initState();
     _load();
+    // Same contract as the group-join flow: a fresh venue_booking
+    // notification means a manager-visible queue changed — refresh the
+    // pending badges without waiting for a manual pull.
+    _notificationSub = WebSocketService().applicationNotificationStream
+        .listen((data) {
+          if (data['category']?.toString() == 'venue_booking') _load();
+        });
+  }
+
+  @override
+  void dispose() {
+    _notificationSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -60,15 +78,43 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
         widget.repo.getMyOwnerProfile(userId),
         widget.repo.listMyVenues(userId),
       ]);
+      final venues = results[1] as List<VenueSummary>;
+      final pendingCounts = await _loadPendingCounts(userId, venues);
       if (!mounted) return;
       setState(() {
         _ownerProfile = results[0] as VenueOwnerProfile?;
-        _venues = results[1] as List<VenueSummary>;
+        _venues = venues;
+        _pendingCounts = pendingCounts;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Pending approval requests per managed venue — the same "คำขอรออนุมัติ"
+  /// surface the group sheet shows managers, so pending bookings stay
+  /// discoverable even when realtime delivery is down.
+  Future<Map<String, int>> _loadPendingCounts(
+    String userId,
+    List<VenueSummary> venues,
+  ) async {
+    final counts = <String, int>{};
+    await Future.wait(
+      venues.map((venue) async {
+        try {
+          final pending = await widget.repo.listVenueBookingsForManager(
+            userId,
+            venue.id,
+            statuses: const ['pending'],
+          );
+          counts[venue.id] = pending.length;
+        } catch (_) {
+          counts[venue.id] = 0;
+        }
+      }),
+    );
+    return counts;
   }
 
   Future<void> _applyAsOwner() async {
@@ -214,6 +260,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                       for (final venue in _venues)
                         CourtOwnerVenueCard(
                           venue: venue,
+                          pendingCount: _pendingCounts[venue.id] ?? 0,
                           onManage: () => _openManage(venue),
                           onViewBookings: () => _openBookings(venue),
                         ),

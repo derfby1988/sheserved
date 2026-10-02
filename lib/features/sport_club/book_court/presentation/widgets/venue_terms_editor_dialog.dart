@@ -3,6 +3,8 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
+import 'venue_cancellation_cutoff_field.dart';
+
 /// Owner editor for venue usage terms. Publishing always creates a new
 /// active version (older versions stay for existing booking snapshots), so
 /// this dialog only submits a draft — the caller runs `publish_sports_venue_terms`
@@ -43,35 +45,27 @@ class _VenueTermsEditorDialogBody extends StatefulWidget {
 class _VenueTermsEditorDialogBodyState
     extends State<_VenueTermsEditorDialogBody> {
   late final _terms = TextEditingController(text: widget.currentText ?? '');
-  late final _cutoff = TextEditingController(
-    text: (widget.currentCutoffMinutes ?? 60).toString(),
+  late final List<int> _cutoffOptions = venueCancellationCutoffOptions(
+    widget.currentCutoffMinutes,
   );
+  late int _cutoffMinutes = widget.currentCutoffMinutes ?? 60;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void dispose() {
     _terms.dispose();
-    _cutoff.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Cutoff must be an explicit non-negative integer — a malformed or
-  /// empty value blocks submission instead of silently falling back.
-  int? get _cutoffValue {
-    final raw = _cutoff.text.trim();
-    if (raw.isEmpty) return null;
-    final parsed = int.tryParse(raw);
-    if (parsed == null || parsed < 0) return null;
-    return parsed;
-  }
-
-  bool get _valid => _terms.text.trim().isNotEmpty && _cutoffValue != null;
+  bool get _valid => _terms.text.trim().isNotEmpty;
 
   void _submit() {
-    final cutoff = _cutoffValue;
-    if (!_valid || cutoff == null) return;
-    Navigator.pop(context, (text: _terms.text.trim(), cutoffMinutes: cutoff));
+    if (!_valid) return;
+    Navigator.pop(context, (
+      text: _terms.text.trim(),
+      cutoffMinutes: _cutoffMinutes,
+    ));
   }
 
   @override
@@ -147,28 +141,13 @@ class _VenueTermsEditorDialogBodyState
                           onChanged: (_) => setState(() {}),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: _cutoff,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'ยกเลิกล่วงหน้าได้ไม่เกิน (นาที)',
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (_) => setState(() {}),
+                        VenueCancellationCutoffField(
+                          key: const ValueKey('venue-terms-cutoff'),
+                          value: _cutoffMinutes,
+                          options: _cutoffOptions,
+                          onChanged: (minutes) =>
+                              setState(() => _cutoffMinutes = minutes),
                         ),
-                        if (_cutoff.text.trim().isNotEmpty &&
-                            _cutoffValue == null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'กรุณากรอกจำนวนนาทีเป็นตัวเลขจำนวนเต็มที่ไม่ติดลบ',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.red.shade700,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),

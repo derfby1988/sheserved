@@ -18,10 +18,12 @@
  */
 
 const REVOKE_CHANNEL = 'socket:revoke';
+const SUBSCRIBE_RETRY_MS = 2000;
 
 let _io = null;
 let _subscriber = null;
 let _redis = null;
+let _subscribeRetryTimer = null;
 
 function _getRedis() {
   if (_redis) return _redis;
@@ -58,6 +60,56 @@ async function handleRevocation({ userId, sessionId = null }) {
   }
 }
 
+/** Wire one dedicated subscriber connection to the revoke channel. */
+function _subscribe(redis) {
+  try {
+    _subscriber = redis.duplicate();
+    _subscriber.on('error', (err) => {
+      console.warn('[Revocation] subscriber error:', err.message);
+    });
+    _subscriber.on('message', (channel, message) => {
+      if (channel !== REVOKE_CHANNEL) return;
+      try {
+        handleRevocation(JSON.parse(message));
+      } catch (err) {
+        console.error('[Revocation] malformed message:', err.message);
+      }
+    });
+    _subscriber.subscribe(REVOKE_CHANNEL, (err) => {
+      if (!err) {
+        console.log('[Revocation] subscribed to', REVOKE_CHANNEL);
+        return;
+      }
+      console.error('[Revocation] subscribe failed:', err.message);
+      // Leave no half-open subscriber: publishRevocation() treats a non-null
+      // _subscriber as "propagation handled" and would skip the local
+      // fallback, silently dropping live revocations on this instance.
+      _subscriber = null;
+      _scheduleSubscribeRetry(redis);
+    });
+  } catch (err) {
+    console.error('[Revocation] init failed:', err.message);
+    _subscriber = null;
+    _scheduleSubscribeRetry(redis);
+  }
+}
+
+// initSocketRevocation() runs while the shared Redis client is still
+// connecting (enableOfflineQueue=false), so the first subscribe can fail.
+// Retry until the client is ready instead of degrading for the whole run.
+function _scheduleSubscribeRetry(redis) {
+  if (_subscribeRetryTimer) return;
+  _subscribeRetryTimer = setTimeout(() => {
+    _subscribeRetryTimer = null;
+    if (_subscriber) return;
+    if (redis.status !== 'ready') {
+      _scheduleSubscribeRetry(redis);
+      return;
+    }
+    _subscribe(redis);
+  }, SUBSCRIBE_RETRY_MS);
+}
+
 /**
  * initSocketRevocation(io) — wire the Redis subscriber.  Call once after
  * the Socket.IO server exists.  Safe when Redis is unavailable (propagation
@@ -70,24 +122,7 @@ function initSocketRevocation(io) {
     console.warn('[Revocation] Redis not available — revocation propagates locally only');
     return;
   }
-  try {
-    _subscriber = redis.duplicate();
-    _subscriber.subscribe(REVOKE_CHANNEL, (err) => {
-      if (err) console.error('[Revocation] subscribe failed:', err.message);
-      else console.log('[Revocation] subscribed to', REVOKE_CHANNEL);
-    });
-    _subscriber.on('message', (channel, message) => {
-      if (channel !== REVOKE_CHANNEL) return;
-      try {
-        handleRevocation(JSON.parse(message));
-      } catch (err) {
-        console.error('[Revocation] malformed message:', err.message);
-      }
-    });
-  } catch (err) {
-    console.error('[Revocation] init failed:', err.message);
-    _subscriber = null;
-  }
+  _subscribe(redis);
 }
 
 /**
@@ -115,6 +150,10 @@ async function publishRevocation({ userId, sessionId = null }) {
 }
 
 function shutdown() {
+  if (_subscribeRetryTimer) {
+    clearTimeout(_subscribeRetryTimer);
+    _subscribeRetryTimer = null;
+  }
   if (_subscriber) {
     _subscriber.unsubscribe(REVOKE_CHANNEL).catch(() => {});
     _subscriber.disconnect();

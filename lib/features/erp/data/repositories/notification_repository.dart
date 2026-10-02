@@ -79,8 +79,11 @@ class NotificationRepository {
   }) async {
     try {
       if (_useGateway) {
-        final cacheKey = '${category ?? '*'}:$limit';
-        final cached = _notificationsCache[cacheKey];
+        final userId = _appUserId;
+        final cacheKey = userId == null
+            ? null
+            : '$userId:${category ?? '*'}:$limit';
+        final cached = cacheKey == null ? null : _notificationsCache[cacheKey];
         if (cached != null &&
             DateTime.now().difference(cached.at) < _cacheTtl) {
           return cached.data;
@@ -96,10 +99,12 @@ class NotificationRepository {
         final notifications = (data as List)
             .map((item) => _fromGatewayJson(Map<String, dynamic>.from(item)))
             .toList();
-        _notificationsCache[cacheKey] = (
-          at: DateTime.now(),
-          data: notifications,
-        );
+        if (cacheKey != null) {
+          _notificationsCache[cacheKey] = (
+            at: DateTime.now(),
+            data: notifications,
+          );
+        }
         return notifications;
       }
 
@@ -127,11 +132,27 @@ class NotificationRepository {
     }
   }
 
+  /// Logs the resolved notification identity once per user so a mismatched
+  /// owner account (badge stays 0 while rows exist for someone else) is
+  /// visible in the device log without spamming every refresh tick.
+  static String? _loggedUserId;
+
+  void _logIdentity() {
+    final userId = _appUserId ?? '-';
+    if (_loggedUserId == userId) return;
+    _loggedUserId = userId;
+    debugPrint(
+      '[NotificationRepo] identity user=$userId gateway=$_useGateway',
+    );
+  }
+
   Future<int> getUnreadCount({String? category}) async {
+    _logIdentity();
     try {
       if (_useGateway) {
-        final cacheKey = category ?? '*';
-        final cached = _unreadCache[cacheKey];
+        final userId = _appUserId;
+        final cacheKey = userId == null ? null : '$userId:${category ?? '*'}';
+        final cached = cacheKey == null ? null : _unreadCache[cacheKey];
         if (cached != null &&
             DateTime.now().difference(cached.at) < _cacheTtl) {
           return cached.count;
@@ -142,11 +163,24 @@ class NotificationRepository {
           queryParams: {if (category != null) 'category': category},
         );
         final count = (data as Map<String, dynamic>)['count'] as int? ?? 0;
-        _unreadCache[cacheKey] = (at: DateTime.now(), count: count);
+        if (cacheKey != null) {
+          _unreadCache[cacheKey] = (at: DateTime.now(), count: count);
+        }
         return count;
       }
 
       final userId = _appUserId;
+      if (_client.auth.currentUser == null ||
+          _client.auth.currentUser?.id != userId) {
+        final notifications = await getNotifications(
+          category: category,
+          unreadOnly: true,
+          limit: 200,
+        );
+        return notifications
+            .where((notification) => !notification.isRead)
+            .length;
+      }
       if (userId == null) return 0;
 
       final result = await _client.rpc(

@@ -2942,7 +2942,7 @@ ALTER TABLE public.fitness_group_bookings
 >
 > สรุป: ขยายหน้า `SportClubPage` ให้เป็น Sports Hub ที่ผู้ใช้ปัดซ้าย/ขวาระหว่าง 3 ประสบการณ์หลัก โดยให้ **หาเพื่อนออกกำลังกายอยู่ตรงกลาง** เป็นหน้าหลักเดิม และมีหน้าจองสนามกีฬาอยู่ด้านหนึ่งกับหน้าค้นหาโค้ช/เทรนเนอร์อยู่อีกด้านหนึ่ง ใช้ตัวกรองกีฬา/พื้นที่ร่วมกันเฉพาะส่วนที่มีความหมายร่วมกัน แต่แยกตัวกรองเฉพาะ domain และแยกโฟลเดอร์โค้ดเพื่อให้ค้นหา แก้ไข และทดสอบได้ง่าย
 
-> **สถานะปัจจุบัน:** Phase 21.7.1–21.7.9 implement แล้วใน repository — shared filter contract (persistence/restore/logout), venue supply + owner onboarding/admin review (migration `20260924100000`), discovery + instant booking + owner approval + reviews (migration `20260924110000`, `book_court/`), coach discovery + request lifecycle (migration `20260924120000`, `find_coach/`) พร้อม route wiring ใน `main.dart` และ unit/widget tests; migrations ทั้งสาม apply กับ Supabase จริงแล้ว (SQL Editor: "Success. No rows returned") และผ่าน RPC smoke test 32 checks บน scratch Postgres เหลือ 21.7.10 บางส่วน: end-to-end test ผ่าน app กับฐานจริง และ device QA; 21.7.12 coach profile/courses/scheduling/enrollment implement + apply migrations แล้ว เหลือ real-app flow verification; 21.7.13 implement + apply migration `20260928120000` แล้ว (shared catalog/usage ranking/shell-owned sport bar) เหลือ device QA; 21.7.14 implement แล้วใน repository — migration `20260926100000` (rating_10 backfill, category catalog/scores, helpful votes, v2 RPCs + legacy compat adapter) apply กับ Supabase จริงแล้ว (SQL Editor: "Success. No rows returned") ผ่าน RPC smoke test 76 checks บน scratch Postgres และ widget/unit tests; เหลือยืนยัน flow รีวิวบนแอปจริง, device QA และ decision gate ที่เหลือคือ rollout/retirement ของ legacy 1–5 contract; 21.7.15 migrate Find Coach/Book Court pages/sheets/dialogs ไป shared Neumorphic + Glass แล้ว (ไม่เหลือ raw AlertDialog ใน scope) เหลือ device QA ตาม exit gate; เพิ่ม admin tab `เงื่อนไขมาตรฐานสนาม` และ migration `20261001120000_sports_hub_platform_venue_terms.sql` ใน local change set — analyze/widget test ผ่าน แต่ยังต้อง apply migration และตรวจ RPC/effective-terms flow กับ Supabase จริงก่อนถือว่า rollout เสร็จ
+> **สถานะปัจจุบัน:** Phase 21.7.1–21.7.9 implement แล้วใน repository — shared filter contract (persistence/restore/logout), venue supply + owner onboarding/admin review (migration `20260924100000`), discovery + instant booking + owner approval + reviews (migration `20260924110000`, `book_court/`), coach discovery + request lifecycle (migration `20260924120000`, `find_coach/`) พร้อม route wiring ใน `main.dart` และ unit/widget tests; migrations ทั้งสาม apply กับ Supabase จริงแล้ว (SQL Editor: "Success. No rows returned") และผ่าน RPC smoke test 32 checks บน scratch Postgres เหลือ 21.7.10 บางส่วน: end-to-end test ผ่าน app กับฐานจริง และ device QA; 21.7.12 coach profile/courses/scheduling/enrollment implement + apply migrations แล้ว เหลือ real-app flow verification; 21.7.13 implement + apply migration `20260928120000` แล้ว (shared catalog/usage ranking/shell-owned sport bar) เหลือ device QA; 21.7.14 implement แล้วใน repository — migration `20260926100000` (rating_10 backfill, category catalog/scores, helpful votes, v2 RPCs + legacy compat adapter) apply กับ Supabase จริงแล้ว (SQL Editor: "Success. No rows returned") ผ่าน RPC smoke test 76 checks บน scratch Postgres และ widget/unit tests; เหลือยืนยัน flow รีวิวบนแอปจริง, device QA และ decision gate ที่เหลือคือ rollout/retirement ของ legacy 1–5 contract; 21.7.15 migrate Find Coach/Book Court pages/sheets/dialogs ไป shared Neumorphic + Glass แล้ว (ไม่เหลือ raw AlertDialog ใน scope) เหลือ device QA ตาม exit gate; เพิ่ม admin tab `เงื่อนไขมาตรฐานสนาม` และ migration `20261001120000_sports_hub_platform_venue_terms.sql` ใน local change set — analyze/widget test ผ่าน แต่ยังต้อง apply migration และตรวจ RPC/effective-terms flow กับ Supabase จริงก่อนถือว่า rollout เสร็จ; 21.7.16 implement แล้วใน repository — migration `20261003100000_sports_hub_court_time_pricing.sql` (per-court time rules + version-checked pro-rata pricing/snapshots) อยู่ใน local change set เช่นกัน, analyze/widget tests ผ่าน, แต่ยังต้อง apply บน Supabase (PostgreSQL 15+) และรัน SQL smoke ก่อน rollout; 21.7.17 เพิ่ม section "นัดหมายกำลังจะเริ่ม" ใน `CourtDetailSheet` (booking confirmed ที่ยังไม่หมดเวลาทุก venue, ปัดซ้ายยกเลิกตาม cutoff snapshot) พร้อม widget tests — ไม่มี migration เพิ่ม
 
 ### 21.1 ข้อเสนอหลักและมติด้าน UX
 
@@ -3151,7 +3151,9 @@ lib/features/sport_club/
 │   │   └── book_court_models.dart
 │   ├── domain/
 │   │   ├── book_court_filter.dart
-│   │   └── court_unit_catalog.dart
+│   │   ├── court_unit_catalog.dart
+│   │   ├── venue_local_time.dart
+│   │   └── venue_setup_progress.dart
 │   ├── application/
 │   │   ├── book_court_query.dart
 │   │   ├── book_court_booking_service.dart
@@ -3159,11 +3161,12 @@ lib/features/sport_club/
 │   └── presentation/
 │       ├── pages/
 │       │   ├── book_court_page.dart
-│       │   ├── court_detail_page.dart
-│       │   ├── court_owner_registration_page.dart
-│       │   ├── court_owner_dashboard_page.dart
-│       │   └── admin/
-│       │       └── owner_application_review_page.dart
+│       │   ├── court_my_bookings_page.dart
+│       │   ├── court_owner_bookings_page.dart
+│       │   ├── court_owner_dashboard.dart
+│       │   ├── court_owner_venue_manage_page.dart
+│       │   ├── court_reviews_page.dart
+│       │   └── admin_court_owner_review_page.dart
 │       └── widgets/
 │           ├── court_card.dart
 │           ├── court_detail_sheet.dart
@@ -3176,11 +3179,17 @@ lib/features/sport_club/
 │           ├── book_court_filter_sheet.dart
 │           ├── court_review_rating_card.dart
 │           ├── court_review_tag_picker.dart
-│           └── owner/
-│               ├── venue_editor.dart
-│               ├── court_inventory_editor.dart
-│               ├── court_schedule_editor.dart
-│               └── owner_booking_manager.dart
+│           ├── court_owner_register_sheet.dart
+│           ├── court_owner_venue_card.dart
+│           ├── court_owner_booking_manager.dart
+│           ├── owner_court_editor_dialog.dart
+│           ├── venue_profile_editor_sheet.dart
+│           ├── venue_setup_checklist_card.dart
+│           ├── venue_sports_editor_dialog.dart
+│           ├── venue_hours_editor_dialog.dart
+│           ├── venue_amenities_editor_dialog.dart
+│           ├── venue_terms_editor_dialog.dart
+│           └── admin_platform_venue_terms_panel.dart
 │
 ├── find_coach/                     # ระบบค้นหาโค้ช/เทรนเนอร์เท่านั้น
 │   ├── data/
@@ -3215,7 +3224,7 @@ lib/features/sport_club/
 
 ### 21.4.1 มาตรฐานการออกแบบ UI/UX สไตล์ Neumorphic (Soft UI)
 
-เพื่อยกระดับประสบการณ์ใช้งานให้สวยงาม พรีเมียม ทันสมัย และสอดคล้องเป็นหนึ่งเดียวกับหน้ารายละเอียดก๊วน (`GroupDetailSheet` ใน `lib/features/sport_club/presentation/widgets/sheets/group_detail_sheet.dart`) ที่ได้ปรับใช้ Neumorphic UI เรียบร้อยแล้ว ชิ้นส่วน UI สำคัญของระบบจองสนามและค้นหาโค้ช ได้แก่ `court_detail_sheet.dart` (และ `court_detail_page.dart`), `coach_detail_page.dart` (และ `coach_detail_sheet.dart`), `book_court_filter.dart` (ร่วมกับ `book_court_filter_sheet.dart` และ `book_court_quick_filter_row.dart`), และ `find_coach_filter.dart` (ร่วมกับ `coach_filter_sheet.dart` และ `coach_quick_filter_row.dart`) ต้องปฏิบัติตามมาตรฐาน Neumorphic Design System ใน `lib/shared/widgets/neumorphic` อย่างเคร่งครัด:
+เพื่อยกระดับประสบการณ์ใช้งานให้สวยงาม พรีเมียม ทันสมัย และสอดคล้องเป็นหนึ่งเดียวกับหน้ารายละเอียดก๊วน (`GroupDetailSheet` ใน `lib/features/sport_club/presentation/widgets/sheets/group_detail_sheet.dart`) ที่ได้ปรับใช้ Neumorphic UI เรียบร้อยแล้ว ชิ้นส่วน UI สำคัญของระบบจองสนามและค้นหาโค้ช ได้แก่ `court_detail_sheet.dart` (detail ของ venue/court ใช้ sheet เพียงรูปแบบเดียว ไม่มี standalone detail page/route), `coach_detail_page.dart` (และ `coach_detail_sheet.dart`), `book_court_filter.dart` (ร่วมกับ `book_court_filter_sheet.dart` และ `book_court_quick_filter_row.dart`), และ `find_coach_filter.dart` (ร่วมกับ `coach_filter_sheet.dart` และ `coach_quick_filter_row.dart`) ต้องปฏิบัติตามมาตรฐาน Neumorphic Design System ใน `lib/shared/widgets/neumorphic` อย่างเคร่งครัด:
 
 #### 1. กฎพื้นฐานด้าน Theming & Visual Tokens (`NeumorphicTheme`)
 - **สีพื้นหลังหลัก (Background Matching):** พื้นหลังของ Scaffold, BottomSheet Modal Shell และแผ่นการ์ด ต้องใช้ `NeumorphicTheme.baseColor` (`#E7EBF0`) เสมอ ห้ามใช้สีขาวล้วน (`#FFFFFF`) หรือสีดำล้วน เพื่อให้การจัดแสงและเงาสองทิศทาง (Dual Shadows) แสดงมิติความนูนและร่องลึกได้อย่างสมจริง
@@ -3226,7 +3235,7 @@ lib/features/sport_club/
 - **ปุ่มยืนยันหลัก (Vibrant Gradient CTA):** ปุ่ม Call-to-Action หลัก (เช่น "จองคอร์ท", "ส่งคำขอเรียน") ใช้ปุ่มแคปซูล Vibrant Cyan-Blue Gradient (`NeumorphicTheme.buttonGradient`: `#38BDF8` → `#2563EB`) ควบคู่กับเงาเรืองแสง `NeumorphicTheme.glowShadows` โดดเด่น ชัดเจน น่ากด
 - **สีตัวอักษร:** หัวข้อหลักใช้ `NeumorphicTheme.textPrimary` (`#1E293B`) และข้อความรอง/คำอธิบายใช้ `NeumorphicTheme.textSecondary` (`#64748B`)
 
-#### 2. การออกแบบ `court_detail_sheet.dart` และ `court_detail_page.dart` (หน้ารายละเอียดสนามและคอร์ท)
+#### 2. การออกแบบ `court_detail_sheet.dart` (sheet รายละเอียดสนามและคอร์ท — ใช้ sheet เพียงรูปแบบเดียว)
 - **Modal Shell & Header:**
   - ตัว Sheet / Page ใช้พื้นหลัง `NeumorphicTheme.baseColor` มุมขอบบนมน `Radius.circular(28)` พร้อมขอบเส้นไฮไลต์สีขาว
   - Hero Image Carousel มีกรอบมนขนาดใหญ่ ลอยเด่นด้วย `NeumorphicTheme.cardShadows`
@@ -3237,7 +3246,7 @@ lib/features/sport_club/
   - ไอคอนประจำหัวข้อแต่ละ Section บรรจุใน Neumorphic Circle Badge ขนาด 32–36px
   - ชิปสิ่งอำนวยความสะดวก (เช่น ที่จอดรถ, ห้องอาบน้ำ, ติดแอร์, Wi-Fi): แสดงเป็น Raised Clay Pills
 - **Court Units List & Availability Slot Picker:**
-  - คอร์ทแต่ละคอร์ท (Court Units) แสดงเป็นการ์ด Neumorphic พร้อมป้ายราคาต่อหน่วยแบบ Clay Pill
+  - คอร์ทแต่ละคอร์ท (Court Units) แสดงราคาเริ่มต้นจาก hourly base/rules; เมื่อเลือกเวลาจองให้แสดงยอดรวมแบบ pro-rata ต่อช่วงและยอดรวมทั้งหมดก่อนยอมรับเงื่อนไข
   - ตัวเลือกช่วงเวลาว่าง (Availability Time Slots):
     - Slot ว่าง (Available): Neumorphic Raised Pill สัมผัสนุ่ม แตะแล้วยุบตัว (Tactile press)
     - Slot ที่กำลังเลือก (Selected): Inset Sunken Box ร่องลึก ขอบเรืองแสงสี `accentCyan` หรือ Gradient Pill ขอบเรืองแสง
@@ -3273,7 +3282,7 @@ lib/features/sport_club/
   - ตัวเลือกช่วงราคา (Price Range Slider & Inputs):
     - รางสไลเดอร์ (Slider Track) ใช้เอฟเฟกต์ร่องลึก (Sunken Inset Track) เสมือนร่องบนแผ่นปูน
     - หัวเลื่อน (Thumb / Knob) เป็น Neumorphic Raised Disc ทรงกลมลอยเด่นพร้อมเงาคู่
-    - ช่องกรอกตัวเลขราคาใช้ `NeumorphicInsetBox` ข้อความสี `textPrimary`
+    - ช่องกรอกตัวเลขราคาใช้ `NeumorphicInsetBox` ข้อความสี `textPrimary`; การกรองเทียบยอดรวมของวัน/เวลา/ระยะเวลาที่เลือกและ resolve วันเวลาใน timezone ของแต่ละ venue; ต้องเลือก slot ครบก่อน apply
   - สิ่งอำนวยความสะดวก (Amenities Multi-Select): กริดตัวเลือกเป็น Neumorphic Raised Tiles เมื่อเลือกจะเปลี่ยนเป็น Inset Tile สไตล์ Sunken Shadow
   - ปุ่ม Footer: ปุ่ม "ล้างตัวกรอง" (Neumorphic Raised Button) และปุ่ม "นำตัวกรองไปใช้" (Vibrant Gradient CTA Button)
 
@@ -3332,6 +3341,7 @@ sports_venue_owner_members
 sports_venues
 sports_venue_sports
 sports_venue_courts
+sports_venue_court_price_rules
 sports_venue_operating_hours
 sports_venue_availability
 sports_venue_bookings  # statuses include pending/confirmed/completed/cancelled/rejected/expired
@@ -3356,6 +3366,12 @@ sports_court_unit_defaults
 - `sports_venue_sports` ผูก venue กับกีฬา และเก็บ `unit_label_override` แบบต่อ venue+sport (เช่น ฟุตบอลใช้ “สนาม”, แบดมินตันใช้ “คอร์ท”); เมื่อไม่ override ให้อ่าน default จาก catalog ตาม sport
 - `sports_venues` ต้องเก็บ IANA timezone ของสถานที่; เวลา operating hours/availability ที่กรอกและแสดงผลยึดเวลาท้องถิ่นของ venue, ส่วน booking/conflict ต้อง resolve เป็น absolute timestamp ในฐานข้อมูล และทดสอบกรณี timezone/DST ที่เกี่ยวข้อง
 - `sports_venue_courts` แทน resource ที่จองได้จริง มี `sport_id`, ชื่อ/หมายเลข, active status, capacity/รายละเอียดที่เกี่ยวข้อง, unit label และ `booking_approval_mode` (`instant`/`owner_approval`) ซึ่งเจ้าของตั้งแยกได้ต่อคอร์ท; `instant` ยืนยันทันทีเมื่อ slot ว่าง ส่วน `owner_approval` สร้าง booking `pending`; รองรับสนามย่อยหลายสนามและไม่ hard-code ว่าทุก resource ต้องชื่อ court
+- `sports_venue_court_price_rules` กำหนดราคาเป็นช่วงต่อคอร์ท (`day_of_week`, `start_time`, `end_time`, `price_per_hour`); `day_of_week=NULL` ใช้ทุกวัน, เวลาเป็น local time ของ venue, เจ้าของกำหนดขอบช่วงเป็นนาทีได้เอง และทุกคอร์ทแยก schedule กัน; ช่วงราคาใช้ `[start_time,end_time)`, ห้ามช่วงที่ทับซ้อนกันภายใน scope เดียวกัน; weekday-specific rule มี precedence เหนือ all-day rule เมื่อเวลาทับกัน และไม่รองรับ rule ข้ามเที่ยงคืน ให้แยกช่วงตามวัน
+- ราคาใน schedule คิดเป็นบาท/ชั่วโมงและคำนวณแบบ pro-rata ตามนาที ฝั่ง trusted RPC โดยปัดเป็น 2 ตำแหน่งครั้งเดียวตอนรวมยอด; ถ้ามี rule แล้วแต่ช่วงจองไม่มีราคา fallback ให้ปฏิเสธการจอง; ถ้าไม่มี rule ใช้ `sports_venue_courts.price_amount` เดิมเป็นราคาเดิมต่อหน่วย/ราคา fallback เพื่อ backward compatibility โดยห้ามตีความหน่วย legacy (`session/match/day`) เป็นราคา/ชั่วโมง
+- การกำหนด schedule ต้องใช้ `pricing_unit='hour'`; `price_amount` เดิมคงไว้เป็น hourly fallback สำหรับคอร์ทที่คิดเป็นชั่วโมง แต่คอร์ท legacy ที่ใช้หน่วยอื่นยังอ่าน/จองตามพฤติกรรมเดิมได้จนกว่าเจ้าของจะเปลี่ยนหน่วยอย่างชัดเจน
+- `price_schedule_version` เพิ่มทุกครั้งที่ base price หรือ price rules เปลี่ยน; quote ส่ง version ให้ client และ `create_sports_venue_booking` / `change_pending_venue_booking_slot` ต้องตรวจ version เดียวกันใน transaction; เมื่อ schedule เปิดใช้แต่ client ไม่ส่ง version ให้ fail closed พร้อม code สำหรับแจ้งให้อัปเดต client
+- `sports_venue_bookings` เก็บ `price_total_snapshot`, `price_breakdown_snapshot`, `price_schedule_version_snapshot` ควบคู่กับ `price_amount_snapshot`/`pricing_unit_snapshot`; ราคา booking เดิมไม่เปลี่ยนเมื่อเจ้าของแก้ schedule และการย้าย pending booking คำนวณ/snapshot ราคาใหม่ตาม slot ที่เลือก
+- ตัวกรองราคาเทียบกับยอดรวม ณ วัน/เวลา/ระยะเวลาที่เลือก โดย date/time ถูก resolve แยกตาม timezone ของแต่ละ venue และ venue จะผ่านเมื่อมีอย่างน้อยหนึ่งคอร์ทของกีฬาที่เลือกซึ่งราคาอยู่ในช่วง; ต้องเลือกวัน เวลาเริ่ม และระยะเวลาให้ครบก่อน apply price filter และช่วงต้องจบในวัน local เดียวกัน; venue card แสดงราคาเริ่มต้นจาก hourly base/rules ที่ active เท่านั้นเพื่อไม่เปรียบเทียบหน่วย legacy ที่ต่างกัน
 - `sports_court_unit_defaults` เป็น catalog ที่ admin ดูแล มี default singular/plural ต่อ sport และ locale; seed ให้ครบทุกกีฬาที่เปิดใช้ ถ้าไม่มี mapping ให้ fallback เป็นคำกลาง “สนาม/พื้นที่” พร้อมแจ้ง admin ให้เติม catalog ห้ามเดาคำจากชื่อกีฬาใน runtime
 - เจ้าของเลือกค่า default หรือ override คำเรียกต่อชนิดกีฬาในสถานที่ได้; validation ป้องกัน label ว่าง/ยาวเกินกำหนด และการแก้ label ภายหลังไม่เปลี่ยน booking เก่าที่เก็บ snapshot
 - amenities และรูปภาพเก็บเป็นข้อมูลที่เจ้าของยืนยันจริง; มี moderation/validation และห้าม filter แสดงสิ่งอำนวยความสะดวกที่ไม่ได้ระบุว่ามี
@@ -3419,6 +3435,9 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 | 11 | 21.7.12 Find Coach experience completion | complete coach profile/admin lifecycle, coach management, private favorites, 1:1/group/course schedules and enrollment |
 | 12 | 21.7.13 Sports Hub shared sport catalog | per-user detail-open stats (page-balanced + smoothing), one shared sport order, single shared sport bar outside the PageView with smooth swipe, equal real trailing-control dimensions without blank space |
 | 13 | 21.7.14 Book Court review experience | additive 1–10 scoring migration, court-level category ratings with venue roll-up, popular topics, helpful votes and full review page |
+| 14 | 21.7.15 Find Coach/Book Court UI migration | staged migration ของทุก page/sheet/dialog ในสอง domain ไป shared Neumorphic + Glass contract |
+| 15 | 21.7.16 Book Court time-based pricing | per-court recurring price rules, server-side pro-rata quote contract, version-checked booking snapshots, selected-slot price filter และ starting-price display |
+| 16 | 21.7.17 Court detail upcoming appointments | section "นัดหมายกำลังจะเริ่ม" ใน `CourtDetailSheet` พร้อม cutoff-guarded cancellation |
 
 #### เหตุผลของลำดับและการคุมผลกระทบ
 
@@ -3465,7 +3484,7 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 
 #### 21.7.4 Book Court — Read-only Discovery และ Availability
 
-- ทำ public query เฉพาะ venue/court ที่ผ่าน approval; สร้าง court card/detail พร้อมกีฬา, หน่วย, ราคา, rating, ระยะทาง, เวลาเปิด และข้อมูล amenities ที่มีหลักฐาน โดยการออกแบบ `court_detail_sheet.dart` และ `court_detail_page.dart` ต้องใช้มาตรฐาน Neumorphic Design System (`NeumorphicTheme.baseColor`, dual shadows `cardShadows`, circle icon badges, clay amenity chips, tactile availability slots และ Vibrant Gradient CTA ตามข้อ 21.4.1)
+- ทำ public query เฉพาะ venue/court ที่ผ่าน approval; สร้าง court card/detail พร้อมกีฬา, หน่วย, ราคา, rating, ระยะทาง, เวลาเปิด และข้อมูล amenities ที่มีหลักฐาน โดยการออกแบบ `court_detail_sheet.dart` ต้องใช้มาตรฐาน Neumorphic Design System (`NeumorphicTheme.baseColor`, dual shadows `cardShadows`, circle icon badges, clay amenity chips, tactile availability slots และ Vibrant Gradient CTA ตามข้อ 21.4.1)
 - ใช้ shared sport/location filters และ `BookCourtFilter` สำหรับวันที่ (เวลา local ของ venue), ช่วงเวลา, ราคา, rating, ประเภทสนาม, amenities และ availability
 - ทำ quick filters (`book_court_quick_filter_row.dart`) ที่ข้อมูลรองรับ เช่น “คอร์ทว่าง”, “รัศมี” และ “เป็นเจ้าของ” ออกแบบเป็น Neumorphic Raised Pills พร้อม Inset/Gradient state เมื่อเลือก; defer “เคยจองแล้ว” จน booking history มีจริงใน 21.7.5; personal filters ต้อง login และ query ตามสิทธิ์จริง
 - เพิ่ม loading/error/empty states และ `BookCourtFilterSheet` ตาม interaction/accessibility pattern ของ `advanced_filter_sheet.dart` แต่แยก model/query และออกแบบ UI สไตล์ Neumorphic (`baseColor`, Inset Slider Track, `NeumorphicInsetBox`, Raised Amenity Tiles และ Vibrant CTA ตามข้อ 21.4.1)
@@ -3534,7 +3553,7 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - platform terms เริ่มจาก seed legacy version 0 ที่ `is_configured=false`; หน้า admin ไม่ prefill ข้อความ placeholder และ backend ปฏิเสธการ publish ข้อความ legacy นี้; การเลือกใช้จาก owner, readiness และการจองด้วย platform fallback ปฏิเสธด้วย `PLATFORM_TERMS_NOT_CONFIGURED` จน admin บันทึกเงื่อนไขจริง; เมื่อ config แล้ว owner เลือกได้และ readiness gate ใช้สถานะเดียวกันทั้ง client/server
 - การแก้ standard terms ที่มีค่าต่างจากเดิมสร้าง version ใหม่, มีผลกับสนามที่ใช้ platform terms และ venue ที่ยังไม่มี custom terms; ผู้จองต้องยอมรับเวอร์ชันล่าสุดก่อนจอง/เปลี่ยน slot; booking ที่สร้างแล้วคง terms text/cutoff snapshot เดิม
 - **กติกาความครบถ้วนของ setup ต้องนิยามและคำนวณจากข้อมูลจริง:** sports ต้องมีอย่างน้อยหนึ่ง sport ที่เลือกใช้ได้; hours ต้องระบุครบ 7 วันว่าเปิด/ปิด หรือเลือก 24/7 อย่างชัดเจน (ไม่มี row ห้ามตีความว่าเปิดตลอด); amenities เป็น optional — ถ้าต้องแยก "ยังไม่ระบุ" จาก "ยืนยันว่าไม่มี" ให้ persist การยืนยันนั้น มิฉะนั้นให้เป็น optional/non-blocking และไม่นับเป็น required progress; terms ต้องเป็น custom active version หรือเลือก platform terms ที่ admin ตั้งค่าแล้ว; courts ต้องมี active court อย่างน้อยหนึ่งรายการ — inactive court อย่างเดียวไม่ทำให้ step complete
-- **Safe editing:** ชั่วโมงที่ยังไม่ตั้งต้องไม่ถูกเติมเป็น 09:00–21:00 โดยอัตโนมัติ; ตรวจช่วงเวลาและแสดง validation ก่อนส่ง; UI/backend ต้องสอดคล้องกันเรื่องข้ามเที่ยงคืน (ปัจจุบัน booking ไม่รองรับ slot ข้ามวัน); cutoff นาทีต้องเป็นค่าจำนวนเต็มที่ไม่ติดลบและห้ามแทน input ผิดรูปแบบด้วยค่า 60 แบบเงียบ ๆ
+- **Safe editing:** ชั่วโมงที่ยังไม่ตั้งต้องไม่ถูกเติมเป็น 09:00–21:00 โดยอัตโนมัติ; ตรวจช่วงเวลาและแสดง validation ก่อนส่ง; UI/backend ต้องสอดคล้องกันเรื่องข้ามเที่ยงคืน (ปัจจุบัน booking ไม่รองรับ slot ข้ามวัน); cutoff นาทีเลือกจาก preset slider (`VenueCancellationCutoffField`) เท่านั้น — 0/15/30/45/60 นาที และ 1/2/5/12/24/36 ชั่วโมง จึงไม่มี input ผิดรูปแบบให้ fallback เงียบ ๆ; ค่าที่ published อยู่นอก preset ถูกคงเป็นตัวเลือกเพิ่มเพื่อไม่เขียนทับ cutoff ที่ booking snapshot ไว้ (ใช้ทั้ง owner venue terms dialog และ admin platform terms panel)
 - **ความสัมพันธ์ sport/court:** ป้องกันการเอา sport ออกจาก venue ขณะที่ยังมี court ผูกกับ sport นั้น จน mapping ระหว่าง venue กับ resource ไม่สอดคล้อง; ปฏิเสธการถอด sport ที่ยังมี court ใช้งาน หรือให้ owner ย้าย/ปิด court อย่างชัดเจนก่อน; ห้าม editor เลือก sport แรกแทน court เดิมโดยเงียบเมื่อ sport เดิมไม่อยู่ในตัวเลือก; การแก้ court ต้อง preserve `is_active` และให้เปิด/ปิดได้; validate capacity/price ตาม constraint ของฐานข้อมูล
 - **Venue profile ก่อนตรวจ:** ปัจจุบันสร้าง venue จากชื่ออย่างเดียว แม้ RPC รองรับ description, address, province/district, coordinates และ timezone; เพิ่ม UI แก้ข้อมูลขั้นต่ำที่จำเป็นต่อ discovery/radius/timezone และกำหนด field ที่ต้องมีเพื่อขออนุมัติให้ชัดเจน; ระบุด้วยว่ารูป venue เป็น required หรือ optional และหาก required ต้องมี upload/moderation flow ที่ปลอดภัยก่อนอนุมัติ (ตาราง photos อย่างเดียวไม่ถือว่ามี UI)
 - **Admin review readiness:** ปัจจุบัน venue เริ่ม `pending` ทันทีที่สร้าง และ `review_sports_venue` ยังอนุมัติได้โดยไม่ตรวจ setup; กำหนด owner action ส่งตรวจเมื่อครบ readiness และเพิ่ม server-side validation ให้ admin approve ไม่ได้หากข้อมูล mandatory ไม่ครบ พร้อมแสดง checklist/reason ใน admin review; การแก้ venue ที่ rejected ต้องมีทาง resubmit ชัดเจน ส่วนการ suspend ต้องไม่ถูกเข้าใจว่าเป็น pending
@@ -3640,6 +3659,28 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - **Migration order:** (1) inventory และ baseline screenshots ของ Find Coach/Book Court เดิม; (2) migrate Find Coach pages/sheets/dialogs รวมทั้ง retire/redirect standalone `coach_detail_page.dart` ให้เปิด `CoachDetailSheet` ตาม 21.7.12; (3) migrate Book Court secondary pages/sheets/dialogs โดยคง `BookCourtPage` main-shell exception และ review semantics ใน 21.7.14; (4) ปิดด้วย cross-flow visual, navigation, accessibility และ regression QA; ใช้การ migrate เป็นราย flow เพื่อไม่ restyle ทั้งแอปพร้อมกัน
 - **Test/exit gate:** ทุก page/sheet/dialog ใน scope ใช้ shared library ตามชนิด ยกเว้น main discovery pages ที่ตรงกับ `SportClubPage`; ยืนยัน glass dialog scroll/height บนจอแคบและ preserve parent sheet/page state เมื่อเปิด/ปิด nested dialog; ยืนยัน pinned header/footer, scroll position และ `Slidable` `endActionPane`/`ScrollMotion` โดย primary CTA ยังมองเห็นและ secondary actions แสดงตาม role/state; ไม่มี direct `AlertDialog` ใน feature scope; เพิ่ม/ปรับ widget/golden/navigation tests และ device QA สำหรับ loading/empty/error, keyboard/large text, tap targets และย้อนกลับได้ถูกต้อง; analyzer, relevant tests และ `git diff --check` ผ่าน
 
+#### 21.7.16 Book Court — Per-court Time-based Pricing และ Quote Contract
+
+- **สถานะ:** implement แล้วใน repository — migration `20261003100000_sports_hub_court_time_pricing.sql` (ตาราง `sports_venue_court_price_rules`, `price_schedule_version`, booking price snapshots, quote/version RPCs, public views ใหม่), owner editor UI แบบหลายช่วงราคา, booking dialog ที่ quote ราคาก่อนยืนยัน, price filter เทียบยอดจริงของ slot ที่เลือก และ venue card "ราคาเริ่มต้นที่ … บ."; `dart analyze` และ widget/unit tests ที่เกี่ยวข้องผ่าน; **ยังไม่ได้ apply migration กับ Supabase จริง** — local Postgres 14.20 ไม่รองรับ `security_invoker` views (ต้อง PG15+) จึงต้องรัน migration + `database/sports_hub_rpc_smoke_test.sql` บน Supabase/scratch PG15 ก่อนถือว่า rollout เสร็จ
+- **ขอบเขตและ compatibility:** เปลี่ยน pricing จาก flat ต่อคอร์ทเป็น recurring schedule ต่อคอร์ทแบบ additive — เจ้าของกำหนดช่วงเวลาเอง (`day_of_week` nullable = ทุกวัน, `start_time`/`end_time` เป็นเวลา local ของ venue, `price_per_hour`); คง `price_amount`/`pricing_unit` เดิมเป็น base/fallback และคงหน่วย legacy (`session/match/day`) ทำงานตามเดิม; booking เดิมและ snapshot เดิมไม่เปลี่ยนเมื่อเจ้าของแก้ schedule
+- **Quote contract (server-authoritative):** `quote_sports_venue_court_price(court_id, starts_at, ends_at)` คืน `total_amount` (pro-rata ต่อนาที ปัด 2 ตำแหน่งครั้งเดียวตอนรวม), `price_amount` (effective hourly rate), `price_schedule_version`, `has_time_pricing`, `price_error` และ `breakdown` ต่อช่วงอัตรา; slot ต้อง minute-aligned, ไม่เกิน 24 ชม.; weekday-specific rule มี precedence เหนือ all-day rule; ช่วงที่ไม่มี rule และไม่มี flat fallback ตอบ `PRICE_NOT_CONFIGURED` (fail closed); คอร์ทที่ไม่มี rule เลยใช้ `price_amount` เดิมแบบเดิมและไม่ตีความหน่วย legacy เป็นรายชั่วโมง
+- **Version safety:** `sports_venue_courts.price_schedule_version` เพิ่มทุกครั้งที่ base price/unit หรือชุด rules เปลี่ยน (trigger + explicit bump ใน upsert); `create_sports_venue_booking` และ `change_pending_venue_booking_slot` รับ `p_expected_price_schedule_version` — คอร์ทที่มี schedule แต่ client ไม่ส่ง version ตอบ `PRICE_VERSION_REQUIRED`, version เก่าตอบ `PRICE_CHANGED` ให้ client re-quote; ตรวจ version ใน transaction เดียวกับ availability/terms check หลัง lock court row
+- **Upsert contract:** `upsert_sports_venue_court(..., p_price_rules JSONB)` แทนที่ rules ทั้งชุดแบบ atomic เมื่อส่ง array (ต้องระบุทุกช่วงที่ต้องการเก็บ); validate ฝั่ง RPC: ≤100 rules, `day_of_week` 0–6 หรือ NULL, `end_time > start_time`, ราคาไม่ติดลบ/ไม่เกิน 2 ตำแหน่ง และไม่มีช่วงทับซ้อนใน scope เดียวกัน (`INVALID_PRICE_RULES`/`TOO_MANY_PRICE_RULES`/`INVALID_PRICE_RULE`/`OVERLAPPING_PRICE_RULES`/`PRICE_RULES_REQUIRE_HOURLY`); signature เดิมถูก rename เป็น `*_legacy` และ revoke execute จาก public roles ตาม pattern terms migration เดิม
+- **Client/UX:** `OwnerCourtEditorDialog` มี section "ราคาแยกตามวันและเวลา" — เพิ่ม/ลบช่วง, เลือกวันเฉพาะหรือทุกวัน, เวลาเริ่ม-สิ้นสุด และราคา/ชม. พร้อม client-side validation ที่ mirror RPC; `CourtBookingDialog` quote ราคาทุก merged range และแสดงยอดต่อช่วง + "ราคารวมประมาณ" ก่อนยอมรับเงื่อนไข, ปิดปุ่มยืนยันเมื่อ quote ไม่ครบ/ล้มเหลว และส่ง quote version ไปกับ booking; multi-range selection ยังสร้างหลาย booking แยกกันตามเดิมโดยแต่ละรายการผูก idempotency key และ price version ของตนเอง; my bookings/owner manager แสดง `priceTotal` เมื่อมีและ fallback เป็นราคาต่อหน่วยเดิม
+- **Discovery display:** `sports_venue_courts_public` เพิ่ม `starting_price_amount`/`has_time_pricing`; `sports_venue_price_summary_public` คืนราคาต่อชั่วโมงต่ำสุดต่อ venue สำหรับ card "ราคาเริ่มต้นที่ … บ." โดยรวมเฉพาะคอร์ท active ของ venue approved; `sports_venue_court_price_rules_public` เป็น read view สำหรับแสดง schedule สาธารณะ
+- **Price filter:** `quote_sports_venue_prices_for_local_slot(venue_ids, local_date, start_time, duration_minutes, sport_id)` quote ทุกคอร์ท active ต่อ venue ณ เวลา local ของ venue นั้น; `BookCourtQuery` เทียบยอดรวมกับ min/max ที่เลือกและผ่านเมื่อมีอย่างน้อยหนึ่งคอร์ทของกีฬาที่เลือกอยู่ในช่วง; filter บังคับเลือกวัน เวลาเริ่ม และ duration ครบก่อน apply และช่วงต้องจบในวัน local เดียวกัน (`PRICE_FILTER_REQUIRES_SLOT`/`PRICE_FILTER_CROSSES_DAY` ฝั่ง client, `INVALID_PRICE_FILTER_SLOT` ฝั่ง RPC)
+- **Rollout order และ failure handling:** ต้อง apply migration ก่อน release client ที่ใช้ contract ใหม่ — RPC เก่าที่ rename เป็น `*_legacy` ถูก revoke และ client แสดง "ระบบจองสนามยังไม่พร้อม กรุณาอัปเดต Supabase migrations" เมื่อ PostgREST ตอบ `PGRST202/203/204` (function missing/signature mismatch); เมื่อ price RPCs มีแล้ว client เก่าที่ไม่ส่ง version จะถูก `PRICE_VERSION_REQUIRED` เฉพาะคอร์ทที่เปิด schedule เท่านั้น คอร์ท flat เดิมจองได้ปกติ
+- **Test/exit gate:** SQL smoke ใน `database/sports_hub_rpc_smoke_test.sql` ครอบคลุม pro-rata ข้ามขอบ rule, weekday override precedence, starting price, booking snapshot total/breakdown/version, snapshot immutability เมื่อแก้ schedule, `PRICE_VERSION_REQUIRED`/`PRICE_CHANGED`, overlapping-rule rejection และ pending slot change re-quote; widget/unit tests ครอบคลุม owner editor validation, quote UI states, price-filter guards และ version forwarding; เหลือรัน smoke บน PostgreSQL 15+ และยืนยัน flow บนแอปจริงก่อนปิด phase
+
+#### 21.7.17 Book Court — Upcoming Appointments Section ใน Court Detail Sheet
+
+- **สถานะ:** implement แล้วใน repository — `CourtDetailSheet` แสดง section "นัดหมายกำลังจะเริ่ม" ก่อนปุ่ม "ประวัติการจองของฉัน" พร้อม widget tests ผ่าน (`court_detail_sheet_test.dart`); ไม่มี migration เพิ่มเพราะใช้ `list_my_sports_venue_bookings` contract เดิม
+- **ขอบเขต:** แสดงเฉพาะ booking ของผู้ใช้ที่ `status = confirmed` และ `ends_at` ยังไม่ผ่าน (ครอบคลุมทั้ง instant-confirm และ owner-approved เพราะลงเอย `confirmed` เหมือนกัน) — ไม่จำกัดเฉพาะ venue ที่กำลังเปิดดูเพื่อเตือนนัดชนก่อนจองใหม่; เรียงตาม `starts_at` ใกล้สุดก่อน; ผู้ใช้ที่ไม่ได้ล็อกอินไม่เห็น section โดย `userId` ส่งผ่าน constructor จาก `BookCourtPage` เพื่อให้ testable โดยไม่ผูก `AuthService` singleton
+- **Card content:** ชื่อ venue, ชิปสถานะ, ชื่อ court, วันเวลาใน timezone ของ venue ผ่าน `VenueLocalTime` และราคารวม/ต่อหน่วย — ใช้ `_frostedCard`/`_sectionHeader`/`Slidable` pattern เดียวกับ section อื่นใน sheet
+- **Actions:** ปัดซ้ายแสดงเฉพาะ "ยกเลิก" — `change_pending_venue_booking_slot` รับเฉพาะ booking `pending` (`BOOKING_NOT_PENDING` สำหรับ confirmed) จึงไม่มี action "เปลี่ยนเวลา" ใน section นี้; การเลื่อนนัดที่ยืนยันแล้วทำผ่านยกเลิก+จองใหม่ หรือใช้ flow pending ในหน้าการจองของฉัน
+- **Cancel flow:** ตรวจ `cancellableByBooker` (`DateTime.now()` เทียบ `startsAt - cancellationCutoffMinutes` จาก snapshot ของ booking นั้น) ก่อนเปิด `CourtBookingActionDialogs.confirmUserCancel`; เลย cutoff แสดง dialog แจ้งให้ติดต่อ venue โดยตรงตาม cutoff contract; ยกเลิกสำเร็จ reload เฉพาะรายการใน section และแสดง notice; error map เป็นข้อความไทยจาก RPC codes (`CUTOFF_PASSED`/`BOOKING_NOT_FOUND`/`NOT_AUTHORIZED`)
+- **Test/exit gate:** widget tests ครอบคลุม section presence/ordering ก่อนปุ่มประวัติ, filter เฉพาะ confirmed ที่ไม่หมดเวลา, sorting, cancel success/failure, cutoff dialog และ signed-out state
+
 ### 21.8 Test plan และ Acceptance Criteria
 
 #### UI/Widget tests
@@ -3662,7 +3703,12 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - court detail sheet มี layout/pinned actions ตาม group detail pattern, ใช้ Neumorphic theme โทนเดียวกับ GroupDetailSheet (baseColor, dual cardShadows, circle icon badges, availability slot chips ที่รองรับ tactile states, และปุ่ม CTA Gradient ตามข้อ 21.4.1) และปุ่มทั้งสามแสดงตาม state ที่ถูกต้อง
 - instant booking แสดง confirmed state; owner-approval แสดง pending state และ terms dialog บังคับยอมรับก่อน submit
 - terms dialog ปิด/ไม่ยอมรับแล้วไม่สร้าง booking; stale terms version ขอ consent ใหม่; accepted terms/cutoff snapshot ถูกผูกกับ booking
+- owner venue terms dialog และ admin platform terms panel เลือก cancellation cutoff จาก preset slider (`VenueCancellationCutoffField`: 0/15/30/45/60 นาที, 1/2/5/12/24/36 ชม.) แทนช่องกรอกตัวเลข; ค่า published ที่อยู่นอก preset ยังแสดงและคงค่าเดิมเมื่อ publish ซ้ำ; ปุ่ม publish เปิดเมื่อข้อความเงื่อนไขไม่ว่าง
 - pending slot conflict ให้คำขอคง pending พร้อม action เปลี่ยนเวลา/ยกเลิก; cutoff ทำให้ปุ่มยกเลิก disabled พร้อมคำอธิบาย
+- court detail sheet แสดง section "นัดหมายกำลังจะเริ่ม" เฉพาะ booking confirmed ที่ยังไม่สิ้นสุดเวลา เรียงเวลาใกล้สุดก่อนและอยู่ก่อนปุ่ม "ประวัติการจองของฉัน"; ปัดซ้ายยกเลิกได้ตาม cutoff (เลย cutoff แสดง dialog แนะนำติดต่อ venue), ไม่มี action เปลี่ยนเวลาสำหรับ confirmed และ signed-out ไม่แสดง section
+- owner court editor แสดง/แก้หลาย price windows ต่อคอร์ท (ทุกวัน/รายวัน + เวลาเริ่ม-สิ้นสุด + ราคา/ชม.), validate รูปแบบราคา เวลา และช่วงทับซ้อนก่อน save, ส่ง rules ครบชุดผ่าน upsert และปิด section เมื่อหน่วยไม่ใช่รายชั่วโมง
+- booking dialog quote ราคาทุก range ที่เลือกและแสดงยอดต่อช่วง + ราคารวมประมาณก่อนยอมรับเงื่อนไข; ปิด confirm เมื่อ quote ไม่ครบ/ล้มเหลว/ไม่มีราคาครบช่วง และแสดงข้อความสถานะราคาชัดเจน
+- venue card แสดง "ราคาเริ่มต้นที่ … บ." จาก hourly rate ต่ำสุดที่ active; price filter ใน filter sheet ต้องเลือกวัน เวลาเริ่ม และระยะเวลาครบก่อนเปิดใช้ และช่วงที่ข้ามวันถูกปฏิเสธ
 - Book Court review form ให้คะแนนรวม 1–10 แยกจากคะแนนย่อย 5 หมวด (สภาพพื้น/คุณภาพสนาม, อุปกรณ์/สิ่งอำนวยความสะดวก, ทำเล/การเดินทาง, บริการ, ความคุ้มค่า) ครบทุกหมวด; comment 0–500, standard/custom tags รวมไม่เกิน 5 และ eligibility state ผูกกับ completed booking ของ court ที่รีวิว
 - `BookCourtFilter.minRating` และ advanced-filter control/query ใช้สเกล 1–10 สอดคล้องกับ review summary หลัง migration
 - CourtReviewsPage แสดง overall average/count, category bars พร้อม sample count, popular standard-tag topics/counts, rating/topic filters และ sort helpful/newest/high/low; item แสดงคะแนน 1–10, reviewer, วันที่, court/sport context และ helpful count พร้อม verified-booking state
@@ -3708,6 +3754,9 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - submit review v2 ปฏิเสธ booking ที่ไม่ใช่ของผู้ใช้/ยังไม่ completed/court ไม่ตรง, review ซ้ำ, score นอกช่วง 1–10, คะแนนย่อยไม่ครบหรือ category ซ้ำ และ tag รวมเกิน 5; review+category scores+tags บันทึก atomic; migration แปลง rating เดิม 1–5 เป็น 1–10 ได้ครั้งเดียวและไม่สร้าง category score ปลอม
 - client ปลอมสถานะ completed ไม่ได้; หลังรีวิว booking เดิมซ้ำไม่ได้ แต่ booking completed อื่นของ venue เดียวกันรีวิวแยกได้
 - instant booking ยืนยันอัตโนมัติเฉพาะเมื่อ slot ว่าง; owner-approval คง pending จน manager ตัดสินใจ; pending ไม่กัน slot, approve ชนกันคง pending ให้เปลี่ยนเวลาใน court เดิม, auto-expiry ทำงาน และ concurrent confirmed booking ไม่เกิน capacity
+- price rules คิด pro-rata ข้ามขอบช่วงใน timezone ของ venue; weekday rule ชนะ all-day rule ณ เวลาเดียวกัน; ช่วงไม่มี rule และไม่มี flat fallback ตอบ `PRICE_NOT_CONFIGURED`; overlap/invalid rules ถูกปฏิเสธทั้ง client และ RPC
+- booking บนคอร์ทที่มี schedule บังคับ `p_expected_price_schedule_version` (`PRICE_VERSION_REQUIRED`), version เก่าตอบ `PRICE_CHANGED` ให้ client re-quote, และ `price_total_snapshot`/`price_breakdown_snapshot`/`price_schedule_version_snapshot` ไม่เปลี่ยนเมื่อเจ้าของแก้ schedule ภายหลัง; pending slot change คำนวณ/snapshot ราคาใหม่ตาม slot ปลายทาง
+- price filter ผ่าน `quote_sports_venue_prices_for_local_slot` เทียบยอดรวม ณ เวลา local ของแต่ละ venue เฉพาะคอร์ทของกีฬาที่เลือก; starting price summary รวมเฉพาะคอร์ท active ของ venue approved; คอร์ท flat/legacy non-hourly ทำงานเหมือนเดิม
 - cancellation ก่อน/หลัง cutoff, owner cancellation พร้อม reason, terms snapshot/version และ notification recipients/events ถูกต้องครบ; stale terms consent ถูกปฏิเสธให้ retry
 - pending slot update เปลี่ยนได้เฉพาะ court เดิม, rechecks availability, เก็บ audit event และ notification ไม่ส่งซ้ำ
 - approve/reject/instant-confirm/cancel/slot-conflict/expiry notifications ถูก persist แบบ idempotent และ realtime ไปยังผู้รับที่ถูกต้อง; filter category `venue_booking`, mark-as-read และ tap notification เปิด booking/venue ที่ตรงกัน
@@ -3746,6 +3795,8 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - [ ] Find Coach experience completion ใน 21.7.12 ผ่าน coach supply/moderation, profile/detail, private favorite/history filters, schedules/courses, capacity/approval, privacy และ notification gates (implement + RPC smoke tests เสร็จแล้วใน commit `19caa35`; เหลือยืนยัน apply migration `20260927100000` บน Supabase จริง, end-to-end flow บนแอป และ device QA)
 - [ ] Shared sport usage ranking/scroll continuity ใน 21.7.13 ผ่านเมื่อมีข้อมูลจริงจาก Coach เพียงพอ; ระหว่างรอยังคงลำดับเดิมและ fallback ตามที่กำหนด
 - [ ] Book Court review experience ใน 21.7.14 ผ่าน 1–10 migration/compatibility, completed court-level review, five category scores, venue roll-up, popular topics, helpful votes และ full review page ตาม exit gate (implement + migration + smoke/widget/unit tests เสร็จแล้ว; เหลือยืนยัน flow บนแอปจริงและ device QA)
+- [ ] Book Court time-based pricing ใน 21.7.16 ผ่าน per-court rules, pro-rata quote, version-checked snapshots, selected-slot filter และ starting-price display ตาม exit gate (implement + widget/unit tests เสร็จแล้ว; เหลือ apply migration `20261003100000` บน Supabase (PostgreSQL 15+), รัน SQL smoke และยืนยัน flow บนแอปจริง)
+- [x] Court detail sheet แสดง section "นัดหมายกำลังจะเริ่ม" ตาม 21.7.17 — booking confirmed ที่ยังไม่สิ้นสุดเวลาของผู้ใช้ทุก venue เรียงใกล้สุดก่อน, ปัดซ้ายยกเลิกผ่าน confirm dialog และ cutoff guard, ไม่มีเปลี่ยนเวลาสำหรับ confirmed, signed-out ไม่แสดง
 - [ ] ผ่าน widget, unit, integration, authorization, accessibility และ device QA บนจอเล็ก (widget/unit ผ่านแล้ว; เหลือ integration/concurrency ฝั่ง server และ device QA)
 
 ### 21.9 ความเสี่ยงและแนวทางป้องกัน
@@ -3780,5 +3831,6 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - 21.7.8–21.7.9: `find_coach/` ครบ data/domain/application (`coach_models.dart`, `find_coach_repository.dart`, `find_coach_filter.dart`, `find_coach_query.dart`, `coach_request_service.dart`) และ presentation (`find_coach_page.dart`, `my_coach_requests_page.dart`, `coach_requests_queue_page.dart`, `admin_coach_review_page.dart` + widgets) + migration `20260924120000`
 - 21.7.11 baseline ที่มีแล้ว: `book_court/` — `domain/venue_setup_progress.dart` (checklist 8 ขั้น), `presentation/pages/court_owner_venue_manage_page.dart` (หน้าจัดการสนามต่อสนาม + progress card), editor dialogs `venue_sports_editor_dialog.dart` / `venue_hours_editor_dialog.dart` / `venue_amenities_editor_dialog.dart` / `venue_terms_editor_dialog.dart` (GlassDialog มี scrollbar), `OwnerCourtEditorDialog` รองรับเลือกกีฬา; แท็บ `เงื่อนไขมาตรฐานสนาม` ใน `ReviewProposedSportsPage` พร้อม `AdminPlatformVenueTermsPanel`; migration `20261001120000_sports_hub_platform_venue_terms.sql` เพิ่ม platform terms singleton, admin RPCs, effective terms view และ version-aware booking/readiness; migration ยังต้อง apply/verify บน Supabase จริง. Notification pipeline fix (`20260925110000` — nullable `profession_id`, `pg_notify` → `application-notification`, `list_app_notifications` RPC, legacy repo reads ผ่าน `AuthService.userId`). Remaining work ของ phase นี้ให้ยึด audit checklist/exit gate ใน 21.7.11 ด้านบน; ห้ามถือว่า baseline นี้หมายถึง phase complete
 - routes ใหม่ใน `main.dart`: `/community/sports`, `/community/sports/courts`, `/community/sports/coaches`, owner dashboard/applications, coach admin review และ prefix deep links สำหรับ `/community/sports/courts/:id` `/community/sports/coaches/:id`
-- tests: `test/features/sport_club/{shared,book_court,find_coach}/` ครอบคลุม filter isolation, persistence/restore, logout deactivation, stale-request guard, pagination, radius filter, booking/request service guards
+- 21.7.16 baseline ที่มีแล้ว: migration `20261003100000_sports_hub_court_time_pricing.sql` (ตาราง `sports_venue_court_price_rules`, `price_schedule_version` + trigger, booking snapshot columns, `sports_venue_court_price_quote_internal`, `quote_sports_venue_court_price`, `quote_sports_venue_prices_for_local_slot`, upsert ที่รับ `p_price_rules`, booking/slot-change RPCs ที่ตรวจ price version, public views `sports_venue_court_price_rules_public`/`sports_venue_price_summary_public` และ `starting_price_amount`/`has_time_pricing` ใน `sports_venue_courts_public`); `book_court/` — `CourtPriceRule`/`VenueCourtPriceQuote`/`PriceRulesetSnapshot` ใน `book_court_models.dart`, quote/save/price-filter plumbing ใน `book_court_repository.dart`, selected-slot price filter ใน `book_court_query.dart`, version forwarding ใน `book_court_booking_service.dart`, multi-window editor ใน `owner_court_editor_dialog.dart`, per-range quotes ใน `court_booking_dialog.dart` และ "ราคาเริ่มต้นที่" ใน `court_card.dart`/`court_owner_venue_card.dart`; migration ยังต้อง apply/verify บน Supabase จริง (PostgreSQL 15+) พร้อม `database/sports_hub_rpc_smoke_test.sql`
+- tests: `test/features/sport_club/{shared,book_court,find_coach}/` ครอบคลุม filter isolation, persistence/restore, logout deactivation, stale-request guard, pagination, radius filter, booking/request service guards, owner price-rule validation, quote UI states, price-filter guards และ price-version forwarding
 - ยังคงห้าม import implementation ข้าม `book_court/` กับ `find_coach/`; สื่อสารผ่าน shared contract เท่านั้น

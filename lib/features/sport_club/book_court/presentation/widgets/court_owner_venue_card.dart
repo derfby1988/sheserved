@@ -7,12 +7,14 @@ import '../../data/book_court_models.dart';
 /// Compact card for a managed venue in the owner dashboard.
 class CourtOwnerVenueCard extends StatelessWidget {
   final VenueSummary venue;
+  final int pendingCount;
   final VoidCallback? onManage;
   final VoidCallback? onViewBookings;
 
   const CourtOwnerVenueCard({
     super.key,
     required this.venue,
+    this.pendingCount = 0,
     this.onManage,
     this.onViewBookings,
   });
@@ -74,9 +76,13 @@ class CourtOwnerVenueCard extends StatelessWidget {
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 const Spacer(),
-                TextButton(
-                  onPressed: onViewBookings,
-                  child: const Text('การจอง'),
+                Badge(
+                  isLabelVisible: pendingCount > 0,
+                  label: Text('$pendingCount'),
+                  child: TextButton(
+                    onPressed: onViewBookings,
+                    child: const Text('การจอง'),
+                  ),
                 ),
                 const SizedBox(width: 4),
                 FilledButton.tonal(

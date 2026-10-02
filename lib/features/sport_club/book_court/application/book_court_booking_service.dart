@@ -8,6 +8,7 @@ typedef BookCourtCreateCall =
       required DateTime endsAt,
       required int termsVersion,
       String? idempotencyKey,
+      int? priceScheduleVersion,
     });
 
 typedef BookCourtCancelCall =
@@ -28,6 +29,7 @@ typedef BookCourtChangeSlotCall =
       required DateTime startsAt,
       required DateTime endsAt,
       int? termsVersion,
+      int? priceScheduleVersion,
     });
 
 /// Booking use cases for Book Court.
@@ -61,6 +63,7 @@ class BookCourtBookingService {
     required DateTime endsAt,
     required int termsVersion,
     String? idempotencyKey,
+    int? priceScheduleVersion,
   }) {
     if (userId == null || userId.isEmpty) {
       return Future<String?>.value(null);
@@ -72,13 +75,21 @@ class BookCourtBookingService {
       endsAt: endsAt,
       termsVersion: termsVersion,
       idempotencyKey: idempotencyKey,
+      priceScheduleVersion: priceScheduleVersion,
     );
   }
 
   Future<({int completed, Object? error})> bookSlots({
     required String? userId,
     required VenueCourt court,
-    required List<({DateTime start, DateTime end, String idempotencyKey})>
+    required List<
+      ({
+        DateTime start,
+        DateTime end,
+        String idempotencyKey,
+        int? priceScheduleVersion,
+      })
+    >
     slots,
     required int termsVersion,
   }) async {
@@ -92,6 +103,7 @@ class BookCourtBookingService {
           endsAt: slot.end,
           termsVersion: termsVersion,
           idempotencyKey: slot.idempotencyKey,
+          priceScheduleVersion: slot.priceScheduleVersion,
         );
         if (id == null) {
           return (completed: completed, error: StateError('UNAUTHORIZED'));
@@ -142,6 +154,7 @@ class BookCourtBookingService {
     required DateTime startsAt,
     required DateTime endsAt,
     int? termsVersion,
+    int? priceScheduleVersion,
   }) async {
     if (userId == null || userId.isEmpty) return false;
     if (!booking.isPending) return false;
@@ -151,6 +164,7 @@ class BookCourtBookingService {
       startsAt: startsAt,
       endsAt: endsAt,
       termsVersion: termsVersion,
+      priceScheduleVersion: priceScheduleVersion,
     );
     return true;
   }

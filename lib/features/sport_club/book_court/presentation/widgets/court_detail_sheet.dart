@@ -5,11 +5,13 @@ import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:sheserved/shared/widgets/thai_address_picker/glass_date_time_picker.dart';
 import 'package:sheserved/shared/widgets/thai_buddhist_date_picker.dart';
 
+import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/venue_local_time.dart';
 import '../pages/court_reviews_page.dart';
 import 'court_availability_picker.dart';
+import 'court_booking_action_dialogs.dart';
 import 'court_review_rating_card.dart';
 
 typedef CourtBookingCallback =
@@ -21,18 +23,22 @@ typedef CourtBookingCallback =
 
 /// Venue detail bottom sheet: info, courts, operating hours, availability
 /// and reviews. Booking entry points are delegated to [onBookCourt] so the
-/// sheet itself never creates bookings.
+/// sheet itself never creates bookings — cancelling one of the user's own
+/// confirmed bookings is the only mutation handled inline.
 ///
 /// Court rows keep the sheet calm by hiding their actions behind a left
-/// swipe (same Slidable pattern as the group detail sheet); tapping a row
-/// only selects it and loads its availability, so nothing is swipe-only.
+/// swipe (same Slidable pattern as the group detail sheet). Tapping a row
+/// expands its availability grid right underneath that row — one grid at a
+/// time — so nothing is swipe-only.
 class CourtDetailSheet extends StatefulWidget {
   final VenueSummary venue;
   final BookCourtRepository repo;
   final String? sharedSportId;
   final ScrollController? scrollController;
+  final String? userId;
   final CourtBookingCallback? onBookCourt;
   final Future<void> Function()? onWriteReview;
+  final Future<void> Function()? onOpenMyBookings;
 
   const CourtDetailSheet({
     super.key,
@@ -40,8 +46,10 @@ class CourtDetailSheet extends StatefulWidget {
     required this.repo,
     this.sharedSportId,
     this.scrollController,
+    this.userId,
     this.onBookCourt,
     this.onWriteReview,
+    this.onOpenMyBookings,
   });
 
   static Future<void> show(
@@ -49,8 +57,10 @@ class CourtDetailSheet extends StatefulWidget {
     required VenueSummary venue,
     required BookCourtRepository repo,
     String? sharedSportId,
+    String? userId,
     CourtBookingCallback? onBookCourt,
     Future<void> Function()? onWriteReview,
+    Future<void> Function()? onOpenMyBookings,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -74,8 +84,10 @@ class CourtDetailSheet extends StatefulWidget {
           repo: repo,
           sharedSportId: sharedSportId,
           scrollController: scrollController,
+          userId: userId,
           onBookCourt: onBookCourt,
           onWriteReview: onWriteReview,
+          onOpenMyBookings: onOpenMyBookings,
         ),
       ),
     );
@@ -87,19 +99,28 @@ class CourtDetailSheet extends StatefulWidget {
 
 class _CourtDetailSheetState extends State<CourtDetailSheet> {
   List<VenueCourt> _courts = [];
+  List<VenueBooking> _upcomingBookings = [];
   List<VenueOperatingHours> _hours = [];
   List<VenueReview> _reviews = [];
   VenueOwnerPublicProfile? _ownerProfile;
+  String? _bookingNotice;
   bool _hoursExpanded = false;
   bool _loading = true;
   bool _availabilityLoading = false;
   bool _checkingSlot = false;
-  String? _selectedCourtId;
+  String? _expandedCourtId;
   String? _availabilityError;
   String? _availabilityNotice;
   CourtAvailability? _availability;
   late DateTime _availabilityDate;
   int _availabilityRequestId = 0;
+
+  late final BookCourtBookingService _booking = BookCourtBookingService(
+    create: widget.repo.createBooking,
+    cancel: widget.repo.cancelBooking,
+    decide: widget.repo.decideBooking,
+    changeSlot: widget.repo.changePendingBookingSlot,
+  );
 
   @override
   void initState() {
@@ -118,6 +139,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
         widget.repo.listPublicOperatingHours(widget.venue.id),
         widget.repo.listVenueReviews(widget.venue.id, limit: 5),
         _loadPublicOwnerProfile(),
+        _loadUpcomingBookings(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -125,10 +147,57 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
         _hours = results[1] as List<VenueOperatingHours>;
         _reviews = results[2] as List<VenueReview>;
         _ownerProfile = results[3] as VenueOwnerPublicProfile?;
+        _upcomingBookings = results[4] as List<VenueBooking>;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// The user's own confirmed bookings whose slot has not ended yet, soonest
+  /// first — instant-confirmed and owner-approved bookings both land in
+  /// `confirmed`, so one status check covers both. Deliberately not scoped to
+  /// this venue: the point of the section is to warn about a clash before the
+  /// user books again. Booking instants are absolute, so "has not ended yet"
+  /// is a plain timestamp comparison with no venue-local math.
+  Future<List<VenueBooking>> _loadUpcomingBookings() async {
+    final userId = widget.userId;
+    if (userId == null) return const [];
+    try {
+      final bookings = await widget.repo.listMyBookings(userId);
+      final now = DateTime.now();
+      return bookings
+          .where((b) => b.isConfirmed && b.endsAt.isAfter(now))
+          .toList()
+        ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _cancelUpcoming(VenueBooking booking) async {
+    if (!booking.cancellableByBooker) {
+      await CourtBookingActionDialogs.showCutoffPassed(context);
+      return;
+    }
+    final ok = await CourtBookingActionDialogs.confirmUserCancel(
+      context,
+      venueName: booking.venueName ?? '',
+      cutoffMinutes: booking.cancellationCutoffMinutes,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await _booking.cancelBooking(userId: widget.userId, booking: booking);
+      final upcoming = await _loadUpcomingBookings();
+      if (!mounted) return;
+      setState(() {
+        _upcomingBookings = upcoming;
+        _bookingNotice = 'ยกเลิกการจองแล้ว';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _bookingNotice = _mapBookingError(e));
     }
   }
 
@@ -164,6 +233,25 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
   }
 
+  /// Tapping a court row opens its grid and closes whichever other grid was
+  /// open, so the sheet never shows two tables at once. Tapping the open row
+  /// again closes it.
+  void _toggleCourtAvailability(VenueCourt court) {
+    if (_checkingSlot) return;
+    if (_expandedCourtId == court.id) {
+      _availabilityRequestId++;
+      setState(() {
+        _expandedCourtId = null;
+        _availability = null;
+        _availabilityError = null;
+        _availabilityNotice = null;
+        _availabilityLoading = false;
+      });
+      return;
+    }
+    _loadAvailability(court);
+  }
+
   Future<void> _loadAvailability(
     VenueCourt court, {
     bool preserveNotice = false,
@@ -171,7 +259,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     final requestId = ++_availabilityRequestId;
     final date = _availabilityDate;
     setState(() {
-      _selectedCourtId = court.id;
+      _expandedCourtId = court.id;
       _availability = null;
       _availabilityError = null;
       if (!preserveNotice) _availabilityNotice = null;
@@ -181,7 +269,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
       final availability = await _fetchAvailability(court, date);
       if (!mounted ||
           requestId != _availabilityRequestId ||
-          _selectedCourtId != court.id) {
+          _expandedCourtId != court.id) {
         return;
       }
       setState(() {
@@ -191,7 +279,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     } catch (_) {
       if (mounted &&
           requestId == _availabilityRequestId &&
-          _selectedCourtId == court.id) {
+          _expandedCourtId == court.id) {
         setState(() {
           _availabilityError = 'โหลดตารางว่างไม่สำเร็จ';
           _availabilityLoading = false;
@@ -223,7 +311,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     if (!mounted) return;
     final requestIsCurrent =
         requestId == _availabilityRequestId &&
-        _selectedCourtId == court.id &&
+        _expandedCourtId == court.id &&
         _availabilityDate == date;
     setState(() => _checkingSlot = false);
     if (!requestIsCurrent) return;
@@ -259,7 +347,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
 
   /// Delegates booking to [onBookCourt]; the booking dialog stays open on top
   /// of this sheet, so when the flow finishes (booked, declined or failed)
-  /// the visible availability grid is reloaded — never the rest of the sheet.
+  /// the expanded grid is reloaded — never the rest of the sheet.
   Future<void> _bookCourt(
     VenueCourt court, {
     DateTime? initialDate,
@@ -270,15 +358,12 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
       initialDate: initialDate,
       initialSlotStart: initialSlotStart,
     );
-    if (!mounted) return;
-    final gridCourt = _courts
-        .where((c) => c.id == (_availability?.courtId ?? _selectedCourtId))
-        .firstOrNull;
-    if (gridCourt != null) await _loadAvailability(gridCourt);
+    if (!mounted || _expandedCourtId != court.id) return;
+    await _loadAvailability(court);
   }
 
   Future<void> _pickAvailabilityDate() async {
-    final courtId = _selectedCourtId;
+    final courtId = _expandedCourtId;
     final today = VenueLocalTime.today(widget.venue.timezone);
     final picked = await GlassDatePicker.show(
       context,
@@ -295,54 +380,217 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     await _loadAvailability(court);
   }
 
-  Widget _buildAvailabilityLoading() => _frostedCard(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('กำลังโหลดตารางว่าง', style: TextStyle(fontSize: 13)),
-        const SizedBox(height: 10),
-        LinearProgressIndicator(
-          minHeight: 4,
-          borderRadius: BorderRadius.circular(2),
-          color: AppColors.primaryDark,
-          backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-        ),
-      ],
-    ),
+  Widget _availabilityLoadingBlock() => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('กำลังโหลดตารางว่าง', style: TextStyle(fontSize: 13)),
+      const SizedBox(height: 10),
+      LinearProgressIndicator(
+        minHeight: 4,
+        borderRadius: BorderRadius.circular(2),
+        color: AppColors.primaryDark,
+        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+      ),
+    ],
   );
 
-  Widget _buildAvailabilityNotice(String message) => _frostedCard(
-    child: Row(
-      children: [
-        Icon(Icons.info_outline_rounded, color: Colors.orange.shade800),
-        const SizedBox(width: 8),
-        Expanded(child: Text(message)),
-      ],
-    ),
+  Widget _availabilityNoticeRow(String message) => Row(
+    children: [
+      Icon(Icons.info_outline_rounded, size: 18, color: Colors.orange.shade800),
+      const SizedBox(width: 8),
+      Expanded(child: Text(message, style: const TextStyle(fontSize: 12.5))),
+    ],
   );
 
-  Widget _buildAvailabilityError(VenueCourt court) => _frostedCard(
-    child: Row(
-      children: [
-        Icon(Icons.error_outline_rounded, color: Colors.red.shade600),
-        const SizedBox(width: 8),
-        const Expanded(child: Text('โหลดตารางว่างไม่สำเร็จ')),
-        TextButton.icon(
-          onPressed: () => _loadAvailability(court),
-          icon: const Icon(Icons.refresh_rounded, size: 18),
-          label: const Text('ลองใหม่'),
-        ),
-      ],
-    ),
+  Widget _availabilityErrorRow(VenueCourt court) => Row(
+    children: [
+      Icon(Icons.error_outline_rounded, size: 18, color: Colors.red.shade600),
+      const SizedBox(width: 8),
+      const Expanded(child: Text('โหลดตารางว่างไม่สำเร็จ')),
+      TextButton.icon(
+        onPressed: () => _loadAvailability(court),
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('ลองใหม่'),
+      ),
+    ],
   );
+
+  Widget _upcomingHint() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: const Row(
+        children: [
+          Icon(
+            Icons.swipe_left_rounded,
+            size: 15,
+            color: AppColors.primaryDark,
+          ),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'ปัดการ์ดนัดหมายไปทางซ้ายเพื่อยกเลิกการจอง',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: AppColors.primaryDark,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookingNoticeRow(String message) => Row(
+    children: [
+      Icon(Icons.info_outline_rounded, size: 18, color: Colors.orange.shade800),
+      const SizedBox(width: 8),
+      Expanded(child: Text(message, style: const TextStyle(fontSize: 12.5))),
+    ],
+  );
+
+  Widget _buildUpcomingBookingRow(VenueBooking booking, {bool isLast = false}) {
+    final priceLabel = booking.priceTotal != null
+        ? 'ราคารวม ${booking.priceTotal!.toStringAsFixed(2)} บาท'
+        : booking.priceAmount != null
+        ? '${booking.priceAmount!.toStringAsFixed(0)} บาท/'
+              '${_unitLabel(booking.pricingUnit ?? 'hour')}'
+        : null;
+
+    final tile = NeumorphicInsetBox(
+      height: null,
+      borderRadius: 14,
+      padding: EdgeInsets.zero,
+      border: BorderSide(color: Colors.white.withValues(alpha: 0.7)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    booking.venueName ?? 'สนาม',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: NeumorphicTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                _confirmedChip(),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${booking.unitLabel ?? 'สนาม'} ${booking.courtName ?? ''}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: NeumorphicTheme.textSecondary,
+              ),
+            ),
+            Text(
+              _bookingRangeLabel(booking),
+              style: const TextStyle(
+                fontSize: 13,
+                color: NeumorphicTheme.textSecondary,
+              ),
+            ),
+            if (priceLabel != null)
+              Text(
+                priceLabel,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: NeumorphicTheme.textPrimary,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Slidable(
+          key: ValueKey('upcoming_${booking.id}'),
+          endActionPane: ActionPane(
+            motion: const ScrollMotion(),
+            extentRatio: 0.26,
+            children: [
+              _responsiveSlidableAction(
+                onPressed: (_) => _cancelUpcoming(booking),
+                backgroundColor: const Color(0xFFC62828),
+                foregroundColor: Colors.white,
+                icon: Icons.cancel_outlined,
+                label: 'ยกเลิก',
+              ),
+            ],
+          ),
+          child: tile,
+        ),
+      ),
+    );
+  }
+
+  static Widget _confirmedChip() {
+    const color = Colors.green;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'ยืนยันแล้ว',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  /// Booking instants are stored UTC — render them in the venue's timezone
+  /// so the slot matches what the booker picked.
+  static String _bookingRangeLabel(VenueBooking booking) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final start = VenueLocalTime.wallTimeOfInstant(
+      booking.startsAt,
+      booking.timezone,
+    );
+    final end = VenueLocalTime.wallTimeOfInstant(
+      booking.endsAt,
+      booking.timezone,
+    );
+    return '${start.day}/${start.month}/${start.year + 543} '
+        '${two(start.hour)}:${two(start.minute)}'
+        '–${two(end.hour)}:${two(end.minute)}';
+  }
+
+  static String _mapBookingError(Object e) {
+    final raw = e.toString();
+    if (raw.contains('CUTOFF_PASSED')) {
+      return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง';
+    }
+    if (raw.contains('BOOKING_NOT_FOUND')) return 'ไม่พบการจองนี้แล้ว';
+    if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
+    return 'ยกเลิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+  }
 
   @override
   Widget build(BuildContext context) {
     final venue = widget.venue;
-    final selectedCourt = _courts
-        .where((court) => court.id == _selectedCourtId)
-        .firstOrNull;
     return Container(
       decoration: BoxDecoration(
         color: NeumorphicTheme.baseColor,
@@ -370,26 +618,40 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                   child: CircularProgressIndicator(),
                 ),
               )
-            : ListView(
-                controller: widget.scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
+                  // Pinned header — never scrolls with the content below.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: 36,
+                          child: Stack(
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 40,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: NeumorphicSheetCloseButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
                           venue.name,
                           style: const TextStyle(
                             fontSize: 20,
@@ -398,147 +660,198 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                             color: NeumorphicTheme.textPrimary,
                           ),
                         ),
-                      ),
-                      if (widget.onWriteReview != null) ...[
-                        const SizedBox(width: 8),
-                        _reviewButton(),
                       ],
-                    ],
+                    ),
                   ),
-                  if (venue.address?.isNotEmpty == true ||
-                      venue.district != null) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Expanded(
+                    child: ListView(
+                      controller: widget.scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
                       children: [
-                        const Icon(
-                          Icons.place_outlined,
-                          size: 16,
-                          color: NeumorphicTheme.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            [
-                              venue.address,
-                              venue.district,
-                              venue.province,
-                            ].whereType<String>().join(', '),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: NeumorphicTheme.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (venue.description?.isNotEmpty == true) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      venue.description!,
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        height: 1.45,
-                        color: NeumorphicTheme.textPrimary,
-                      ),
-                    ),
-                  ],
-                  if (_hours.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleHours,
-                      child: _frostedCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionHeader(
-                              icon: Icons.schedule_rounded,
-                              title: 'เวลาเปิด-ปิด',
-                              trailing: _hoursToggle(),
-                            ),
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding: const EdgeInsets.only(left: 48),
-                              child: _hoursExpanded
-                                  ? Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        for (final h in _weekOrderedHours)
-                                          _hoursRow(h),
-                                      ],
-                                    )
-                                  : _collapsedHoursRow(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  _sectionHeader(
-                    icon: Icons.sports_tennis_rounded,
-                    title: 'สนาม/คอร์ท',
-                    badge: _courts.isEmpty ? null : '${_courts.length}',
-                  ),
-                  if (_courts.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _swipeHint(canBook: widget.onBookCourt != null),
-                  ],
-                  const SizedBox(height: 8),
-                  if (_courts.isEmpty)
-                    NeumorphicInsetBox(
-                      width: double.infinity,
-                      height: null,
-                      borderRadius: 14,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.event_busy_rounded,
-                            size: 32,
-                            color: NeumorphicTheme.textSecondary,
-                          ),
+                        if (venue.address?.isNotEmpty == true ||
+                            venue.district != null) ...[
                           const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.place_outlined,
+                                size: 16,
+                                color: NeumorphicTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  [
+                                    venue.address,
+                                    venue.district,
+                                    venue.province,
+                                  ].whereType<String>().join(', '),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: NeumorphicTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (venue.description?.isNotEmpty == true) ...[
+                          const SizedBox(height: 8),
                           Text(
-                            'ยังไม่มีสนามที่เปิดจอง',
+                            venue.description!,
                             style: const TextStyle(
-                              fontSize: 13,
-                              color: NeumorphicTheme.textSecondary,
+                              fontSize: 13.5,
+                              height: 1.45,
+                              color: NeumorphicTheme.textPrimary,
                             ),
                           ),
                         ],
-                      ),
-                    )
-                  else
-                    for (final court in _courts) _buildCourtTile(court),
-                  if (_availabilityNotice != null && selectedCourt != null) ...[
-                    const SizedBox(height: 4),
-                    _buildAvailabilityNotice(_availabilityNotice!),
-                  ],
-                  if (_availabilityLoading) ...[
-                    const SizedBox(height: 4),
-                    _buildAvailabilityLoading(),
-                  ],
-                  if (_availabilityError != null && selectedCourt != null) ...[
-                    const SizedBox(height: 4),
-                    _buildAvailabilityError(selectedCourt),
-                  ],
-                  if (_availability != null) ...[
-                    const SizedBox(height: 4),
-                    _buildAvailabilityCard(_availability!),
-                  ],
-                  const SizedBox(height: 16),
-                  _frostedCard(
-                    child: CourtReviewRatingCard(
-                      averageRating: venue.averageRating,
-                      reviewCount: venue.reviewCount,
-                      reviews: _reviews,
-                      ownerProfile: _ownerProfile,
-                      onSeeAll: _openReviewsPage,
+                        if (_hours.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _toggleHours,
+                            child: _frostedCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _sectionHeader(
+                                    icon: Icons.schedule_rounded,
+                                    title: 'เวลาเปิด-ปิด',
+                                    trailing: _hoursToggle(),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 48),
+                                    child: _hoursExpanded
+                                        ? Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              for (final h in _weekOrderedHours)
+                                                _hoursRow(h),
+                                            ],
+                                          )
+                                        : _collapsedHoursRow(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        _frostedCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _sectionHeader(
+                                icon: Icons.sports_tennis_rounded,
+                                title: 'สนาม/คอร์ท',
+                                badge: _courts.isEmpty
+                                    ? null
+                                    : '${_courts.length}',
+                              ),
+                              if (_courts.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _swipeHint(canBook: widget.onBookCourt != null),
+                              ],
+                              const SizedBox(height: 8),
+                              if (_courts.isEmpty)
+                                NeumorphicInsetBox(
+                                  width: double.infinity,
+                                  height: null,
+                                  borderRadius: 14,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 18,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.event_busy_rounded,
+                                        size: 32,
+                                        color: NeumorphicTheme.textSecondary,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'ยังไม่มีสนามที่เปิดจอง',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: NeumorphicTheme.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                for (final court in _courts)
+                                  _buildCourtTile(
+                                    court,
+                                    isLast: court == _courts.last,
+                                  ),
+                            ],
+                          ),
+                        ),
+                        if (_upcomingBookings.isNotEmpty ||
+                            _bookingNotice != null) ...[
+                          const SizedBox(height: 16),
+                          _frostedCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _sectionHeader(
+                                  icon: Icons.upcoming_rounded,
+                                  title: 'นัดหมายกำลังจะเริ่ม',
+                                  badge: _upcomingBookings.isEmpty
+                                      ? null
+                                      : '${_upcomingBookings.length}',
+                                ),
+                                if (_upcomingBookings.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _upcomingHint(),
+                                  const SizedBox(height: 8),
+                                  for (final booking in _upcomingBookings)
+                                    _buildUpcomingBookingRow(
+                                      booking,
+                                      isLast: booking == _upcomingBookings.last,
+                                    ),
+                                ],
+                                if (_bookingNotice != null) ...[
+                                  const SizedBox(height: 8),
+                                  _bookingNoticeRow(_bookingNotice!),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (widget.onOpenMyBookings != null) ...[
+                          const SizedBox(height: 12),
+                          _myBookingsButton(),
+                        ],
+                        const SizedBox(height: 16),
+                        _frostedCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CourtReviewRatingCard(
+                                averageRating: venue.averageRating,
+                                reviewCount: venue.reviewCount,
+                                reviews: _reviews,
+                                ownerProfile: _ownerProfile,
+                                onSeeAll: _openReviewsPage,
+                              ),
+                              if (widget.onWriteReview != null) ...[
+                                const SizedBox(height: 10),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _reviewButton(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -570,12 +883,57 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                 ),
                 SizedBox(width: 6),
                 Text(
-                  'รีวิว',
+                  'เขียนรีวิว',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: AppColors.primaryDark,
                   ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _myBookingsButton() {
+    return NeumorphicContainer(
+      width: double.infinity,
+      borderRadius: 14,
+      depth: 3,
+      blur: 6,
+      border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: widget.onOpenMyBookings,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  size: 18,
+                  color: AppColors.primaryDark,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'ประวัติการจองของฉัน',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AppColors.primaryDark,
                 ),
               ],
             ),
@@ -706,11 +1064,15 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
   }
 
-  Widget _buildAvailabilityCard(CourtAvailability availability) {
-    final court = _courts
-        .where((c) => c.id == availability.courtId)
-        .firstOrNull;
-    return _frostedCard(
+  /// The grid that opens underneath the court row it belongs to. It sits in a
+  /// sunken field so it reads as an extension of the row that was tapped.
+  Widget _buildAvailabilityPanel(VenueCourt court) {
+    final availability = _availability;
+    return NeumorphicInsetBox(
+      height: null,
+      borderRadius: 14,
+      padding: const EdgeInsets.all(12),
+      border: BorderSide(color: Colors.white.withValues(alpha: 0.7)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -722,15 +1084,13 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                 color: AppColors.primaryDark,
               ),
               const SizedBox(width: 8),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  court == null
-                      ? 'ตารางว่าง'
-                      : '${court.unitLabel ?? 'สนาม'} ${court.name}',
+                  'ตารางว่าง',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
+                  style: TextStyle(
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w700,
                     color: NeumorphicTheme.textPrimary,
                   ),
@@ -743,7 +1103,6 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
           Text(
             'เวลาท้องถิ่นของสนาม (${widget.venue.timezone})',
             style: const TextStyle(
@@ -751,6 +1110,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
               color: NeumorphicTheme.textSecondary,
             ),
           ),
+          if (_availabilityNotice != null) ...[
+            const SizedBox(height: 6),
+            _availabilityNoticeRow(_availabilityNotice!),
+          ],
           if (_checkingSlot) ...[
             const SizedBox(height: 8),
             const Text(
@@ -760,29 +1123,39 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
             const SizedBox(height: 6),
             LinearProgressIndicator(
               minHeight: 4,
-              borderRadius: BorderRadius.all(Radius.circular(2)),
+              borderRadius: const BorderRadius.all(Radius.circular(2)),
               color: AppColors.primaryDark,
               backgroundColor: AppColors.primary.withValues(alpha: 0.15),
             ),
           ],
-          const SizedBox(height: 4),
-          CourtAvailabilityPicker(
-            availability: availability,
-            date: _availabilityDate,
-            timezone: widget.venue.timezone,
-            onSlotTap:
-                court == null || widget.onBookCourt == null || _checkingSlot
-                ? null
-                : (start, end) => _verifySlotAndBook(court, start, end),
-          ),
+          const SizedBox(height: 8),
+          if (_availabilityLoading)
+            _availabilityLoadingBlock()
+          else if (_availabilityError != null)
+            _availabilityErrorRow(court)
+          else if (availability != null)
+            CourtAvailabilityPicker(
+              availability: availability,
+              date: _availabilityDate,
+              timezone: widget.venue.timezone,
+              onSlotTap: widget.onBookCourt == null || _checkingSlot
+                  ? null
+                  : (start, end) => _verifySlotAndBook(court, start, end),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildCourtTile(VenueCourt court) {
-    final selected = _selectedCourtId == court.id;
+  Widget _buildCourtTile(VenueCourt court, {bool isLast = false}) {
+    final expanded = _expandedCourtId == court.id;
     final isInstant = court.approvalMode == BookingApprovalMode.instant;
+    final displayedPrice = court.startingPriceAmount ?? court.priceAmount;
+    final displayedPriceLabel = displayedPrice == null
+        ? null
+        : displayedPrice == displayedPrice.roundToDouble()
+        ? displayedPrice.toStringAsFixed(0)
+        : displayedPrice.toStringAsFixed(2);
 
     final actions = <Widget>[
       _responsiveSlidableAction(
@@ -802,30 +1175,30 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
         ),
     ];
 
-    final tile = NeumorphicContainer(
-      borderRadius: 16,
-      depth: 4,
-      blur: 8,
-      border: Border.all(
-        color: selected
+    final tile = NeumorphicInsetBox(
+      height: null,
+      borderRadius: 14,
+      padding: EdgeInsets.zero,
+      border: BorderSide(
+        color: expanded
             ? AppColors.primaryDark
             : Colors.white.withValues(alpha: 0.7),
-        width: selected ? 1.6 : 1,
+        width: expanded ? 1.6 : 1,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _loadAvailability(court),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _toggleCourtAvailability(court),
           child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         '${court.unitLabel ?? 'สนาม'} ${court.name}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
@@ -833,26 +1206,42 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                           color: NeumorphicTheme.textPrimary,
                         ),
                       ),
-                    ),
-                    if (court.priceAmount != null)
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          if (court.indoor != null)
+                            _tag(court.indoor! ? 'ในร่ม' : 'กลางแจ้ง'),
+                          if (court.courtType != null) _tag(court.courtType!),
+                          _tag(isInstant ? 'จองได้ทันที' : 'รอเจ้าของอนุมัติ'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (displayedPriceLabel != null)
                       Text(
-                        '${court.priceAmount!.toStringAsFixed(0)} ฿/${_unitLabel(court.pricingUnit)}',
+                        court.hasTimePricing ||
+                                court.startingPriceAmount != null
+                            ? 'เริ่มต้น $displayedPriceLabel ฿/ชม.'
+                            : '$displayedPriceLabel ฿/${_unitLabel(court.pricingUnit)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           color: AppColors.primaryDark,
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    if (court.indoor != null)
-                      _tag(court.indoor! ? 'ในร่ม' : 'กลางแจ้ง'),
-                    if (court.courtType != null) _tag(court.courtType!),
-                    _tag(isInstant ? 'จองได้ทันที' : 'รอเจ้าของอนุมัติ'),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ],
                 ),
               ],
@@ -863,18 +1252,26 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Slidable(
-          key: ValueKey('court_${court.id}'),
-          endActionPane: ActionPane(
-            motion: const ScrollMotion(),
-            extentRatio: (actions.length * 0.26).clamp(0.26, 0.6),
-            children: actions,
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Slidable(
+              key: ValueKey('court_${court.id}'),
+              endActionPane: ActionPane(
+                motion: const ScrollMotion(),
+                extentRatio: (actions.length * 0.26).clamp(0.26, 0.6),
+                children: actions,
+              ),
+              child: tile,
+            ),
           ),
-          child: tile,
-        ),
+          if (expanded) ...[
+            const SizedBox(height: 8),
+            _buildAvailabilityPanel(court),
+          ],
+        ],
       ),
     );
   }

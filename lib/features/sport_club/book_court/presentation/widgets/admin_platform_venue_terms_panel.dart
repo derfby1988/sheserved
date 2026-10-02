@@ -4,6 +4,7 @@ import 'package:sheserved/shared/widgets/glass/glass_confirm_dialog.dart';
 
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
+import 'venue_cancellation_cutoff_field.dart';
 
 class AdminPlatformVenueTermsPanel extends StatefulWidget {
   final BookCourtRepository repo;
@@ -23,18 +24,14 @@ class AdminPlatformVenueTermsPanel extends StatefulWidget {
 class _AdminPlatformVenueTermsPanelState
     extends State<AdminPlatformVenueTermsPanel> {
   final _termsController = TextEditingController();
-  final _cutoffController = TextEditingController();
   PlatformVenueTerms? _terms;
+  int? _cutoffMinutes;
+  List<int> _cutoffOptions = venueCancellationCutoffOptions(null);
   bool _loading = true;
   bool _saving = false;
   String? _error;
 
-  int? get _cutoffValue {
-    final raw = _cutoffController.text.trim();
-    if (raw.isEmpty) return null;
-    final value = int.tryParse(raw);
-    return value != null && value >= 0 ? value : null;
-  }
+  int? get _cutoffValue => _cutoffMinutes;
 
   bool get _valid =>
       _termsController.text.trim().isNotEmpty &&
@@ -51,7 +48,6 @@ class _AdminPlatformVenueTermsPanelState
   @override
   void dispose() {
     _termsController.dispose();
-    _cutoffController.dispose();
     super.dispose();
   }
 
@@ -72,9 +68,12 @@ class _AdminPlatformVenueTermsPanelState
       final terms = await widget.repo.getPlatformVenueTerms(adminId);
       if (!mounted) return;
       _termsController.text = terms.isConfigured ? terms.termsText : '';
-      _cutoffController.text = terms.cancellationCutoffMinutes.toString();
       setState(() {
         _terms = terms;
+        _cutoffOptions = venueCancellationCutoffOptions(
+          terms.cancellationCutoffMinutes,
+        );
+        _cutoffMinutes = terms.cancellationCutoffMinutes;
         _loading = false;
       });
     } catch (error) {
@@ -249,29 +248,15 @@ class _AdminPlatformVenueTermsPanelState
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 8),
-                    TextField(
+                    VenueCancellationCutoffField(
                       key: const ValueKey('platform-venue-terms-cutoff'),
-                      controller: _cutoffController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'ยกเลิกล่วงหน้าได้ไม่เกิน (นาที)',
-                        helperText:
-                            'ผู้จองยกเลิกได้ฟรีจนถึงเวลานี้ก่อนเริ่มจอง',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => setState(() {}),
+                      value:
+                          _cutoffMinutes ??
+                          kVenueCancellationCutoffPresets.first,
+                      options: _cutoffOptions,
+                      onChanged: (minutes) =>
+                          setState(() => _cutoffMinutes = minutes),
                     ),
-                    if (_cutoffController.text.trim().isNotEmpty &&
-                        _cutoffValue == null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          'กรุณากรอกจำนวนนาทีเป็นจำนวนเต็มที่ไม่ติดลบ',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      ),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Text(

@@ -2746,10 +2746,9 @@ class _HomePageState extends ConsumerState<HomePage>
   // ==================== Top Navigation Bar ====================
 
   Widget _buildTopNavigationBar(BuildContext context) {
-    final chatCount = ref.watch(chatUnreadProvider);
-    final erpCount = ref.watch(notificationProvider).totalUnreadCount;
-    final total = chatCount + erpCount;
-
+    // No badgeCount override — TlzNotificationButton already shows
+    // (totalUnreadCount + chatUnreadCount) for the general panel, and
+    // overriding badgeCount disables its periodic/resume refresh.
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
@@ -2774,7 +2773,6 @@ class _HomePageState extends ConsumerState<HomePage>
             : null,
       ),
       child: TlzAppTopBar.onPrimary(
-        notificationCount: total,
         searchHintText: 'ค้นหายา ร้านยา หมอ...',
         onQRTap: () =>
             _showSnackBar(context, 'QR Scanner จะเปิดใช้งานเร็วๆ นี้'),

@@ -11,6 +11,7 @@ import '../../features/erp/presentation/providers/notification_provider.dart';
 import '../../features/erp/presentation/widgets/glass_card.dart';
 import '../../services/auth_service.dart';
 import 'swipe_to_dismiss_card.dart';
+import 'tlz_notification_toast.dart';
 
 Future<void> showTlzNotificationPanel(
   BuildContext context, {
@@ -86,10 +87,10 @@ Future<bool> openTlzNotificationDestination(
 }
 
 String? _resolveNotificationRoute(AppNotification notification) {
-  final payloadRoute = notification.payload['route']?.toString();
-  if (payloadRoute != null && payloadRoute.startsWith('/')) {
-    return payloadRoute;
-  }
+  // Payload routes win — the shared helper also remaps booker-side venue
+  // booking notifications to the booker's own booking list.
+  final payloadRoute = notificationPayloadRoute(notification);
+  if (payloadRoute != null) return payloadRoute;
 
   return switch (notification.category) {
     'chat' => '/chat-list',

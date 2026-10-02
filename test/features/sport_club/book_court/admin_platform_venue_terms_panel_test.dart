@@ -63,25 +63,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.widget<FilledButton>(
-        find.byKey(const ValueKey('platform-venue-terms-save')),
-      ).onPressed,
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('platform-venue-terms-save')),
+          )
+          .onPressed,
       isNull,
     );
     expect(
-      tester.widget<TextField>(
-        find.byKey(const ValueKey('platform-venue-terms-text')),
-      ).controller!.text,
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('platform-venue-terms-text')),
+          )
+          .controller!
+          .text,
       isEmpty,
     );
     await tester.enterText(
       find.byKey(const ValueKey('platform-venue-terms-text')),
       'ยกเลิกล่วงหน้าได้ตามเงื่อนไขของสนาม',
     );
-    await tester.enterText(
-      find.byKey(const ValueKey('platform-venue-terms-cutoff')),
-      '90',
+    final cutoffSlider = find.descendant(
+      of: find.byKey(const ValueKey('platform-venue-terms-cutoff')),
+      matching: find.byType(Slider),
     );
+    // Index 5 = 120 minutes (2 ชม.) in the preset list.
+    tester.widget<Slider>(cutoffSlider).onChanged!(5);
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('platform-venue-terms-save')));
     await tester.pumpAndSettle();
 
@@ -90,12 +98,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.savedText, 'ยกเลิกล่วงหน้าได้ตามเงื่อนไขของสนาม');
-    expect(repo.savedCutoff, 90);
+    expect(repo.savedCutoff, 120);
     expect(repo.current.version, 1);
     expect(repo.current.isConfigured, isTrue);
   });
 
-  testWidgets('disables save for an invalid cancellation cutoff', (
+  testWidgets('cutoff is picked from presets and cannot be free-typed', (
     tester,
   ) async {
     final repo = _FakeBookCourtRepository(
@@ -115,19 +123,21 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey('platform-venue-terms-cutoff')),
-      '-1',
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('platform-venue-terms-cutoff')),
+        matching: find.byType(TextField),
+      ),
+      findsNothing,
     );
-    await tester.pump();
-
+    expect(find.text('1 ชม.'), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(
             find.byKey(const ValueKey('platform-venue-terms-save')),
           )
           .onPressed,
-      isNull,
+      isNotNull,
     );
   });
 }

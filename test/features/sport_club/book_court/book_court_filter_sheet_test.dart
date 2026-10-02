@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/domain/book_court_filter.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic_button.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/book_court_filter_sheet.dart';
 import 'package:sheserved/shared/widgets/thai_address_picker/thai_address_repository.dart';
 
 class _FakeAddressRepository implements ThaiAddressRepository {
   @override
-  Future<List<String>> getAllProvinces() async =>
-      const ['กรุงเทพมหานคร', 'ขอนแก่น'];
+  Future<List<String>> getAllProvinces() async => const [
+    'กรุงเทพมหานคร',
+    'ขอนแก่น',
+  ];
 
   @override
   Future<List<String>> getDistrictsByProvince(String province) async =>
@@ -18,15 +21,19 @@ class _FakeAddressRepository implements ThaiAddressRepository {
       };
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 void main() {
   testWidgets('edits the shared venue query in the filter sheet', (
     tester,
   ) async {
-    const currentFilter = BookCourtFilter(minPrice: 100.0);
+    final currentFilter = BookCourtFilter(
+      date: DateTime(2026, 10, 3),
+      startTime: const TimeOfDay(hour: 18, minute: 0),
+      duration: const Duration(hours: 1),
+      minPrice: 100,
+    );
     BookCourtFilterSheetResult? result;
 
     await tester.pumpWidget(
@@ -191,5 +198,38 @@ void main() {
 
     expect(find.text('ตัวกรองสนาม'), findsNothing);
     expect(result, isNull);
+  });
+
+  testWidgets('requires a selected slot before applying a price filter', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => BookCourtFilterSheet.show(
+                  context,
+                  current: const BookCourtFilter(minPrice: 100),
+                  currentQuery: '',
+                  addressRepository: _FakeAddressRepository(),
+                ),
+                child: const Text('เปิดตัวกรอง'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('เปิดตัวกรอง'));
+    await tester.pumpAndSettle();
+    expect(find.text('ตัวกรองสนาม'), findsOneWidget);
+    final applyButton = tester.widget<NeumorphicVerifyButton>(
+      find.byType(NeumorphicVerifyButton),
+    );
+    expect(applyButton.isEnabled, isFalse);
+    expect(applyButton.onPressed, isNull);
   });
 }

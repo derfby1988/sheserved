@@ -110,6 +110,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       venueName: b.venueName ?? '',
       timezone: b.timezone,
       loadAvailability: widget.repo.getCourtAvailability,
+      quotePrice: widget.repo.quoteCourtPrice,
       allowDisjoint: false,
       initialDate: VenueLocalTime.dateOfInstant(b.startsAt, b.timezone),
     );
@@ -123,6 +124,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
           startsAt: slot.start,
           endsAt: slot.end,
           termsVersion: b.termsVersion,
+          priceScheduleVersion: slot.priceQuote.priceScheduleVersion,
         );
       } catch (error) {
         if (!error.toString().contains('TERMS_VERSION_CHANGED')) rethrow;
@@ -141,6 +143,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
           startsAt: slot.start,
           endsAt: slot.end,
           termsVersion: accepted.version,
+          priceScheduleVersion: slot.priceQuote.priceScheduleVersion,
         );
       }
       _toast('เปลี่ยนเวลาแล้ว รอเจ้าของอนุมัติ');
@@ -294,8 +297,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   }
 
   Widget _buildBookingCard(VenueBooking b) {
-    final reviewable =
-        b.isCompleted && !_reviewedBookingIds.contains(b.id);
+    final reviewable = b.isCompleted && !_reviewedBookingIds.contains(b.id);
     return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
@@ -303,90 +305,92 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    b.venueName ?? 'สนาม',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  b.venueName ?? 'สนาม',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
-                _statusChip(b.status),
+              ),
+              _statusChip(b.status),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${b.unitLabel ?? 'สนาม'} ${b.courtName ?? ''}',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          Text(
+            _fmtRange(b),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          if (b.priceTotal != null)
+            Text(
+              'ราคารวม ${b.priceTotal!.toStringAsFixed(2)} บาท',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            )
+          else if (b.priceAmount != null)
+            Text(
+              '${b.priceAmount!.toStringAsFixed(0)} บาท/${_unitLabel(b.pricingUnit)}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          if (b.rejectionReason?.isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'เหตุผลที่ถูกปฏิเสธ: ${b.rejectionReason}',
+                style: const TextStyle(fontSize: 12.5, color: Colors.red),
+              ),
+            ),
+          if (b.cancellationReason?.isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'เหตุผลยกเลิก: ${b.cancellationReason}',
+                style: const TextStyle(fontSize: 12.5, color: Colors.red),
+              ),
+            ),
+          if (b.isPending || b.isConfirmed || reviewable) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (b.isPending)
+                  TextButton.icon(
+                    onPressed: () => _changeSlot(b),
+                    icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                    label: const Text('เปลี่ยนเวลา'),
+                  ),
+                if (b.isPending || b.isConfirmed)
+                  TextButton.icon(
+                    onPressed: () => _cancel(b),
+                    icon: const Icon(
+                      Icons.cancel_outlined,
+                      size: 16,
+                      color: Colors.red,
+                    ),
+                    label: const Text(
+                      'ยกเลิก',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                if (reviewable)
+                  FilledButton.tonalIcon(
+                    onPressed: () => _writeReview(b),
+                    icon: const Icon(Icons.rate_review_outlined, size: 16),
+                    label: const Text('เขียนรีวิว'),
+                  ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${b.unitLabel ?? 'สนาม'} ${b.courtName ?? ''}',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            Text(
-              _fmtRange(b.startsAt, b.endsAt),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            if (b.priceAmount != null)
-              Text(
-                '${b.priceAmount!.toStringAsFixed(0)} บาท/${_unitLabel(b.pricingUnit)}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            if (b.rejectionReason?.isNotEmpty == true)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'เหตุผลที่ถูกปฏิเสธ: ${b.rejectionReason}',
-                  style: const TextStyle(fontSize: 12.5, color: Colors.red),
-                ),
-              ),
-            if (b.cancellationReason?.isNotEmpty == true)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'เหตุผลยกเลิก: ${b.cancellationReason}',
-                  style: const TextStyle(fontSize: 12.5, color: Colors.red),
-                ),
-              ),
-            if (b.isPending || b.isConfirmed || reviewable) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  if (b.isPending)
-                    TextButton.icon(
-                      onPressed: () => _changeSlot(b),
-                      icon: const Icon(Icons.edit_calendar_rounded, size: 16),
-                      label: const Text('เปลี่ยนเวลา'),
-                    ),
-                  if (b.isPending || b.isConfirmed)
-                    TextButton.icon(
-                      onPressed: () => _cancel(b),
-                      icon: const Icon(
-                        Icons.cancel_outlined,
-                        size: 16,
-                        color: Colors.red,
-                      ),
-                      label: const Text(
-                        'ยกเลิก',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  if (reviewable)
-                    FilledButton.tonalIcon(
-                      onPressed: () => _writeReview(b),
-                      icon: const Icon(Icons.rate_review_outlined, size: 16),
-                      label: const Text('เขียนรีวิว'),
-                    ),
-                ],
-              ),
-            ],
           ],
-        ),
+        ],
+      ),
     );
   }
 
@@ -423,8 +427,18 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     _ => 'ชม.',
   };
 
-  static String _fmtRange(DateTime start, DateTime end) {
+  /// Booking instants are stored UTC — render them in the venue's timezone
+  /// so the slot matches what the booker picked.
+  static String _fmtRange(VenueBooking booking) {
     String two(int n) => n.toString().padLeft(2, '0');
+    final start = VenueLocalTime.wallTimeOfInstant(
+      booking.startsAt,
+      booking.timezone,
+    );
+    final end = VenueLocalTime.wallTimeOfInstant(
+      booking.endsAt,
+      booking.timezone,
+    );
     return '${start.day}/${start.month}/${start.year + 543} '
         '${two(start.hour)}:${two(start.minute)}'
         '–${two(end.hour)}:${two(end.minute)}';
@@ -437,6 +451,15 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     }
     if (raw.contains('TERMS_VERSION_CHANGED')) {
       return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาอ่านและยอมรับเวอร์ชันใหม่';
+    }
+    if (raw.contains('PRICE_CHANGED')) {
+      return 'ราคาสนามเปลี่ยนแล้ว กรุณาเลือกเวลาใหม่และตรวจสอบราคา';
+    }
+    if (raw.contains('PRICE_VERSION_REQUIRED')) {
+      return 'กรุณาอัปเดตแอปก่อนเปลี่ยนเวลาจองสนามนี้';
+    }
+    if (raw.contains('PRICE_NOT_CONFIGURED')) {
+      return 'สนามยังไม่ได้กำหนดราคาในช่วงเวลานี้';
     }
     if (raw.contains('SLOT_TAKEN') || raw.contains('OVERLAP')) {
       return 'ช่วงเวลานี้ถูกจองแล้ว กรุณาเลือกเวลาอื่น';

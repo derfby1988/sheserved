@@ -13,6 +13,7 @@ class OwnerCourtEditorDialog {
     BuildContext context, {
     VenueCourt? court,
     required String sportId,
+    List<VenueCourtPriceRule> priceRules = const [],
     Map<String, String>? sportChoices,
   }) {
     return GlassDialog.show<Map<String, dynamic>>(
@@ -23,6 +24,7 @@ class OwnerCourtEditorDialog {
       builder: (dialogContext) => _OwnerCourtEditorDialogBody(
         court: court,
         sportId: sportId,
+        priceRules: priceRules,
         sportChoices: sportChoices,
       ),
     );
@@ -36,6 +38,7 @@ class _OwnerCourtEditorDialogBody extends StatefulWidget {
   /// no choices are given). A sport missing from the venue's sport set is
   /// never silently substituted; the owner must pick one explicitly.
   final String sportId;
+  final List<VenueCourtPriceRule> priceRules;
 
   /// venue_sport choices (id → display name) shown as a dropdown when the
   /// venue offers more than one sport. Null = fixed [sportId].
@@ -44,6 +47,7 @@ class _OwnerCourtEditorDialogBody extends StatefulWidget {
   const _OwnerCourtEditorDialogBody({
     this.court,
     required this.sportId,
+    this.priceRules = const [],
     this.sportChoices,
   });
 
@@ -59,11 +63,14 @@ class _OwnerCourtEditorDialogBodyState
     text: widget.court?.unitLabel ?? '',
   );
   late final _price = TextEditingController(
-    text: widget.court?.priceAmount?.toStringAsFixed(0) ?? '',
+    text: widget.court?.priceAmount?.toStringAsFixed(2) ?? '',
   );
   late final _capacity = TextEditingController(
     text: (widget.court?.capacity ?? 1).toString(),
   );
+  late final List<_PriceRuleDraft> _priceRules = [
+    for (final rule in widget.priceRules) _PriceRuleDraft.fromRule(rule),
+  ];
   final ScrollController _scrollController = ScrollController();
 
   /// Null until a valid sport is selected — submitting requires one
@@ -94,6 +101,9 @@ class _OwnerCourtEditorDialogBodyState
     _unitLabel.dispose();
     _price.dispose();
     _capacity.dispose();
+    for (final rule in _priceRules) {
+      rule.price.dispose();
+    }
     _scrollController.dispose();
     super.dispose();
   }
@@ -112,15 +122,178 @@ class _OwnerCourtEditorDialogBodyState
     final raw = _price.text.trim();
     if (raw.isEmpty) return null;
     final parsed = double.tryParse(raw);
-    if (parsed == null || parsed < 0) return -1;
+    if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(raw) ||
+        parsed == null ||
+        parsed < 0 ||
+        parsed > 99999999.99) {
+      return -1;
+    }
     return parsed;
   }
+
+  String? get _priceRulesError {
+    if (_priceRules.isEmpty) return null;
+    if (_pricingUnit != 'hour') return 'ราคาแยกช่วงเวลาต้องคิดเป็นรายชั่วโมง';
+    if (_priceRules.length > 100) return 'กำหนดช่วงราคาได้ไม่เกิน 100 ช่วง';
+    for (var i = 0; i < _priceRules.length; i++) {
+      final rule = _priceRules[i];
+      final rawPrice = rule.price.text.trim();
+      final price = double.tryParse(rawPrice);
+      if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(rawPrice) ||
+          price == null ||
+          price > 99999999.99) {
+        return 'กรุณากรอกราคา/ชั่วโมงไม่เกิน 2 ตำแหน่ง';
+      }
+      final start = _minutes(rule.start);
+      final end = _minutes(rule.end);
+      if (start >= end) return 'เวลาเริ่มต้องน้อยกว่าเวลาสิ้นสุด';
+      for (final other in _priceRules.skip(i + 1)) {
+        final sameSchedule = rule.dayOfWeek == other.dayOfWeek;
+        if (sameSchedule &&
+            start < _minutes(other.end) &&
+            _minutes(other.start) < end) {
+          return 'ช่วงเวลาราคาทับซ้อนกัน';
+        }
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> get _priceRulesJson => [
+    for (final rule in _priceRules)
+      {
+        'day_of_week': rule.dayOfWeek,
+        'start_time': _formatTime(rule.start),
+        'end_time': _formatTime(rule.end),
+        'price_per_hour': double.parse(rule.price.text.trim()),
+      },
+  ];
 
   bool get _valid =>
       _name.text.trim().isNotEmpty &&
       _capacityValue != null &&
       _priceValue != -1 &&
+      _priceRulesError == null &&
       _sportId != null;
+
+  int _minutes(TimeOfDay time) => time.hour * 60 + time.minute;
+
+  String _formatTime(TimeOfDay time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _pickPriceRuleTime(
+    _PriceRuleDraft rule, {
+    required bool start,
+  }) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: start ? rule.start : rule.end,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (start) {
+        rule.start = picked;
+      } else {
+        rule.end = picked;
+      }
+    });
+  }
+
+  void _addPriceRule() {
+    setState(() {
+      _priceRules.add(
+        _PriceRuleDraft(
+          dayOfWeek: null,
+          start: const TimeOfDay(hour: 18, minute: 0),
+          end: const TimeOfDay(hour: 22, minute: 0),
+        ),
+      );
+    });
+  }
+
+  void _removePriceRule(int index) {
+    final rule = _priceRules.removeAt(index);
+    rule.price.dispose();
+    setState(() {});
+  }
+
+  Widget _priceRuleTile(int index) {
+    final rule = _priceRules[index];
+    const weekdayLabels = {
+      0: 'อาทิตย์',
+      1: 'จันทร์',
+      2: 'อังคาร',
+      3: 'พุธ',
+      4: 'พฤหัสบดี',
+      5: 'ศุกร์',
+      6: 'เสาร์',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  initialValue: rule.dayOfWeek ?? 7,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'วัน',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 7, child: Text('ทุกวัน')),
+                    for (final entry in weekdayLabels.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (value) => setState(
+                    () => rule.dayOfWeek = value == 7 ? null : value,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'ลบช่วงราคา',
+                onPressed: () => _removePriceRule(index),
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _pickPriceRuleTime(rule, start: true),
+                  child: Text('เริ่ม ${_formatTime(rule.start)}'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _pickPriceRuleTime(rule, start: false),
+                  child: Text('สิ้นสุด ${_formatTime(rule.end)}'),
+                ),
+              ),
+            ],
+          ),
+          TextField(
+            controller: rule.price,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'ราคา/ชั่วโมง',
+              suffixText: 'บาท',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -185,8 +358,7 @@ class _OwnerCourtEditorDialogBodyState
                               border: OutlineInputBorder(),
                             ),
                             items: [
-                              for (final entry
-                                  in widget.sportChoices!.entries)
+                              for (final entry in widget.sportChoices!.entries)
                                 DropdownMenuItem(
                                   value: entry.key,
                                   child: Text(entry.value),
@@ -236,7 +408,9 @@ class _OwnerCourtEditorDialogBodyState
                                 controller: _price,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: 'ราคา (บาท)',
+                                  labelText: _pricingUnit == 'hour'
+                                      ? 'ราคาเริ่มต้น (บาท/ชม.)'
+                                      : 'ราคา (บาท)',
                                   errorText: _priceValue == -1
                                       ? 'ราคาไม่ถูกต้อง'
                                       : null,
@@ -272,12 +446,45 @@ class _OwnerCourtEditorDialogBodyState
                                     child: Text('วัน'),
                                   ),
                                 ],
-                                onChanged: (v) => setState(
-                                  () => _pricingUnit = v ?? 'hour',
-                                ),
+                                onChanged: (v) =>
+                                    setState(() => _pricingUnit = v ?? 'hour'),
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'ราคาแยกตามวันและเวลา',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _pricingUnit == 'hour'
+                              ? _priceValue == null
+                                    ? 'กำหนดช่วงเป็นนาทีได้; วันเฉพาะทับกฎทุกวัน และช่วงนอกกฎจะจองไม่ได้ถ้าไม่มีราคาเริ่มต้น'
+                                    : 'กำหนดช่วงเป็นนาทีได้; วันเฉพาะทับกฎทุกวัน และช่วงนอกกฎใช้ราคาเริ่มต้น'
+                              : 'ต้องเลือกคิดราคาต่อชั่วโมงเพื่อกำหนดราคาแยกช่วงเวลา',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        for (var i = 0; i < _priceRules.length; i++)
+                          _priceRuleTile(i),
+                        if (_priceRulesError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              _priceRulesError!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        TextButton.icon(
+                          onPressed: _pricingUnit == 'hour'
+                              ? _addPriceRule
+                              : null,
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('เพิ่มช่วงราคา'),
                         ),
                         const SizedBox(height: 12),
                         Row(
@@ -419,6 +626,7 @@ class _OwnerCourtEditorDialogBodyState
                             'indoor': _indoor,
                             'is_active': _isActive,
                             'approval_mode': _approvalMode,
+                            'price_rules': _priceRulesJson,
                             if (widget.court != null) 'id': widget.court!.id,
                           })
                         : null,
@@ -429,6 +637,37 @@ class _OwnerCourtEditorDialogBodyState
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PriceRuleDraft {
+  int? dayOfWeek;
+  TimeOfDay start;
+  TimeOfDay end;
+  final TextEditingController price;
+
+  _PriceRuleDraft({
+    required this.dayOfWeek,
+    required this.start,
+    required this.end,
+    String priceText = '',
+  }) : price = TextEditingController(text: priceText);
+
+  factory _PriceRuleDraft.fromRule(VenueCourtPriceRule rule) {
+    TimeOfDay parse(String value) {
+      final parts = value.split(':');
+      return TimeOfDay(
+        hour: int.tryParse(parts.first) ?? 0,
+        minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+      );
+    }
+
+    return _PriceRuleDraft(
+      dayOfWeek: rule.dayOfWeek,
+      start: parse(rule.startTime),
+      end: parse(rule.endTime),
+      priceText: rule.pricePerHour.toStringAsFixed(2),
     );
   }
 }

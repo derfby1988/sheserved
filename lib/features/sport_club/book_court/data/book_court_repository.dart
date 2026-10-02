@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/services/websocket_service.dart';
 import 'book_court_models.dart';
 
 /// Supabase data access for the Book Court domain.
@@ -105,6 +106,21 @@ class BookCourtRepository {
           .inFilter('venue_id', ids),
     ]);
 
+    final startingPriceByVenue = <String, double>{};
+    try {
+      final priceRows = await _client
+          .from('sports_venue_price_summary_public')
+          .select('venue_id, starting_price_amount')
+          .inFilter('venue_id', ids);
+      for (final row in (priceRows as List)) {
+        final m = Map<String, dynamic>.from(row);
+        final amount = (m['starting_price_amount'] as num?)?.toDouble();
+        if (amount != null) {
+          startingPriceByVenue[m['venue_id']?.toString() ?? ''] = amount;
+        }
+      }
+    } catch (_) {}
+
     final ratingByVenue = <String, (double, int)>{};
     for (final row in (results[0] as List)) {
       final m = Map<String, dynamic>.from(row);
@@ -149,6 +165,7 @@ class BookCourtRepository {
           (v) => v.copyWith(
             averageRating: ratingByVenue[v.id]?.$1,
             reviewCount: ratingByVenue[v.id]?.$2 ?? 0,
+            startingPriceAmount: startingPriceByVenue[v.id],
             courtCount: courtCountByVenue[v.id] ?? 0,
             amenityIds: amenitiesByVenue[v.id] ?? const {},
             photoUrls: photosByVenue[v.id] ?? const [],
@@ -172,6 +189,89 @@ class BookCourtRepository {
     final res = await q.order('name');
     return (res as List)
         .map((e) => VenueCourt.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<VenueCourtPriceQuote> quoteCourtPrice(
+    VenueCourt court,
+    DateTime startsAt,
+    DateTime endsAt,
+  ) async {
+    try {
+      final result = await _client.rpc(
+        'quote_sports_venue_court_price',
+        params: {
+          'p_court_id': court.id,
+          'p_starts_at': startsAt.toUtc().toIso8601String(),
+          'p_ends_at': endsAt.toUtc().toIso8601String(),
+        },
+      );
+      if (result is! Map) {
+        throw const FormatException('Invalid court price quote response');
+      }
+      return VenueCourtPriceQuote.fromJson(Map<String, dynamic>.from(result));
+    } catch (error) {
+      if (!error.toString().contains('PGRST202')) rethrow;
+      final hours = endsAt.difference(startsAt).inSeconds / 3600;
+      final total = court.pricingUnit == 'hour' && court.priceAmount != null
+          ? ((court.priceAmount! * hours * 100).roundToDouble() / 100)
+          : null;
+      return VenueCourtPriceQuote(
+        totalAmount: total,
+        priceAmount: court.priceAmount,
+        pricingUnit: court.pricingUnit,
+      );
+    }
+  }
+
+  Future<Map<String, List<double>>> quoteVenuePricesForLocalSlot({
+    required List<String> venueIds,
+    required String? sportId,
+    required DateTime localDate,
+    required int startTimeMinutes,
+    required int durationMinutes,
+  }) async {
+    if (venueIds.isEmpty) return {};
+    final result = await _client.rpc(
+      'quote_sports_venue_prices_for_local_slot',
+      params: {
+        'p_venue_ids': venueIds,
+        'p_sport_id': sportId,
+        'p_local_date':
+            '${localDate.year.toString().padLeft(4, '0')}-'
+            '${localDate.month.toString().padLeft(2, '0')}-'
+            '${localDate.day.toString().padLeft(2, '0')}',
+        'p_start_time':
+            '${(startTimeMinutes ~/ 60).toString().padLeft(2, '0')}:'
+            '${(startTimeMinutes % 60).toString().padLeft(2, '0')}:00',
+        'p_duration_minutes': durationMinutes,
+      },
+    );
+    final prices = <String, List<double>>{};
+    for (final row in result as List) {
+      final value = Map<String, dynamic>.from(row);
+      final venueId = value['venue_id']?.toString() ?? '';
+      final amount = (value['total_amount'] as num?)?.toDouble();
+      if (venueId.isNotEmpty && amount != null) {
+        prices.putIfAbsent(venueId, () => []).add(amount);
+      }
+    }
+    return prices;
+  }
+
+  Future<List<VenueCourtPriceRule>> listMyCourtPriceRules(
+    String userId,
+    String courtId,
+  ) async {
+    _assertCurrentUser(userId);
+    final result = await _client.rpc(
+      'list_my_sports_venue_court_price_rules',
+      params: {'p_user_id': userId, 'p_court_id': courtId},
+    );
+    return (result as List)
+        .map(
+          (row) => VenueCourtPriceRule.fromJson(Map<String, dynamic>.from(row)),
+        )
         .toList();
   }
 
@@ -444,6 +544,7 @@ class BookCourtRepository {
     String approvalMode = 'instant',
     String? unitLabel,
     bool isActive = true,
+    List<VenueCourtPriceRule>? priceRules,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
@@ -462,6 +563,13 @@ class BookCourtRepository {
         'p_booking_approval_mode': approvalMode,
         'p_unit_label': unitLabel,
         'p_is_active': isActive,
+        ...?(priceRules == null
+            ? null
+            : {
+                'p_price_rules': priceRules
+                    .map((rule) => rule.toJson())
+                    .toList(),
+              }),
       },
     );
     return res.toString();
@@ -580,6 +688,17 @@ class BookCourtRepository {
 
   // =============== Booking lifecycle ===============
 
+  /// Mirrors the Fitness Buddies approval flow: once the RPC has persisted
+  /// its `app_notifications` rows we nudge the websocket server to
+  /// re-publish them to each recipient's room. Fire-and-forget — delivery
+  /// must never fail the booking mutation, matching sports_hub_notify's
+  /// guarded semantics.
+  void _notifyVenueBooking(String bookingId) {
+    try {
+      WebSocketService().sendVenueBookingNotification(bookingId: bookingId);
+    } catch (_) {}
+  }
+
   Future<String> createBooking({
     required String userId,
     required String courtId,
@@ -587,6 +706,7 @@ class BookCourtRepository {
     required DateTime endsAt,
     required int termsVersion,
     String? idempotencyKey,
+    int? priceScheduleVersion,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
@@ -598,9 +718,14 @@ class BookCourtRepository {
         'p_ends_at': endsAt.toUtc().toIso8601String(),
         'p_terms_version': termsVersion,
         'p_idempotency_key': idempotencyKey,
+        ...?(priceScheduleVersion == null
+            ? null
+            : {'p_expected_price_schedule_version': priceScheduleVersion}),
       },
     );
-    return res.toString();
+    final bookingId = res.toString();
+    _notifyVenueBooking(bookingId);
+    return bookingId;
   }
 
   Future<void> cancelBooking(
@@ -617,6 +742,7 @@ class BookCourtRepository {
         'p_reason': reason,
       },
     );
+    _notifyVenueBooking(bookingId);
   }
 
   /// Returns 'confirmed', 'rejected' or 'conflict'.
@@ -636,6 +762,7 @@ class BookCourtRepository {
         'p_reason': reason,
       },
     );
+    _notifyVenueBooking(bookingId);
     return res.toString();
   }
 
@@ -645,6 +772,7 @@ class BookCourtRepository {
     required DateTime startsAt,
     required DateTime endsAt,
     int? termsVersion,
+    int? priceScheduleVersion,
   }) async {
     _assertCurrentUser(userId);
     await _client.rpc(
@@ -655,8 +783,12 @@ class BookCourtRepository {
         'p_starts_at': startsAt.toUtc().toIso8601String(),
         'p_ends_at': endsAt.toUtc().toIso8601String(),
         'p_terms_version': termsVersion,
+        ...?(priceScheduleVersion == null
+            ? null
+            : {'p_expected_price_schedule_version': priceScheduleVersion}),
       },
     );
+    _notifyVenueBooking(bookingId);
   }
 
   Future<List<VenueBooking>> listMyBookings(
@@ -698,10 +830,15 @@ class BookCourtRepository {
     return bookings.map((b) => b.venueId).toSet();
   }
 
-  /// Venue ids the user manages (เป็นเจ้าของ filter).
+  /// Venue ids the user owns or was invited to manage (เป็นเจ้าของ filter).
+  /// Venues reachable only through the Sheserved-admin override
+  /// (member_role='admin') are excluded — oversight is not ownership.
   Future<Set<String>> listMyManagedVenueIds(String userId) async {
     final venues = await listMyVenues(userId);
-    return venues.map((v) => v.id).toSet();
+    return venues
+        .where((v) => v.memberRole != 'admin')
+        .map((v) => v.id)
+        .toSet();
   }
 
   // =============== Reviews ===============

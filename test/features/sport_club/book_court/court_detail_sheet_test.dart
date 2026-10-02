@@ -5,6 +5,7 @@ import 'package:sheserved/features/sport_club/book_court/data/book_court_reposit
 import 'package:sheserved/features/sport_club/book_court/domain/venue_local_time.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_availability_picker.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_detail_sheet.dart';
+import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:sheserved/shared/widgets/thai_buddhist_date_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -29,6 +30,9 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   DateTime? availabilityTo;
   final List<CourtAvailability> availabilityResponses = [];
   final List<String> availabilityCourtIds = [];
+  List<VenueBooking> myBookings = const [];
+  final List<String> cancelledBookingIds = [];
+  Object? cancelError;
 
   @override
   Future<List<VenueCourt>> listPublicCourts(
@@ -69,6 +73,23 @@ class _FakeBookCourtRepository extends BookCourtRepository {
       return availabilityResponses.removeAt(0);
     }
     return availability ?? CourtAvailability(courtId: courtId);
+  }
+
+  @override
+  Future<List<VenueBooking>> listMyBookings(
+    String userId, {
+    List<String>? statuses,
+  }) async => myBookings;
+
+  @override
+  Future<void> cancelBooking(
+    String userId,
+    String bookingId, {
+    String? reason,
+  }) async {
+    if (cancelError != null) throw cancelError!;
+    cancelledBookingIds.add(bookingId);
+    myBookings = myBookings.where((b) => b.id != bookingId).toList();
   }
 }
 
@@ -140,9 +161,31 @@ const _approvalCourt = VenueCourt(
   unitLabel: 'คอร์ท',
 );
 
+VenueBooking _booking({
+  required String id,
+  required String venueName,
+  required DateTime startsAt,
+  required DateTime endsAt,
+  VenueBookingStatus status = VenueBookingStatus.confirmed,
+}) => VenueBooking(
+  id: id,
+  courtId: 'court-1',
+  venueId: 'venue-1',
+  sportId: 'sport-1',
+  startsAt: startsAt,
+  endsAt: endsAt,
+  status: status,
+  venueName: venueName,
+  courtName: 'หลังจวนเก่าภูว้า',
+  unitLabel: 'คอร์ท',
+  priceTotal: 180,
+);
+
 Widget _harness(
   _FakeBookCourtRepository repo, {
   CourtBookingCallback? onBookCourt,
+  Future<void> Function()? onOpenMyBookings,
+  String? userId = 'user-1',
 }) {
   return MaterialApp(
     home: Builder(
@@ -153,8 +196,10 @@ Widget _harness(
               context,
               venue: _venue,
               repo: repo,
+              userId: userId,
               onBookCourt: onBookCourt,
               onWriteReview: () async {},
+              onOpenMyBookings: onOpenMyBookings,
             ),
             child: const Text('เปิดรายละเอียด'),
           ),
@@ -307,7 +352,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.availabilityCourtIds, ['court-1']);
-    expect(find.text('ตารางเวลา'), findsOneWidget);
+    expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
   });
 
   testWidgets('a finished booking reloads only the visible availability', (
@@ -329,7 +374,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.availabilityCourtIds, ['court-1', 'court-1']);
-    expect(find.text('ตารางเวลา'), findsOneWidget);
+    expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
   });
 
   testWidgets('booking without a visible grid does not load availability', (
@@ -348,7 +393,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.availabilityCourtIds, isEmpty);
-    expect(find.text('ตารางเวลา'), findsNothing);
+    expect(find.byType(CourtAvailabilityPicker), findsNothing);
   });
 
   testWidgets('availability requests use venue-local day boundaries', (
@@ -482,8 +527,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('โหลดตารางว่างไม่สำเร็จ'), findsOneWidget);
-    expect(find.text('ตารางเวลา'), findsNothing);
+    expect(find.byType(CourtAvailabilityPicker), findsNothing);
     expect(find.text('ลองใหม่'), findsOneWidget);
+  });
+
+  testWidgets('time-priced courts show their hourly starting price', (
+    tester,
+  ) async {
+    repo.courts = [
+      const VenueCourt(
+        id: 'court-1',
+        venueId: 'venue-1',
+        sportId: 'sport-1',
+        name: 'หลังจวนเก่าภูว้า',
+        priceAmount: 100,
+        pricingUnit: 'hour',
+        startingPriceAmount: 65,
+        hasTimePricing: true,
+        unitLabel: 'คอร์ท',
+      ),
+    ];
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('เริ่มต้น 65 ฿/ชม.'), findsOneWidget);
   });
 
   testWidgets('owner profile RPC failures keep venue details available', (
@@ -510,5 +577,278 @@ void main() {
     expect(find.text('สมชาย ศ.'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
     expect(find.byIcon(Icons.person_rounded), findsOneWidget);
+  });
+
+  testWidgets('booking history button invokes its navigation callback', (
+    tester,
+  ) async {
+    var openedHistory = false;
+    await tester.pumpWidget(
+      _harness(repo, onOpenMyBookings: () async => openedHistory = true),
+    );
+    await _openSheet(tester);
+
+    final historyButton = find.text('ประวัติการจองของฉัน');
+    expect(historyButton, findsOneWidget);
+    await tester.ensureVisible(historyButton);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(historyButton).dy,
+      greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
+    );
+
+    await tester.tap(historyButton);
+    await tester.pumpAndSettle();
+
+    expect(openedHistory, isTrue);
+  });
+
+  testWidgets('the close button dismisses the sheet', (tester) async {
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.byType(CourtDetailSheet), findsOneWidget);
+    expect(find.byType(NeumorphicSheetCloseButton), findsOneWidget);
+
+    await tester.tap(find.byType(NeumorphicSheetCloseButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CourtDetailSheet), findsNothing);
+  });
+
+  testWidgets('court rows are sunken fields that open their grid underneath', (
+    tester,
+  ) async {
+    repo.availability = _openAvailability();
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
+    await _openSheet(tester);
+
+    expect(find.text('ตารางว่าง'), findsNothing);
+    expect(find.byType(NeumorphicInsetBox), findsOneWidget);
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
+    expect(find.text('ตารางว่าง'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
+    );
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ตารางว่าง'), findsNothing);
+    expect(find.byType(NeumorphicInsetBox), findsOneWidget);
+  });
+
+  testWidgets('only one court grid stays open at a time', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    repo.courts = [_instantCourt, _approvalCourt];
+    repo.availability = _openAvailability();
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(repo.availabilityCourtIds, ['court-1']);
+    expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
+    );
+
+    await tester.tap(find.text('คอร์ท คอร์ทในร่ม'));
+    await tester.pumpAndSettle();
+
+    expect(repo.availabilityCourtIds, ['court-1', 'court-2']);
+    expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      greaterThan(tester.getBottomLeft(find.text('คอร์ท คอร์ทในร่ม')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
+    );
+  });
+
+  testWidgets(
+    'upcoming confirmed appointments sit above the my-bookings button',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      final now = DateTime.now();
+      repo.myBookings = [
+        _booking(
+          id: 'booking-soon',
+          venueName: 'สนามลาดพร้าว',
+          startsAt: now.add(const Duration(hours: 2)),
+          endsAt: now.add(const Duration(hours: 3)),
+        ),
+        _booking(
+          id: 'booking-later',
+          venueName: 'สนามบางนา',
+          startsAt: now.add(const Duration(days: 1)),
+          endsAt: now.add(const Duration(days: 1, hours: 1)),
+        ),
+        // Owner still has to approve this one.
+        _booking(
+          id: 'booking-pending',
+          venueName: 'สนามรออนุมัติ',
+          status: VenueBookingStatus.pending,
+          startsAt: now.add(const Duration(hours: 4)),
+          endsAt: now.add(const Duration(hours: 5)),
+        ),
+        // Confirmed but already finished — history, not an upcoming appointment.
+        _booking(
+          id: 'booking-done',
+          venueName: 'สนามที่จบแล้ว',
+          startsAt: now.subtract(const Duration(hours: 3)),
+          endsAt: now.subtract(const Duration(hours: 2)),
+        ),
+      ];
+
+      await tester.pumpWidget(_harness(repo, onOpenMyBookings: () async {}));
+      await _openSheet(tester);
+
+      expect(find.text('นัดหมายกำลังจะเริ่ม'), findsOneWidget);
+      expect(find.text('สนามลาดพร้าว'), findsOneWidget);
+      expect(find.text('สนามบางนา'), findsOneWidget);
+      expect(find.text('สนามรออนุมัติ'), findsNothing);
+      expect(find.text('สนามที่จบแล้ว'), findsNothing);
+      expect(find.text('ยืนยันแล้ว'), findsNWidgets(2));
+      // Soonest first.
+      expect(
+        tester.getTopLeft(find.text('สนามลาดพร้าว')).dy,
+        lessThan(tester.getTopLeft(find.text('สนามบางนา')).dy),
+      );
+      // The section sits directly above the my-bookings entry point.
+      expect(
+        tester.getTopLeft(find.text('นัดหมายกำลังจะเริ่ม')).dy,
+        lessThan(tester.getTopLeft(find.text('ประวัติการจองของฉัน')).dy),
+      );
+    },
+  );
+
+  testWidgets('no upcoming section when the booker has nothing scheduled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('นัดหมายกำลังจะเริ่ม'), findsNothing);
+  });
+
+  testWidgets('swiping an upcoming appointment cancels it after confirmation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    repo.myBookings = [
+      _booking(
+        id: 'booking-soon',
+        venueName: 'สนามลาดพร้าว',
+        startsAt: now.add(const Duration(hours: 2)),
+        endsAt: now.add(const Duration(hours: 3)),
+      ),
+    ];
+
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('ยกเลิก'), findsNothing);
+    expect(
+      find.text('ปัดการ์ดนัดหมายไปทางซ้ายเพื่อยกเลิกการจอง'),
+      findsOneWidget,
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('upcoming_booking-soon')),
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ยืนยันยกเลิก'));
+    await tester.pumpAndSettle();
+
+    expect(repo.cancelledBookingIds, ['booking-soon']);
+    expect(find.text('ยกเลิกการจองแล้ว'), findsOneWidget);
+    expect(find.text('สนามลาดพร้าว'), findsNothing);
+    // The card keeps the section (and its notice) alive after the row goes,
+    // so the booker sees why the appointment disappeared.
+    expect(find.text('นัดหมายกำลังจะเริ่ม'), findsOneWidget);
+    expect(
+      find.text('ปัดการ์ดนัดหมายไปทางซ้ายเพื่อยกเลิกการจอง'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a failed cancel keeps the row and explains why', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    repo.myBookings = [
+      _booking(
+        id: 'booking-soon',
+        venueName: 'สนามลาดพร้าว',
+        startsAt: now.add(const Duration(hours: 2)),
+        endsAt: now.add(const Duration(hours: 3)),
+      ),
+    ];
+    repo.cancelError = Exception('CUTOFF_PASSED');
+
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    await tester.drag(
+      find.byKey(const ValueKey('upcoming_booking-soon')),
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ยืนยันยกเลิก'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('สนามลาดพร้าว'), findsOneWidget);
+    expect(
+      find.text('เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('signed-out bookers never load their booking list', (
+    tester,
+  ) async {
+    repo.myBookings = [
+      _booking(
+        id: 'booking-soon',
+        venueName: 'สนามลาดพร้าว',
+        startsAt: DateTime.now().add(const Duration(hours: 2)),
+        endsAt: DateTime.now().add(const Duration(hours: 3)),
+      ),
+    ];
+
+    await tester.pumpWidget(_harness(repo, userId: null));
+    await _openSheet(tester);
+
+    expect(find.text('นัดหมายกำลังจะเริ่ม'), findsNothing);
+    expect(find.text('สนามลาดพร้าว'), findsNothing);
   });
 }

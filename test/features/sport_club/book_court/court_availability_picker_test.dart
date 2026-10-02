@@ -16,6 +16,16 @@ void main() {
       expect(start.toUtc(), DateTime.utc(2030, 1, 1, 7));
     });
 
+    test('maps a UTC booking instant back to venue wall time', () {
+      final wall = VenueLocalTime.wallTimeOfInstant(
+        DateTime.utc(2030, 1, 1, 14),
+        'Asia/Bangkok',
+      );
+
+      expect(wall.hour, 21);
+      expect(wall.day, 1);
+    });
+
     test('uses calendar-day boundaries across daylight-saving changes', () {
       final date = DateTime(2024, 3, 10);
       final start = VenueLocalTime.atWallTime(date, 'America/New_York', 0);

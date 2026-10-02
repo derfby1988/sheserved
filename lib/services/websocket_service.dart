@@ -21,16 +21,19 @@ class WebSocketService {
   static const int _maxConnectionAttempts = 3;
   static const int _socketReconnectionAttempts = 10;
   Timer? _heartbeatTimer;
+  Timer? _authRetryTimer;
 
-  // ── W3.5/W3.6: token lifecycle state ──
-  // socket.io bakes `auth` into options at construction — internal
-  // auto-reconnect would keep sending the OLD token after a refresh.
-  // We therefore dispose+recreate the socket whenever the backend access
-  // token rotates, and stop entirely when tokens are cleared (revoke/logout).
+  // socket.io bakes `auth` into the options at construction, so token changes
+  // must rebuild the socket instead of relying on its internal reconnect.
   String? _userId;
   String? _authToken;
   StreamSubscription<String?>? _tokenSub;
+  bool _authUserLifecycleWatching = false;
+  bool _connectionRequested = false;
   bool _handlingAuthFailure = false;
+  int _authRecoveryAttempts = 0;
+  int _authRetryCount = 0;
+  static const int _maxAuthRecoveries = 3;
 
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
@@ -198,6 +201,16 @@ class WebSocketService {
     debugPrint('[WebSocket] emit application-review-notification OK');
   }
 
+  /// Ask the backend to re-publish the persisted `app_notifications` rows for
+  /// a venue booking (requested/decided/cancelled/slot_changed). The server
+  /// resolves recipients from the database — the same client→server→client
+  /// path the Fitness Buddies join-approval flow uses — so delivery does not
+  /// depend on the pg_notify LISTEN bridge being alive.
+  void sendVenueBookingNotification({required String bookingId}) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('venue-booking-notification', {'bookingId': bookingId});
+  }
+
   WebSocketService._(this._serverUrl);
 
   /// Singleton instance
@@ -230,6 +243,23 @@ class WebSocketService {
       debugPrint('WebSocket is disabled');
       return;
     }
+    authToken ??= AuthenticatedHttpClient.instance.accessToken;
+    if (AppConfig.useBackendAuth && userId != null && authToken == null) {
+      _errorController.add('Verified login required for realtime updates');
+      disconnect();
+      return;
+    }
+    _connectionRequested = true;
+    _authRetryTimer?.cancel();
+    _authRetryTimer = null;
+
+    // socket.io bakes `auth` into the options at construction, so an existing
+    // socket must never be reused once the identity/token we hold differs —
+    // otherwise a refreshed token would never reach the handshake and the
+    // connection would keep failing with the stale one.
+    if (_socket != null && (authToken != _authToken || userId != _userId)) {
+      _disposeSocket();
+    }
 
     if (_isConnected) {
       debugPrint('WebSocket already connected');
@@ -246,6 +276,7 @@ class WebSocketService {
     _userId = userId;
     _authToken = authToken;
     _watchTokenLifecycle();
+    _watchAuthUserLifecycle();
 
     // Check connection attempts to prevent infinite retry
     if (_connectionAttempts >= _maxConnectionAttempts) {
@@ -275,11 +306,18 @@ class WebSocketService {
             .build(),
       );
 
+      final socket = _socket!;
+
       // Connection Events
-      _socket!.onConnect((_) {
+      socket.onConnect((_) {
+        if (!identical(_socket, socket)) return;
         debugPrint('WebSocket connected');
         _isConnected = true;
-        _connectionAttempts = 0; // Reset on successful connection
+        _connectionAttempts = 0;
+        _authRecoveryAttempts = 0;
+        _authRetryCount = 0;
+        _authRetryTimer?.cancel();
+        _authRetryTimer = null;
         _connectionController.add(true);
 
         // Start heartbeat to keep connection alive in background
@@ -288,7 +326,7 @@ class WebSocketService {
         // Send user info after connection
         if (userId != null) {
           final user = AuthService.instance.currentUser;
-          _socket!.emit('user-connected', {
+          socket.emit('user-connected', {
             'userId': userId,
             // ✅ [Yield Way] ส่ง settings สำหรับ Server คัดกรองการให้ทาง
             'isThaiMhungEnabled': user?.isThaiMhungEnabled ?? false,
@@ -301,13 +339,15 @@ class WebSocketService {
         }
       });
 
-      _socket!.onDisconnect((_) {
+      socket.onDisconnect((_) {
+        if (!identical(_socket, socket)) return;
         debugPrint('WebSocket disconnected');
         _isConnected = false;
         _connectionController.add(false);
       });
 
-      _socket!.onConnectError((error) {
+      socket.onConnectError((error) {
+        if (!identical(_socket, socket)) return;
         _isConnected = false;
         _connectionErrorLogCount++;
         final now = DateTime.now();
@@ -325,10 +365,8 @@ class WebSocketService {
         }
         _errorController.add('Connection error: $error');
 
-        // W3.6: handshake rejected by socket-auth (expired/revoked token or
-        // strict-mode legacy rejection) — refresh once or stop retrying.
         if (_isSocketAuthError(error)) {
-          unawaited(_handleSocketAuthFailure());
+          unawaited(_handleSocketAuthFailure(source: socket));
         }
       });
 
@@ -474,15 +512,24 @@ class WebSocketService {
         _applicationNotificationController.add(Map<String, dynamic>.from(data));
       });
 
-      _socket!.on('error', (error) {
+      socket.on('session-revoked', (_) {
+        if (!identical(_socket, socket)) return;
+        unawaited(_handleServerSessionRevoked(socket));
+      });
+
+      socket.on('error', (error) {
+        if (!identical(_socket, socket)) return;
         if (kDebugMode) {
           debugPrint('WebSocket error: $error');
         }
         _errorController.add('Error: $error');
+        if (_isSocketAuthError(error)) {
+          unawaited(_handleSocketAuthFailure(source: socket));
+        }
       });
 
       // เชื่อมต่อหลังจาก setup events แล้ว
-      _socket!.connect();
+      socket.connect();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to connect WebSocket: $e');
@@ -812,70 +859,200 @@ class WebSocketService {
     });
   }
 
-  /// W3.6 — subscribe once to backend token rotation. A new access token
-  /// rebuilds the socket (socket.io cannot mutate auth on an existing
-  /// connection); `null` means logout/revoke → disconnect and stop retrying.
   void _watchTokenLifecycle() {
-    _tokenSub ??= AuthenticatedHttpClient.instance.tokenChanges.listen((
-      token,
-    ) {
+    _tokenSub ??= AuthenticatedHttpClient.instance.tokenChanges.listen((token) {
       if (token == null) {
-        // Session revoked/logged out — never retry with the old token.
         _authToken = null;
         disconnect();
         return;
       }
-      if (_socket != null && token != _authToken) {
-        final uid = _userId;
-        disconnect(); // disposes the stale-token socket + resets attempts
-        if (uid != null && _isEnabled) {
-          unawaited(connect(userId: uid, authToken: token));
-        }
+      if (token == _authToken) return;
+
+      final userId = _userId;
+      _authToken = token;
+      _cancelAuthRetry(resetCount: true);
+      if (_connectionRequested && _isEnabled && userId != null) {
+        _disposeSocket();
+        unawaited(connect(userId: userId, authToken: token));
       }
+    });
+  }
+
+  void _watchAuthUserLifecycle() {
+    if (_authUserLifecycleWatching) return;
+    AuthService.instance.addListener(_handleAuthUserChanged);
+    _authUserLifecycleWatching = true;
+  }
+
+  void _handleAuthUserChanged() {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId == _userId) return;
+
+    final shouldReconnect =
+        _connectionRequested && userId != null && _isEnabled;
+    _cancelAuthRetry(resetCount: true);
+    _disposeSocket();
+    _userId = userId;
+    _authToken = AuthenticatedHttpClient.instance.accessToken;
+
+    if (userId == null) {
+      _connectionRequested = false;
+      _authToken = null;
+      return;
+    }
+    if (shouldReconnect) {
+      unawaited(connect(userId: userId, authToken: _authToken));
+    }
+  }
+
+  void _cancelAuthRetry({bool resetCount = false}) {
+    _authRetryTimer?.cancel();
+    _authRetryTimer = null;
+    if (resetCount) _authRetryCount = 0;
+  }
+
+  void _scheduleAuthRetry() {
+    if (_authRetryTimer != null ||
+        !_connectionRequested ||
+        !_isEnabled ||
+        _userId == null ||
+        _authToken == null) {
+      return;
+    }
+
+    const delaysInSeconds = [5, 15, 30];
+    final delayIndex = _authRetryCount < delaysInSeconds.length
+        ? _authRetryCount
+        : delaysInSeconds.length - 1;
+    _authRetryCount++;
+    _authRetryTimer = Timer(Duration(seconds: delaysInSeconds[delayIndex]), () {
+      _authRetryTimer = null;
+      if (!_connectionRequested || !_isEnabled) return;
+      unawaited(_handleSocketAuthFailure());
     });
   }
 
   bool _isSocketAuthError(dynamic error) =>
       error.toString().contains('Authentication failed');
 
-  /// Handshake auth was rejected: try one refresh (single-flight in
-  /// [AuthenticatedHttpClient]); on failure the session is revoked/expired —
-  /// clear tokens and stop the socket rather than retrying stale credentials.
-  Future<void> _handleSocketAuthFailure() async {
-    if (_handlingAuthFailure) return;
+  Future<void> _handleSocketAuthFailure({IO.Socket? source}) async {
+    if ((source != null && !identical(_socket, source)) ||
+        _handlingAuthFailure) {
+      return;
+    }
     _handlingAuthFailure = true;
+    final failedToken = _authToken;
+    final failedUserId = _userId;
     try {
-      final client = AuthenticatedHttpClient.instance;
-      if (_authToken == null) {
-        // Legacy/anonymous handshake rejected (e.g. STRICT_SOCKET_AUTH) —
-        // no refresh path exists; stop retrying.
+      if (failedToken == null) {
         disconnect();
-        _errorController.add('Verified login required for realtime updates');
+        _errorController.add('Realtime updates require a valid login');
         return;
       }
-      final refreshed = await client.refreshTokens();
-      if (!refreshed) {
-        await client.clearTokens();
+      if (_authRecoveryAttempts >= _maxAuthRecoveries) {
         disconnect();
-        _errorController.add('Session expired — please log in again');
+        _errorController.add(
+          'Realtime updates unavailable — please log in again',
+        );
+        return;
       }
-      // On success tokenChanges emitted the new token → listener reconnects.
+
+      final client = AuthenticatedHttpClient.instance;
+      final result = await client.refreshTokens();
+      final token = client.accessToken;
+      if (result == TokenRefreshResult.refreshed &&
+          token != null &&
+          token != failedToken &&
+          failedUserId == _userId) {
+        _authRecoveryAttempts++;
+      }
+      if (failedToken != _authToken ||
+          failedUserId != _userId ||
+          (source != null && !identical(_socket, source))) {
+        return;
+      }
+
+      switch (result) {
+        case TokenRefreshResult.refreshed:
+          if (token == null || token == failedToken) {
+            _disposeSocket();
+            _errorController.add(
+              'Realtime updates temporarily unavailable; retrying',
+            );
+            _scheduleAuthRetry();
+            return;
+          }
+          return;
+        case TokenRefreshResult.rejected:
+          _disposeSocket();
+          if (AuthService.instance.currentUser != null) {
+            try {
+              await AuthService.instance.logout();
+            } catch (_) {}
+          }
+          _errorController.add('Session expired — please log in again');
+          return;
+        case TokenRefreshResult.unavailable:
+          _disposeSocket();
+          _errorController.add(
+            'Realtime authentication temporarily unavailable; retrying',
+          );
+          _scheduleAuthRetry();
+          return;
+        case TokenRefreshResult.missingRefreshToken:
+          _disposeSocket();
+          _errorController.add(
+            'Realtime updates unavailable — please log in again',
+          );
+          return;
+      }
+    } catch (error) {
+      _disposeSocket();
+      _errorController.add(
+        'Realtime authentication temporarily unavailable; retrying',
+      );
+      _scheduleAuthRetry();
     } finally {
       _handlingAuthFailure = false;
     }
   }
 
-  /// Disconnect from server
-  void disconnect() {
-    _stopHeartbeat();
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket!.dispose();
-      _socket = null;
-      _isConnected = false;
-      resetConnectionAttempts();
-      _connectionController.add(false);
+  Future<void> _handleServerSessionRevoked(IO.Socket source) async {
+    if (!identical(_socket, source)) return;
+    disconnect();
+    try {
+      await AuthenticatedHttpClient.instance.clearTokens();
+    } catch (_) {}
+    if (AuthService.instance.currentUser != null) {
+      try {
+        await AuthService.instance.logout();
+      } catch (_) {}
     }
+    _errorController.add('Session expired — please log in again');
+  }
+
+  void _disposeSocket() {
+    _stopHeartbeat();
+    final socket = _socket;
+    final wasConnected = _isConnected;
+    _socket = null;
+    _isConnected = false;
+    if (socket != null) {
+      socket.disconnect();
+      socket.dispose();
+      resetConnectionAttempts();
+    }
+    if (socket != null || wasConnected) _connectionController.add(false);
+  }
+
+  /// Disconnect from server and stop automatic recovery.
+  void disconnect() {
+    _connectionRequested = false;
+    _cancelAuthRetry(resetCount: true);
+    _authRecoveryAttempts = 0;
+    _userId = null;
+    _authToken = null;
+    _disposeSocket();
   }
 
   /// Start a custom heartbeat ping
@@ -976,6 +1153,10 @@ class WebSocketService {
   void dispose() {
     _tokenSub?.cancel();
     _tokenSub = null;
+    if (_authUserLifecycleWatching) {
+      AuthService.instance.removeListener(_handleAuthUserChanged);
+      _authUserLifecycleWatching = false;
+    }
     disconnect();
     _connectionController.close();
     _locationController.close();

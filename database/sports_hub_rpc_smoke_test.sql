@@ -67,7 +67,7 @@ END $$;
 -- `security_invoker` view option needs Postgres 15+ (Supabase production).
 -- For a local Postgres <15, strip the option into a scratch copy first:
 --   mkdir -p /tmp/migcheck
---   for f in supabase/migrations/20260924*sports_hub*.sql; do
+--   for f in supabase/migrations/2026*sports_hub*.sql; do
 --     sed 's/WITH (security_invoker = on)//g' "$f" > "/tmp/migcheck/$(basename "$f")"
 --   done
 -- then point the \ir paths below at /tmp/migcheck instead of ../supabase.
@@ -85,6 +85,7 @@ END $$;
 \ir ../supabase/migrations/20261001130000_sports_hub_fail_closed_missing_hours.sql
 \ir ../supabase/migrations/20261001140000_sports_hub_booking_venue_timezone.sql
 \ir ../supabase/migrations/20261002100000_sports_hub_public_venue_owner_profile.sql
+\ir ../supabase/migrations/20261003100000_sports_hub_court_time_pricing.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -129,6 +130,8 @@ DECLARE
   v_court3 uuid; v_terms int; v_platform_version int;
   v_platform_terms jsonb; v_platform_booking uuid;
   v_platform_booking2 uuid; v_b1 uuid; v_b2 uuid; v_b3 uuid;
+  v_price_court uuid; v_price_booking uuid; v_price_quote jsonb;
+  v_price_version bigint; v_pending_price_booking uuid;
   v_b4 uuid; v_b5 uuid; v_review uuid; v_missing text[];
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
@@ -332,6 +335,123 @@ BEGIN
       pg_temp.bkk_ts(4, '10:00'), pg_temp.bkk_ts(4, '11:00'),
       99, 'idem-3')$$, v_cust, v_court));
 
+  v_price_court := public.upsert_sports_venue_court(
+    v_owner, NULL, v_venue, v_sport, 'Court Price Schedule',
+    1, 100, 'hour', 'synthetic', true, 'instant', NULL, true,
+    jsonb_build_array(
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '08:00', 'end_time', '10:00',
+        'price_per_hour', 60),
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '10:00', 'end_time', '22:00',
+        'price_per_hour', 120),
+      jsonb_build_object(
+        'day_of_week', EXTRACT(DOW FROM
+          ((now() AT TIME ZONE 'Asia/Bangkok')::date + 13))::SMALLINT,
+        'start_time', '09:00', 'end_time', '10:00',
+        'price_per_hour', 180)));
+  SELECT price_schedule_version INTO v_price_version
+  FROM public.sports_venue_courts WHERE id = v_price_court;
+  v_price_quote := public.quote_sports_venue_court_price(
+    v_price_court, pg_temp.bkk_ts(12, '09:30'),
+    pg_temp.bkk_ts(12, '11:00'));
+  PERFORM pg_temp.expect(
+    (v_price_quote->>'total_amount')::numeric = 150
+      AND jsonb_array_length(v_price_quote->'breakdown') = 2,
+    'time prices are prorated across rule boundaries');
+  v_price_quote := public.quote_sports_venue_court_price(
+    v_price_court, pg_temp.bkk_ts(13, '09:30'),
+    pg_temp.bkk_ts(13, '10:30'));
+  PERFORM pg_temp.expect((v_price_quote->>'total_amount')::numeric = 150,
+    'weekday-specific rate overrides the all-day rate');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.quote_sports_venue_prices_for_local_slot(
+      ARRAY[v_venue],
+      (now() AT TIME ZONE 'Asia/Bangkok')::date + 12,
+      '09:30', 60) q
+    WHERE q.venue_id = v_venue AND q.total_amount = 90),
+    'price filter quotes the selected local time and duration');
+  PERFORM pg_temp.expect((SELECT starting_price_amount = 60
+    FROM public.sports_venue_price_summary_public
+    WHERE venue_id = v_venue),
+    'venue starting price is the lowest hourly rate');
+
+  v_price_booking := public.create_sports_venue_booking(
+    v_cust, v_price_court, pg_temp.bkk_ts(12, '09:30'),
+    pg_temp.bkk_ts(12, '11:00'), v_terms, 'priced-booking-v1',
+    v_price_version);
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_price_booking
+      AND price_total_snapshot = 150
+      AND jsonb_array_length(price_breakdown_snapshot) = 2
+      AND price_schedule_version_snapshot = v_price_version),
+    'booking snapshots the authoritative total and breakdown');
+  PERFORM pg_temp.expect_raise('scheduled booking requires current price version',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(13, '10:00'), pg_temp.bkk_ts(13, '11:00'),
+      %s, 'priced-booking-old-client')$$,
+      v_cust, v_price_court, v_terms), 'PRICE_VERSION_REQUIRED');
+
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_price_court, v_venue, v_sport, 'Court Price Schedule',
+    1, 100, 'hour', 'synthetic', true, 'instant', NULL, true,
+    jsonb_build_array(
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '08:00', 'end_time', '10:00',
+        'price_per_hour', 70),
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '10:00', 'end_time', '22:00',
+        'price_per_hour', 120)));
+  PERFORM pg_temp.expect((SELECT price_total_snapshot = 150
+    FROM public.sports_venue_bookings WHERE id = v_price_booking),
+    'price edits do not rewrite existing booking snapshots');
+  PERFORM pg_temp.expect_raise('stale price quote cannot create booking',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(14, '10:00'), pg_temp.bkk_ts(14, '11:00'),
+      %s, 'priced-booking-stale', %s)$$,
+      v_cust, v_price_court, v_terms, v_price_version), 'PRICE_CHANGED');
+  PERFORM pg_temp.expect_raise('overlapping price rules are rejected',
+    format($s$SELECT public.upsert_sports_venue_court(
+      %L, %L, %L, %L, %L, 1, 100, 'hour', 'synthetic', true,
+      'instant', NULL, true, %L::jsonb)$s$,
+      v_owner, v_price_court, v_venue, v_sport, 'Court Price Schedule',
+      jsonb_build_array(
+        jsonb_build_object('day_of_week', NULL, 'start_time', '08:00',
+          'end_time', '12:00', 'price_per_hour', 100),
+        jsonb_build_object('day_of_week', NULL, 'start_time', '11:00',
+          'end_time', '13:00', 'price_per_hour', 120))::text),
+    'OVERLAPPING_PRICE_RULES');
+
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_price_court, v_venue, v_sport, 'Court Price Schedule',
+    1, 100, 'hour', 'synthetic', true, 'owner_approval', NULL, true,
+    jsonb_build_array(
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '08:00', 'end_time', '10:00',
+        'price_per_hour', 70),
+      jsonb_build_object(
+        'day_of_week', NULL, 'start_time', '10:00', 'end_time', '22:00',
+        'price_per_hour', 120)));
+  SELECT price_schedule_version INTO v_price_version
+  FROM public.sports_venue_courts WHERE id = v_price_court;
+  v_pending_price_booking := public.create_sports_venue_booking(
+    v_cust2, v_price_court, pg_temp.bkk_ts(15, '09:30'),
+    pg_temp.bkk_ts(15, '10:30'), v_terms, 'priced-pending-v1',
+    v_price_version);
+  PERFORM public.change_pending_venue_booking_slot(
+    v_cust2, v_pending_price_booking,
+    pg_temp.bkk_ts(16, '10:00'), pg_temp.bkk_ts(16, '11:00'),
+    v_terms, v_price_version);
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_bookings
+    WHERE id = v_pending_price_booking
+      AND status = 'pending'
+      AND starts_at = pg_temp.bkk_ts(16, '10:00')
+      AND price_total_snapshot = 120
+      AND price_schedule_version_snapshot = v_price_version),
+    'pending reschedule refreshes its price snapshot for the new slot');
+
   -- authorization
   PERFORM pg_temp.expect_raise('stranger cannot cancel booking',
     format($$SELECT public.cancel_sports_venue_booking(%L, %L, 'not mine')$$,
@@ -491,6 +611,19 @@ BEGIN
     pg_temp.bkk_ts(3, '11:00'), v_terms, 'idem-4');
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
     WHERE id = v_b2) = 'pending', 'owner-approval court creates pending');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.app_notifications
+    WHERE recipient_id = v_owner
+      AND category = 'venue_booking'
+      AND event_type = 'venue_booking.requested'
+      AND payload->>'bookingId' = v_b2::text),
+    'pending approval notification is persisted for the venue owner');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.list_app_notifications(
+      v_owner, 'venue_booking', 50, false) n
+    WHERE n.event_type = 'venue_booking.requested'
+      AND n.payload->>'bookingId' = v_b2::text),
+    'owner can load pending approval notification in the panel');
 
   PERFORM pg_temp.expect_raise('non-manager cannot approve booking',
     format($$SELECT public.decide_sports_venue_booking(%L, %L, 'approve')$$,

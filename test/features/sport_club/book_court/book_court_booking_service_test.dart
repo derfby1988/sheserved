@@ -37,6 +37,7 @@ void main() {
                 required endsAt,
                 required termsVersion,
                 idempotencyKey,
+                priceScheduleVersion,
               }) async {
                 calls++;
                 return 'b1';
@@ -50,6 +51,7 @@ void main() {
                 required startsAt,
                 required endsAt,
                 termsVersion,
+                priceScheduleVersion,
               }) async {},
         );
 
@@ -70,7 +72,7 @@ void main() {
 
     test('forwards court, slot, terms version and idempotency key', () async {
       String? gotCourt, gotKey;
-      int? gotTerms;
+      int? gotTerms, gotPriceScheduleVersion;
       final service = BookCourtBookingService(
         create:
             ({
@@ -80,10 +82,12 @@ void main() {
               required endsAt,
               required termsVersion,
               idempotencyKey,
+              priceScheduleVersion,
             }) async {
               gotCourt = courtId;
               gotTerms = termsVersion;
               gotKey = idempotencyKey;
+              gotPriceScheduleVersion = priceScheduleVersion;
               return 'booking-7';
             },
         cancel: (_, _, {reason}) async {},
@@ -95,6 +99,7 @@ void main() {
               required startsAt,
               required endsAt,
               termsVersion,
+              priceScheduleVersion,
             }) async {},
       );
 
@@ -106,11 +111,13 @@ void main() {
         endsAt: startsAt.add(const Duration(hours: 2)),
         termsVersion: 3,
         idempotencyKey: 'idem-9',
+        priceScheduleVersion: 7,
       );
       expect(id, 'booking-7');
       expect(gotCourt, 'court-1');
       expect(gotTerms, 3);
       expect(gotKey, 'idem-9');
+      expect(gotPriceScheduleVersion, 7);
     });
 
     test('server errors (e.g. TERMS_VERSION_CHANGED) propagate', () {
@@ -123,6 +130,7 @@ void main() {
               required endsAt,
               required termsVersion,
               idempotencyKey,
+              priceScheduleVersion,
             }) async => throw StateError('TERMS_VERSION_CHANGED'),
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
@@ -133,6 +141,7 @@ void main() {
               required startsAt,
               required endsAt,
               termsVersion,
+              priceScheduleVersion,
             }) async {},
       );
 
@@ -166,6 +175,7 @@ void main() {
                 required endsAt,
                 required termsVersion,
                 idempotencyKey,
+                priceScheduleVersion,
               }) async {
                 calls.add(idempotencyKey!);
                 receivedStarts.add(startsAt);
@@ -183,6 +193,7 @@ void main() {
                 required startsAt,
                 required endsAt,
                 termsVersion,
+                priceScheduleVersion,
               }) async {},
         );
         final slots = [
@@ -191,6 +202,7 @@ void main() {
               start: DateTime(2030, 1, 1, 10 + i * 3),
               end: DateTime(2030, 1, 1, 11 + i * 3),
               idempotencyKey: 'key-$i',
+              priceScheduleVersion: 7,
             ),
         ];
         final first = await service.bookSlots(
@@ -231,6 +243,7 @@ void main() {
               required endsAt,
               required termsVersion,
               idempotencyKey,
+              priceScheduleVersion,
             }) async => throw StateError('must not call'),
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
@@ -241,6 +254,7 @@ void main() {
               required startsAt,
               required endsAt,
               termsVersion,
+              priceScheduleVersion,
             }) async {},
       );
       final result = await service.bookSlots(
@@ -251,6 +265,7 @@ void main() {
             start: DateTime(2030),
             end: DateTime(2030, 1, 1, 1),
             idempotencyKey: 'key',
+            priceScheduleVersion: null,
           ),
         ],
         termsVersion: 1,
@@ -274,6 +289,7 @@ void main() {
                 required endsAt,
                 required termsVersion,
                 idempotencyKey,
+                priceScheduleVersion,
               }) async => 'b1',
           cancel: (_, _, {reason}) async {},
           decide: (_, _, decision, {reason}) async {
@@ -287,6 +303,7 @@ void main() {
                 required startsAt,
                 required endsAt,
                 termsVersion,
+                priceScheduleVersion,
               }) async {},
         );
 
@@ -323,6 +340,7 @@ void main() {
                 required endsAt,
                 required termsVersion,
                 idempotencyKey,
+                priceScheduleVersion,
               }) async => 'b1',
           cancel: (_, _, {reason}) async {},
           decide: (_, _, _, {reason}) async => 'confirmed',
@@ -333,6 +351,7 @@ void main() {
                 required startsAt,
                 required endsAt,
                 termsVersion,
+                priceScheduleVersion,
               }) async {
                 calls++;
               },
@@ -360,6 +379,7 @@ void main() {
               required endsAt,
               required termsVersion,
               idempotencyKey,
+              priceScheduleVersion,
             }) async => 'b1',
         cancel: (_, _, {reason}) async {},
         decide: (_, _, _, {reason}) async => 'confirmed',
@@ -370,6 +390,7 @@ void main() {
               required startsAt,
               required endsAt,
               termsVersion,
+              priceScheduleVersion,
             }) async {
               calls++;
             },

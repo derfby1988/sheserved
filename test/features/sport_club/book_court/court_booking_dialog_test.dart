@@ -25,7 +25,13 @@ Future<void> _openDialog(
   DateTime? initialSlotStart,
   Future<CourtAvailability> Function(String, DateTime, DateTime)?
   loadAvailability,
-  void Function(List<({DateTime start, DateTime end})>? result)? onResult,
+  Future<VenueCourtPriceQuote> Function(
+    VenueCourt court,
+    DateTime startsAt,
+    DateTime endsAt,
+  )?
+  quotePrice,
+  void Function(List<CourtBookingSelection>? result)? onResult,
 }) async {
   final date = VenueLocalTime.addCalendarDays(
     VenueLocalTime.today('Asia/Bangkok'),
@@ -53,6 +59,10 @@ Future<void> _openDialog(
                 loadAvailability:
                     loadAvailability ??
                     (_, from, to) async => _availability(from),
+                quotePrice:
+                    quotePrice ??
+                    (_, _, _) async =>
+                        const VenueCourtPriceQuote(priceScheduleVersion: 1),
               );
               onResult?.call(result);
             },
@@ -76,7 +86,7 @@ void main() {
       VenueLocalTime.today(timezone),
       1,
     );
-    List<({DateTime start, DateTime end})>? result;
+    List<CourtBookingSelection>? result;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -105,6 +115,8 @@ void main() {
                       ),
                     ],
                   ),
+                  quotePrice: (_, _, _) async =>
+                      const VenueCourtPriceQuote(priceScheduleVersion: 1),
                 );
               },
               child: const Text('เปิดฟอร์มจอง'),
@@ -149,6 +161,34 @@ void main() {
       result!.last.end.difference(result!.last.start),
       const Duration(hours: 1),
     );
+  });
+
+  testWidgets('shows and returns the server price quote version', (
+    tester,
+  ) async {
+    List<CourtBookingSelection>? result;
+    await _openDialog(
+      tester,
+      quotePrice: (_, _, _) async => const VenueCourtPriceQuote(
+        totalAmount: 90,
+        priceAmount: 90,
+        pricingUnit: 'hour',
+        priceScheduleVersion: 3,
+        hasTimePricing: true,
+      ),
+      onResult: (selection) => result = selection,
+    );
+
+    await tester.tap(find.text('18:00'));
+    await tester.pumpAndSettle();
+    expect(find.text('ราคารวมประมาณ 90 บาท'), findsOneWidget);
+    await tester.ensureVisible(find.text('ถัดไป — อ่านเงื่อนไข'));
+    await tester.tap(find.text('ถัดไป — อ่านเงื่อนไข'));
+    await tester.pumpAndSettle();
+
+    expect(result, hasLength(1));
+    expect(result!.single.priceQuote.priceScheduleVersion, 3);
+    expect(result!.single.priceQuote.totalAmount, 90);
   });
 
   testWidgets('initial slot is summarized and remains editable', (

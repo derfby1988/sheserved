@@ -120,6 +120,7 @@ class VenueSummary {
   final String? rejectionReason;
   final double? averageRating;
   final int reviewCount;
+  final double? startingPriceAmount;
   final Set<String> amenityIds;
   final List<String> photoUrls;
   final Set<String> sportIds;
@@ -143,6 +144,7 @@ class VenueSummary {
     this.rejectionReason,
     this.averageRating,
     this.reviewCount = 0,
+    this.startingPriceAmount,
     this.amenityIds = const {},
     this.photoUrls = const [],
     this.sportIds = const {},
@@ -163,6 +165,7 @@ class VenueSummary {
         ? null
         : venueStatusFrom(j['status']?.toString()),
     courtCount: (j['court_count'] as num?)?.toInt() ?? 0,
+    startingPriceAmount: (j['starting_price_amount'] as num?)?.toDouble(),
     rejectionReason: j['rejection_reason']?.toString(),
     memberRole: j['member_role']?.toString(),
   );
@@ -170,6 +173,7 @@ class VenueSummary {
   VenueSummary copyWith({
     double? averageRating,
     int? reviewCount,
+    double? startingPriceAmount,
     int? courtCount,
     Set<String>? amenityIds,
     List<String>? photoUrls,
@@ -189,6 +193,7 @@ class VenueSummary {
     rejectionReason: rejectionReason,
     averageRating: averageRating ?? this.averageRating,
     reviewCount: reviewCount ?? this.reviewCount,
+    startingPriceAmount: startingPriceAmount ?? this.startingPriceAmount,
     amenityIds: amenityIds ?? this.amenityIds,
     photoUrls: photoUrls ?? this.photoUrls,
     sportIds: sportIds ?? this.sportIds,
@@ -205,6 +210,8 @@ class VenueCourt {
   final int capacity;
   final double? priceAmount;
   final String pricingUnit;
+  final double? startingPriceAmount;
+  final bool hasTimePricing;
   final String? courtType;
   final bool? indoor;
   final BookingApprovalMode approvalMode;
@@ -219,6 +226,8 @@ class VenueCourt {
     this.capacity = 1,
     this.priceAmount,
     this.pricingUnit = 'hour',
+    this.startingPriceAmount,
+    this.hasTimePricing = false,
     this.courtType,
     this.indoor,
     this.approvalMode = BookingApprovalMode.instant,
@@ -234,6 +243,8 @@ class VenueCourt {
     capacity: (j['capacity'] as num?)?.toInt() ?? 1,
     priceAmount: (j['price_amount'] as num?)?.toDouble(),
     pricingUnit: j['pricing_unit']?.toString() ?? 'hour',
+    startingPriceAmount: (j['starting_price_amount'] as num?)?.toDouble(),
+    hasTimePricing: j['has_time_pricing'] == true,
     courtType: j['court_type']?.toString(),
     indoor: j['indoor'] as bool?,
     approvalMode: bookingApprovalModeFrom(
@@ -242,6 +253,70 @@ class VenueCourt {
     unitLabel: j['unit_label']?.toString(),
     isActive: j['is_active'] != false,
   );
+}
+
+class VenueCourtPriceRule {
+  final int? dayOfWeek;
+  final String startTime;
+  final String endTime;
+  final double pricePerHour;
+
+  const VenueCourtPriceRule({
+    required this.dayOfWeek,
+    required this.startTime,
+    required this.endTime,
+    required this.pricePerHour,
+  });
+
+  factory VenueCourtPriceRule.fromJson(Map<String, dynamic> json) =>
+      VenueCourtPriceRule(
+        dayOfWeek: (json['day_of_week'] as num?)?.toInt(),
+        startTime: json['start_time']?.toString() ?? '00:00',
+        endTime: json['end_time']?.toString() ?? '00:00',
+        pricePerHour: (json['price_per_hour'] as num?)?.toDouble() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'day_of_week': dayOfWeek,
+    'start_time': startTime,
+    'end_time': endTime,
+    'price_per_hour': pricePerHour,
+  };
+}
+
+class VenueCourtPriceQuote {
+  final double? totalAmount;
+  final double? priceAmount;
+  final String? pricingUnit;
+  final int? priceScheduleVersion;
+  final bool hasTimePricing;
+  final String? errorCode;
+  final List<Map<String, dynamic>> breakdown;
+
+  const VenueCourtPriceQuote({
+    this.totalAmount,
+    this.priceAmount,
+    this.pricingUnit,
+    this.priceScheduleVersion,
+    this.hasTimePricing = false,
+    this.errorCode,
+    this.breakdown = const [],
+  });
+
+  factory VenueCourtPriceQuote.fromJson(Map<String, dynamic> json) =>
+      VenueCourtPriceQuote(
+        totalAmount: (json['total_amount'] as num?)?.toDouble(),
+        priceAmount: (json['price_amount'] as num?)?.toDouble(),
+        pricingUnit: json['pricing_unit']?.toString(),
+        priceScheduleVersion: (json['price_schedule_version'] as num?)?.toInt(),
+        hasTimePricing: json['has_time_pricing'] == true,
+        errorCode: json['price_error']?.toString(),
+        breakdown:
+            (json['breakdown'] as List?)
+                ?.map((row) => Map<String, dynamic>.from(row as Map))
+                .toList() ??
+            const [],
+      );
 }
 
 /// Venue operating window for one weekday, in venue-local time.
@@ -337,6 +412,9 @@ class VenueBooking {
   final String? unitLabel;
   final double? priceAmount;
   final String? pricingUnit;
+  final double? priceTotal;
+  final List<Map<String, dynamic>> priceBreakdown;
+  final int? priceScheduleVersion;
   final BookingApprovalMode approvalMode;
   final int termsVersion;
   final int cancellationCutoffMinutes;
@@ -359,6 +437,9 @@ class VenueBooking {
     this.unitLabel,
     this.priceAmount,
     this.pricingUnit,
+    this.priceTotal,
+    this.priceBreakdown = const [],
+    this.priceScheduleVersion,
     this.approvalMode = BookingApprovalMode.instant,
     this.termsVersion = 0,
     this.cancellationCutoffMinutes = 60,
@@ -407,6 +488,17 @@ class VenueBooking {
         (j['priceAmount'] as num?)?.toDouble() ??
         (j['price_amount'] as num?)?.toDouble(),
     pricingUnit: j['pricingUnit']?.toString() ?? j['pricing_unit']?.toString(),
+    priceTotal:
+        (j['priceTotal'] as num?)?.toDouble() ??
+        (j['price_total_snapshot'] as num?)?.toDouble(),
+    priceBreakdown:
+        ((j['priceBreakdown'] ?? j['price_breakdown_snapshot']) as List?)
+            ?.map((row) => Map<String, dynamic>.from(row as Map))
+            .toList() ??
+        const [],
+    priceScheduleVersion:
+        (j['priceScheduleVersion'] as num?)?.toInt() ??
+        (j['price_schedule_version_snapshot'] as num?)?.toInt(),
     approvalMode: bookingApprovalModeFrom(
       j['approvalMode']?.toString() ?? j['booking_approval_mode']?.toString(),
     ),

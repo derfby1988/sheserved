@@ -11,19 +11,40 @@ import 'presence_service.dart';
 /// This is a temporary solution until we fully integrate Supabase Auth
 class AuthService extends ChangeNotifier {
   static AuthService? _instance;
-  
+
   UserModel? _currentUser;
-  
-  AuthService._();
-  
+  bool _isLoggingOut = false;
+
+  AuthService._() {
+    AuthenticatedHttpClient.instance.tokenChanges.listen((token) {
+      if (token != null ||
+          !AppConfig.useBackendAuth ||
+          _currentUser == null ||
+          _isLoggingOut) {
+        return;
+      }
+      _currentUser = null;
+      unawaited(_stopPresenceAfterTokenClear());
+      notifyListeners();
+    });
+  }
+
+  Future<void> _stopPresenceAfterTokenClear() async {
+    try {
+      await PresenceService.instance.stop();
+    } catch (e) {
+      debugPrint('AuthService: presence stop after token clear error: $e');
+    }
+  }
+
   static AuthService get instance {
     _instance ??= AuthService._();
     return _instance!;
   }
-  
+
   /// Get current logged in user
   UserModel? get currentUser => _currentUser;
-  
+
   /// Get current user's phone number
   String? get userPhone => _currentUser?.phone;
 
@@ -35,11 +56,13 @@ class AuthService extends ChangeNotifier {
 
   /// Check if current user is provider
   bool get isProvider => _currentUser?.isProvider ?? false;
-  
+
   /// Login user (set current user) - auto starts presence heartbeat
   Future<void> login(UserModel user) async {
     _currentUser = user;
-    debugPrint('AuthService: User logged in - ${user.username} (Phone: ${user.phone})');
+    debugPrint(
+      'AuthService: User logged in - ${user.username} (Phone: ${user.phone})',
+    );
 
     // Safety net: ถ้า status เป็น busy แต่ไม่มีงาน in_progress → reset เป็น online
     unawaited(_fixStaleBusyStatusIfNeeded(user));
@@ -68,14 +91,16 @@ class AuthService extends ChangeNotifier {
         final userRepo = UserRepository(Supabase.instance.client);
         await userRepo.setAvailabilityStatus(user.id, 'online');
         _currentUser = user.copyWith(availabilityStatus: 'online');
-        debugPrint('AuthService: Auto-reset stale busy → online for ${user.id}');
+        debugPrint(
+          'AuthService: Auto-reset stale busy → online for ${user.id}',
+        );
         notifyListeners();
       }
     } catch (e) {
       debugPrint('AuthService: _fixStaleBusyStatusIfNeeded error: $e');
     }
   }
-  
+
   /// อัปเดต currentUser ในหน่วยความจำหลังข้อมูลผู้ใช้เปลี่ยน (เช่น เปลี่ยนรหัสผ่าน)
   /// ไม่ fetch ใหม่จาก DB — ใช้ user object ที่ caller มีอยู่แล้ว
   void applyUserUpdate(UserModel updatedUser) {
@@ -83,23 +108,34 @@ class AuthService extends ChangeNotifier {
     _currentUser = updatedUser;
     notifyListeners();
   }
+
   Future<void> logout() async {
-    // หยุด heartbeat ก่อน logout
-    await PresenceService.instance.stop();
-
-    // Phase 13.2: revoke refresh session ที่ backend + ลบ tokens ออกจาก
-    // secure storage (best-effort — logout ท้องถิ่นต้องสำเร็จเสมอ)
-    if (AppConfig.useBackendAuth) {
+    if (_isLoggingOut) return;
+    _isLoggingOut = true;
+    try {
+      // หยุด heartbeat ก่อน logout
       try {
-        await AuthenticatedHttpClient.instance.logout();
+        await PresenceService.instance.stop();
       } catch (e) {
-        debugPrint('AuthService: backend logout error: $e');
+        debugPrint('AuthService: presence stop error: $e');
       }
-    }
 
-    _currentUser = null;
-    debugPrint('AuthService: User logged out');
-    notifyListeners();
+      // Phase 13.2: revoke refresh session ที่ backend + ลบ tokens ออกจาก
+      // secure storage (best-effort — logout ท้องถิ่นต้องสำเร็จเสมอ)
+      if (AppConfig.useBackendAuth) {
+        try {
+          await AuthenticatedHttpClient.instance.logout();
+        } catch (e) {
+          debugPrint('AuthService: backend logout error: $e');
+        }
+      }
+
+      _currentUser = null;
+      debugPrint('AuthService: User logged out');
+      notifyListeners();
+    } finally {
+      _isLoggingOut = false;
+    }
   }
 
   /// Phase 13.2 — restore session จาก secure storage (access/refresh tokens)
@@ -107,7 +143,9 @@ class AuthService extends ChangeNotifier {
   Future<bool> restoreSession() async {
     if (!AppConfig.useBackendAuth) return false;
 
-    AuthenticatedHttpClient.instance.configure(baseUrl: AppConfig.backendApiUrl);
+    AuthenticatedHttpClient.instance.configure(
+      baseUrl: AppConfig.backendApiUrl,
+    );
     try {
       final userJson = await AuthenticatedHttpClient.instance.restoreSession();
       if (userJson == null) return false;

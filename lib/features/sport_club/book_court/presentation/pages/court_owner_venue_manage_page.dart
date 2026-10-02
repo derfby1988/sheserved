@@ -322,9 +322,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         elevation: 0,
         builder: (c) => SafeArea(
           child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(28),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             child: Container(
               color: NeumorphicTheme.baseColor,
               child: Column(
@@ -394,47 +392,49 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         .length;
     if (blocked == 0) return true;
     if (!mounted) return false;
-    unawaited(GlassDialog.show<void>(
-      context: context,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      contentPadding: EdgeInsets.zero,
-      builder: (dialogContext) => ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'ยังเอากีฬาออกไม่ได้',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+    unawaited(
+      GlassDialog.show<void>(
+        context: context,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        contentPadding: EdgeInsets.zero,
+        builder: (dialogContext) => ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'ยังเอากีฬาออกไม่ได้',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'มี $blocked คอร์ทที่เปิดใช้งานผูกกับกีฬานี้ '
-                '— ปิดการใช้งานหรือย้ายคอร์ทไปกีฬาอื่นก่อน',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: Colors.white.withValues(alpha: 0.75),
-                  height: 1.4,
+                const SizedBox(height: 12),
+                Text(
+                  'มี $blocked คอร์ทที่เปิดใช้งานผูกกับกีฬานี้ '
+                  '— ปิดการใช้งานหรือย้ายคอร์ทไปกีฬาอื่นก่อน',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.75),
+                    height: 1.4,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              GlassActionButton(
-                label: 'เข้าใจแล้ว',
-                isFilled: true,
-                fillColor: AppColors.primaryDark,
-                onTap: () => Navigator.of(dialogContext).pop(),
-              ),
-            ],
+                const SizedBox(height: 16),
+                GlassActionButton(
+                  label: 'เข้าใจแล้ว',
+                  isFilled: true,
+                  fillColor: AppColors.primaryDark,
+                  onTap: () => Navigator.of(dialogContext).pop(),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
     return false;
   }
 
@@ -487,9 +487,24 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       _toast('กรุณาตั้งค่ากีฬาของสนามก่อนเพิ่มคอร์ท');
       return;
     }
+    var priceRules = const <VenueCourtPriceRule>[];
+    if (court != null) {
+      try {
+        priceRules = await widget.repo.listMyCourtPriceRules(userId, court.id);
+      } catch (e) {
+        _toast(
+          e.toString().contains('PGRST202')
+              ? _mapError(e)
+              : 'โหลดช่วงราคาของคอร์ทไม่สำเร็จ กรุณาลองใหม่',
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
     final draft = await OwnerCourtEditorDialog.show(
       context,
       court: court,
+      priceRules: priceRules,
       sportId: court?.sportId ?? _venueSports.first['sport_id'].toString(),
       sportChoices: _sportChoices,
     );
@@ -511,6 +526,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             ? null
             : draft['unit_label'] as String?,
         isActive: draft['is_active'] as bool? ?? court?.isActive ?? true,
+        priceRules: (draft['price_rules'] as List)
+            .map(
+              (rule) => VenueCourtPriceRule.fromJson(
+                Map<String, dynamic>.from(rule as Map),
+              ),
+            )
+            .toList(),
       ),
       court == null ? 'เพิ่มคอร์ทแล้ว' : 'บันทึกคอร์ทแล้ว',
     );
@@ -646,69 +668,69 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _venue.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _venue.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
-                      if (_memberRole == 'manager')
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            'คุณเป็นผู้จัดการของสนามนี้',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.grey.shade600,
-                            ),
+                    ),
+                    if (_memberRole == 'manager')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'คุณเป็นผู้จัดการของสนามนี้',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.grey.shade600,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (reason != null &&
-                reason.isNotEmpty &&
-                status != VenueStatus.approved)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'เหตุผล: $reason',
-                  style: TextStyle(fontSize: 12.5, color: Colors.red.shade700),
+                      ),
+                  ],
                 ),
               ),
-            const SizedBox(height: 8),
-            _buildReviewAction(status),
-          ],
-        ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (reason != null &&
+              reason.isNotEmpty &&
+              status != VenueStatus.approved)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'เหตุผล: $reason',
+                style: TextStyle(fontSize: 12.5, color: Colors.red.shade700),
+              ),
+            ),
+          const SizedBox(height: 8),
+          _buildReviewAction(status),
+        ],
+      ),
     );
   }
 
@@ -781,45 +803,45 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'ข้อมูลสนาม',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'ข้อมูลสนาม',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
-                TextButton.icon(
-                  onPressed: _saving ? null : _editVenueProfile,
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('แก้ไข'),
-                ),
-              ],
-            ),
-            _infoLine(
-              Icons.location_on_outlined,
-              [
-                v['district']?.toString(),
-                v['province']?.toString(),
-              ].whereType<String>().join(', '),
-            ),
-            _infoLine(Icons.map_outlined, orNA(v['address']?.toString())),
-            _infoLine(Icons.my_location_rounded, 'พิกัด: $location'),
-            _infoLine(
-              Icons.schedule_rounded,
-              'เขตเวลา: ${orNA(v['timezone']?.toString())}',
-            ),
-            if ((v['description']?.toString() ?? '').isNotEmpty)
-              _infoLine(Icons.notes_rounded, v['description'].toString()),
-            const SizedBox(height: 4),
-            Text(
-              'รูปภาพสนาม: ไม่บังคับสำหรับการอนุมัติ',
-              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
-            ),
-          ],
-        ),
+              ),
+              TextButton.icon(
+                onPressed: _saving ? null : _editVenueProfile,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('แก้ไข'),
+              ),
+            ],
+          ),
+          _infoLine(
+            Icons.location_on_outlined,
+            [
+              v['district']?.toString(),
+              v['province']?.toString(),
+            ].whereType<String>().join(', '),
+          ),
+          _infoLine(Icons.map_outlined, orNA(v['address']?.toString())),
+          _infoLine(Icons.my_location_rounded, 'พิกัด: $location'),
+          _infoLine(
+            Icons.schedule_rounded,
+            'เขตเวลา: ${orNA(v['timezone']?.toString())}',
+          ),
+          if ((v['description']?.toString() ?? '').isNotEmpty)
+            _infoLine(Icons.notes_rounded, v['description'].toString()),
+          const SizedBox(height: 4),
+          Text(
+            'รูปภาพสนาม: ไม่บังคับสำหรับการอนุมัติ',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
     );
   }
 
@@ -855,71 +877,78 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'คอร์ท (${courts.length})',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: _saving || !canAdd ? null : () => _editCourt(),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('เพิ่มคอร์ท'),
-                ),
-              ],
-            ),
-            if (!canAdd)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
                 child: Text(
-                  'ตั้งค่ากีฬาของสนามก่อนจึงจะเพิ่มคอร์ทได้',
-                  style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                  'คอร์ท (${courts.length})',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            if (courts.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'ยังไม่มีคอร์ท',
-                  style: TextStyle(color: Colors.grey.shade600),
+              FilledButton.tonalIcon(
+                onPressed: _saving || !canAdd ? null : () => _editCourt(),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('เพิ่มคอร์ท'),
+              ),
+            ],
+          ),
+          if (!canAdd)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'ตั้งค่ากีฬาของสนามก่อนจึงจะเพิ่มคอร์ทได้',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+              ),
+            ),
+          if (courts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'ยังไม่มีคอร์ท',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            )
+          else
+            for (final court in courts)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  court.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-              )
-            else
-              for (final court in courts)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    court.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    [
-                      _sportChoices[court.sportId] ?? '',
-                      if (court.unitLabel != null) court.unitLabel!,
-                      if (court.priceAmount != null)
-                        '${court.priceAmount!.toStringAsFixed(0)} บาท/${court.pricingUnit}',
-                      court.approvalMode == BookingApprovalMode.ownerApproval
-                          ? 'รออนุมัติ'
-                          : 'ยืนยันทันที',
-                      if (!court.isActive) 'ปิดใช้งาน',
-                    ].where((s) => s.isNotEmpty).join(' · '),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: const Icon(Icons.edit_outlined, size: 18),
-                  onTap: _saving ? null : () => _editCourt(court),
+                subtitle: Text(
+                  [
+                    _sportChoices[court.sportId] ?? '',
+                    if (court.unitLabel != null) court.unitLabel!,
+                    if (court.startingPriceAmount != null)
+                      'เริ่มต้น ${_formatPrice(court.startingPriceAmount!)} บาท/ชม.',
+                    if (court.startingPriceAmount == null &&
+                        court.priceAmount != null)
+                      '${_formatPrice(court.priceAmount!)} บาท/${court.pricingUnit}',
+                    court.approvalMode == BookingApprovalMode.ownerApproval
+                        ? 'รออนุมัติ'
+                        : 'ยืนยันทันที',
+                    if (!court.isActive) 'ปิดใช้งาน',
+                  ].where((s) => s.isNotEmpty).join(' · '),
+                  style: const TextStyle(fontSize: 12),
                 ),
-          ],
-        ),
+                trailing: const Icon(Icons.edit_outlined, size: 18),
+                onTap: _saving ? null : () => _editCourt(court),
+              ),
+        ],
+      ),
     );
   }
+
+  static String _formatPrice(double amount) => amount == amount.roundToDouble()
+      ? amount.toStringAsFixed(0)
+      : amount.toStringAsFixed(2);
 
   static String _mapError(Object e) {
     final raw = e.toString();
@@ -947,6 +976,15 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     }
     if (raw.contains('INVALID_COURT')) {
       return 'กรุณากรอกชื่อคอร์ท';
+    }
+    if (raw.contains('OVERLAPPING_PRICE_RULES')) {
+      return 'ช่วงเวลาราคาซ้อนกัน กรุณาแก้ช่วงเวลา';
+    }
+    if (raw.contains('PRICE_RULES_REQUIRE_HOURLY')) {
+      return 'กรุณาเลือกคิดราคาต่อชั่วโมงก่อนกำหนดช่วงราคา';
+    }
+    if (raw.contains('INVALID_PRICE_RULE')) {
+      return 'ข้อมูลช่วงราคาหรือราคา/ชั่วโมงไม่ถูกต้อง';
     }
     if (raw.contains('INCOMPLETE_HOURS')) {
       return 'กรุณาระบุเวลาเปิด–ปิดให้ครบทั้ง 7 วัน';

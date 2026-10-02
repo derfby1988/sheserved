@@ -28,6 +28,7 @@ import 'features/articles/presentation/pages/articles_page.dart';
 import 'package:sheserved/features/sport_club/presentation/pages/sports_hub_page.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_repository.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/admin_court_owner_review_page.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/pages/court_my_bookings_page.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/court_owner_dashboard.dart';
 import 'package:sheserved/features/sport_club/find_coach/data/find_coach_repository.dart';
 import 'package:sheserved/features/sport_club/find_coach/presentation/pages/admin_coach_review_page.dart';
@@ -322,6 +323,13 @@ class SheservedApp extends StatelessWidget {
         '/community/sports': (context) => const SportsHubPage(),
         '/community/sports/courts': (context) =>
             const SportsHubPage(initialPage: 0),
+        // Booker-side venue_booking notifications land on the booker's own
+        // booking list rather than the public venue directory.
+        '/community/sports/courts/my-bookings': (context) => AuthGuardWidget(
+          child: CourtMyBookingsPage(
+            repo: BookCourtRepository(Supabase.instance.client),
+          ),
+        ),
         '/community/sports/coaches': (context) =>
             const SportsHubPage(initialPage: 2),
         '/community/sports/courts/owner/dashboard': (context) =>
@@ -377,7 +385,8 @@ class SheservedApp extends StatelessWidget {
         // Court page of the hub; they never mix with group/session ids.
         if (settings.name?.startsWith('/community/sports/courts/') == true &&
             settings.name != '/community/sports/courts/owner/dashboard' &&
-            settings.name != '/community/sports/courts/owner/applications') {
+            settings.name != '/community/sports/courts/owner/applications' &&
+            settings.name != '/community/sports/courts/my-bookings') {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => const SportsHubPage(initialPage: 0),

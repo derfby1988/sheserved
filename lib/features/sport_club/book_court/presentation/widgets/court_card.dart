@@ -9,10 +9,19 @@ class CourtCard extends StatelessWidget {
   final double? distanceKm;
   final VoidCallback? onTap;
 
-  const CourtCard({super.key, required this.venue, this.distanceKm, this.onTap});
+  const CourtCard({
+    super.key,
+    required this.venue,
+    this.distanceKm,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final startingPrice = venue.startingPriceAmount;
+    final startingPriceText = startingPrice == null
+        ? null
+        : _formatAmount(startingPrice);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -145,6 +154,17 @@ class CourtCard extends StatelessWidget {
                         ),
                     ],
                   ),
+                  if (startingPriceText != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'ราคาเริ่มต้นที่ $startingPriceText บ.',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -153,6 +173,10 @@ class CourtCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _formatAmount(double amount) => amount == amount.roundToDouble()
+      ? amount.toStringAsFixed(0)
+      : amount.toStringAsFixed(2);
 
   static IconData _amenityIcon(String key) => switch (key) {
     'parking' => Icons.local_parking_rounded,

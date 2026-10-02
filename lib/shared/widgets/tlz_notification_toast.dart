@@ -38,6 +38,21 @@ Map<String, dynamic>? groupChatNotificationRouteArguments(
 String? notificationPayloadRoute(AppNotification notification) {
   final route = notification.payload['route']?.toString();
   if (route == null || !route.startsWith('/')) return null;
+  return venueBookingNotificationRoute(notification, route);
+}
+
+/// Owner-side venue booking notifications keep the owner dashboard route;
+/// booker-side ones point at the venue deep link, which opens the public
+/// directory — the booker expects their own booking list instead.
+String venueBookingNotificationRoute(
+  AppNotification notification,
+  String route,
+) {
+  if (notification.category == 'venue_booking' &&
+      route.startsWith('/community/sports/courts/') &&
+      !route.startsWith('/community/sports/courts/owner/')) {
+    return '/community/sports/courts/my-bookings';
+  }
   return route;
 }
 

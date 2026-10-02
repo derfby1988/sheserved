@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sheserved/services/auth_service.dart';
+import 'package:sheserved/services/websocket_service.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../application/book_court_booking_service.dart';
@@ -28,6 +31,7 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
   List<VenueBooking> _bookings = [];
   bool _loading = true;
   bool _showHistory = false;
+  StreamSubscription<Map<String, dynamic>>? _notificationSub;
 
   String? get _userId => AuthService.instance.currentUser?.id;
 
@@ -41,6 +45,30 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
   @override
   void initState() {
     super.initState();
+    _load();
+    _notificationSub = WebSocketService().applicationNotificationStream.listen(
+      _onApplicationNotification,
+    );
+  }
+
+  @override
+  void dispose() {
+    _notificationSub?.cancel();
+    super.dispose();
+  }
+
+  /// A new venue_booking notification for this venue means the queue
+  /// changed — reload so the manager sees pending requests without a
+  /// manual refresh (same idea as the pending section in the group sheet).
+  void _onApplicationNotification(Map<String, dynamic> data) {
+    if (data['category']?.toString() != 'venue_booking') return;
+    final payload = data['payload'];
+    final venueId = payload is Map
+        ? payload['venueId']?.toString()
+        : null;
+    if (venueId != null && venueId.isNotEmpty && venueId != widget.venue.id) {
+      return;
+    }
     _load();
   }
 

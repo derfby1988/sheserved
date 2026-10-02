@@ -17,6 +17,9 @@ class CourtAvailabilityPicker extends StatelessWidget {
   final Set<DateTime> selectedStarts;
   final void Function(DateTime start, DateTime end)? onSlotTap;
 
+  /// Centers the header, slot grid and legend horizontally when true.
+  final bool centered;
+
   const CourtAvailabilityPicker({
     super.key,
     required this.availability,
@@ -26,6 +29,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
     this.freeOnly = false,
     this.selectedStarts = const {},
     this.onSlotTap,
+    this.centered = false,
   });
 
   /// One-hour candidate slots between 06:00 and 23:00 venue-local time.
@@ -89,41 +93,56 @@ class CourtAvailabilityPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slots = freeOnly ? freeSlots : hourlySlots(date, timezone: timezone);
+    final wrapAlignment = centered ? WrapAlignment.center : WrapAlignment.start;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: centered
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
-        const Text(
+/*         const Text(
           'ตารางเวลา',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-        ),
+        ), */
         const SizedBox(height: 8),
-        if (slots.isEmpty) const Text('ไม่มีเวลาว่างในวันที่เลือก'),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final slot in slots)
-              _SlotChip(
-                slot: slot,
-                state: _slotState(slot.start, slot.end),
-                selected: selectedStarts.contains(slot.start),
-                onTap: onSlotTap == null
-                    ? null
-                    : () => onSlotTap!(slot.start, slot.end),
-              ),
-          ],
+        if (slots.isEmpty)
+          Text(
+            'ไม่มีเวลาว่างในวันที่เลือก',
+            textAlign: centered ? TextAlign.center : null,
+          ),
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            alignment: wrapAlignment,
+            children: [
+              for (final slot in slots)
+                _SlotChip(
+                  slot: slot,
+                  state: _slotState(slot.start, slot.end),
+                  selected: selectedStarts.contains(slot.start),
+                  onTap: onSlotTap == null
+                      ? null
+                      : () => onSlotTap!(slot.start, slot.end),
+                ),
+            ],
+          ),
         ),
         if (!freeOnly) ...[
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              _legend(Colors.green.shade100, 'ว่าง'),
-              _legend(Colors.red.shade100, 'ถูกจอง'),
-              _legend(Colors.grey.shade300, 'ปิด'),
-              _legend(Colors.orange.shade100, 'ไม่พร้อม'),
-            ],
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              alignment: wrapAlignment,
+              children: [
+                _legend(Colors.green.shade100, 'ว่าง'),
+                _legend(Colors.red.shade100, 'ถูกจอง'),
+                _legend(Colors.grey.shade300, 'ปิด'),
+                _legend(Colors.orange.shade100, 'ไม่พร้อม'),
+              ],
+            ),
           ),
         ],
       ],

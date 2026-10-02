@@ -781,6 +781,75 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Venue booking notification relay. sports_hub_notify persists the
+  // app_notifications rows inside the booking RPC and pg_notify's them on
+  // 'sports_hub_notifications' — but that path only works while the LISTEN
+  // bridge is up. This event mirrors the Fitness Buddies flow: the acting
+  // client nudges the server, which resolves the persisted notification rows
+  // (and their recipients) from the database — the client payload is never
+  // trusted for recipient identity.
+  socket.on('venue-booking-notification', async (data) => {
+    if (!socketRateLimit(socket, 'venue-booking-notification')) return;
+    if (!socket.userId || !supabaseForSync) return;
+    const bookingId = data?.bookingId?.toString();
+    if (!bookingId) return;
+
+    try {
+      const { data: booking, error: bookingError } = await supabaseForSync
+        .from('sports_venue_bookings')
+        .select('id, user_id, venue_id')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (bookingError || !booking) return;
+
+      // Only the booker or a manager of that venue may trigger the relay.
+      if (booking.user_id !== socket.userId) {
+        const { data: venue } = await supabaseForSync
+          .from('sports_venues')
+          .select('owner_profile_id')
+          .eq('id', booking.venue_id)
+          .maybeSingle();
+        const profileId = venue?.owner_profile_id;
+        if (!profileId) return;
+        const [ownerRes, memberRes] = await Promise.all([
+          supabaseForSync
+            .from('sports_venue_owner_profiles')
+            .select('user_id')
+            .eq('id', profileId)
+            .maybeSingle(),
+          supabaseForSync
+            .from('sports_venue_owner_members')
+            .select('user_id')
+            .eq('owner_profile_id', profileId),
+        ]);
+        const managerIds = new Set(
+          [ownerRes.data?.user_id, ...(memberRes.data || []).map(m => m.user_id)]
+            .filter(Boolean),
+        );
+        if (!managerIds.has(socket.userId)) return;
+      }
+
+      // Only broadcast fresh rows — the mutation that triggered this event
+      // writes its notifications inside the same transaction.
+      const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: rows, error: rowsError } = await supabaseForSync
+        .from('app_notifications')
+        .select('*')
+        .eq('category', 'venue_booking')
+        .eq('payload->>bookingId', bookingId)
+        .gte('created_at', since);
+      if (rowsError || !rows || rows.length === 0) return;
+
+      for (const row of rows) {
+        if (row.recipient_id) {
+          socketService.broadcastApplicationNotification([row.recipient_id], row);
+        }
+      }
+    } catch (error) {
+      console.error('[VenueBooking] notification relay failed:', error.message);
+    }
+  });
+
   // Location update event
   socket.on('location-update', async (data) => {
     if (!socketRateLimit(socket, 'location-update')) return;
