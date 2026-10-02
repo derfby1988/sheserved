@@ -61,6 +61,13 @@ class VenueOwnerProfile {
   final String? rejectionReason;
   final DateTime? createdAt;
 
+  /// Timestamp of the latest application submission — unlike [createdAt],
+  /// this refreshes when a rejected application is resubmitted.
+  final DateTime? submittedAt;
+
+  /// When an admin last decided on the application (approve/reject/suspend).
+  final DateTime? reviewedAt;
+
   const VenueOwnerProfile({
     required this.id,
     required this.userId,
@@ -71,6 +78,8 @@ class VenueOwnerProfile {
     required this.status,
     this.rejectionReason,
     this.createdAt,
+    this.submittedAt,
+    this.reviewedAt,
   });
 
   factory VenueOwnerProfile.fromJson(Map<String, dynamic> j) =>
@@ -84,6 +93,8 @@ class VenueOwnerProfile {
         status: venueOwnerStatusFrom(j['status']?.toString()),
         rejectionReason: j['rejection_reason']?.toString(),
         createdAt: DateTime.tryParse(j['created_at']?.toString() ?? ''),
+        submittedAt: DateTime.tryParse(j['submitted_at']?.toString() ?? ''),
+        reviewedAt: DateTime.tryParse(j['reviewed_at']?.toString() ?? ''),
       );
 }
 
@@ -423,6 +434,10 @@ class VenueBooking {
   final String? bookerName;
   final DateTime? createdAt;
 
+  /// When the owner approved/rejected — drives "ถูกปฏิเสธล่าสุดก่อน" ordering
+  /// on the booker's my-bookings page. Null for undecided or legacy rows.
+  final DateTime? decidedAt;
+
   const VenueBooking({
     required this.id,
     required this.courtId,
@@ -447,6 +462,7 @@ class VenueBooking {
     this.cancellationReason,
     this.bookerName,
     this.createdAt,
+    this.decidedAt,
   });
 
   bool get isPending => status == VenueBookingStatus.pending;
@@ -514,6 +530,9 @@ class VenueBooking {
     cancellationReason: j['cancellationReason']?.toString(),
     bookerName: j['bookerName']?.toString(),
     createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+    decidedAt: DateTime.tryParse(
+      j['decidedAt']?.toString() ?? j['decided_at']?.toString() ?? '',
+    ),
   );
 }
 

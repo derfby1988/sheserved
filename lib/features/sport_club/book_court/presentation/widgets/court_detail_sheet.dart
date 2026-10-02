@@ -562,7 +562,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   }
 
   /// Booking instants are stored UTC — render them in the venue's timezone
-  /// so the slot matches what the booker picked.
+  /// so the slot matches what the booker picked. The day collapses to
+  /// 'วันนี้'/'พรุ่งนี้' when it can, else a short Thai date (12 ต.ค. 69).
   static String _bookingRangeLabel(VenueBooking booking) {
     String two(int n) => n.toString().padLeft(2, '0');
     final start = VenueLocalTime.wallTimeOfInstant(
@@ -573,8 +574,17 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
       booking.endsAt,
       booking.timezone,
     );
-    return '${start.day}/${start.month}/${start.year + 543} '
-        '${two(start.hour)}:${two(start.minute)}'
+    final today = VenueLocalTime.today(booking.timezone);
+    final startDate = VenueLocalTime.dateOfInstant(
+      booking.startsAt,
+      booking.timezone,
+    );
+    final dayLabel = startDate == today
+        ? 'วันนี้'
+        : startDate == VenueLocalTime.addCalendarDays(today, 1)
+        ? 'พรุ่งนี้'
+        : ThaiDateUtils.formatShortDateBE2Digit(start);
+    return '$dayLabel ${two(start.hour)}:${two(start.minute)}'
         '–${two(end.hour)}:${two(end.minute)}';
   }
 
@@ -996,8 +1006,34 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     return parts.length >= 2 ? '${parts[0]}.${parts[1]}' : raw ?? '';
   }
 
+  /// 'HH:MM[:SS]' → minutes since midnight; null when missing/unparsable.
+  static int? _clockMinutes(String? raw) {
+    final parts = (raw ?? '').split(':');
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return hour * 60 + minute;
+  }
+
+  /// Live open/closed state — only meaningful on today's row, the one line
+  /// that stays visible when the week is collapsed.
+  bool? _isOpenNow(VenueOperatingHours h) {
+    if (h.isClosed) return null;
+    final now = VenueLocalTime.now(widget.venue.timezone);
+    if (h.dayOfWeek != now.weekday % 7) return null;
+    final open = _clockMinutes(h.openTime);
+    final close = _clockMinutes(h.closeTime);
+    if (open == null || close == null) return null;
+    final minute = now.hour * 60 + now.minute;
+    return close > open
+        ? minute >= open && minute < close
+        : minute >= open || minute < close;
+  }
+
   Widget _hoursRow(VenueOperatingHours h) {
     final closed = h.isClosed;
+    final openNow = closed ? null : _isOpenNow(h);
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -1013,17 +1049,33 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
             ),
           ),
           Expanded(
-            child: Text(
-              closed
-                  ? 'ปิด'
-                  : '${_formatClock(h.openTime)} - ${_formatClock(h.closeTime)} น.',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: closed
-                    ? Colors.red.shade400
-                    : NeumorphicTheme.textPrimary,
-              ),
+            child: Wrap(
+              spacing: 6,
+              children: [
+                Text(
+                  closed
+                      ? 'ปิด'
+                      : '${_formatClock(h.openTime)} - ${_formatClock(h.closeTime)} น.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: closed
+                        ? Colors.red.shade400
+                        : NeumorphicTheme.textPrimary,
+                  ),
+                ),
+                if (openNow != null)
+                  Text(
+                    openNow ? 'เปิดอยู่' : 'ปิดแล้ว',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: openNow
+                          ? Colors.green.shade600
+                          : Colors.red.shade400,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

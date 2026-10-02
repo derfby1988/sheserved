@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
 import '../../data/book_court_models.dart';
@@ -28,74 +27,94 @@ class CourtOwnerVenueCard extends StatelessWidget {
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  venue.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: NeumorphicTheme.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (venue.memberRole == 'manager')
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
                   child: Text(
-                    venue.name,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                    'ผู้จัดการ',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: NeumorphicTheme.textSecondary,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (venue.memberRole == 'manager')
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Text(
-                      'ผู้จัดการ',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                _statusChip(venue.status),
-              ],
+              _statusChip(venue.status),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [venue.district, venue.province].whereType<String>().join(', '),
+            style: const TextStyle(
+              fontSize: 12,
+              color: NeumorphicTheme.textSecondary,
             ),
-            const SizedBox(height: 4),
-            Text(
-              [venue.district, venue.province].whereType<String>().join(', '),
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '${venue.courtCount} สนาม',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: NeumorphicTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (venue.averageRating != null)
                 Text(
-                  '${venue.courtCount} สนาม',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-                const SizedBox(width: 12),
-                if (venue.averageRating != null)
-                  Text(
-                    '⭐ ${venue.averageRating!.toStringAsFixed(1)} (${venue.reviewCount})',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                const Spacer(),
-                Badge(
-                  isLabelVisible: pendingCount > 0,
-                  label: Text('$pendingCount'),
-                  child: TextButton(
-                    onPressed: onViewBookings,
-                    child: const Text('การจอง'),
+                  '⭐ ${venue.averageRating!.toStringAsFixed(1)} (${venue.reviewCount})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: NeumorphicTheme.textSecondary,
                   ),
                 ),
-                const SizedBox(width: 4),
-                FilledButton.tonal(
-                  style: FilledButton.styleFrom(
-                    foregroundColor: AppColors.primaryDark,
-                  ),
-                  onPressed: onManage,
-                  child: const Text('จัดการ'),
+              const Spacer(),
+              Badge(
+                isLabelVisible: pendingCount > 0,
+                label: Text('$pendingCount'),
+                child: NeumorphicPillButton(
+                  onPressed: onViewBookings,
+                  icon: Icons.calendar_month_rounded,
+                  text: 'การจอง',
+                  height: 34,
+                  fontSize: 12.5,
+                  iconSize: 15,
+                  depth: 3,
+                  blur: 6,
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 8),
+              NeumorphicPillButton(
+                onPressed: onManage,
+                icon: Icons.tune_rounded,
+                text: 'จัดการ',
+                color: NeumorphicTheme.primaryBlue,
+                height: 34,
+                fontSize: 12.5,
+                iconSize: 15,
+                depth: 3,
+                blur: 6,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

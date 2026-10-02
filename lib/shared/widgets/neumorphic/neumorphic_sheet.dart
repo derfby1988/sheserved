@@ -563,6 +563,10 @@ class NeumorphicSwitchTile extends StatelessWidget {
 }
 
 /// ปุ่มทรงแคปซูลแบบนูน (รอง) สำหรับยกเลิกหรือปุ่มตัวเลือก เช่น วันที่/เวลา.
+///
+/// **กันข้อความล้น:** ป้ายในปุ่มย่อขนาดอัตโนมัติ (FittedBox) และความกว้างของ
+/// แคปซูลถูกจำกัดไว้ไม่เกิน [maxWidth] (ค่าเริ่มต้น = ความกว้างจอลบระยะขอบ 16
+/// ทั้งสองข้าง) ปุ่มจึงไม่ดันล้นจอแม้ถูกวางใน `Row` ที่ไม่จำกัดความกว้าง
 class NeumorphicPillButton extends StatelessWidget {
   const NeumorphicPillButton({
     super.key,
@@ -575,6 +579,8 @@ class NeumorphicPillButton extends StatelessWidget {
     this.iconSize = 18,
     this.depth = 5,
     this.blur = 10,
+    this.maxWidth,
+    this.color,
   });
 
   final String text;
@@ -582,6 +588,11 @@ class NeumorphicPillButton extends StatelessWidget {
   final IconData? icon;
   final bool active;
   final double height;
+
+  /// สีไอคอน/ข้อความ — ใช้ทำปุ่มหลักที่ยังนูนอยู่ (ไม่ต้องพึ่ง [active]
+  /// ซึ่งจะเปลี่ยนปุ่มเป็นร่องจม) ค่าเริ่มต้น: primaryBlue เมื่อ active,
+  /// textSecondary เมื่อไม่ active
+  final Color? color;
 
   /// ขนาดตัวอักษร — ลดลงได้เมื่อใช้เป็นปุ่มลิงก์ขนาดเล็กในบรรทัด
   final double fontSize;
@@ -591,10 +602,17 @@ class NeumorphicPillButton extends StatelessWidget {
   final double depth;
   final double blur;
 
+  /// เพดานความกว้างของแคปซูล — ค่าเริ่มต้นคือความกว้างหน้าจอลบ 32
+  /// ส่งค่าที่แคบกว่าได้เมื่อปุ่มอยู่ในพื้นที่จำกัด (เช่น ครึ่งความกว้าง)
+  final double? maxWidth;
+
   @override
   Widget build(BuildContext context) {
     final accent = NeumorphicTheme.primaryBlue;
     final enabled = onPressed != null;
+    final labelColor =
+        color ?? (active ? accent : NeumorphicTheme.textSecondary);
+    final cap = maxWidth ?? MediaQuery.sizeOf(context).width - 32;
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -615,30 +633,31 @@ class NeumorphicPillButton extends StatelessWidget {
                   )
                 : NeumorphicTheme.baseColor,
             child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon != null) ...[
-                    Icon(
-                      icon,
-                      size: iconSize,
-                      color: active ? accent : NeumorphicTheme.textSecondary,
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Flexible(
-                    child: Text(
-                      text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: fontSize,
-                        fontWeight: FontWeight.w600,
-                        color: active ? accent : NeumorphicTheme.textSecondary,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: cap),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: iconSize, color: labelColor),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          text,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.w600,
+                            color: labelColor,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

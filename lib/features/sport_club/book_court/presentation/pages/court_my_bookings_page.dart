@@ -29,7 +29,8 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   List<VenueReviewTag> _tagCatalog = const [];
   List<VenueReviewCategory> _categoryCatalog = const [];
   bool _loading = true;
-  bool _showHistory = false;
+  // 0 = การจอง, 1 = ถูกปฏิเสธ/หมดอายุ, 2 = ยกเลิก, 3 = เสร็จสิ้น
+  int _tab = 0;
 
   String? get _userId => AuthService.instance.currentUser?.id;
 
@@ -220,22 +221,47 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final active = _bookings
-        .where(
-          (b) =>
-              b.isPending ||
-              b.isConfirmed ||
-              b.status == VenueBookingStatus.completed,
-        )
+    // Active appointments: the nearest one leads.
+    final now = DateTime.now();
+    final active =
+        _bookings
+            .where((b) => b.isPending || b.isConfirmed)
+            .toList()
+          ..sort((a, b) {
+            final aLive = a.endsAt.isAfter(now);
+            final bLive = b.endsAt.isAfter(now);
+            if (aLive != bLive) return aLive ? -1 : 1;
+            return aLive
+                ? a.startsAt.compareTo(b.startsAt)
+                : b.startsAt.compareTo(a.startsAt);
+          });
+    // Rejections stay ahead of expired requests; rejected bookings sort by
+    // decision time, and expired requests by their scheduled start time.
+    final rejectedOrExpired =
+        _bookings
+            .where(
+              (b) =>
+                  b.status == VenueBookingStatus.rejected ||
+                  b.status == VenueBookingStatus.expired,
+            )
+            .toList()
+          ..sort((a, b) {
+            final aRejected = a.status == VenueBookingStatus.rejected;
+            final bRejected = b.status == VenueBookingStatus.rejected;
+            if (aRejected != bRejected) return aRejected ? -1 : 1;
+            return aRejected
+                ? (b.decidedAt ?? b.createdAt ?? b.startsAt).compareTo(
+                    a.decidedAt ?? a.createdAt ?? a.startsAt,
+                  )
+                : b.startsAt.compareTo(a.startsAt);
+          });
+    final cancelled = _bookings
+        .where((b) => b.status == VenueBookingStatus.cancelled)
         .toList();
-    final history = _bookings
-        .where(
-          (b) =>
-              !b.isPending &&
-              !b.isConfirmed &&
-              b.status != VenueBookingStatus.completed,
-        )
-        .toList();
+    final completed = _bookings
+        .where((b) => b.isCompleted)
+        .toList()
+      ..sort((a, b) => b.endsAt.compareTo(a.endsAt));
 
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
@@ -251,48 +277,158 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _userId == null
-          ? const Center(child: Text('กรุณาเข้าสู่ระบบเพื่อดูการจอง'))
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  if (active.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          'ยังไม่มีการจอง',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ),
-                    )
-                  else
-                    for (final b in active) _buildBookingCard(b),
-                  if (history.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showHistory = !_showHistory),
-                        icon: Icon(
-                          _showHistory
-                              ? Icons.expand_less_rounded
-                              : Icons.expand_more_rounded,
-                        ),
-                        label: Text(
-                          _showHistory
-                              ? 'ซ่อนประวัติ'
-                              : 'ประวัติการจอง (${history.length})',
-                        ),
-                      ),
-                    ),
-                    if (_showHistory)
-                      for (final b in history) _buildBookingCard(b),
-                  ],
-                ],
+          ? const Center(
+              child: Text(
+                'กรุณาเข้าสู่ระบบเพื่อดูการจอง',
+                style: TextStyle(color: NeumorphicTheme.textSecondary),
               ),
+            )
+          : Column(
+              children: [
+                _tabBar(),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: switch (_tab) {
+                      1 => _statusTab(
+                        rejectedOrExpired,
+                        'ไม่มีรายการที่ถูกปฏิเสธหรือหมดอายุ',
+                        Icons.block_outlined,
+                      ),
+                      2 => _statusTab(
+                        cancelled,
+                        'ไม่มีรายการที่ยกเลิก',
+                        Icons.cancel_outlined,
+                      ),
+                      3 => _statusTab(
+                        completed,
+                        'ไม่มีรายการที่เสร็จสิ้น',
+                        Icons.event_available_rounded,
+                      ),
+                      _ => _bookingsTab(active),
+                    },
+                  ),
+                ),
+              ],
             ),
+    );
+  }
+
+  /// Segmented tab bar — an inset track with a raised pill on the selected
+  /// tab, same raised/sunken language as the sheet chips. Tab colours follow
+  /// the status chips so the danger statuses stay red.
+  Widget _tabBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: NeumorphicInsetBox(
+        height: 44,
+        borderRadius: 22,
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          children: [
+            _tabItem(0, 'การจอง', AppColors.primaryDark),
+            _tabItem(1, 'ถูกปฏิเสธ', Colors.red),
+            _tabItem(2, 'ยกเลิก', Colors.red),
+            _tabItem(3, 'เสร็จสิ้น', AppColors.primaryDark),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabItem(int index, String label, Color activeColor) {
+    final selected = _tab == index;
+    final text = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        label,
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: 13.5,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+          color: selected ? activeColor : NeumorphicTheme.textSecondary,
+        ),
+      ),
+    );
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _tab = index),
+          borderRadius: BorderRadius.circular(18),
+          child: selected
+              ? NeumorphicContainer(
+                  height: 36,
+                  borderRadius: 18,
+                  depth: 3,
+                  blur: 6,
+                  child: Center(child: text),
+                )
+              : Center(child: text),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyCard(IconData icon, String label) {
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      borderRadius: 18,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        children: [
+          NeumorphicInsetBox(
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            padding: EdgeInsets.zero,
+            child: Icon(
+              icon,
+              size: 26,
+              color: NeumorphicTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: NeumorphicTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookingsTab(List<VenueBooking> active) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        if (active.isEmpty)
+          _emptyCard(Icons.event_busy_rounded, 'ยังไม่มีการจอง')
+        else
+          for (final b in active) _buildBookingCard(b),
+      ],
+    );
+  }
+
+  /// One list per status tab — a shared empty card when there is nothing.
+  Widget _statusTab(
+    List<VenueBooking> bookings,
+    String emptyLabel,
+    IconData emptyIcon,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        if (bookings.isEmpty)
+          _emptyCard(emptyIcon, emptyLabel)
+        else
+          for (final b in bookings) _buildBookingCard(b),
+      ],
     );
   }
 
@@ -315,6 +451,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
+                    color: NeumorphicTheme.textPrimary,
                   ),
                 ),
               ),
@@ -324,21 +461,35 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
           const SizedBox(height: 4),
           Text(
             '${b.unitLabel ?? 'สนาม'} ${b.courtName ?? ''}',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            style: const TextStyle(
+              fontSize: 13,
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
           Text(
             _fmtRange(b),
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            style: const TextStyle(
+              fontSize: 13,
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
           if (b.priceTotal != null)
             Text(
               'ราคารวม ${b.priceTotal!.toStringAsFixed(2)} บาท',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: NeumorphicTheme.textPrimary,
+              ),
             )
           else if (b.priceAmount != null)
             Text(
               '${b.priceAmount!.toStringAsFixed(0)} บาท/${_unitLabel(b.pricingUnit)}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: NeumorphicTheme.textPrimary,
+              ),
             ),
           if (b.rejectionReason?.isNotEmpty == true)
             Padding(
@@ -346,6 +497,14 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
               child: Text(
                 'เหตุผลที่ถูกปฏิเสธ: ${b.rejectionReason}',
                 style: const TextStyle(fontSize: 12.5, color: Colors.red),
+              ),
+            ),
+          if (b.status == VenueBookingStatus.expired)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'เหตุผลที่หมดอายุ: อนุมัติไม่ทัน',
+                style: TextStyle(fontSize: 12.5, color: Colors.red),
               ),
             ),
           if (b.cancellationReason?.isNotEmpty == true)
@@ -360,36 +519,80 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 if (b.isPending)
-                  TextButton.icon(
+                  _actionPill(
                     onPressed: () => _changeSlot(b),
-                    icon: const Icon(Icons.edit_calendar_rounded, size: 16),
-                    label: const Text('เปลี่ยนเวลา'),
+                    icon: Icons.edit_calendar_rounded,
+                    text: 'เปลี่ยนเวลา',
+                    color: NeumorphicTheme.textSecondary,
                   ),
                 if (b.isPending || b.isConfirmed)
-                  TextButton.icon(
+                  _actionPill(
                     onPressed: () => _cancel(b),
-                    icon: const Icon(
-                      Icons.cancel_outlined,
-                      size: 16,
-                      color: Colors.red,
-                    ),
-                    label: const Text(
-                      'ยกเลิก',
-                      style: TextStyle(color: Colors.red),
-                    ),
+                    icon: Icons.cancel_outlined,
+                    text: 'ยกเลิก',
+                    color: Colors.red,
                   ),
                 if (reviewable)
-                  FilledButton.tonalIcon(
+                  _actionPill(
                     onPressed: () => _writeReview(b),
-                    icon: const Icon(Icons.rate_review_outlined, size: 16),
-                    label: const Text('เขียนรีวิว'),
+                    icon: Icons.rate_review_outlined,
+                    text: 'เขียนรีวิว',
+                    color: AppColors.primaryDark,
                   ),
               ],
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Compact raised pill for card actions — the same shape and shadow scale
+  /// as [NeumorphicPillButton] (height 34, depth 3) but sized to its content
+  /// and tintable, so the destructive cancel keeps its red cue and pills can
+  /// sit inside a [Wrap]/[Center] without stretching full-width.
+  Widget _actionPill({
+    required IconData icon,
+    required String text,
+    required Color color,
+    VoidCallback? onPressed,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(17),
+        child: NeumorphicContainer(
+          height: 34,
+          borderRadius: 17,
+          depth: 3,
+          blur: 6,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

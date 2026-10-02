@@ -265,6 +265,30 @@ void main() {
     expect(find.text('0$tomorrowDow.00 - 1$tomorrowDow.00 น.'), findsNothing);
   });
 
+  testWidgets("only today's hours line carries a live open badge", (
+    tester,
+  ) async {
+    repo.hours = [
+      for (var day = 0; day < 7; day++)
+        VenueOperatingHours(
+          dayOfWeek: day,
+          openTime: '00:00',
+          closeTime: '24:00',
+        ),
+    ];
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('เปิดอยู่'), findsOneWidget);
+    expect(find.text('ปิดแล้ว'), findsNothing);
+
+    await tester.tap(find.text('ดูทั้งสัปดาห์'));
+    await tester.pumpAndSettle();
+
+    // The whole week shows, but only today's row can claim a live status.
+    expect(find.text('เปิดอยู่'), findsOneWidget);
+  });
+
   testWidgets('court actions stay hidden until the row is swiped left', (
     tester,
   ) async {
@@ -740,6 +764,51 @@ void main() {
       );
     },
   );
+
+  testWidgets('appointment dates collapse to วันนี้/พรุ่งนี้ or a Thai date', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    final tomorrow = now.add(const Duration(days: 1));
+    final later = now.add(const Duration(days: 5));
+    repo.myBookings = [
+      _booking(
+        id: 'booking-today',
+        venueName: 'สนามใกล้บ้าน',
+        startsAt: VenueLocalTime.atWallTime(
+          VenueLocalTime.today(_venue.timezone),
+          _venue.timezone,
+          0,
+        ),
+        endsAt: now.add(const Duration(hours: 2)),
+      ),
+      _booking(
+        id: 'booking-tomorrow',
+        venueName: 'สนามบางนา',
+        startsAt: tomorrow,
+        endsAt: tomorrow.add(const Duration(hours: 1)),
+      ),
+      _booking(
+        id: 'booking-later',
+        venueName: 'สนามอีกวัน',
+        startsAt: later,
+        endsAt: later.add(const Duration(hours: 1)),
+      ),
+    ];
+
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.textContaining('วันนี้'), findsOneWidget);
+    expect(find.textContaining('พรุ่งนี้'), findsOneWidget);
+    expect(
+      find.textContaining(ThaiDateUtils.formatShortDateBE2Digit(later)),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('no upcoming section when the booker has nothing scheduled', (
     tester,
