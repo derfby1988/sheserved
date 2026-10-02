@@ -84,6 +84,7 @@ END $$;
 \ir ../supabase/migrations/20261001120000_sports_hub_platform_venue_terms.sql
 \ir ../supabase/migrations/20261001130000_sports_hub_fail_closed_missing_hours.sql
 \ir ../supabase/migrations/20261001140000_sports_hub_booking_venue_timezone.sql
+\ir ../supabase/migrations/20261002100000_sports_hub_public_venue_owner_profile.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -271,6 +272,14 @@ BEGIN
   PERFORM pg_temp.expect(EXISTS(
     SELECT 1 FROM public.sports_venues_public WHERE id = v_venue),
     'approved venue appears in public view');
+  UPDATE public.users SET profile_image_url = 'owner-avatar-test'
+  WHERE id = v_owner;
+  PERFORM pg_temp.expect(
+    public.get_public_sports_venue_owner_profile(v_venue) =
+      jsonb_build_object(
+        'display_name', 'Owner O.',
+        'avatar_url', 'owner-avatar-test'),
+    'public owner profile only exposes masked name and avatar');
   PERFORM pg_temp.expect(EXISTS(
     SELECT 1 FROM public.sports_venue_status_events
     WHERE venue_id = v_venue AND new_status = 'approved'),

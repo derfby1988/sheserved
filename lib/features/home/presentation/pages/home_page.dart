@@ -1869,8 +1869,13 @@ class _HomePageState extends ConsumerState<HomePage>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
       );
-      Navigator.pushNamed(context, '/login');
-      return;
+      await Navigator.pushNamed(
+        context,
+        '/login',
+        arguments: {'returnAfterLogin': true},
+      );
+      if (!mounted || ServiceLocator.instance.currentUser == null) return;
+      return _onToggleBookmark(article);
     }
 
     // Save previous state for revert

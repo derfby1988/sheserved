@@ -1085,8 +1085,12 @@ class HealthArticleDialogs {
     required VoidCallback onRefreshProducts,
   }) async {
     if (AuthService.instance.currentUser == null) {
-      await Navigator.pushNamed(context, '/login');
-      if (AuthService.instance.currentUser == null) return;
+      await Navigator.pushNamed(
+        context,
+        '/login',
+        arguments: {'returnAfterLogin': true},
+      );
+      if (!context.mounted || AuthService.instance.currentUser == null) return;
     }
 
     List<MedicationModel> searchResults = [];

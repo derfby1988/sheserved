@@ -20,7 +20,6 @@ import 'package:sheserved/features/sport_club/presentation/widgets/sheets/sessio
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_session_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/edit_group_sheet.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sheets/group_invite_poster_sheet.dart';
-import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 
@@ -2667,24 +2666,22 @@ class GroupDetailSheet {
     );
   }
 
-  void _handleJoinGroup(
-    BuildContext ctx,
+  Future<void> _handleJoinGroup(
     String groupId,
     Map<String, dynamic> group,
-  ) {
-    final userId = AuthService.instance.currentUser?.id;
-    if (userId == null) {
+  ) async {
+    if (AuthService.instance.currentUser == null) {
       // Not logged in -> save intent and redirect to login
-      SportClubDeepLinkService.storePendingDeepLink(
-        GroupDetailDeepLinkData(groupId: groupId),
-      );
-      Navigator.of(ctx).popUntil((r) => r.isFirst);
-      Navigator.of(pageContext).pushNamed('/login');
-      return;
+      await Navigator.of(
+        pageContext,
+      ).pushNamed('/login', arguments: {'returnAfterLogin': true});
+      if (!pageContext.mounted || AuthService.instance.currentUser == null) {
+        return;
+      }
     }
 
     // Logged in -> open session picker to join
-    SessionPickerSheet.show(
+    await SessionPickerSheet.show(
       pageContext,
       repo: repo,
       client: client,
@@ -2822,7 +2819,7 @@ class GroupDetailSheet {
             Expanded(
               flex: isAdmin ? 3 : 1,
               child: NeumorphicVerifyButton(
-                onPressed: () => _handleJoinGroup(ctx, groupId, group),
+                onPressed: () => _handleJoinGroup(groupId, group),
                 text: group['is_private'] == true
                     ? 'ขอเข้าร่วมก๊วน'
                     : 'เข้าร่วมก๊วนทันที',

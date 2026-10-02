@@ -301,8 +301,12 @@ class _ArticlesPageState extends State<ArticlesPage> {
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
             if (AuthService.instance.currentUser == null) {
-              await Navigator.pushNamed(context, '/login');
-              if (AuthService.instance.currentUser == null) return;
+              await Navigator.pushNamed(
+                context,
+                '/login',
+                arguments: {'returnAfterLogin': true},
+              );
+              if (!mounted || AuthService.instance.currentUser == null) return;
             }
             _showCreateArticleDialog();
           },
@@ -326,7 +330,8 @@ class _ArticlesPageState extends State<ArticlesPage> {
                       if (_isNavBarVisible) {
                         setState(() => _isNavBarVisible = false);
                       }
-                    } else if (notification.direction == ScrollDirection.forward) {
+                    } else if (notification.direction ==
+                        ScrollDirection.forward) {
                       if (!_isNavBarVisible) {
                         setState(() => _isNavBarVisible = true);
                       }
@@ -335,39 +340,39 @@ class _ArticlesPageState extends State<ArticlesPage> {
                   },
                   child: CustomScrollView(
                     controller: _scrollController,
-                  slivers: [
-                    // Page Title
-                    SliverToBoxAdapter(child: _buildPageHeader(context)),
+                    slivers: [
+                      // Page Title
+                      SliverToBoxAdapter(child: _buildPageHeader(context)),
 
-                    // Filter Bar
-                    SliverToBoxAdapter(child: _buildFilterBar(context)),
+                      // Filter Bar
+                      SliverToBoxAdapter(child: _buildFilterBar(context)),
 
-                    // Articles Grid
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 8,
+                      // Articles Grid
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        sliver: _isLoading
+                            ? SliverToBoxAdapter(child: _buildSkeletonGrid())
+                            : _buildArticlesGrid(context),
                       ),
-                      sliver: _isLoading
-                          ? SliverToBoxAdapter(child: _buildSkeletonGrid())
-                          : _buildArticlesGrid(context),
-                    ),
 
-                    // Loading More Loader
-                    if (_isLoadingMore)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Center(
-                            child: CircularProgressIndicator(color: _blue),
+                      // Loading More Loader
+                      if (_isLoadingMore)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: CircularProgressIndicator(color: _blue),
+                            ),
                           ),
                         ),
-                      ),
 
-                    // Bottom spacing
-                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
-                  ],
-                ),
+                      // Bottom spacing
+                      const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -386,7 +391,11 @@ class _ArticlesPageState extends State<ArticlesPage> {
           },
           onAddPressed: () async {
             if (AuthService.instance.currentUser == null) {
-              Navigator.pushNamed(context, '/login', arguments: '/emergency-live');
+              Navigator.pushNamed(
+                context,
+                '/login',
+                arguments: '/emergency-live',
+              );
               return;
             }
             Navigator.pushNamed(context, '/emergency-live');
@@ -1548,9 +1557,7 @@ class _ArticlesPageState extends State<ArticlesPage> {
                           decoration: BoxDecoration(
                             color: _blue.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _blue.withOpacity(0.2),
-                            ),
+                            border: Border.all(color: _blue.withOpacity(0.2)),
                           ),
                           child: Wrap(
                             spacing: 8,
@@ -1829,11 +1836,8 @@ class _ArticlesPageState extends State<ArticlesPage> {
                   ),
                 ),
               ),
-           
             ],
           ),
-         
- 
         ],
       ),
     );

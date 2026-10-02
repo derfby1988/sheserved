@@ -89,6 +89,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   List<VenueCourt> _courts = [];
   List<VenueOperatingHours> _hours = [];
   List<VenueReview> _reviews = [];
+  VenueOwnerPublicProfile? _ownerProfile;
+  bool _hoursExpanded = false;
   bool _loading = true;
   bool _availabilityLoading = false;
   bool _checkingSlot = false;
@@ -115,16 +117,26 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
         ),
         widget.repo.listPublicOperatingHours(widget.venue.id),
         widget.repo.listVenueReviews(widget.venue.id, limit: 5),
+        _loadPublicOwnerProfile(),
       ]);
       if (!mounted) return;
       setState(() {
         _courts = results[0] as List<VenueCourt>;
         _hours = results[1] as List<VenueOperatingHours>;
         _reviews = results[2] as List<VenueReview>;
+        _ownerProfile = results[3] as VenueOwnerPublicProfile?;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<VenueOwnerPublicProfile?> _loadPublicOwnerProfile() async {
+    try {
+      return await widget.repo.getPublicVenueOwnerProfile(widget.venue.id);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -434,17 +446,34 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                   ],
                   if (_hours.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    _frostedCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sectionHeader(
-                            icon: Icons.schedule_rounded,
-                            title: 'เวลาเปิด-ปิด',
-                          ),
-                          const SizedBox(height: 10),
-                          for (final h in _hours) _hoursRow(h),
-                        ],
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _toggleHours,
+                      child: _frostedCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _sectionHeader(
+                              icon: Icons.schedule_rounded,
+                              title: 'เวลาเปิด-ปิด',
+                              trailing: _hoursToggle(),
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 48),
+                              child: _hoursExpanded
+                                  ? Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        for (final h in _weekOrderedHours)
+                                          _hoursRow(h),
+                                      ],
+                                    )
+                                  : _collapsedHoursRow(),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -508,6 +537,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
                       averageRating: venue.averageRating,
                       reviewCount: venue.reviewCount,
                       reviews: _reviews,
+                      ownerProfile: _ownerProfile,
                       onSeeAll: _openReviewsPage,
                     ),
                   ),
@@ -555,6 +585,59 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     );
   }
 
+  /// The hours card stays one line tall until the user taps it: collapsed it
+  /// shows today's venue-local window only, expanded it lists the whole week.
+  void _toggleHours() => setState(() => _hoursExpanded = !_hoursExpanded);
+
+  /// Weeks run Monday-first; [VenueOperatingHours.dayOfWeek] uses 0 = Sunday.
+  List<VenueOperatingHours> get _weekOrderedHours =>
+      [..._hours]
+        ..sort((a, b) => (a.dayOfWeek + 6) % 7 - ((b.dayOfWeek + 6) % 7));
+
+  Widget _collapsedHoursRow() {
+    final todayDow = VenueLocalTime.now(widget.venue.timezone).weekday % 7;
+    final today = _hours.where((h) => h.dayOfWeek == todayDow).firstOrNull;
+    if (today == null) {
+      return const Text(
+        'ไม่ระบุเวลาเปิด-ปิดของวันนี้',
+        style: TextStyle(fontSize: 12.5, color: NeumorphicTheme.textSecondary),
+      );
+    }
+    return _hoursRow(today);
+  }
+
+  Widget _hoursToggle() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _hoursExpanded ? 'ซ่อน' : 'ดูทั้งสัปดาห์',
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: NeumorphicTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        NeumorphicIconButton(
+          icon: _hoursExpanded
+              ? Icons.keyboard_arrow_up_rounded
+              : Icons.keyboard_arrow_down_rounded,
+          onPressed: _toggleHours,
+          size: 28,
+          iconSize: 18,
+          color: AppColors.primaryDark,
+        ),
+      ],
+    );
+  }
+
+  /// 'HH:MM[:SS]' → 'HH.MM'
+  static String _formatClock(String? raw) {
+    final parts = (raw ?? '').split(':');
+    return parts.length >= 2 ? '${parts[0]}.${parts[1]}' : raw ?? '';
+  }
+
   Widget _hoursRow(VenueOperatingHours h) {
     final closed = h.isClosed;
     return Padding(
@@ -573,7 +656,9 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
           ),
           Expanded(
             child: Text(
-              closed ? 'ปิด' : '${h.openTime ?? ''}–${h.closeTime ?? ''}',
+              closed
+                  ? 'ปิด'
+                  : '${_formatClock(h.openTime)} - ${_formatClock(h.closeTime)} น.',
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,

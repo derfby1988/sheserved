@@ -369,10 +369,16 @@ cd websocket-server && npm run dev
 ./start-caddy.sh
 
 # 4) Flutter — ต้องส่ง dart-define ทุกครั้ง
+#    ⚠️ อย่าลืม USE_BACKEND_AUTH=true — ถ้าลืม แอปจะใช้ legacy SHA-256 login
+#    ที่เทียบ hash กับ users.password_hash ตรงๆ ซึ่ง match ไม่ได้กับ
+#    hash Argon2id/bcrypt ที่ backend เคยเขียน → "รหัสผ่านไม่ถูกต้อง" ทั้งที่ถูก
 flutter run \
+  --dart-define=USE_BACKEND_AUTH=true \
   --dart-define=BACKEND_API_URL=http://192.168.X.X:8080 \
   --dart-define=GOOGLE_SERVER_CLIENT_ID="$(grep '^GOOGLE_CLIENT_ID=' websocket-server/.env | cut -d= -f2-)"
 ```
+
+> **`USE_BACKEND_AUTH` default = `false`** (comment ใน `app_config.dart` ที่เขียนว่า default true เป็น comment เก่าไม่ตรงโค้ด) — ลืมส่ง = legacy path เสมอ
 
 **อาการ → สาเหตุ (อ้างอิงจาก incident จริง):**
 
@@ -382,6 +388,7 @@ flutter run \
 | Social login 401 "Invalid provider token" | `serverClientId` (dart-define) ไม่ตรง `GOOGLE_CLIENT_ID` ใน `.env` — ต้องเป็น **Web client** ตัวเดียวกัน ไม่ใช่ Android/iOS client |
 | ไม่ได้ `idToken` จาก Google เลย | `serverClientId` ว่าง → ลืม `--dart-define=GOOGLE_SERVER_CLIENT_ID` |
 | Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) |
+| Login ขึ้น "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" ทั้งที่รหัสถูก (incident 2026-10-02) | ลืม `--dart-define=USE_BACKEND_AUTH=true` → แอปใช้ legacy path เทียบ `sha256(pw)` กับ `users.password_hash` ตรงๆ แต่ account ถูก migrate เป็น Argon2id/bcrypt แล้ว (register ผ่าน backend หรือ lazy rehash ตอน backend login) → match ไม่ได้ถาวร — เช็คด้วย `SELECT username, password_algo FROM users WHERE username='...'` ถ้า algo ≠ `sha256` ต้อง login ผ่าน backend เท่านั้น |
 
 > **แนวทางลดปัญหาระยะยาว:** ตั้ง **DHCP reservation** บน router ให้เครื่องหลักได้ IP เดิมทุกครั้ง — จะไม่ต้องแก้ `mainMachineIp`/`LOCAL_API_URL` เลยเมื่ออยู่เครือข่ายเดิม; ต่างเครือข่ายจริง ๆ ค่อยทำ checklist นี้
 

@@ -21,6 +21,8 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   List<VenueCourt> courts = const [];
   List<VenueOperatingHours> hours = const [];
   List<VenueReview> reviews = const [];
+  VenueOwnerPublicProfile? ownerProfile;
+  Object? ownerProfileError;
   CourtAvailability? availability;
   Object? availabilityError;
   DateTime? availabilityFrom;
@@ -44,6 +46,14 @@ class _FakeBookCourtRepository extends BookCourtRepository {
     String venueId, {
     int limit = 50,
   }) async => reviews;
+
+  @override
+  Future<VenueOwnerPublicProfile?> getPublicVenueOwnerProfile(
+    String venueId,
+  ) async {
+    if (ownerProfileError != null) throw ownerProfileError!;
+    return ownerProfile;
+  }
 
   @override
   Future<CourtAvailability> getCourtAvailability(
@@ -76,6 +86,17 @@ CourtAvailability _openAvailability({
       ),
   ],
 );
+
+/// One week of hours with a distinct window per weekday so a test can tell
+/// which day's line is on screen.
+List<VenueOperatingHours> _weekHours() => [
+  for (var day = 0; day < 7; day++)
+    VenueOperatingHours(
+      dayOfWeek: day,
+      openTime: '0$day:00',
+      closeTime: '1$day:00',
+    ),
+];
 
 Future<void> _selectAvailabilityDate(WidgetTester tester, DateTime date) async {
   final today = VenueLocalTime.today(_venue.timezone);
@@ -161,6 +182,42 @@ void main() {
 
   setUp(() {
     repo = _FakeBookCourtRepository()..courts = [_instantCourt];
+  });
+
+  testWidgets('operating hours collapse to today until the card is tapped', (
+    tester,
+  ) async {
+    repo.hours = _weekHours();
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    final todayDow = VenueLocalTime.now(_venue.timezone).weekday % 7;
+    final tomorrowDow = (todayDow + 1) % 7;
+
+    expect(find.text('เวลาเปิด-ปิด'), findsOneWidget);
+    expect(find.text('ดูทั้งสัปดาห์'), findsOneWidget);
+    expect(find.text('0$todayDow.00 - 1$todayDow.00 น.'), findsOneWidget);
+    expect(find.text('0$tomorrowDow.00 - 1$tomorrowDow.00 น.'), findsNothing);
+
+    await tester.tap(find.text('ดูทั้งสัปดาห์'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ดูทั้งสัปดาห์'), findsNothing);
+    expect(find.text('ซ่อน'), findsOneWidget);
+    for (var day = 0; day < 7; day++) {
+      expect(find.text('0$day.00 - 1$day.00 น.'), findsOneWidget);
+    }
+    expect(
+      tester.getTopLeft(find.text('จันทร์')).dy,
+      lessThan(tester.getTopLeft(find.text('อาทิตย์')).dy),
+    );
+
+    await tester.tap(find.text('ซ่อน'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ดูทั้งสัปดาห์'), findsOneWidget);
+    expect(find.text('ซ่อน'), findsNothing);
+    expect(find.text('0$tomorrowDow.00 - 1$tomorrowDow.00 น.'), findsNothing);
   });
 
   testWidgets('court actions stay hidden until the row is swiped left', (
@@ -427,5 +484,31 @@ void main() {
     expect(find.text('โหลดตารางว่างไม่สำเร็จ'), findsOneWidget);
     expect(find.text('ตารางเวลา'), findsNothing);
     expect(find.text('ลองใหม่'), findsOneWidget);
+  });
+
+  testWidgets('owner profile RPC failures keep venue details available', (
+    tester,
+  ) async {
+    repo.ownerProfileError = StateError('RPC_NOT_FOUND');
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('สนามหลังจวน'), findsOneWidget);
+    expect(find.text('ยังไม่มีรีวิว'), findsOneWidget);
+    expect(find.text('เจ้าของสนาม'), findsNothing);
+  });
+
+  testWidgets('review section loads the owner avatar and name', (tester) async {
+    repo.ownerProfile = const VenueOwnerPublicProfile(
+      displayName: 'สมชาย ศ.',
+      avatarUrl: 'https://example.invalid/avatar.png',
+    );
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('เจ้าของสนาม'), findsOneWidget);
+    expect(find.text('สมชาย ศ.'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byIcon(Icons.person_rounded), findsOneWidget);
   });
 }

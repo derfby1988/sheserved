@@ -39,7 +39,11 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
   Future<void> _checkErpAccess() async {
     final user = AuthService.instance.currentUser;
     if (user == null) {
-      if (mounted) setState(() { _canAccess = false; _accessChecked = true; });
+      if (mounted)
+        setState(() {
+          _canAccess = false;
+          _accessChecked = true;
+        });
       return;
     }
     try {
@@ -49,20 +53,31 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
       final canAccess = await _erpAccessService.canAccessAnyProfession(user.id);
       if (canAccess) {
         // Resolve the actual profession_id from employee_roles
-        _resolvedProfessionId = await _erpAccessService.getActiveProfessionId(user.id);
+        _resolvedProfessionId = await _erpAccessService.getActiveProfessionId(
+          user.id,
+        );
         // Load organization data and theme using the resolved profession_id
         final professionId = _resolvedProfessionId ?? user.professionId;
         if (professionId != null && professionId.isNotEmpty) {
-          await ref.read(organizationSettingsProvider.notifier).loadOrganization(professionId);
-          ref.read(dashboardThemeProvider.notifier).loadTheme(
-            userId: user.id,
-            professionId: professionId,
-          );
+          await ref
+              .read(organizationSettingsProvider.notifier)
+              .loadOrganization(professionId);
+          ref
+              .read(dashboardThemeProvider.notifier)
+              .loadTheme(userId: user.id, professionId: professionId);
         }
       }
-      if (mounted) setState(() { _canAccess = canAccess; _accessChecked = true; });
+      if (mounted)
+        setState(() {
+          _canAccess = canAccess;
+          _accessChecked = true;
+        });
     } catch (_) {
-      if (mounted) setState(() { _canAccess = false; _accessChecked = true; });
+      if (mounted)
+        setState(() {
+          _canAccess = false;
+          _accessChecked = true;
+        });
     }
   }
 
@@ -73,7 +88,12 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     if (user == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
+          final currentRoute = ModalRoute.of(context)?.settings.name;
+          Navigator.pushReplacementNamed(
+            context,
+            '/login',
+            arguments: currentRoute == null ? null : {'redirect': currentRoute},
+          );
         }
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -103,26 +123,40 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     final isDark = theme?.isDarkMode ?? false;
     final bgColors = isDark
         ? [const Color(0xFF0F0F0F), const Color(0xFF1A1A1A)]
-        : [const Color(0xFFDFF8FF), const Color(0xFFDFF7E8), const Color(0xFFF4E4FB)];
-    final iconColor = isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3);
+        : [
+            const Color(0xFFDFF8FF),
+            const Color(0xFFDFF7E8),
+            const Color(0xFFF4E4FB),
+          ];
+    final iconColor = isDark
+        ? const Color(0xFFCCFF00)
+        : const Color(0xFF4F7DF3);
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F0F0F) : const Color(0xFFE8F6FF),
+      backgroundColor: isDark
+          ? const Color(0xFF0F0F0F)
+          : const Color(0xFFE8F6FF),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        toolbarHeight: orgState.settings != null && orgState.settings!.branches.length > 1 ? 68 : kToolbarHeight,
+        toolbarHeight:
+            orgState.settings != null && orgState.settings!.branches.length > 1
+            ? 68
+            : kToolbarHeight,
         title: _buildAppBarTitle(orgState, isDark),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: iconColor),
         actions: [
-          if (orgState.settings != null && orgState.settings!.branches.length > 1)
+          if (orgState.settings != null &&
+              orgState.settings!.branches.length > 1)
             _BranchSelector(
               branches: orgState.settings!.branches,
               selectedBranchId: orgState.selectedBranchId,
               onChanged: (branchId) {
-                ref.read(organizationSettingsProvider.notifier).selectBranch(branchId);
+                ref
+                    .read(organizationSettingsProvider.notifier)
+                    .selectBranch(branchId);
               },
               isDark: isDark,
             ),
@@ -145,7 +179,8 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
         children: [
           ErpMiniSidebar(
             isExpanded: _isSidebarExpanded,
-            onToggle: () => setState(() => _isSidebarExpanded = !_isSidebarExpanded),
+            onToggle: () =>
+                setState(() => _isSidebarExpanded = !_isSidebarExpanded),
           ),
           Expanded(
             child: Container(
@@ -183,11 +218,19 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
     final selectedBranch = orgState.selectedBranchId != null
         ? settings.branches.firstWhere(
             (b) => b.id == orgState.selectedBranchId,
-            orElse: () => settings.selectedBranch ?? const OrganizationBranch(id: '', branchCode: '', branchName: ''),
+            orElse: () =>
+                settings.selectedBranch ??
+                const OrganizationBranch(
+                  id: '',
+                  branchCode: '',
+                  branchName: '',
+                ),
           )
         : settings.selectedBranch;
 
-    if (settings.branches.length <= 1 || selectedBranch == null || selectedBranch.branchName.isEmpty) {
+    if (settings.branches.length <= 1 ||
+        selectedBranch == null ||
+        selectedBranch.branchName.isEmpty) {
       return Text(
         'ERP Dashboard',
         style: GoogleFonts.inter(
@@ -224,7 +267,6 @@ class _ErpDashboardShellState extends ConsumerState<ErpDashboardShell> {
       ],
     );
   }
-
 }
 
 /// Compact branch selector for AppBar
@@ -244,8 +286,12 @@ class _BranchSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textColor = isDark ? Colors.white : const Color(0xFF1D2733);
-    final bgColor = isDark ? Colors.white.withOpacity(0.15) : const Color(0xFFF5FBFF);
-    final borderColor = isDark ? Colors.white.withOpacity(0.25) : const Color(0xFFD7E8F6);
+    final bgColor = isDark
+        ? Colors.white.withOpacity(0.15)
+        : const Color(0xFFF5FBFF);
+    final borderColor = isDark
+        ? Colors.white.withOpacity(0.25)
+        : const Color(0xFFD7E8F6);
 
     return Container(
       margin: const EdgeInsets.only(right: 8),
@@ -258,10 +304,20 @@ class _BranchSelector extends StatelessWidget {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isDense: true,
-          value: selectedBranchId ?? (branches.isNotEmpty ? branches.first.id : null),
-          icon: Icon(Icons.expand_more, size: 16, color: isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3)),
+          value:
+              selectedBranchId ??
+              (branches.isNotEmpty ? branches.first.id : null),
+          icon: Icon(
+            Icons.expand_more,
+            size: 16,
+            color: isDark ? const Color(0xFFCCFF00) : const Color(0xFF4F7DF3),
+          ),
           dropdownColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-          style: GoogleFonts.inter(color: textColor, fontSize: 12, fontWeight: FontWeight.w500),
+          style: GoogleFonts.inter(
+            color: textColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
           items: branches.map((branch) {
             return DropdownMenuItem<String>(
               value: branch.id,
@@ -279,4 +335,3 @@ class _BranchSelector extends StatelessWidget {
     );
   }
 }
-

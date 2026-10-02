@@ -87,6 +87,23 @@ class VenueOwnerProfile {
       );
 }
 
+class VenueOwnerPublicProfile {
+  final String? displayName;
+  final String? avatarUrl;
+
+  const VenueOwnerPublicProfile({this.displayName, this.avatarUrl});
+
+  factory VenueOwnerPublicProfile.fromJson(Map<String, dynamic> json) =>
+      VenueOwnerPublicProfile(
+        displayName: json['display_name']?.toString(),
+        avatarUrl: json['avatar_url']?.toString(),
+      );
+
+  bool get hasPublicInfo =>
+      (displayName?.trim().isNotEmpty ?? false) ||
+      (avatarUrl?.trim().isNotEmpty ?? false);
+}
+
 /// A venue as shown on public discovery surfaces (no owner contact data).
 class VenueSummary {
   final String id;
@@ -462,19 +479,14 @@ class VenueReview {
       courtName: j['court_name']?.toString(),
       sportName: j['sport_name']?.toString(),
       tagLabels:
-          (j['tag_labels'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
+          (j['tag_labels'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
       helpfulCount: (j['helpful_count'] as num?)?.toInt() ?? 0,
       viewerVoted: j['viewer_voted'] == true,
     );
   }
 
-  VenueReview copyWith({
-    int? helpfulCount,
-    bool? viewerVoted,
-  }) => VenueReview(
+  VenueReview copyWith({int? helpfulCount, bool? viewerVoted}) => VenueReview(
     id: id,
     venueId: venueId,
     courtId: courtId,
@@ -584,13 +596,12 @@ class VenueReviewTopic {
     required this.reviewCount,
   });
 
-  factory VenueReviewTopic.fromJson(Map<String, dynamic> j) =>
-      VenueReviewTopic(
-        tagId: j['tag_id']?.toString() ?? '',
-        labelTh: j['label_th']?.toString() ?? '',
-        labelEn: j['label_en']?.toString(),
-        reviewCount: (j['review_count'] as num?)?.toInt() ?? 0,
-      );
+  factory VenueReviewTopic.fromJson(Map<String, dynamic> j) => VenueReviewTopic(
+    tagId: j['tag_id']?.toString() ?? '',
+    labelTh: j['label_th']?.toString() ?? '',
+    labelEn: j['label_en']?.toString(),
+    reviewCount: (j['review_count'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// Deterministic 10-point rating bands used by the review page's score
@@ -641,8 +652,7 @@ class VenueReviewSummary {
     final rawBands = j['band_counts'];
     if (rawBands is Map) {
       for (final band in VenueReviewBand.values) {
-        bands[band] =
-            (rawBands[band.wireKey] as num?)?.toInt() ?? 0;
+        bands[band] = (rawBands[band.wireKey] as num?)?.toInt() ?? 0;
       }
     }
     return VenueReviewSummary(

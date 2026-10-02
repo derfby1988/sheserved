@@ -232,6 +232,20 @@ class BookCourtRepository {
         .toList();
   }
 
+  Future<VenueOwnerPublicProfile?> getPublicVenueOwnerProfile(
+    String venueId,
+  ) async {
+    final result = await _client.rpc(
+      'get_public_sports_venue_owner_profile',
+      params: {'p_venue_id': venueId},
+    );
+    if (result is! Map) return null;
+    final profile = VenueOwnerPublicProfile.fromJson(
+      Map<String, dynamic>.from(result),
+    );
+    return profile.hasPublicInfo ? profile : null;
+  }
+
   Future<List<VenueReviewTag>> listReviewTagCatalog() async {
     final res = await _client.rpc('list_sports_venue_review_tags');
     return (res as List)

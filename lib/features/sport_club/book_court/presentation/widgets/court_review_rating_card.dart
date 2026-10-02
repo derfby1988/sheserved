@@ -10,6 +10,7 @@ class CourtReviewRatingCard extends StatelessWidget {
   final double? averageRating;
   final int reviewCount;
   final List<VenueReview> reviews;
+  final VenueOwnerPublicProfile? ownerProfile;
   final VoidCallback? onSeeAll;
 
   const CourtReviewRatingCard({
@@ -17,21 +18,91 @@ class CourtReviewRatingCard extends StatelessWidget {
     this.averageRating,
     this.reviewCount = 0,
     this.reviews = const [],
+    this.ownerProfile,
     this.onSeeAll,
   });
 
   @override
   Widget build(BuildContext context) {
+    final avatarUrl = ownerProfile?.avatarUrl?.trim();
+    final hasAvatar = avatarUrl?.isNotEmpty == true;
+    final ownerName = ownerProfile?.displayName?.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (ownerProfile != null) ...[
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                child: hasAvatar
+                    ? ClipOval(
+                        child: Image.network(
+                          avatarUrl!,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null
+                              ? child
+                              : const Center(
+                                  child: SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                    ),
+                                  ),
+                                ),
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Icons.person_rounded,
+                                size: 20,
+                                color: AppColors.primaryDark,
+                              ),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_rounded,
+                        size: 20,
+                        color: AppColors.primaryDark,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'เจ้าของสนาม',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Text(
+                      ownerName?.isNotEmpty == true
+                          ? ownerName!
+                          : 'เจ้าของสนาม',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 4,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: AppColors.primaryDark,
                 borderRadius: BorderRadius.circular(8),
@@ -48,9 +119,7 @@ class CourtReviewRatingCard extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                averageRating == null
-                    ? 'ยังไม่มีรีวิว'
-                    : '$reviewCount รีวิว',
+                averageRating == null ? 'ยังไม่มีรีวิว' : '$reviewCount รีวิว',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
@@ -74,8 +143,7 @@ class CourtReviewRatingCard extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    backgroundImage:
-                        (review.userAvatarUrl?.isNotEmpty == true)
+                    backgroundImage: (review.userAvatarUrl?.isNotEmpty == true)
                         ? NetworkImage(review.userAvatarUrl!)
                         : null,
                     child: review.userAvatarUrl?.isNotEmpty == true

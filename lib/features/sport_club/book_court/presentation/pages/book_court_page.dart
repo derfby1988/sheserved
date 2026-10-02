@@ -275,7 +275,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
     await Navigator.pushNamed(
       context,
       '/login',
-      arguments: {'redirect': '/community/sport-club'},
+      arguments: {'returnAfterLogin': true},
     );
     return _userId != null;
   }

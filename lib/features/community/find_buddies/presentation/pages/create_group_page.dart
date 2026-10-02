@@ -281,12 +281,13 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       if (!mounted) return;
       await _saveDraft();
       if (!mounted) return;
-      Navigator.pushNamed(
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {'redirect': '/community/sport-club/group/create'},
+        arguments: {'returnAfterLogin': true},
       );
-      return;
+      if (!mounted || AuthService.instance.currentUser == null) return;
+      return _submit();
     }
     setState(() => _submitting = true);
     try {
@@ -522,11 +523,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         body: Stack(
           children: [
             // Ambient Neumorphic Background Circles
-            Positioned(
-              top: -60,
-              left: -60,
-              child: _buildBackgroundCircle(200),
-            ),
+            Positioned(top: -60, left: -60, child: _buildBackgroundCircle(200)),
             Positioned(
               bottom: 120,
               right: -80,
@@ -968,16 +965,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: NeumorphicTheme.baseColor,
-                  boxShadow: NeumorphicTheme.smallShadows(
-                    distance: 3,
-                    blur: 6,
-                  ),
+                  boxShadow: NeumorphicTheme.smallShadows(distance: 3, blur: 6),
                 ),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: NeumorphicTheme.primaryBlue,
-                ),
+                child: Icon(icon, size: 18, color: NeumorphicTheme.primaryBlue),
               ),
               const SizedBox(width: 12),
               Text(
@@ -1200,8 +1190,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                             'เลือกประเภทกีฬา *',
                             style: TextStyle(
                               fontSize: 14,
-                              color: NeumorphicTheme.textSecondary
-                                  .withValues(alpha: 0.65),
+                              color: NeumorphicTheme.textSecondary.withValues(
+                                alpha: 0.65,
+                              ),
                             ),
                           ),
                         ),
@@ -1302,8 +1293,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                           decoration: InputDecoration(
                             hintText: 'ค้นหากีฬา',
                             hintStyle: TextStyle(
-                              color: NeumorphicTheme.textSecondary
-                                  .withValues(alpha: 0.65),
+                              color: NeumorphicTheme.textSecondary.withValues(
+                                alpha: 0.65,
+                              ),
                             ),
                             prefixIcon: const Icon(
                               Icons.search,
@@ -1314,8 +1306,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
                           ),
                           onChanged: (value) {
                             setSheetState(() => query = value);
@@ -1426,8 +1419,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                 Text(
                   'กำลังโหลด...',
                   style: TextStyle(
-                    color: NeumorphicTheme.textSecondary
-                        .withValues(alpha: 0.65),
+                    color: NeumorphicTheme.textSecondary.withValues(
+                      alpha: 0.65,
+                    ),
                     fontSize: 14,
                   ),
                 ),
@@ -2013,8 +2007,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                       hintText: 'รหัสไปรษณีย์ | ชื่อสถานที่',
                       hintStyle: TextStyle(
                         fontSize: 13,
-                        color: NeumorphicTheme.textSecondary
-                            .withValues(alpha: 0.65),
+                        color: NeumorphicTheme.textSecondary.withValues(
+                          alpha: 0.65,
+                        ),
                       ),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -2065,11 +2060,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                       ? null
                       : () => _searchPlace(_searchPlaceCtrl.text),
                 ),
-                Container(
-                  height: 22,
-                  width: 1,
-                  color: const Color(0xFFCAD1DC),
-                ),
+                Container(height: 22, width: 1, color: const Color(0xFFCAD1DC)),
                 IconButton(
                   icon: const Icon(
                     Icons.tune_rounded,
@@ -2461,8 +2452,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
             ),
           ),
           ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(20),
+            ),
             child: SizedBox(
               height: 180,
               child: KeyedSubtree(
@@ -2477,8 +2469,9 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: const BoxDecoration(
                 color: Color(0xFFDFE5ED),
-                borderRadius:
-                    BorderRadius.vertical(bottom: Radius.circular(20)),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
               ),
               child: Text(
                 'พิกัด: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
@@ -2703,10 +2696,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: NeumorphicTheme.baseColor,
-                boxShadow: NeumorphicTheme.smallShadows(
-                  distance: 2,
-                  blur: 4,
-                ),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
               ),
               child: const Icon(
                 Icons.card_membership_rounded,
@@ -2778,10 +2768,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               decoration: BoxDecoration(
                 color: NeumorphicTheme.baseColor,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: NeumorphicTheme.smallShadows(
-                  distance: 3,
-                  blur: 6,
-                ),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 3, blur: 6),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -2816,10 +2803,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: NeumorphicTheme.baseColor,
-                boxShadow: NeumorphicTheme.smallShadows(
-                  distance: 2,
-                  blur: 4,
-                ),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 2, blur: 4),
               ),
               child: const Icon(
                 Icons.sports_tennis_rounded,
@@ -2891,10 +2875,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               decoration: BoxDecoration(
                 color: NeumorphicTheme.baseColor,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: NeumorphicTheme.smallShadows(
-                  distance: 3,
-                  blur: 6,
-                ),
+                boxShadow: NeumorphicTheme.smallShadows(distance: 3, blur: 6),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -3093,10 +3074,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: layout == 'single'
                         ? NeumorphicTheme.glowShadows()
-                        : NeumorphicTheme.smallShadows(
-                            distance: 2,
-                            blur: 5,
-                          ),
+                        : NeumorphicTheme.smallShadows(distance: 2, blur: 5),
                   ),
                   child: Center(
                     child: Text(
@@ -3137,10 +3115,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: layout == 'double'
                         ? NeumorphicTheme.glowShadows()
-                        : NeumorphicTheme.smallShadows(
-                            distance: 2,
-                            blur: 5,
-                          ),
+                        : NeumorphicTheme.smallShadows(distance: 2, blur: 5),
                   ),
                   child: Center(
                     child: Text(
@@ -3271,14 +3246,14 @@ class _NeumorphicModernTextFieldState
                           width: 2.0,
                         )
                       : (hasError
-                          ? const BorderSide(
-                              color: Colors.redAccent,
-                              width: 1.5,
-                            )
-                          : BorderSide(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              width: 1.0,
-                            )),
+                            ? const BorderSide(
+                                color: Colors.redAccent,
+                                width: 1.5,
+                              )
+                            : BorderSide(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                width: 1.0,
+                              )),
                 ),
                 child: widget.maxLines > 1
                     ? TextField(
@@ -3298,8 +3273,9 @@ class _NeumorphicModernTextFieldState
                           fillColor: Colors.transparent,
                           hintText: widget.hint,
                           hintStyle: TextStyle(
-                            color: NeumorphicTheme.textSecondary
-                                .withValues(alpha: 0.65),
+                            color: NeumorphicTheme.textSecondary.withValues(
+                              alpha: 0.65,
+                            ),
                             fontSize: 14,
                             fontWeight: FontWeight.w400,
                           ),
@@ -3332,8 +3308,9 @@ class _NeumorphicModernTextFieldState
                               fillColor: Colors.transparent,
                               hintText: widget.hint,
                               hintStyle: TextStyle(
-                                color: NeumorphicTheme.textSecondary
-                                    .withValues(alpha: 0.65),
+                                color: NeumorphicTheme.textSecondary.withValues(
+                                  alpha: 0.65,
+                                ),
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
                               ),
@@ -3356,10 +3333,7 @@ class _NeumorphicModernTextFieldState
                 padding: const EdgeInsets.only(left: 4),
                 child: Text(
                   field.errorText ?? '',
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                 ),
               ),
             ],

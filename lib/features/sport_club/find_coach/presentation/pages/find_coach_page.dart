@@ -353,7 +353,7 @@ class _FindCoachPageState extends State<FindCoachPage> {
     await Navigator.pushNamed(
       context,
       '/login',
-      arguments: {'redirect': '/community/sport-club'},
+      arguments: {'returnAfterLogin': true},
     );
     return _userId != null;
   }

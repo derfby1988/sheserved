@@ -812,16 +812,18 @@ class _SportClubPageState extends State<SportClubPage> {
     }
     if (bookingId == null) {
       if (!mounted) return;
-      Navigator.pushNamed(
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {
-          'redirect': '/community/sport-club',
-          if (groupId != null)
-            'args': {'groupId': groupId, 'intent': 'join_group'},
-        },
+        arguments: {'returnAfterLogin': true},
       );
-      return;
+      if (!mounted || AuthService.instance.currentUser == null) return;
+      return _book(
+        sessionId,
+        requiresOwnerApproval: requiresOwnerApproval,
+        groupId: groupId,
+        positionId: positionId,
+      );
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1117,7 +1119,7 @@ class _SportClubPageState extends State<SportClubPage> {
     await Navigator.pushNamed(
       context,
       '/login',
-      arguments: {'redirect': '/community/sport-club'},
+      arguments: {'returnAfterLogin': true},
     );
     return AuthService.instance.currentUser != null;
   }

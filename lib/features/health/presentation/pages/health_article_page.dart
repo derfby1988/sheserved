@@ -358,21 +358,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อกดไลก์')),
       );
 
-      Navigator.pushReplacementNamed(
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {
-          'route': '/health/article',
-          'arguments': {
-            'article': _article,
-            'targetPage': _currentPage,
-            'targetCommentId': commentId,
-            'pendingAction': 'like',
-            'pendingCommentId': commentId,
-          },
-        },
+        arguments: {'returnAfterLogin': true},
       );
-      return;
+      if (!mounted || ServiceLocator.instance.currentUser == null) return;
+      return _onToggleLike(commentId);
     }
 
     // Optimistic UI update
@@ -502,21 +494,13 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         const SnackBar(content: Text('กรุณาเข้าสู่ระบบเพื่อบุ๊กมาร์ก')),
       );
 
-      Navigator.pushReplacementNamed(
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {
-          'route': '/health/article',
-          'arguments': {
-            'article': _article,
-            'targetPage': _currentPage,
-            'targetCommentId': commentId,
-            'pendingAction': 'bookmark',
-            'pendingCommentId': commentId,
-          },
-        },
+        arguments: {'returnAfterLogin': true},
       );
-      return;
+      if (!mounted || ServiceLocator.instance.currentUser == null) return;
+      return _onToggleBookmark(commentId: commentId);
     }
 
     // State will be updated after successful API response
@@ -942,11 +926,7 @@ class _HealthArticlePageState extends State<HealthArticlePage>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE6B980),
-              Color(0xFF8EBAE3),
-              Color(0xFF5D9CDB),
-            ],
+            colors: [Color(0xFFE6B980), Color(0xFF8EBAE3), Color(0xFF5D9CDB)],
             stops: [0.0, 0.2, 0.5],
           ),
         ),
@@ -976,136 +956,141 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                         ),
                       )
                     : NotificationListener<UserScrollNotification>(
-                      onNotification: (notification) {
-                        if (notification.direction == ScrollDirection.reverse) {
-                          if (_isNavBarVisible) {
-                            setState(() => _isNavBarVisible = false);
+                        onNotification: (notification) {
+                          if (notification.direction ==
+                              ScrollDirection.reverse) {
+                            if (_isNavBarVisible) {
+                              setState(() => _isNavBarVisible = false);
+                            }
+                          } else if (notification.direction ==
+                              ScrollDirection.forward) {
+                            if (!_isNavBarVisible) {
+                              setState(() => _isNavBarVisible = true);
+                            }
                           }
-                        } else if (notification.direction == ScrollDirection.forward) {
-                          if (!_isNavBarVisible) {
-                            setState(() => _isNavBarVisible = true);
-                          }
-                        }
-                        return false;
-                      },
-                      child: CustomScrollView(
-                        controller: _scrollController,
-                        slivers: [
-                          SliverToBoxAdapter(
-                            key: _articleHeadKey,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: HealthArticleHead(
-                                article: _article,
-                                totalComments: _totalComments,
-                                isTitleExpanded: _isTitleExpanded,
-                                isContentExpanded: _isContentExpanded,
-                                editHistory: _articleEditHistory,
-                                onToggleTitleExpand: () => setState(
-                                  () => _isTitleExpanded = !_isTitleExpanded,
+                          return false;
+                        },
+                        child: CustomScrollView(
+                          controller: _scrollController,
+                          slivers: [
+                            SliverToBoxAdapter(
+                              key: _articleHeadKey,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
                                 ),
-                                onToggleContentExpand: () => setState(
-                                  () => _isContentExpanded = !_isContentExpanded,
-                                ),
-                                onReply: () => _handleReply(null),
-                                onEditArticle: () => HealthArticleDialogs
-                                    .showEditArticleDialog(
-                                  context,
-                                  article: _article!,
-                                  onProceed: () => HealthArticleDialogs
-                                      .showEditArticleScreen(
+                                child: HealthArticleHead(
+                                  article: _article,
+                                  totalComments: _totalComments,
+                                  isTitleExpanded: _isTitleExpanded,
+                                  isContentExpanded: _isContentExpanded,
+                                  editHistory: _articleEditHistory,
+                                  onToggleTitleExpand: () => setState(
+                                    () => _isTitleExpanded = !_isTitleExpanded,
+                                  ),
+                                  onToggleContentExpand: () => setState(
+                                    () => _isContentExpanded =
+                                        !_isContentExpanded,
+                                  ),
+                                  onReply: () => _handleReply(null),
+                                  onEditArticle: () =>
+                                      HealthArticleDialogs.showEditArticleDialog(
+                                        context,
+                                        article: _article!,
+                                        onProceed: () =>
+                                            HealthArticleDialogs.showEditArticleScreen(
+                                              context,
+                                              article: _article!,
+                                              products: _products,
+                                              repository: _repository,
+                                              onDataChanged: _loadData,
+                                            ),
+                                      ),
+                                  onToggleBookmark: () => _onToggleBookmark(),
+                                  onManageTagRequests: () => Navigator.push(
                                     context,
-                                    article: _article!,
-                                    products: _products,
-                                    repository: _repository,
-                                    onDataChanged: _loadData,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const ArticleTagRequestsPage(),
+                                    ),
                                   ),
+                                  bookmarkKey: _getIconKey('bm-article'),
+                                  formatThaiDate: _formatThaiDate,
                                 ),
-                                onToggleBookmark: () =>
-                                    _onToggleBookmark(),
-                                onManageTagRequests: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ArticleTagRequestsPage(),
-                                  ),
-                                ),
-                                bookmarkKey: _getIconKey('bm-article'),
-                                formatThaiDate: _formatThaiDate,
                               ),
                             ),
-                          ),
-                          Builder(
-                            builder: (context) {
-                              final isAuthor =
-                                  AuthService.instance.userId ==
-                                  _article?.authorId;
-                              final visibleProducts = _products
-                                  .where((p) => p.isApproved || isAuthor)
-                                  .toList();
+                            Builder(
+                              builder: (context) {
+                                final isAuthor =
+                                    AuthService.instance.userId ==
+                                    _article?.authorId;
+                                final visibleProducts = _products
+                                    .where((p) => p.isApproved || isAuthor)
+                                    .toList();
 
-                              if (visibleProducts.isEmpty)
-                                return const SliverToBoxAdapter(
-                                  child: SizedBox.shrink(),
-                                );
+                                if (visibleProducts.isEmpty)
+                                  return const SliverToBoxAdapter(
+                                    child: SizedBox.shrink(),
+                                  );
 
-                              return SliverPersistentHeader(
-                                pinned: true,
-                                delegate: ProductSectionDelegate(
-                                  products: visibleProducts,
-                                  authorId: _article!.authorId,
-                                  onRequestTag: () => HealthArticleDialogs
-                                      .showRequestTagDialog(
-                                    context,
-                                    articleId: _article!.id,
-                                    onRefreshProducts: _fetchProducts,
+                                return SliverPersistentHeader(
+                                  pinned: true,
+                                  delegate: ProductSectionDelegate(
+                                    products: visibleProducts,
+                                    authorId: _article!.authorId,
+                                    onRequestTag: () =>
+                                        HealthArticleDialogs.showRequestTagDialog(
+                                          context,
+                                          articleId: _article!.id,
+                                          onRefreshProducts: _fetchProducts,
+                                        ),
                                   ),
-                                ),
-                                key: _productsKey,
-                              );
-                            },
-                          ),
-                          SliverToBoxAdapter(
-                            key: _commentsKey,
-                            child: HealthArticleCommentHeader(
-                              currentSort: _currentSort,
-                              onSortChanged: (value) {
-                                setState(() => _currentSort = value);
-                                _fetchComments(1);
+                                  key: _productsKey,
+                                );
                               },
                             ),
-                          ),
-                          if (_isCommentsLoading)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.all(40.0),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
+                            SliverToBoxAdapter(
+                              key: _commentsKey,
+                              child: HealthArticleCommentHeader(
+                                currentSort: _currentSort,
+                                onSortChanged: (value) {
+                                  setState(() => _currentSort = value);
+                                  _fetchComments(1);
+                                },
+                              ),
+                            ),
+                            if (_isCommentsLoading)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(40.0),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            )
-                          else if (_comments.isEmpty)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.all(32.0),
-                                child: Center(
-                                  child: Text(
-                                    'ยังไม่มีความคิดเห็น',
-                                    style: TextStyle(color: Colors.white70),
+                              )
+                            else if (_comments.isEmpty)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(32.0),
+                                  child: Center(
+                                    child: Text(
+                                      'ยังไม่มีความคิดเห็น',
+                                      style: TextStyle(color: Colors.white70),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            )
-                          else
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
+                              )
+                            else
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  context,
+                                  index,
+                                ) {
                                   final comment = _comments[index];
-                                  final isOwnComment = comment.userId ==
+                                  final isOwnComment =
+                                      comment.userId ==
                                       AuthService.instance.currentUser?.id;
                                   final isArticleAuthor =
                                       _article?.authorId ==
@@ -1115,8 +1100,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                     displayNumber: _getCommentDisplayNumber(
                                       comment,
                                     ),
-                                    parentDisplayNumber: comment.parentId !=
-                                            null
+                                    parentDisplayNumber:
+                                        comment.parentId != null
                                         ? _getParentDisplayNumber(comment)
                                         : null,
                                     isOwnComment: isOwnComment,
@@ -1124,10 +1109,8 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                     isExpanded: _expandedCommentIds.contains(
                                       comment.id,
                                     ),
-                                    isVisibilityLoading:
-                                        _visibilityLoadingIds.contains(
-                                      comment.id,
-                                    ),
+                                    isVisibilityLoading: _visibilityLoadingIds
+                                        .contains(comment.id),
                                     commentKey: _commentKeys.putIfAbsent(
                                       comment.id,
                                       () => GlobalKey(),
@@ -1150,45 +1133,45 @@ class _HealthArticlePageState extends State<HealthArticlePage>
                                     }),
                                     onToggleLike: () =>
                                         _onToggleLike(comment.id),
-                                    onToggleBookmark: () =>
-                                        _onToggleBookmark(commentId: comment.id),
-                                    onReply: () => _handleReply(comment.id),
-                                    onEdit: () => HealthArticleDialogs
-                                        .showEditDialog(
-                                      context,
-                                      comment: comment,
-                                      onUpdate: _updateComment,
-                                      onScrollToComment:
-                                          _scrollToSpecificComment,
+                                    onToggleBookmark: () => _onToggleBookmark(
+                                      commentId: comment.id,
                                     ),
+                                    onReply: () => _handleReply(comment.id),
+                                    onEdit: () =>
+                                        HealthArticleDialogs.showEditDialog(
+                                          context,
+                                          comment: comment,
+                                          onUpdate: _updateComment,
+                                          onScrollToComment:
+                                              _scrollToSpecificComment,
+                                        ),
                                     onToggleVisibility: () =>
                                         _toggleCommentVisibility(comment),
                                     onShowEditHistory: () =>
-                                        HealthArticleDialogs
-                                            .showEditHistoryDialog(
-                                      context,
-                                      comment: comment,
-                                      formatThaiDate: _formatThaiDate,
-                                    ),
+                                        HealthArticleDialogs.showEditHistoryDialog(
+                                          context,
+                                          comment: comment,
+                                          formatThaiDate: _formatThaiDate,
+                                        ),
                                   );
-                                },
-                                childCount: _comments.length,
+                                }, childCount: _comments.length),
                               ),
-                            ),
-                          if (_totalComments > 10)
-                            SliverToBoxAdapter(
-                              key: _paginationKey,
-                              child: HealthArticlePagination(
-                                currentPage: _currentPage,
-                                totalRootComments: _totalRootComments,
-                                totalComments: _totalComments,
-                                onPageChanged: _changePage,
+                            if (_totalComments > 10)
+                              SliverToBoxAdapter(
+                                key: _paginationKey,
+                                child: HealthArticlePagination(
+                                  currentPage: _currentPage,
+                                  totalRootComments: _totalRootComments,
+                                  totalComments: _totalComments,
+                                  onPageChanged: _changePage,
+                                ),
                               ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 120),
                             ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 120)),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
               ),
             ],
           ),
@@ -1207,7 +1190,11 @@ class _HealthArticlePageState extends State<HealthArticlePage>
         },
         onAddPressed: () async {
           if (AuthService.instance.currentUser == null) {
-            Navigator.pushNamed(context, '/login', arguments: '/emergency-live');
+            Navigator.pushNamed(
+              context,
+              '/login',
+              arguments: '/emergency-live',
+            );
             return;
           }
           Navigator.pushNamed(context, '/emergency-live');
@@ -1237,22 +1224,19 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     }
   }
 
-  void _showBookmarksDialog() {
+  Future<void> _showBookmarksDialog() async {
     if (!AuthService.instance.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('กรุณาเข้าสู่ระบบเพื่อดูรายการที่บันทึกไว้'),
         ),
       );
-      Navigator.pushNamed(
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {
-          'route': '/health/article',
-          'arguments': {'article': _article, 'openBookmarks': true},
-        },
+        arguments: {'returnAfterLogin': true},
       );
-      return;
+      if (!mounted || !AuthService.instance.isLoggedIn) return;
     }
 
     setState(() {
@@ -1264,37 +1248,27 @@ class _HealthArticlePageState extends State<HealthArticlePage>
     );
   }
 
-  void _handleReply(String? commentId) {
-    final currentUser = ServiceLocator.instance.currentUser;
-
-    if (currentUser == null) {
-      Navigator.pushReplacementNamed(
+  Future<void> _handleReply(String? commentId) async {
+    if (ServiceLocator.instance.currentUser == null) {
+      await Navigator.pushNamed(
         context,
         '/login',
-        arguments: {
-          'route': '/health/article',
-          'arguments': {
-            'article': _article,
-            'targetPage': _currentPage,
-            'targetCommentId': commentId,
-            'pendingAction': 'reply',
-            'pendingCommentId': commentId,
-          },
-        },
+        arguments: {'returnAfterLogin': true},
       );
-    } else {
-      HealthArticleDialogs.showReplyDialog(
-        context,
-        commentId: commentId,
-        comments: _comments,
-        onSubmit: _submitComment,
-        onScrollToComment: _scrollToSpecificComment,
-        totalRootComments: _totalRootComments,
-        currentSort: _currentSort,
-        currentPage: _currentPage,
-        changePage: _changePage,
-      );
+      if (!mounted || ServiceLocator.instance.currentUser == null) return;
     }
+
+    HealthArticleDialogs.showReplyDialog(
+      context,
+      commentId: commentId,
+      comments: _comments,
+      onSubmit: _submitComment,
+      onScrollToComment: _scrollToSpecificComment,
+      totalRootComments: _totalRootComments,
+      currentSort: _currentSort,
+      currentPage: _currentPage,
+      changePage: _changePage,
+    );
   }
 
   String _formatThaiDate(DateTime date) {
@@ -1328,7 +1302,6 @@ class _HealthArticlePageState extends State<HealthArticlePage>
 
     return '$dayName ${date.day} ${months[date.month - 1]} $yearString';
   }
-
 
   Future<void> _toggleCommentVisibility(HealthArticleComment comment) async {
     if (_visibilityLoadingIds.contains(comment.id)) return;
