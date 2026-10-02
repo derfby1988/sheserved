@@ -22,14 +22,20 @@ class AppConfig {
   // DEVELOPMENT SERVER (VIDEO PROCESSING / WEBSOCKET)
   // =====================================================
 
-  /// IP หรือ Local Hostname ของเครื่องหลัก (Primary Machine) ที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '192.168.1.167:8080';
+  /// ค่าเริ่มต้น IP หรือ Local Hostname ของเครื่องหลักที่รัน Backend Server/Caddy
+  static const String mainMachineIp = '192.168.0.123:8080';
+
+  /// Base URL ของ backend/Caddy ใช้ร่วมกันทั้ง API และ WebSocket
+  static const String backendApiUrl = String.fromEnvironment(
+    'BACKEND_API_URL',
+    defaultValue: 'http://$mainMachineIp',
+  );
 
   /// URL ของ API Server ผ่าน Caddy
-  static const String localApiUrl = 'http://$mainMachineIp';
+  static const String localApiUrl = backendApiUrl;
 
-  /// URL สำหรับ WebSocket connection ผ่าน Caddy (ใช้ http/ws)
-  static const String websocketUrl = 'http://$mainMachineIp';
+  /// URL สำหรับ WebSocket connection ผ่าน Caddy
+  static const String websocketUrl = backendApiUrl;
 
   // =====================================================
   // SUPABASE CONFIGURATION
@@ -105,13 +111,6 @@ class AppConfig {
   /// เปิดใช้ช่องทาง websocket เฉพาะเมื่อเปิด backend auth ด้วย
   static bool get websocketSportProposalNotificationsEnabled =>
       useBackendAuth && useWebsocketSportProposalNotifications;
-
-  /// Base URL ของ websocket-server backend (Caddy reverse proxy)
-  /// ใช้สำหรับ /api/auth/* และ authenticated HTTP requests
-  static const String backendApiUrl = String.fromEnvironment(
-    'BACKEND_API_URL',
-    defaultValue: 'http://$mainMachineIp',
-  );
 
   /// Google OAuth **Web** client ID — ต้องเป็นค่าเดียวกับ GOOGLE_CLIENT_ID
   /// ฝั่ง websocket-server (backend verify `aud` เทียบกับค่านี้)

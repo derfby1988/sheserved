@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/websocket_service.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
+import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
@@ -23,8 +26,7 @@ class CourtOwnerBookingsPage extends StatefulWidget {
   });
 
   @override
-  State<CourtOwnerBookingsPage> createState() =>
-      _CourtOwnerBookingsPageState();
+  State<CourtOwnerBookingsPage> createState() => _CourtOwnerBookingsPageState();
 }
 
 class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
@@ -63,9 +65,7 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
   void _onApplicationNotification(Map<String, dynamic> data) {
     if (data['category']?.toString() != 'venue_booking') return;
     final payload = data['payload'];
-    final venueId = payload is Map
-        ? payload['venueId']?.toString()
-        : null;
+    final venueId = payload is Map ? payload['venueId']?.toString() : null;
     if (venueId != null && venueId.isNotEmpty && venueId != widget.venue.id) {
       return;
     }
@@ -129,11 +129,7 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
 
   Future<void> _cancelConfirmed(VenueBooking b, String reason) async {
     try {
-      await _booking.cancelBooking(
-        userId: _userId,
-        booking: b,
-        reason: reason,
-      );
+      await _booking.cancelBooking(userId: _userId, booking: b, reason: reason);
       _toast('ยกเลิกการจองแล้ว');
       await _load();
     } catch (e) {
@@ -158,69 +154,117 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
 
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
-      appBar: AppBar(
-        title: Text(
-          'การจอง — ${widget.venue.name}',
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
-        ),
-        backgroundColor: NeumorphicTheme.baseColor,
-        elevation: 0,
-        foregroundColor: NeumorphicTheme.textPrimary,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  _sectionHeader('รออนุมัติ (${pending.length})'),
-                  if (pending.isEmpty)
-                    _empty('ไม่มีคำขอรออนุมัติ')
-                  else
-                    for (final b in pending)
-                      CourtOwnerBookingManager(
-                        booking: b,
-                        onApprove: () => _approve(b),
-                        onReject: (reason) => _reject(b, reason),
-                      ),
-                  _sectionHeader('ยืนยันแล้ว (${confirmed.length})'),
-                  if (confirmed.isEmpty)
-                    _empty('ไม่มีการจองที่ยืนยัน')
-                  else
-                    for (final b in confirmed)
-                      CourtOwnerBookingManager(
-                        booking: b,
-                        onCancel: (reason) => _cancelConfirmed(b, reason),
-                      ),
-                  if (history.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showHistory = !_showHistory),
-                        icon: Icon(
-                          _showHistory
-                              ? Icons.expand_less_rounded
-                              : Icons.expand_more_rounded,
-                        ),
-                        label: Text(
-                          _showHistory
-                              ? 'ซ่อนประวัติ'
-                              : 'ประวัติ (${history.length})',
-                        ),
-                      ),
-                    ),
-                    if (_showHistory)
-                      for (final b in history)
-                        CourtOwnerBookingManager(booking: b),
-                  ],
-                ],
+      drawer: const TlzDrawer(),
+      body: Column(
+        children: [
+          // Same gradient header + TlzAppTopBar as the Sports Hub shell.
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
               ),
             ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  middle: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'การจอง — ${widget.venue.name}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: NeumorphicIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      tooltip: 'ย้อนกลับ',
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            children: [
+                              _sectionHeader('รออนุมัติ (${pending.length})'),
+                              if (pending.isEmpty)
+                                _empty('ไม่มีคำขอรออนุมัติ')
+                              else
+                                for (final b in pending)
+                                  CourtOwnerBookingManager(
+                                    booking: b,
+                                    onApprove: () => _approve(b),
+                                    onReject: (reason) => _reject(b, reason),
+                                  ),
+                              _sectionHeader(
+                                'ยืนยันแล้ว (${confirmed.length})',
+                              ),
+                              if (confirmed.isEmpty)
+                                _empty('ไม่มีการจองที่ยืนยัน')
+                              else
+                                for (final b in confirmed)
+                                  CourtOwnerBookingManager(
+                                    booking: b,
+                                    onCancel: (reason) =>
+                                        _cancelConfirmed(b, reason),
+                                  ),
+                              if (history.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Center(
+                                  child: TextButton.icon(
+                                    onPressed: () => setState(
+                                      () => _showHistory = !_showHistory,
+                                    ),
+                                    icon: Icon(
+                                      _showHistory
+                                          ? Icons.expand_less_rounded
+                                          : Icons.expand_more_rounded,
+                                    ),
+                                    label: Text(
+                                      _showHistory
+                                          ? 'ซ่อนประวัติ'
+                                          : 'ประวัติ (${history.length})',
+                                    ),
+                                  ),
+                                ),
+                                if (_showHistory)
+                                  for (final b in history)
+                                    CourtOwnerBookingManager(booking: b),
+                              ],
+                            ],
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

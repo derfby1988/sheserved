@@ -24,7 +24,7 @@
 
 1. **บันทึกลง External Drive เท่านั้น**: ไฟล์วิดีโอ (Raw/Temp) และภาพหน้าปกวิดีโอ (Thumbnails) ทั้งหมด ต้องเก็บไว้ที่ `/Volumes/PostgreSQL/sheserved_videos`
 2. **ห้ามย้ายไปเก็บที่ Local Harddisk**: ห้ามเปลี่ยน `TEMP_VIDEO_PATH` ใน `.env` กลับเป็น `./temp/videos` บน Macintosh HD โดยเด็ดขาด
-3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ipconfig getifaddr en0`) และระบุค่าให้ตรงกันทั้งใน `AppConfig.mainMachineIp` (Flutter) และ `LOCAL_API_URL` ใน `.env` (Server) ทุกครั้งที่มีการเปลี่ยนวง Network — **ดูขั้นตอนละเอียดใน Section "🔧 Network & Configuration Runbook" ด้านล่าง**
+3. **การจัดการหมายเลข IP เมื่อเปลี่ยนสถานที่ทำงาน (Dynamic IP Support)**: เนื่องจากผู้พัฒนาย้ายที่ทำงานหลายแห่ง ให้ตรวจสอบ IP ของเครื่องหลักในแต่ละสถานที่ (`ipconfig getifaddr en0`) และให้ Flutter resolve `backendApiUrl`/`localApiUrl`/`websocketUrl` ไป Caddy endpoint เดียวกัน (ตั้ง default ผ่าน `mainMachineIp` หรือ override ด้วย `BACKEND_API_URL`) และให้ `LOCAL_API_URL` ใน `.env` (Server) ใช้ endpoint เดียวกันทุกครั้งที่เปลี่ยนวง Network — **ดูขั้นตอนละเอียดใน Section "🔧 Network & Configuration Runbook" ด้านล่าง**
 4. **Cleanup Cron Safety (R9 — บังคับ)**: Disk cleanup cron ที่ลบไฟล์เก่าใน `TEMP_VIDEO_PATH` **ต้องตรวจ `videos.status` ใน DB ก่อนลบ UUID dir** และข้ามโฟลเดอร์ที่ `status` ∈ {`uploading`, `processing`, `ready`} — ห้ามลบ HLS playlist/segments ของวิดีโอที่ client ยังดูได้ ถ้า DB query ล้มเหลว ให้ **fail-safe (ไม่ลบ)** ไม่ใช่ fail-open (ลบหมด) — อ้างอิง Bug Fix #11 ด้านล่าง
 
 ### สถาปัตยกรรม
@@ -305,14 +305,20 @@ ipconfig getifaddr en1   # Ethernet / USB
 ```
 > ใช้ IP ที่ device อื่น (iPhone/iPad) ในวงเดียวกันสามารถเข้าถึงได้ และให้จดไว้คู่กับ Caddy port `8080`
 
-#### ขั้นตอนที่ 2 — อัปเดต Flutter App Config
+#### ขั้นตอนที่ 2 — ตั้ง Flutter Backend Base URL
 ```dart
 // lib/config/app_config.dart
-static const String mainMachineIp = '192.168.X.X:8080'; // ← เปลี่ยนตรงนี้ (IP/Host + Caddy port)
+static const String mainMachineIp = '192.168.X.X:8080';
+static const String backendApiUrl = String.fromEnvironment(
+  'BACKEND_API_URL',
+  defaultValue: 'http://$mainMachineIp',
+);
+static const String localApiUrl = backendApiUrl;
+static const String websocketUrl = backendApiUrl;
 ```
-> **หมายเหตุ**: `bestThumbnailUrl` getter ใน `video_models.dart` จะ auto-normalize URL เก่าให้ชี้ไปที่ Caddy endpoint นี้เสมอ
+> `backendApiUrl` คือ base URL กลางเพียงค่าเดียวสำหรับ auth, local API/video, media URL normalization และ WebSocket; `localApiUrl`/`websocketUrl` เป็น alias เพื่อคง API เดิมและห้ามกำหนด host แยกกัน
 >
-> **⚠️ Phase 13.2+**: `mainMachineIp` ไหลไปเป็น default ของ `backendApiUrl` (auth `/api/auth/*`) ด้วย — ถ้าไม่แก้จุดนี้ **login/register/social ทั้งหมดจะยิงไป IP เก่า**; หรือส่ง `--dart-define=BACKEND_API_URL=http://192.168.X.X:8080` ตอน `flutter run` (ดู "เช็คลิสต์ service stack" ด้านล่าง)
+> ค่า `mainMachineIp` เป็น default เท่านั้น; เมื่อส่ง `--dart-define=BACKEND_API_URL=http://192.168.X.X:8080` ต้องใช้ค่านั้นกับทุก client ด้วย ไม่ใช่เฉพาะ auth. ระบุ Caddy origin พร้อม port `8080` โดยไม่เติม path `/api`.
 
 #### ขั้นตอนที่ 3 — อัปเดต Server Environment (สำคัญมาก)
 ```bash
@@ -368,7 +374,7 @@ cd websocket-server && npm run dev
 # 3) Caddy reverse proxy (terminal แยก)
 ./start-caddy.sh
 
-# 4) Flutter — ต้องส่ง dart-define ทุกครั้ง
+# 4) Flutter — ตั้ง BACKEND_API_URL เป็น base URL เดียวสำหรับ Auth/API/วิดีโอ/WebSocket
 #    ⚠️ อย่าลืม USE_BACKEND_AUTH=true — ถ้าลืม แอปจะใช้ legacy SHA-256 login
 #    ที่เทียบ hash กับ users.password_hash ตรงๆ ซึ่ง match ไม่ได้กับ
 #    hash Argon2id/bcrypt ที่ backend เคยเขียน → "รหัสผ่านไม่ถูกต้อง" ทั้งที่ถูก
@@ -389,7 +395,7 @@ flutter run \
 | ไม่ได้ `idToken` จาก Google เลย | `serverClientId` ว่าง → ลืม `--dart-define=GOOGLE_SERVER_CLIENT_ID` |
 | Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) |
 | Login ขึ้น "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" ทั้งที่รหัสถูก (incident 2026-10-02) | ลืม `--dart-define=USE_BACKEND_AUTH=true` → แอปใช้ legacy path เทียบ `sha256(pw)` กับ `users.password_hash` ตรงๆ แต่ account ถูก migrate เป็น Argon2id/bcrypt แล้ว (register ผ่าน backend หรือ lazy rehash ตอน backend login) → match ไม่ได้ถาวร — เช็คด้วย `SELECT username, password_algo FROM users WHERE username='...'` ถ้า algo ≠ `sha256` ต้อง login ผ่าน backend เท่านั้น |
-
+| อัปโหลดวิดีโอสำเร็จแต่กล่องยอดนิยมว่างบนเครื่องรอง | upload ใช้ `backendApiUrl` ส่วน Trending list เคยใช้ `localApiUrl` ที่แยกประกอบจาก `mainMachineIp`; เมื่อ override `BACKEND_API_URL` เป็น IP ใหม่แต่ `localApiUrl` ยังเป็น IP เก่า การอ่านจะไปผิดเครื่องและ fallback Supabase อาจยังไม่มีแถวที่บันทึกใน Local PostgreSQL. แก้โดยให้ `backendApiUrl` เป็นค่าเดียว และให้ `localApiUrl`/`websocketUrl` เป็น alias; ทดสอบ list endpoint จากเครื่องรองด้วย IP/port เดียวกัน |
 > **แนวทางลดปัญหาระยะยาว:** ตั้ง **DHCP reservation** บน router ให้เครื่องหลักได้ IP เดิมทุกครั้ง — จะไม่ต้องแก้ `mainMachineIp`/`LOCAL_API_URL` เลยเมื่ออยู่เครือข่ายเดิม; ต่างเครือข่ายจริง ๆ ค่อยทำ checklist นี้
 
 ---
@@ -398,11 +404,11 @@ flutter run \
 
 | ไฟล์ | ค่าที่ต้องแก้ | หมายเหตุ |
 |------|--------------|----------|
-| `lib/config/app_config.dart` | `mainMachineIp` | Flutter auto-normalize URL เก่าใน DB ให้ชี้ไป Caddy (`:8080`); **ยังเป็น default ของ `backendApiUrl` (auth) ด้วย** |
+| `lib/config/app_config.dart` | `mainMachineIp` default + `backendApiUrl` canonical | `BACKEND_API_URL` ควบคุม API, วิดีโอ, media normalization และ WebSocket; `localApiUrl`/`websocketUrl` เป็น alias ของค่านี้ |
 | `websocket-server/.env` | `LOCAL_API_URL` | URL ที่ Server ใช้ generate thumbnail URL ผ่าน Caddy |
 | `websocket-server/start-caddy.sh` | Caddy startup script | ใช้ `Caddyfile.dev` สำหรับ Phase 1 (`:8080`) |
 | `websocket-server/Caddyfile.dev` | Caddy dev config | bind port `8080` โดยไม่ต้อง sudo |
-| `--dart-define=BACKEND_API_URL` (build/run) | auth base URL | ถ้าไม่ส่งจะ fallback ไป `mainMachineIp` — ส่งเมื่ออยาก override โดยไม่แก้โค้ด |
+| `--dart-define=BACKEND_API_URL` (build/run) | Unified backend base URL | ถ้าไม่ส่งจะใช้ `http://$mainMachineIp`; เมื่อส่ง override จะเปลี่ยน endpoint ของ auth, local API/video และ WebSocket พร้อมกัน |
 | `--dart-define=GOOGLE_SERVER_CLIENT_ID` (build/run) | Web OAuth client ID | ต้องตรง `GOOGLE_CLIENT_ID` ใน `.env` ไม่งั้น Google sign-in ไม่ได้ `idToken` |
 
 > **ไม่ต้องแก้**: DB records เก่า — `_normalizeLocalUrl()` ใน Flutter จัดการแก้ URL ที่ดึงมาจาก DB ให้ชี้ไป IP ปัจจุบันได้
@@ -458,12 +464,12 @@ static String? _normalizeLocalUrl(String? url) {
   // Replace IPv4/port เก่าด้วย Caddy endpoint ปัจจุบัน
   return url.replaceFirst(
     RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
-    'http://${AppConfig.mainMachineIp}',
+    AppConfig.localApiUrl,
   );
 }
 ```
 
-**ผลลัพธ์**: แม้ DB เก็บ URL ด้วย IP/port เก่า `192.168.0.116:3000` — getter จะ return `192.168.1.111:8080/...` ให้อัตโนมัติ โดยต้องอัปเดตแค่ `AppConfig.mainMachineIp` เพียงจุดเดียว
+**ผลลัพธ์**: แม้ DB เก็บ URL ด้วย IP/port เก่า `192.168.0.116:3000` — getter จะ return URL ที่ชี้ไป Caddy base ปัจจุบันให้อัตโนมัติ โดยทุก client ใช้ `AppConfig.localApiUrl` ซึ่งอ้างอิง `backendApiUrl` ค่าเดียวกัน; เปลี่ยน default ที่ `mainMachineIp` หรือกำหนด `BACKEND_API_URL` เมื่อใช้ IP/host อื่น
 
 > ✅ จุดที่ใช้ pipeline นี้ร่วมกันแล้ว: trending cards, Thai Mhung gallery, fullscreen overlay/lightbox, photo detail dialog และ video player image fallback
 > ✅ `ensureFullUrl()` และตัวตรวจจับไฟล์ภาพใน player รองรับทั้ง URL แบบ absolute, relative path และ URL ที่มี query string (`?t=...`)
@@ -1310,7 +1316,7 @@ socketService.sendStatus(userId, videoId, 'ready', { progress: 100 });
 **กฎที่ต้องปฏิบัติ:**
 - ห้าม hardcode IP ใน URL ที่จะเก็บลง DB — ให้ใช้ `process.env.LOCAL_API_URL` เสมอ
 - ฝั่ง Flutter **ต้องใช้ `video.bestThumbnailUrl`** แทน `video.thumbnailUrl` ตรงๆ เสมอ เพราะ getter นี้มี IP normalization built-in
-- อัปเดต `AppConfig.mainMachineIp` **เป็นจุดเดียว** ที่ต้องเปลี่ยนเมื่อ IP เปลี่ยน
+- ใช้ `backendApiUrl` เป็น base URL กลาง; หาก IP เปลี่ยนให้ปรับ `mainMachineIp` default หรือส่ง `BACKEND_API_URL` override และห้ามกำหนด `localApiUrl`/`websocketUrl` แยกจาก base นี้
 
 ```dart
 // ❌ ผิด — อาจได้ URL ที่ชี้ไป IP เก่า
@@ -4941,7 +4947,7 @@ Flow ใน `POST /api/incidents/:incidentId/victims`:
 
 เมื่อ Flutter app พยายามดึงรายการวิดีโอฉุกเฉิน (`VideoRepository.getEmergencyVideos`) จะลองเรียก Local API (`AppConfig.localApiUrl`) ก่อน แล้วค่อย fallback ไป Supabase ถ้า Local API timeout หรือ error
 
-ในกรณีทีพบปัญหา ค่า `mainMachineIp` ของ Flutter (`lib/config/app_config.dart`) ชี้ไปที่ `172.20.10.13:8080` ซึ่งผ่าน **Caddy reverse proxy** บน port 8080 ไปยัง **websocket-server** บน `localhost:3000` แต่ websocket-server ดังกล่าวไม่ได้รันอยู่ ทำให้ Caddy ตอบ **502 Bad Gateway** แอปจึง timeout แล้ว fallback ไป Supabase แต่ข้อมูล emergency video ไม่ปรากฏในรูปแบบทีต้องการ
+ใน incident เดิม base URL ของ Flutter (ตอนนั้น derive จาก `mainMachineIp`) ชี้ไปที่ `172.20.10.13:8080` ซึ่งผ่าน **Caddy reverse proxy** บน port 8080 ไปยัง **websocket-server** บน `localhost:3000` แต่ websocket-server ดังกล่าวไม่ได้รันอยู่ ทำให้ Caddy ตอบ **502 Bad Gateway** แอปจึง timeout แล้ว fallback ไป Supabase แต่ข้อมูล emergency video ไม่ปรากฏในรูปแบบที่ต้องการ. ปัจจุบันให้ตรวจ effective `backendApiUrl` ซึ่งเป็น base เดียวของ local API และ WebSocket ด้วย
 
 ### 13.2 อาการ
 
@@ -4964,7 +4970,7 @@ Flow ใน `POST /api/incidents/:incidentId/victims`:
    ```bash
    lsof -nP -iTCP:8080 -sTCP:LISTEN
    ```
-4. ตรวจสอบ `AppConfig.mainMachineIp` ใน `lib/config/app_config.dart` ให้ตรงกับ IP ที `websocket-server` แจ้งตอน start เช่น `172.20.10.13:8080`
+4. ตรวจสอบ effective `AppConfig.backendApiUrl` ให้ชี้ Caddy IP/port เดียวกับเครื่องหลัก; ถ้าไม่ส่ง `BACKEND_API_URL` จะใช้ `mainMachineIp` เป็น default และ `localApiUrl`/`websocketUrl` ต้องเท่ากัน
 5. ทดสอบ endpoint ผ่าน Caddy:
    ```bash
    curl "http://172.20.10.13:8080/api/videos/emergency/list?page=1&limit=20"
@@ -4975,7 +4981,7 @@ Flow ใน `POST /api/incidents/:incidentId/victims`:
 
 - Local API เป้น fast-path หลักสำหรับ Video System; ถ้า backend ล้ม การ์ดวีดีโอจะไม่แสดงแม้ Supabase ยังทำงาน
 - ควรตรวจสอบ `lsof` ทั้ง `localhost:3000` และ `:8080` ก่อนรัน Maestro หรือ demo video system
-- หาก IP ของเครื่องหลักเปลี่ยน (e.g. เปลี่ยน Wi-Fi) ต้องอัปเดต `mainMachineIp` ใน `lib/config/app_config.dart` ให้ตรง
+- หาก IP ของเครื่องหลักเปลี่ยน (e.g. เปลี่ยน Wi-Fi) ให้ปรับ `mainMachineIp` default หรือส่ง `BACKEND_API_URL` override; Flutter API, media และ WebSocket ต้องใช้ base เดียวกัน
 
 ## 14. Runbook: ไม่สามารถเพิ่มอาชีพใหม่ (Admin → เพิ่มอาชีพใหม่)
 
@@ -5167,17 +5173,17 @@ Column(
 
 ---
 
-## 16. Phase — Trending Panel Fast Load & Emergency Card Caching (แผนงาน — ยังไม่ Implement)
+## 16. Phase — Trending Panel Fast Load & Emergency Card Caching
 
 > Planned: 2026-09-13
-> Status: Pending implementation / รอการอนุมัติ
+> Status: Partially implemented; remaining phase gates still apply.
 > เป้าหมาย: ให้การ์ดเหตุฉุกเฉินใน "กล่องยอดนิยม" ของ `EmergencyLivePage` แสดงผลได้เร็วที่สุดตั้งแต่เฟรมแรก
 
-### 16.0 สถานะปัจจุบันที่ตรวจสอบแล้ว (Verified — 2026-09-13)
+### 16.0 สถานะการ implement ที่ตรวจสอบจากโค้ด
 
 **ฝั่ง Flutter (`lib/`):**
-- `initState()` → `_loadInitialData()` เป็น **sequential await ทั้งหมด** — `_loadTrendingVideos()` ถูกเรียก **ท้ายสุด** หลัง `_loadEmergencyCategories()`, `_restoreActiveMissionIfNeeded()`, `getInteractionSummary()`, `getVideoById()`, `getGpsTracks()` (`parts/emergency_navigation_logic.dart:278-366`)
-- `_loadTrendingVideos()` ยิง `GET {localApiUrl}/api/videos/emergency/list?page&limit` → fallback Supabase `.from('videos')` **ไม่มี client-side cache ใดๆ** (`video_repository.dart:140-166`)
+- `_loadInitialData()` เริ่ม `_loadTrendingVideos()` และ reporter-mission lookup แบบขนานก่อนรอ categories; การแสดงผลยังต้องผ่าน mission-filter gate (`emergency_navigation_logic.dart:325-424`)
+- `_loadTrendingVideos()` ยิง `GET {AppConfig.localApiUrl}/api/videos/emergency/list?page&limit` → fallback Supabase `.from('videos')`; `VideoRepository` มี in-memory cache 30 วินาทีสำหรับ page 1 และ `forceRefresh` ใช้ข้าม cache (`video_repository.dart:202-293`)
 - `TrendingPanelWidget` render ตั้งแต่เฟรมแรกพร้อม `isLoadingTrending: true` — ไม่ได้ lazy รอผู้ใช้เปิด panel (`live_view_widget.dart:569`)
 - Thumbnail ใช้ `CachedNetworkImage` แล้ว → รูปมี disk/memory cache ของ `cached_network_image` อยู่ (`trending_panel_widget.dart:452`)
 - WebSocket `emergency-notification` → `_loadTrendingVideos()` รีโหลดทั้งชุด (reset `_trendingPage = 1`) (`parts/emergency_websocket_logic.dart:242-249`)
@@ -5190,20 +5196,19 @@ Column(
 
 **ฝั่ง Server (`websocket-server/`):**
 - `/emergency/list` **มี Redis Cache-Aside อยู่แล้ว** — key `video:emergency:list:v2:${page}:${limit}`, TTL = `TTL.DEFAULT` (600s), stampede lock `SETNX` (`routes/video.js:557-597`, `middleware/cache-aside.js`)
-- Invalidation ที่มีอยู่: video ready (`services/video-service.js:306-310`), `view` interaction (`server.js:1190`), thumbnail update กระทบ `video:meta/thumbnail` เท่านั้น (`thumbnail-queue.js:188-191`)
-- **⚠️ Gap ที่พบ (INSERT ไม่ invalidate)**: มี **2 INSERT paths** ที่ไม่ invalidate `video:emergency:list:*`:
-  1. `INSERT INTO videos` ตอน upload video เริ่มต้น (`routes/video.js:172-176`) — type `emergency`
-  2. `INSERT INTO videos` ตอน upload-photos (`routes/video.js:376-380`) — type `emergency_photo` (เมื่อไม่ใช่ thai_mhung) ซึ่งอยู่ใน list query `WHERE v.type IN ('emergency', 'emergency_photo')`
-- **Mitigation ที่มีอยู่**: `view` interaction ยังทำงาน — `recordVideoView()` ถูกเรียกจาก 3 จุด (`trending_panel_widget.dart:385` tap การ์ด, `live_view_widget.dart:227` swipe, `fullscreen_video_viewer.dart:166` fullscreen switch) → server.js:1190 invalidate `video:emergency:list:*` ทุกครั้งที่มีคนดู/ปัดการ์ด → stale window สั้นกว่า TTL ในทางปฏิบัติ แต่ worst case ยังเป็น TTL (600s ปัจจุบัน, 60s ตามที่เสนอ) ถ้าไม่มีใครดูการ์ดเลย
+- Invalidation ที่มีอยู่: insert วิดีโอ emergency (`routes/video.js:180-184`) และภาพ emergency_photo (`routes/video.js:390-394`) เรียก invalidate list หลัง INSERT; video ready (`services/video-service.js:306-310`) และ `view` interaction (`server.js:1190`) ก็ invalidate เช่นกัน
+- INSERT invalidation เป็น best-effort และไม่ควรทำให้ upload rollback เมื่อ Redis มีปัญหา; คงการ invalidate เมื่อ video ready เป็น safety net และตรวจ list endpoint หลังอัปโหลดจริง
+- Thumbnail update กระทบ `video:meta/thumbnail` (`thumbnail-queue.js:188-191`)
 - **หมายเหตุ**: `_recordView()` (HTTP-based) ถูกปิดแล้ว (`emergency_navigation_logic.dart:285,674`) แต่ `recordVideoView()` (WebSocket-based) ยังใช้อยู่ — อย่าสับสนระหว่างสอง method นี้
 - Endpoint เป็น **public read-only** (มี `ipLimiter`, ไม่มี `requireAuth`) และ response มี `user_name`, `user_avatar`, `address/road/soi/alley/village` (ข้อมูลระบุตัวผู้แจ้ง + ที่อยู่เหตุการณ์)
-- **ไม่มี `Cache-Control` header** ตั้งไว้ที่ endpoint หรือ global middleware — ต้องเพิ่ม `no-store` (ตาม secure plan 04)
+- Endpoint ตั้ง `Cache-Control: no-store` สำหรับ proxy/browser; Redis internal cache ยังทำงานและต้อง invalidate เมื่อมีข้อมูลใหม่
+- สาเหตุที่พบในเครื่องรอง: upload ใช้ `backendApiUrl` แต่ list/WebSocket/media normalization เคยใช้ URL ที่ derive แยกจาก `mainMachineIp`; หาก override `BACKEND_API_URL` แล้ว reader ยังชี้ IP เก่า จะอ่าน Local PostgreSQL ไม่ได้และ Supabase fallback อาจไม่พบข้อมูลนั้น. แก้ด้วย canonical URL alias ตาม runbook ขั้นตอนที่ 2 และมี regression test ใน `test/core/app_config_test.dart`
 
 ### 16.1 ปัญหาที่ต้องแก้ (Problem Statement)
 
-1. การ์ดยอดนิยมต้องรอ round-trip หลายตัวที่ไม่เกี่ยวกัน (`await` ต่อเนื่อง) ก่อนเริ่ม fetch — latency รวมอาจถึงหลายวินาทีบนเครือข่ายช้า
-2. เปิดหน้าซ้ำกี่ครั้งก็ยิง API ใหม่ทุกครั้ง — ไม่มี in-memory/disk cache ฝั่ง client
-3. Server cache อาจ stale สำหรับ "เหตุใหม่" — INSERT ไม่ invalidate (ดู §16.0 Gap) แต่มี `view`-based invalidation ช่วย mitigate; ถ้า client ทำ cache เพิ่มโดยไม่แก้ฝั่ง server จะยิ่งทำให้การ์ดใหม่ขึ้นช้ากว่าเดิม
+1. ปัจจุบันเริ่มโหลด Trending และ reporter-mission lookup แบบขนานแล้ว; ต้องรักษา mission-filter gate และไม่ให้การดึง metadata/GPS ที่ไม่เกี่ยวกันหน่วงการแสดงการ์ด
+2. ปัจจุบันมี in-memory cache 30 วินาทีสำหรับ emergency list หน้าแรก แต่ไม่มี persistent disk cache; ต้องคง TTL/generation และ force-refresh behavior ที่ป้องกันข้อมูล stale
+3. Server Redis list cache ถูก invalidate หลัง INSERT ของ `emergency`/`emergency_photo` และเมื่อ video ready; คงการตรวจสอบนี้ไว้ พร้อมให้ client ทุก path อ่านจาก backend base เดียวกัน เพราะ URL ที่ไม่ตรงกันจะทำให้ upload สำเร็จแต่ Trending อ่านผิด endpoint/fallback
 4. การกรองรายการ (`_computeMissionTrendingFilter`) เป็น **per-user** — ห้ามเอาผลที่กรองแล้วไปแคชแชร์กัน (เดี๋ยวรั่วข้ามสิทธิ์ — ดู §16.4)
 
 ### 16.2 ลำดับการดำเนินงานตามความเสี่ยง (Risk-ordered plan)
@@ -5214,10 +5219,10 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 | ลำดับ | งาน | เหตุผลและเงื่อนไข |
 |---|---|---|
-| 1 | **Parallel load** — เริ่ม `_loadTrendingVideos()` พร้อม initialization อื่น | ไม่เปลี่ยน API/data contract หรือ layout; ต้องรอ categories และ mission filter พร้อมก่อนปล่อยการ์ด; ทุก `setState` ต้องตรวจ `mounted` และ page/request generation |
-| 2 | **Server invalidation หลัง INSERT** — แก้ทั้ง video upload และ photo upload | แก้ stale-gap โดยตรง; invalidate เฉพาะ emergency type หลัง insert สำเร็จเท่านั้น; Redis ล้มเหลวต้องไม่ทำให้ upload ล้มเหลว |
-| 3 | **In-memory cache ขั้นพื้นฐาน** ที่ `VideoRepository` | cache เฉพาะ server-confirmed raw list page 1, bounded TTL/size, dedupe in-flight; เปิดด้วย feature flag/rollback ได้ และต้อง clear เมื่อ logout/switch user |
-| 4 | **Shared prefetch** | ใช้ repository singletonเดียวกันจาก Home, EmergencyLivePage และ DonationAdmin; ห้ามผูก state ระหว่าง widget โดยตรง และต้องคง network path เดิมเป็น fallback |
+| 1 | **Parallel load** — implemented | `_loadTrendingVideos()` และ reporter-mission lookup เริ่มก่อนรอ categories; ต้องคง mission-filter gate, mounted check และ request generation |
+| 2 | **Server invalidation หลัง INSERT** — implemented ทั้ง video upload และ photo upload | `routes/video.js` invalidate list หลัง INSERT เฉพาะ `emergency`/`emergency_photo`; คง best-effort fail-open เมื่อ Redis ล้มเหลว และ verify endpoint หลัง upload |
+| 3 | **In-memory cache ขั้นพื้นฐาน** ที่ `VideoRepository` — implemented | cache เฉพาะ server-confirmed raw list page 1, TTL 30s, dedupe in-flight; clear เมื่อ logout/switch user |
+| 4 | **Shared prefetch** — implemented | Home, EmergencyLivePage และ DonationAdmin ใช้ `VideoRepository` singleton; ห้ามผูก state ระหว่าง widget โดยตรง และคง network path เป็น fallback |
 
 **Guardrails ที่ต้องผ่านก่อนถือว่า low-risk:**
 

@@ -12,6 +12,19 @@ Note: on this machine `flutter analyze` crashes ("Could not find a command named
 ships the AOT snapshot). Use `dart analyze lib test` instead; it reports the same
 lints (the repo carries ~2.3k pre-existing info-level ones, so filter by path).
 
+## Backend machine IP changes
+
+When the primary machine's LAN IP changes (or a report looks like an IP
+mismatch — e.g. upload works but lists/WebSocket are empty), follow the
+"Checklist: เมื่อเปลี่ยน Network / IP Address" section under
+"Network & Configuration Runbook" in `docs/plans/VIDEO_SYSTEM_PLAN.md` instead of
+improvising: update `mainMachineIp` in `lib/config/app_config.dart` (single
+source — `backendApiUrl`/`localApiUrl`/`websocketUrl` are aliases), update
+`LOCAL_API_URL` in `websocket-server/.env`, restart Node + ensure Caddy on
+:8080, then verify with
+`curl http://<new-ip>:8080/api/videos/emergency/list` from another device and
+run `flutter test test/core/app_config_test.dart`.
+
 ## iOS / CocoaPods
 
 The iOS project uses CocoaPods with the CDN trunk source. The local CDN specs

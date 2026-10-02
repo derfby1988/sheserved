@@ -77,16 +77,31 @@ class EmergencyUiOverlay extends StatelessWidget {
               right: false,
               child: Column(
                 children: [
-                  if (!isConnected) const OfflineIndicatorWidget(),
-
                   // Main Split Content based on Tab
                   Expanded(
                     child: GestureDetector(
                       onTap: showAcceptPanel ? onDeclineRescue : onToggleUi,
                       behavior: HitTestBehavior.translucent,
-                      child: isThaiMhungReporting
-                          ? content
-                          : SingleChildScrollView(child: content),
+                      // StackFit.expand keeps the content under the same tight
+                      // constraints it had as a direct Expanded child; the
+                      // offline banner floats above the bottom controls
+                      // instead of taking layout space, so showing/hiding it
+                      // never reflows the page.
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          isThaiMhungReporting
+                              ? content
+                              : SingleChildScrollView(child: content),
+                          if (!isConnected)
+                            const Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: OfflineIndicatorWidget(),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
 

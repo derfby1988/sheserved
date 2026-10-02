@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/auth/data/models/user_model.dart';
+import 'package:sheserved/features/chat/data/models/chat_models.dart';
+import 'package:sheserved/features/chat/data/repositories/chat_repository.dart';
+import 'package:sheserved/features/chat/presentation/chat_unread_provider.dart';
+import 'package:sheserved/features/erp/data/repositories/notification_repository.dart';
+import 'package:sheserved/features/erp/presentation/providers/notification_provider.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_models.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_repository.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/pages/court_my_bookings_page.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/presence_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../chat/data/repositories/chat_repository_test.mocks.dart';
 
 class _FakeBookCourtRepository extends BookCourtRepository {
   _FakeBookCourtRepository()
@@ -35,6 +43,43 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   @override
   Future<List<VenueReviewCategory>> listReviewCategoryCatalog() async =>
       const [];
+}
+
+// The page header now uses TlzAppTopBar — its notification button is a
+// Riverpod consumer, so the test needs a ProviderScope with fakes for the
+// repositories/notifiers it watches.
+class _FakeNotificationRepository extends NotificationRepository {
+  _FakeNotificationRepository()
+    : super(
+        SupabaseClient(
+          'https://example.com',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      );
+
+  @override
+  Future<int> getUnreadCount({
+    String? category,
+    bool forceRefresh = false,
+  }) async => 0;
+}
+
+class _FakeChatRepository extends ChatRepository {
+  _FakeChatRepository()
+    : super(
+        MockSupabaseClient(),
+        MockBox<ChatRoom>(),
+        MockBox<ChatMessage>(),
+        MockBox<ChatParticipant>(),
+      );
+}
+
+class _FakeChatUnreadNotifier extends ChatUnreadNotifier {
+  _FakeChatUnreadNotifier() : super(_FakeChatRepository());
+
+  @override
+  Future<void> refresh() async {}
 }
 
 UserModel _testUser() => UserModel(
@@ -135,7 +180,15 @@ void main() {
       ];
 
       await tester.pumpWidget(
-        MaterialApp(home: CourtMyBookingsPage(repo: repo)),
+        ProviderScope(
+          overrides: [
+            chatUnreadProvider.overrideWith((ref) => _FakeChatUnreadNotifier()),
+            notificationRepositoryProvider.overrideWithValue(
+              _FakeNotificationRepository(),
+            ),
+          ],
+          child: MaterialApp(home: CourtMyBookingsPage(repo: repo)),
+        ),
       );
       await tester.pumpAndSettle();
 

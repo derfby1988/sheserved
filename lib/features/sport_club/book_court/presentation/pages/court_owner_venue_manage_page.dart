@@ -8,6 +8,8 @@ import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
+import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
@@ -575,47 +577,94 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     final steps = _steps;
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
-      appBar: AppBar(
-        title: Text(
-          _venue.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
+      drawer: const TlzDrawer(),
+      body: Column(
+        children: [
+          // Same gradient header + TlzAppTopBar as the Sports Hub shell.
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  middle: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _venue.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                  actions: [
+                    IconButton(
+                      tooltip: 'การจอง',
+                      onPressed: _openBookings,
+                      icon: const Icon(
+                        Icons.event_note_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-        backgroundColor: NeumorphicTheme.baseColor,
-        elevation: 0,
-        foregroundColor: NeumorphicTheme.textPrimary,
-        actions: [
-          IconButton(
-            tooltip: 'การจอง',
-            onPressed: _openBookings,
-            icon: const Icon(Icons.event_note_rounded),
+          Expanded(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: NeumorphicIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      tooltip: 'ย้อนกลับ',
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _loading && _detail == null
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null && _detail == null
+                      ? _buildErrorState()
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            children: [
+                              _buildStatusCard(),
+                              _buildVenueInfoCard(),
+                              VenueSetupChecklistCard(
+                                steps: steps,
+                                venueStatus: _venueStatus,
+                                saving: _saving,
+                                onRun: _run,
+                              ),
+                              _buildCourtsSection(),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      body: _loading && _detail == null
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null && _detail == null
-          ? _buildErrorState()
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  _buildStatusCard(),
-                  _buildVenueInfoCard(),
-                  VenueSetupChecklistCard(
-                    steps: steps,
-                    venueStatus: _venueStatus,
-                    saving: _saving,
-                    onRun: _run,
-                  ),
-                  _buildCourtsSection(),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
     );
   }
 

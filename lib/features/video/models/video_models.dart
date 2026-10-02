@@ -177,20 +177,20 @@ class Video {
   /// ✅ IP Normalize Fix (Bug Root Cause):
   /// DB อาจเก็บ URL ด้วย IP เก่า (เช่น 192.168.0.116, 192.168.1.142)
   /// ทุกครั้งที่เชื่อมต่อ WiFi ใหม่ IP จะเปลี่ยน → Image.network โหลดไม่ได้
-  /// แก้โดย replace IPv4 ใน local URL ด้วย AppConfig.mainMachineIp ปัจจุบันเสมอ
+  /// แก้โดย replace IPv4 ใน local URL ด้วย AppConfig.localApiUrl ปัจจุบันเสมอ
   String? get bestThumbnailUrl {
     final raw = photoUrls.isNotEmpty ? photoUrls.first : thumbnailUrl;
     return _normalizeLocalUrl(raw);
   }
 
-  /// Replace IP เก่าใน local server URL → AppConfig.mainMachineIp ปัจจุบัน
+  /// Replace IP เก่าใน local server URL → AppConfig.localApiUrl ปัจจุบัน
   /// URL ที่เป็น CDN (https://) จะถูกส่งคืนตามเดิมโดยไม่แตะต้อง
   static String? _normalizeLocalUrl(String? url) {
     if (url == null || url.isEmpty) return null;
     if (url.startsWith('https://')) return url;
     return url.replaceFirst(
       RegExp(r'http://\d+\.\d+\.\d+\.\d+(:\d+)?'),
-      'http://${AppConfig.mainMachineIp}',
+      AppConfig.localApiUrl,
     );
   }
 

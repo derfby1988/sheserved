@@ -7,6 +7,8 @@ import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/websocket_service.dart';
 import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
+import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 
 import '../../application/court_owner_service.dart';
 import '../../data/book_court_models.dart';
@@ -53,10 +55,11 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     // Same contract as the group-join flow: a fresh venue_booking
     // notification means a manager-visible queue changed — refresh the
     // pending badges without waiting for a manual pull.
-    _notificationSub = WebSocketService().applicationNotificationStream
-        .listen((data) {
-          if (data['category']?.toString() == 'venue_booking') _load();
-        });
+    _notificationSub = WebSocketService().applicationNotificationStream.listen((
+      data,
+    ) {
+      if (data['category']?.toString() == 'venue_booking') _load();
+    });
   }
 
   @override
@@ -199,109 +202,166 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     final userId = _userId;
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
-      appBar: AppBar(
-        title: const Text(
-          'จัดการสนามของฉัน',
-          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
-        ),
-        backgroundColor: NeumorphicTheme.baseColor,
-        elevation: 0,
-        foregroundColor: NeumorphicTheme.textPrimary,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : userId == null
-          ? const Center(child: Text('กรุณาเข้าสู่ระบบ'))
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  _buildOwnerStatusCard(),
-                  const SizedBox(height: 8),
-                  // Venues the user manages are always listed — assigned
-                  // managers see their scope without owning a profile, but
-                  // only an approved owner may create a new venue.
-                  if (_venues.isNotEmpty ||
-                      _ownerProfile?.status == VenueOwnerStatus.approved) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'สนามที่จัดการ (${_venues.length})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: NeumorphicTheme.textPrimary,
-                              ),
-                            ),
-                          ),
-                          if (_ownerProfile?.status ==
-                              VenueOwnerStatus.approved)
-                            NeumorphicPillButton(
-                              onPressed: _addVenue,
-                              icon: Icons.add_rounded,
-                              text: 'เพิ่มสนาม',
-                              height: 34,
-                              fontSize: 13,
-                              iconSize: 16,
-                              depth: 3,
-                              blur: 6,
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (_venues.isEmpty)
-                      NeumorphicContainer(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 24,
-                        ),
-                        borderRadius: 18,
-                        depth: 4,
-                        blur: 8,
-                        child: Column(
-                          children: [
-                            const NeumorphicInsetBox(
-                              width: 56,
-                              height: 56,
-                              borderRadius: 28,
-                              padding: EdgeInsets.zero,
-                              child: Icon(
-                                Icons.stadium_outlined,
-                                size: 26,
-                                color: NeumorphicTheme.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'ยังไม่มีสนาม — สร้างสนามแรกของคุณ',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: NeumorphicTheme.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      for (final venue in _venues)
-                        CourtOwnerVenueCard(
-                          venue: venue,
-                          pendingCount: _pendingCounts[venue.id] ?? 0,
-                          onManage: () => _openManage(venue),
-                          onViewBookings: () => _openBookings(venue),
-                        ),
-                  ],
-                ],
+      drawer: const TlzDrawer(),
+      body: Column(
+        children: [
+          // Same gradient header + TlzAppTopBar as the Sports Hub shell.
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
               ),
             ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  middle: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'จัดการสนามของฉัน',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: NeumorphicIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      tooltip: 'ย้อนกลับ',
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : userId == null
+                      ? const Center(child: Text('กรุณาเข้าสู่ระบบ'))
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            children: [
+                              _buildOwnerStatusCard(),
+                              const SizedBox(height: 8),
+                              // Venues the user manages are always listed — assigned
+                              // managers see their scope without owning a profile, but
+                              // only an approved owner may create a new venue.
+                              if (_venues.isNotEmpty ||
+                                  _ownerProfile?.status ==
+                                      VenueOwnerStatus.approved) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    4,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'สนามที่จัดการ (${_venues.length})',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 15,
+                                            color: NeumorphicTheme.textPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                      if (_ownerProfile?.status ==
+                                          VenueOwnerStatus.approved)
+                                        NeumorphicPillButton(
+                                          onPressed: _addVenue,
+                                          icon: Icons.add_rounded,
+                                          text: 'เพิ่มสนาม',
+                                          height: 34,
+                                          fontSize: 13,
+                                          iconSize: 16,
+                                          depth: 3,
+                                          blur: 6,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (_venues.isEmpty)
+                                  NeumorphicContainer(
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 24,
+                                    ),
+                                    borderRadius: 18,
+                                    depth: 4,
+                                    blur: 8,
+                                    child: Column(
+                                      children: [
+                                        const NeumorphicInsetBox(
+                                          width: 56,
+                                          height: 56,
+                                          borderRadius: 28,
+                                          padding: EdgeInsets.zero,
+                                          child: Icon(
+                                            Icons.stadium_outlined,
+                                            size: 26,
+                                            color:
+                                                NeumorphicTheme.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        const Text(
+                                          'ยังไม่มีสนาม — สร้างสนามแรกของคุณ',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color:
+                                                NeumorphicTheme.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  for (final venue in _venues)
+                                    CourtOwnerVenueCard(
+                                      venue: venue,
+                                      pendingCount:
+                                          _pendingCounts[venue.id] ?? 0,
+                                      onManage: () => _openManage(venue),
+                                      onViewBookings: () =>
+                                          _openBookings(venue),
+                                    ),
+                              ],
+                            ],
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -311,8 +371,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
       _ownerProfile?.submittedAt ?? _ownerProfile?.createdAt,
     );
     final reviewed = _formatDate(_ownerProfile?.reviewedAt);
-    final submittedLine =
-        submitted == null ? null : 'ส่งคำขอเมื่อ $submitted';
+    final submittedLine = submitted == null ? null : 'ส่งคำขอเมื่อ $submitted';
     final approvedSubtitle = [
       if (submitted != null) 'ส่งคำขอ $submitted',
       if (reviewed != null) 'อนุมัติ $reviewed',
@@ -324,85 +383,84 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
       depth: 4,
       blur: 8,
       child: switch (status) {
-          VenueOwnerStatus.approved => _statusTile(
-            icon: Icons.verified_rounded,
-            color: Colors.green.shade700,
-            title: 'คุณเป็นเจ้าของสนามที่อนุมัติแล้ว',
-            subtitle: approvedSubtitle,
-          ),
-          VenueOwnerStatus.pending => _statusTile(
-            icon: Icons.hourglass_top_rounded,
-            color: Colors.orange.shade800,
-            title: 'คำขอเป็นเจ้าของสนามกำลังรอตรวจสอบ',
-            subtitle: submittedLine,
-          ),
-          VenueOwnerStatus.rejected || VenueOwnerStatus.suspended => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _statusTile(
-                icon: Icons.block_rounded,
-                color: Colors.red,
-                title: status == VenueOwnerStatus.rejected
-                    ? 'คำขอไม่ผ่านการตรวจสอบ'
-                    : 'บัญชีเจ้าของสนามถูกระงับ',
-                subtitle: submittedLine,
-              ),
-              if (_ownerProfile?.rejectionReason?.isNotEmpty == true)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, left: 48),
-                  child: Text(
-                    _ownerProfile!.rejectionReason!,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: NeumorphicTheme.textSecondary,
-                    ),
+        VenueOwnerStatus.approved => _statusTile(
+          icon: Icons.verified_rounded,
+          color: Colors.green.shade700,
+          title: 'คุณเป็นเจ้าของสนามที่อนุมัติแล้ว',
+          subtitle: approvedSubtitle,
+        ),
+        VenueOwnerStatus.pending => _statusTile(
+          icon: Icons.hourglass_top_rounded,
+          color: Colors.orange.shade800,
+          title: 'คำขอเป็นเจ้าของสนามกำลังรอตรวจสอบ',
+          subtitle: submittedLine,
+        ),
+        VenueOwnerStatus.rejected || VenueOwnerStatus.suspended => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _statusTile(
+              icon: Icons.block_rounded,
+              color: Colors.red,
+              title: status == VenueOwnerStatus.rejected
+                  ? 'คำขอไม่ผ่านการตรวจสอบ'
+                  : 'บัญชีเจ้าของสนามถูกระงับ',
+              subtitle: submittedLine,
+            ),
+            if (_ownerProfile?.rejectionReason?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 48),
+                child: Text(
+                  _ownerProfile!.rejectionReason!,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: NeumorphicTheme.textSecondary,
                   ),
                 ),
-              if (status == VenueOwnerStatus.rejected)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: NeumorphicPillButton(
-                    onPressed: _applyAsOwner,
-                    icon: Icons.refresh_rounded,
-                    text: 'แก้ไขและส่งคำขอใหม่',
-                    height: 40,
-                    fontSize: 13.5,
-                    depth: 4,
-                    blur: 8,
+              ),
+            if (status == VenueOwnerStatus.rejected)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: NeumorphicPillButton(
+                  onPressed: _applyAsOwner,
+                  icon: Icons.refresh_rounded,
+                  text: 'แก้ไขและส่งคำขอใหม่',
+                  height: 40,
+                  fontSize: 13.5,
+                  depth: 4,
+                  blur: 8,
+                ),
+              ),
+            if (status == VenueOwnerStatus.suspended)
+              const Padding(
+                padding: EdgeInsets.only(top: 8, left: 48),
+                child: Text(
+                  'หากต้องการอุทธรณ์ กรุณาติดต่อทีมงาน Sheserved',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: NeumorphicTheme.textSecondary,
                   ),
                 ),
-              if (status == VenueOwnerStatus.suspended)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, left: 48),
-                  child: Text(
-                    'หากต้องการอุทธรณ์ กรุณาติดต่อทีมงาน Sheserved',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: NeumorphicTheme.textSecondary,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          _ => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _statusTile(
-                icon: Icons.stadium_outlined,
-                color: NeumorphicTheme.primaryBlue,
-                title:
-                    'มีสนามกีฬา? ลงทะเบียนเป็นเจ้าของสนามเพื่อเปิดรับการจอง',
               ),
-              const SizedBox(height: 12),
-              NeumorphicVerifyButton(
-                onPressed: _applyAsOwner,
-                text: 'ลงทะเบียนเจ้าของสนาม',
-                height: 46,
-                fitTextToWidth: true,
-              ),
-            ],
-          ),
-        },
+          ],
+        ),
+        _ => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _statusTile(
+              icon: Icons.stadium_outlined,
+              color: NeumorphicTheme.primaryBlue,
+              title: 'มีสนามกีฬา? ลงทะเบียนเป็นเจ้าของสนามเพื่อเปิดรับการจอง',
+            ),
+            const SizedBox(height: 12),
+            NeumorphicVerifyButton(
+              onPressed: _applyAsOwner,
+              text: 'ลงทะเบียนเจ้าของสนาม',
+              height: 46,
+              fitTextToWidth: true,
+            ),
+          ],
+        ),
+      },
     );
   }
 

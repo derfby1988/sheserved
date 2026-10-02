@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
+import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
+import 'package:sheserved/shared/widgets/tlz_drawer.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
@@ -223,18 +225,15 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   Widget build(BuildContext context) {
     // Active appointments: the nearest one leads.
     final now = DateTime.now();
-    final active =
-        _bookings
-            .where((b) => b.isPending || b.isConfirmed)
-            .toList()
-          ..sort((a, b) {
-            final aLive = a.endsAt.isAfter(now);
-            final bLive = b.endsAt.isAfter(now);
-            if (aLive != bLive) return aLive ? -1 : 1;
-            return aLive
-                ? a.startsAt.compareTo(b.startsAt)
-                : b.startsAt.compareTo(a.startsAt);
-          });
+    final active = _bookings.where((b) => b.isPending || b.isConfirmed).toList()
+      ..sort((a, b) {
+        final aLive = a.endsAt.isAfter(now);
+        final bLive = b.endsAt.isAfter(now);
+        if (aLive != bLive) return aLive ? -1 : 1;
+        return aLive
+            ? a.startsAt.compareTo(b.startsAt)
+            : b.startsAt.compareTo(a.startsAt);
+      });
     // Rejections stay ahead of expired requests; rejected bookings sort by
     // decision time, and expired requests by their scheduled start time.
     final rejectedOrExpired =
@@ -258,59 +257,109 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     final cancelled = _bookings
         .where((b) => b.status == VenueBookingStatus.cancelled)
         .toList();
-    final completed = _bookings
-        .where((b) => b.isCompleted)
-        .toList()
+    final completed = _bookings.where((b) => b.isCompleted).toList()
       ..sort((a, b) => b.endsAt.compareTo(a.endsAt));
 
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
-      appBar: AppBar(
-        title: const Text(
-          'การจองสนามของฉัน',
-          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
-        ),
-        backgroundColor: NeumorphicTheme.baseColor,
-        elevation: 0,
-        foregroundColor: NeumorphicTheme.textPrimary,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _userId == null
-          ? const Center(
-              child: Text(
-                'กรุณาเข้าสู่ระบบเพื่อดูการจอง',
-                style: TextStyle(color: NeumorphicTheme.textSecondary),
+      drawer: const TlzDrawer(),
+      body: Column(
+        children: [
+          // Same gradient header + TlzAppTopBar as the Sports Hub shell.
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
               ),
-            )
-          : Column(
-              children: [
-                _tabBar(),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _load,
-                    child: switch (_tab) {
-                      1 => _statusTab(
-                        rejectedOrExpired,
-                        'ไม่มีรายการที่ถูกปฏิเสธหรือหมดอายุ',
-                        Icons.block_outlined,
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: TlzAppTopBar.onPrimary(
+                  middle: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'การจองสนามของฉัน',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
                       ),
-                      2 => _statusTab(
-                        cancelled,
-                        'ไม่มีรายการที่ยกเลิก',
-                        Icons.cancel_outlined,
-                      ),
-                      3 => _statusTab(
-                        completed,
-                        'ไม่มีรายการที่เสร็จสิ้น',
-                        Icons.event_available_rounded,
-                      ),
-                      _ => _bookingsTab(active),
-                    },
+                      maxLines: 1,
+                    ),
                   ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                // Once loaded the back button rides in the tab row; this
+                // standalone row only covers the loading/signed-out states.
+                if (_loading || _userId == null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: NeumorphicIconButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        tooltip: 'ย้อนกลับ',
+                        onPressed: () => Navigator.maybePop(context),
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _userId == null
+                      ? const Center(
+                          child: Text(
+                            'กรุณาเข้าสู่ระบบเพื่อดูการจอง',
+                            style: TextStyle(
+                              color: NeumorphicTheme.textSecondary,
+                            ),
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            _tabBar(),
+                            Expanded(
+                              child: RefreshIndicator(
+                                onRefresh: _load,
+                                child: switch (_tab) {
+                                  1 => _statusTab(
+                                    rejectedOrExpired,
+                                    'ไม่มีรายการที่ถูกปฏิเสธหรือหมดอายุ',
+                                    Icons.block_outlined,
+                                  ),
+                                  2 => _statusTab(
+                                    cancelled,
+                                    'ไม่มีรายการที่ยกเลิก',
+                                    Icons.cancel_outlined,
+                                  ),
+                                  3 => _statusTab(
+                                    completed,
+                                    'ไม่มีรายการที่เสร็จสิ้น',
+                                    Icons.event_available_rounded,
+                                  ),
+                                  _ => _bookingsTab(active),
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -319,19 +368,31 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   /// the status chips so the danger statuses stay red.
   Widget _tabBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: NeumorphicInsetBox(
-        height: 44,
-        borderRadius: 22,
-        padding: const EdgeInsets.all(4),
-        child: Row(
-          children: [
-            _tabItem(0, 'การจอง', AppColors.primaryDark),
-            _tabItem(1, 'ถูกปฏิเสธ', Colors.red),
-            _tabItem(2, 'ยกเลิก', Colors.red),
-            _tabItem(3, 'เสร็จสิ้น', AppColors.primaryDark),
-          ],
-        ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Row(
+        children: [
+          NeumorphicIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            tooltip: 'ย้อนกลับ',
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: NeumorphicInsetBox(
+              height: 44,
+              borderRadius: 22,
+              padding: const EdgeInsets.all(4),
+              child: Row(
+                children: [
+                  _tabItem(0, 'การจอง', AppColors.primaryDark),
+                  _tabItem(1, 'ถูกปฏิเสธ', Colors.red),
+                  _tabItem(2, 'ยกเลิก', Colors.red),
+                  _tabItem(3, 'เสร็จสิ้น', AppColors.primaryDark),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -384,11 +445,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
             height: 56,
             borderRadius: 28,
             padding: EdgeInsets.zero,
-            child: Icon(
-              icon,
-              size: 26,
-              color: NeumorphicTheme.textSecondary,
-            ),
+            child: Icon(icon, size: 26, color: NeumorphicTheme.textSecondary),
           ),
           const SizedBox(height: 10),
           Text(
