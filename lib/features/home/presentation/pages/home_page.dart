@@ -1711,7 +1711,10 @@ class _HomePageState extends ConsumerState<HomePage>
       final currentUser = AuthService.instance.currentUser;
 
       // Option 3: Auto-start persistent responder tracking if enabled
-      if (currentUser != null &&
+      // (mobile เท่านั้น — permission_handler locationAlways/openAppSettings
+      //  ไม่รองรับ web; throw ตรงนี้จะข้าม article fetch ใน try เดียวกัน)
+      if (!kIsWeb &&
+          currentUser != null &&
           (currentUser.isThaiMhungEnabled ||
               currentUser.isProfessionalResponder)) {
         debugPrint(
