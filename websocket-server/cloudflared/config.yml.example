@@ -1,0 +1,39 @@
+# =============================================================
+# cloudflared config — W4.2 Option B (Cloudflare Tunnel)
+# =============================================================
+# คัดลอกไปที่ ~/.cloudflared/config.yml แล้วแทน <TUNNEL_ID>
+#
+# Architecture:
+#   Internet → Cloudflare edge (TLS จบที่นี่) → tunnel
+#     admin.sheserved.com → http://localhost:8081 (Caddy → build/web)
+#     api.sheserved.com   → http://localhost:8080 (Caddy → node:3000,
+#                            รวม /socket.io — tunnel รองรับ WebSocket โดยอัตโนมัติ)
+#
+# Setup (ครั้งเดียว):
+#   1. cloudflared tunnel login            # เปิด browser เลือก sheserved.com
+#   2. cloudflared tunnel create sheserved # → ได้ TUNNEL_ID + <TUNNEL_ID>.json
+#   3. cloudflared tunnel route dns sheserved admin.sheserved.com
+#      cloudflared tunnel route dns sheserved api.sheserved.com
+#   4. cp cloudflared/config.yml.example ~/.cloudflared/config.yml (แทน TUNNEL_ID)
+#   5. ทดสอบ: cloudflared tunnel run sheserved
+#   6. ติดตั้งเป็น service: sudo cloudflared service install
+# =============================================================
+
+tunnel: <TUNNEL_ID>
+credentials-file: /Users/dave_macmini/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Flutter web build (ผ่าน Caddy :8081 — SPA fallback + CSP อยู่ที่นั่น)
+  - hostname: admin.sheserved.com
+    service: http://localhost:8081
+
+  # Backend API + Socket.IO (ผ่าน Caddy :8080 → node :3000)
+  - hostname: api.sheserved.com
+    service: http://localhost:8080
+    originRequest:
+      # WebSocket ใช้ได้โดย default — keepalive กัน idle timeout
+      keepAliveConnections: 100
+      keepAliveTimeout: 1m30s
+
+  # catch-all สุดท้าย (จำเป็น — ต้องมีเสมอ)
+  - service: http_status:404

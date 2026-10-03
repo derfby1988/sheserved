@@ -50,13 +50,25 @@ if [ "$PORT" = "80" ]; then
   caddy run --config "$CADDYFILE"
 else
   # Port 8080: ใช้ Caddyfile.dev (:8080 bind-all, ไม่ต้อง sudo)
+  # + เสิร์ฟ Flutter web build บน :8081 (W4.2) — root ปรับได้ผ่าน CADDY_WEB_ROOT ใน .env
+  # โหลดเฉพาะ CADDY_* vars จาก .env (ถ้ามี) — กันค่าอื่นที่มี space/quote พัง script
+  if [ -f "$SCRIPT_DIR/.env" ]; then
+    while IFS= read -r line; do
+      [[ "$line" =~ ^CADDY_[A-Z_]+= ]] && export "$line"
+    done < "$SCRIPT_DIR/.env"
+  fi
   CADDYFILE="$SCRIPT_DIR/Caddyfile.dev"
+  export CADDY_WEB_ROOT="${CADDY_WEB_ROOT:-$SCRIPT_DIR/../build/web}"
   echo "  ✅ Starting on port ${PORT} (no sudo required)"
   echo "  Config   : $CADDYFILE"
+  echo "  Web root : $CADDY_WEB_ROOT"
   echo ""
   echo "  🧪 ทดสอบได้ที่:"
   echo "    curl http://localhost:${PORT}/health"
   echo "    curl http://${HOSTNAME}.local:${PORT}/health"
+  echo ""
+  echo "  🌐 Flutter web (build/web):"
+  echo "    http://localhost:8081/"
   echo ""
   echo "  📱 สำหรับมือถือ (Wi-Fi เดียวกัน):"
   echo "    http://${HOSTNAME}.local:${PORT}/api/..."
