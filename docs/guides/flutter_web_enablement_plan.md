@@ -4,7 +4,7 @@
 > **อัปเดต:** 2026-09-19 — ปรับให้เข้ากับ Phase 13 (Trusted Backend Identity Bridge Rollout) ใน `docs/plans/Match_Sport_PLAN.md`
 > **อัปเดต:** 2026-09-20 — เพิ่ม mobile-safety guardrails, UI layout invariants และ release gates หลัง dependency map ในส่วน 3
 > **อัปเดต:** 2026-09-21 — re-baseline กับ Phase 13.3 ที่มี implementation บางส่วนแล้ว และเพิ่ม socket token lifecycle, CSP external origins, passkeys, domain/cache delivery checks
-> **สถานะ:** � **W0/W1 implement + verify แล้ว (2026-09-21)** — web build/serve ผ่าน, analyzer diff 0, Android/iOS build ผ่าน (หลักฐานท้าย W1); �📋 W2–W5 ยังเป็นแผนเพื่อการตัดสินใจ ต้องปิด checklist ก่อนลงมือ
+> **สถานะ:** ✅ **W0/W1 implement + verify แล้ว (2026-09-21) + mobile baseline §4.2 เก็บครบแล้ว (2026-10-03)** — web build/serve ผ่าน, analyzer diff 0, Android/iOS build ผ่าน, device smoke+screenshots บน 4 form factors (หลักฐานท้าย W1); ✅ **W2 ตัดสิน + implement แล้ว**; 🟡 **W3 code ครบ — ค้าง ops prerequisites + browser smoke**; 📋 W4/W5 รอ decisions
 > **ขอบเขต:** ทำให้ `flutter run -d chrome` / `flutter build web` ทำงานได้โดยไม่ขัดกับ `docs/infrastructure/`, `docs/secure/` และ Phase 13 contract
 > **กติกา rollout:** ทุก phase ต้องเป็น release ที่ deploy ได้อิสระตามกฎ Q1-B (ปล่อยค้างได้โดยระบบไม่แย่ลง), มี tests + rollback และห้ามเปลี่ยน `AuthService`/`ServiceLocator` ไปใช้ `Supabase.instance.client.auth.currentUser` (ตาม `.agent/workflows/auth_data_guidelines.md`)
 
@@ -128,6 +128,25 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
 > - ✅ `flutter build ios --simulator --debug` → `Runner.app` (118.6s; ต้อง `pod update GoogleUtilities/UserDefaults` → 8.1.3 ก่อน — Podfile.lock stale อยู่ก่อนแล้ว; มี warning MLKit pods ไม่รองรับ arm64 sim แต่ build ผ่าน)
 > - ⚠️ **ยังขาด:** browser smoke จริงบน Chrome (upload/CSV/preview/face-blur fallback ต้องคลิกทดสอบ), iOS/Android device UI smoke + screenshot diff, `flutter analyze` (analysis server exit code 64 — ใช้ `dart analyze` แทน)
 > - `dart:io` API ที่เหลือใน `chat_room_page`/`chart_board_page`/`group_invite_poster_sheet`/`chat_repository` ทั้งหมดอยู่หลัง `kIsWeb` guard หรือใน IO-only branch แล้ว
+>
+> **หลักฐาน mobile baseline §4.2 (2026-10-03, commit `8ac4099`, Flutter 3.38.1 / Dart 3.10.0, debug build, `USE_BACKEND_AUTH` default false → direct Supabase, account `moter`):**
+> - ✅ `dart analyze lib test` → **2342 issues** (59 error / 574 warning / 1709 info — ลดจาก 2409 ตอน 2026-09-21; error ทั้งหมดอยู่ใน dead/orphan files เดิม)
+> - ✅ `flutter test` → **+508 ~11 −2** — fail 2 ตัวเดิม (`widget_test` + `phase2_role_sync_test`, environmental: ต้องการ `Supabase.instance`)
+> - ✅ `git diff --check` clean; `flutter build apk --debug` (151s) + `flutter build ios --simulator --debug` (135.1s) → install ลง device จริงทั้งคู่
+> - ✅ **Screenshots → `docs/evidence/w0w1_mobile_baseline/`** (ครอบคลุม §4.2 matrix):
+>   - **iOS 393×852** — iPhone 16 sim `A692F954` (iOS 18.1): launch+permission dialog, home guest, profile tab (guest+logged-in), login page, drawer, chat list (empty), consultation card → `/health-data-entry`
+>   - **iOS compact ~375×667** — iPhone SE (3rd gen) sim `EA8D160B` (iOS 18.2): home guest — ใกล้สุดที่มีกับ 320×568
+>   - **Android 360×879** — emulator-5554 `Copy_of_6.7_API_30` (sdk_gphone_arm64, API 33): home guest+logged-in, login, drawer, shop page, chat list (empty), `/health-data-entry`, profile
+>   - **Android 411×868** — emulator-5556 `Sunmi_V2s_PLUS_API_30` (API 30): home guest — ใกล้สุดกับ 412×915
+>   - **Landscape: N/A** — `main.dart:167` lock `portraitUp` ทั้งแอป (by design; `radial_question_view` unlock ชั่วคราวแล้ว re-lock)
+> - ไม่พบ `RenderFlex overflow`/layout exception ในหน้าที่จับภาพทั้งหมด; bottom nav, drawer, consultation card, profile avatar badge ตำแหน่งตรงกันทั้งสอง platform
+> - **หมายเหตุ ops:** physical devices ที่มีอยู่ = iPhone 14 Pro Max (wireless, iOS 27.0) + CPH1989 `DMM7OZFESSFA995L` (Android 11, 360×693dp) — ใช้เสริมได้ในรอบถัดไป
+> - **ข้อสังเกตจากการทดสอบ:**
+>   - account `test`/`dave` ใน `login_CPH1989.yaml` เป็นบัญชี backend-auth — direct-Supabase mode (`USE_BACKEND_AUTH=false`) ต้องใช้ `moter`/`fater` + `12345678`; login flow iOS ต้องเขียนแยก (subflow เดิมใช้ `hideKeyboard` ที่ทำงานไม่ได้บน iOS sim)
+>   - iOS sim: relaunch แอปแล้วกด consultation card ทันที → `restoreSession` ยังไม่เสร็จ ถูก route ไป `/login` — timing ปกติของ session restore ไม่ใช่ bug; `simctl privacy grant location` ไม่ปิด dialog ถาวรในเคสนี้ ต้อง tap dismiss ครั้งเดียว
+>   - Android emulator UiAutomation หลุดระหว่างใช้ Maestro (บ่อยบน fresh boot) — ใช้ `adb shell input tap/text` + `exec-out screencap` แทนได้; `input keyevent 4` บนหน้า login จะ pop route กลับ home อย่าใช้ปิด keyboard (tap field ใหม่ก่อน)
+>   - guest profile tab กลับ state guest ชั่วคราวได้ถ้าอ่าน auth ก่อน session restore เสร็จ (เจอครั้งเดียว ตอนถอยกลับจาก `/health-data-entry`)
+> - ⚠️ **ยังขาด (blocked evidence):** preview/upload บนเนื้อหาจริงใน `chat_room_page`/`chart_board_page`/`incident_report_widget`/`fullscreen_video_viewer` (ไม่มี chat room/media test data), iOS physical screenshot, browser smoke บน Chrome
 
 ---
 
@@ -181,7 +200,7 @@ Phase W5 — Web Hardening            (ก่อน production — รวม 13.
    - เพิ่ม `http://localhost:<port>` (dev — แนะนำ fix port ของ `flutter run -d web-server --web-port`) และ `https://<web-domain>` (prod เมื่อตัดสิน domain ใน W4)
    - ไม่ต้องแก้ Authorized redirect URIs (Flutter web ใช้ GIS ฝั่ง client)
    - ถ้าข้ามขั้นนี้ sign-in จะล้มด้วย `idpiframe_initialization_failed` / origin mismatch
-2. **Backend ต้องรันและเข้าถึงได้**: `cd websocket-server && npm start` — ตอนนี้ `http://192.168.1.111:8080` ตอบ `Connection refused` → browser smoke ทุกขั้นยังทำไม่ได้จนกว่า server จะ up; dev web origin ต้องอยู่ใน `ALLOWED_ORIGINS` ของ `.env` ด้วย (W4.1 — env ops เท่านั้น)
+2. **Backend ต้องรันและเข้าถึงได้**: `cd websocket-server && npm start` — IP ตาม `mainMachineIp` ใน `lib/config/app_config.dart` (ปัจจุบัน `192.168.0.123:8080`; เปลี่ยนเครือข่ายให้ทำตาม checklist ใน `docs/plans/VIDEO_SYSTEM_PLAN.md`) → browser smoke ทุกขั้นต้องให้ server up; dev web origin ต้องอยู่ใน `ALLOWED_ORIGINS` ของ `.env` ด้วย (W4.1 — env ops เท่านั้น)
 3. **Browser smoke เมื่อ 1+2 พร้อม** (คำสั่งที่ใช้ verify):
    ```bash
    flutter run -d web-server --web-port=<port> \
@@ -308,8 +327,8 @@ flutter build ios --simulator --debug
 - [x] ยืนยัน W3.3: แสดงทุก provider แต่ disabled บน web เว้น Google — `SocialProviderPolicy.webEnabled` เป็น flag เดียว; Apple รอ paid dev account ($99/ปี)
 - [x] ยืนยัน W3.6 socket token lifecycle: implement ผ่าน `tokenChanges` + `refreshTokens()` — refresh → reconnect ด้วย token ใหม่, revoke/expiry → หยุดไม่ retry token เดิม
 - [x] ตรวจ W3.9 passkeys bundle: คงไว้เป็น capability เท่านั้น ไม่ประกาศเป็น auth flow — Corbado คิดตาม MAU เมื่อเปิดจริง
-- [ ] บันทึก mobile baseline (screenshot/no-overflow/analyze/test) ตาม matrix ในส่วน 4.2
-- [ ] เตรียม Android emulator/device และระบุรุ่น/device ID สำหรับ mobile gate
+- [x] บันทึก mobile baseline (screenshot/no-overflow/analyze/test) ตาม matrix ในส่วน 4.2 — ✅ 2026-10-03, ดูหลักฐานท้าย W1 + `docs/evidence/w0w1_mobile_baseline/`
+- [x] เตรียม Android emulator/device และระบุรุ่น/device ID สำหรับ mobile gate — ✅ `Copy_of_6.7_API_30` (emulator-5554, 360×879), `Sunmi_V2s_PLUS_API_30` (emulator-5556, 411×868), physical CPH1989 `DMM7OZFESSFA995L` (360×693, Android 11)
 - [ ] ops (ทำจาก code ไม่ได้): เพิ่ม web origin ใน Authorized JavaScript origins ของ Google Web client ใน GCP Console (W3.1) — ขั้นตอนอยู่ในหมายเหตุ "งานค้าง" ของตาราง W3
 - [ ] ops (ทำจาก code ไม่ได้): เปิด backend (`websocket-server`) + เพิ่ม dev web origin ใน `ALLOWED_ORIGINS` แล้วรัน browser smoke ตามขั้นตอนในตาราง W3 (ปัจจุบัน `192.168.1.111:8080` = connection refused)
 - [ ] ตัดสินใจ W5.7: token storage บน web — คง localStorage ตาม 13.2 หรือลงทุน httpOnly cookie + CSRF (แผน 15) พร้อมกัน
