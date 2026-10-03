@@ -20,6 +20,9 @@ dependencies:
   
   # Social Login
   google_sign_in: ^6.2.1
+  # Web impl — ใช้ renderButton (GIS credential flow) ให้ได้ idToken จริงบน web
+  google_sign_in_web: ^0.12.4+4
+  google_sign_in_platform_interface: ^2.5.0
   flutter_facebook_auth: ^7.1.1
   sign_in_with_apple: ^6.1.3
   crypto: ^3.0.6

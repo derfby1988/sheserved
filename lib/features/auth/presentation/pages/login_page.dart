@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/app_config.dart';
 import '../../data/repositories/user_repository.dart';
 import '../../data/services/social_auth_service.dart';
 import '../../data/services/social_provider_policy.dart';
+import '../widgets/google_web_sign_in_button.dart';
 import '../widgets/social_login_button.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../shared/widgets/widgets.dart';
@@ -39,6 +42,7 @@ class _LoginPageState extends State<LoginPage>
   // Services (nullable - may not be initialized if Supabase not configured)
   UserRepository? _userRepository;
   SocialAuthService? _socialAuthService;
+  StreamSubscription<GoogleSignInUserData?>? _googleWebSub;
 
   @override
   void initState() {
@@ -57,6 +61,14 @@ class _LoginPageState extends State<LoginPage>
       } catch (e) {
         debugPrint('LoginPage: Supabase not initialized - $e');
       }
+    }
+
+    // Web: ปุ่ม Google ทางการ (GIS renderButton) ส่ง credential ผ่าน stream
+    // — ไม่มี onTap ให้ hook เหมือนปุ่ม custom
+    if (kIsWeb && _socialAuthService != null) {
+      _googleWebSub = _socialAuthService!.googleWebUserEvents?.listen(
+        _handleGoogleWebCredential,
+      );
     }
 
     _animationController = AnimationController(
@@ -81,6 +93,7 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
+    _googleWebSub?.cancel();
     _loginCooldownTimer?.cancel();
     _usernameController.dispose();
     _passwordController.dispose();
@@ -302,12 +315,40 @@ class _LoginPageState extends State<LoginPage>
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    _buildSocialButton(
-                                      SocialProvider.google,
-                                      onPressed: () => _handleSocialLogin(
+                                    // Web: `signIn()` ไม่คืน idToken → ใช้ปุ่ม
+                                    // Google Identity Services ทางการแทน —
+                                    // icon type ในวงกลม Neumorphic ให้ขนาด
+                                    // เท่าปุ่ม provider อื่น (50px)
+                                    if (kIsWeb)
+                                      Opacity(
+                                        opacity: _isLoading ? 0.5 : 1.0,
+                                        child: IgnorePointer(
+                                          ignoring: _isLoading,
+                                          child: Container(
+                                            width: 50,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: NeumorphicTheme.baseColor,
+                                              shape: BoxShape.circle,
+                                              boxShadow:
+                                                  NeumorphicTheme.smallShadows(
+                                                    distance: 4,
+                                                    blur: 8,
+                                                  ),
+                                            ),
+                                            child: const Center(
+                                              child: GoogleWebSignInButton(),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      _buildSocialButton(
                                         SocialProvider.google,
+                                        onPressed: () => _handleSocialLogin(
+                                          SocialProvider.google,
+                                        ),
                                       ),
-                                    ),
                                     const SizedBox(width: 14),
                                     _buildSocialButton(
                                       SocialProvider.facebook,
@@ -474,36 +515,38 @@ class _LoginPageState extends State<LoginPage>
         opacity: enabled ? 1.0 : 0.45,
         child: GestureDetector(
           onTap: (_isLoading || !enabled) ? null : onPressed,
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: NeumorphicTheme.baseColor,
-          shape: BoxShape.circle,
-          boxShadow: NeumorphicTheme.smallShadows(distance: 4, blur: 8),
-        ),
-        child: Center(
           child: Container(
-            width: 38,
-            height: 38,
+            width: 50,
+            height: 50,
             decoration: BoxDecoration(
-              color: iconBgColor,
+              color: NeumorphicTheme.baseColor,
               shape: BoxShape.circle,
+              boxShadow: NeumorphicTheme.smallShadows(distance: 4, blur: 8),
             ),
             child: Center(
-              child: isLoadingThis
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : iconWidget,
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: isLoadingThis
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : iconWidget,
+                ),
+              ),
             ),
-          ),
-        ),
           ),
         ),
       ),
@@ -694,26 +737,33 @@ class _LoginPageState extends State<LoginPage>
       _loadingProvider = provider;
     });
 
-    try {
-      SocialAuthResult result;
+    final Future<SocialAuthResult> signIn = switch (provider) {
+      SocialProvider.google => _socialAuthService!.signInWithGoogle(),
+      SocialProvider.facebook => _socialAuthService!.signInWithFacebook(),
+      SocialProvider.apple => _socialAuthService!.signInWithApple(),
+      SocialProvider.line => _socialAuthService!.signInWithLine(),
+      SocialProvider.tiktok => _socialAuthService!.signInWithTikTok(),
+    };
+    await _finishSocialLogin(signIn);
+  }
 
-      switch (provider) {
-        case SocialProvider.google:
-          result = await _socialAuthService!.signInWithGoogle();
-          break;
-        case SocialProvider.facebook:
-          result = await _socialAuthService!.signInWithFacebook();
-          break;
-        case SocialProvider.apple:
-          result = await _socialAuthService!.signInWithApple();
-          break;
-        case SocialProvider.line:
-          result = await _socialAuthService!.signInWithLine();
-          break;
-        case SocialProvider.tiktok:
-          result = await _socialAuthService!.signInWithTikTok();
-          break;
-      }
+  /// Web only — credential จากปุ่ม Google ทางการมาทาง stream (ไม่มี onTap)
+  void _handleGoogleWebCredential(GoogleSignInUserData? user) {
+    if (user == null || _isLoading || _socialAuthService == null) return;
+    setState(() {
+      _isLoading = true;
+      _loadingProvider = SocialProvider.google;
+    });
+    unawaited(
+      _finishSocialLogin(_socialAuthService!.signInWithGoogleCredential(user)),
+    );
+  }
+
+  /// ส่วนหลัง sign-in ร่วมของทุก social flow — ไม่ว่า credential จะมาจาก
+  /// ปุ่ม custom (mobile) หรือปุ่ม GIS ทางการ (web)
+  Future<void> _finishSocialLogin(Future<SocialAuthResult> signIn) async {
+    try {
+      final result = await signIn;
 
       if (!mounted) return;
 

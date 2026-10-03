@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,13 +15,7 @@ import '../repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Social Auth Provider Types
-enum SocialAuthProvider {
-  google,
-  facebook,
-  apple,
-  line,
-  tiktok,
-}
+enum SocialAuthProvider { google, facebook, apple, line, tiktok }
 
 /// Social Auth Result
 class SocialAuthResult {
@@ -37,18 +32,11 @@ class SocialAuthResult {
   });
 
   factory SocialAuthResult.success(UserModel user, {bool isNewUser = false}) {
-    return SocialAuthResult(
-      success: true,
-      user: user,
-      isNewUser: isNewUser,
-    );
+    return SocialAuthResult(success: true, user: user, isNewUser: isNewUser);
   }
 
   factory SocialAuthResult.error(String message) {
-    return SocialAuthResult(
-      success: false,
-      errorMessage: message,
-    );
+    return SocialAuthResult(success: false, errorMessage: message);
   }
 }
 
@@ -88,9 +76,12 @@ class SocialAuthService {
   // Google Sign In Configuration
   // serverClientId = Web client ID (ตัวเดียวกับ GOOGLE_CLIENT_ID ฝั่ง backend)
   // ต้องตั้งค่านี้ไม่อย่างนั้น Google จะไม่คืน idToken → backend verify ไม่ได้
+  // บน web ห้ามส่ง serverClientId — google_sign_in_web assert ทิ้ง
+  // (idToken บน web มาจาก meta google-signin-client_id ใน index.html
+  //  ซึ่ง aud = Web client ID ตัวเดียวกับที่ backend verify อยู่แล้ว)
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
-    serverClientId: AppConfig.googleServerClientId.isEmpty
+    serverClientId: (kIsWeb || AppConfig.googleServerClientId.isEmpty)
         ? null
         : AppConfig.googleServerClientId,
   );
@@ -125,7 +116,8 @@ class SocialAuthService {
         final idToken = auth.idToken;
         if (idToken == null || idToken.isEmpty) {
           return SocialAuthResult.error(
-              'ไม่ได้รับ ID token จาก Google — ตรวจสอบ GOOGLE_CLIENT_ID/serverClientId');
+            'ไม่ได้รับ ID token จาก Google — ตรวจสอบ GOOGLE_CLIENT_ID/serverClientId',
+          );
         }
         return await _backendSocialLogin('google', idToken);
       }
@@ -141,7 +133,52 @@ class SocialAuthService {
       return await _handleSocialLogin(socialUserInfo);
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
-      return SocialAuthResult.error('เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Google');
+      return SocialAuthResult.error(
+        'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Google',
+      );
+    }
+  }
+
+  /// Web only — credential ที่ปุ่ม Google Identity Services ทางการ
+  /// (renderButton / One Tap) ส่งเข้ามาทาง stream นี้
+  ///
+  /// `GoogleSignIn.signIn()` ถูก deprecated บน web เพราะคืนเฉพาะ access token
+  /// + profile สังเคราะห์จาก People API (idToken = null เสมอ) ซึ่ง backend
+  /// `/api/auth/social/google` verify ด้วย JWKS ไม่ได้ — credential จาก stream
+  /// นี้มี [GoogleSignInUserData.idToken] เป็น JWT จริง
+  Stream<GoogleSignInUserData?>? get googleWebUserEvents =>
+      GoogleSignInPlatform.instance.userDataEvents;
+
+  /// Web only — login ต่อจาก credential ของปุ่ม GIS ทางการ ผ่าน
+  /// `_backendSocialLogin` path เดียวกับ mobile (ไม่สร้าง auth path แยก)
+  Future<SocialAuthResult> signInWithGoogleCredential(
+    GoogleSignInUserData user,
+  ) async {
+    try {
+      if (AppConfig.useBackendAuth) {
+        final idToken = user.idToken;
+        if (idToken == null || idToken.isEmpty) {
+          return SocialAuthResult.error(
+            'ไม่ได้รับ ID token จาก Google — ตรวจสอบ client ID meta tag',
+          );
+        }
+        return await _backendSocialLogin('google', idToken);
+      }
+
+      final socialUserInfo = SocialUserInfo(
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        photoUrl: user.photoUrl,
+        provider: SocialAuthProvider.google,
+      );
+
+      return await _handleSocialLogin(socialUserInfo);
+    } catch (e) {
+      debugPrint('Google credential sign-in error: $e');
+      return SocialAuthResult.error(
+        'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Google',
+      );
     }
   }
 
@@ -165,7 +202,8 @@ class SocialAuthService {
 
       if (result.status == LoginStatus.failed) {
         return SocialAuthResult.error(
-            result.message ?? 'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Facebook');
+          result.message ?? 'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Facebook',
+        );
       }
 
       // Get user data
@@ -175,7 +213,9 @@ class SocialAuthService {
 
       final nameParts = (userData['name'] as String?)?.split(' ') ?? [];
       final firstName = nameParts.isNotEmpty ? nameParts.first : null;
-      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : null;
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : null;
 
       final socialUserInfo = SocialUserInfo(
         id: userData['id'],
@@ -190,7 +230,9 @@ class SocialAuthService {
       return await _handleSocialLogin(socialUserInfo);
     } catch (e) {
       debugPrint('Facebook Sign-In Error: $e');
-      return SocialAuthResult.error('เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Facebook');
+      return SocialAuthResult.error(
+        'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Facebook',
+      );
     }
   }
 
@@ -221,7 +263,11 @@ class SocialAuthService {
         if (identityToken == null || identityToken.isEmpty) {
           return SocialAuthResult.error('ไม่ได้รับ identity token จาก Apple');
         }
-        return await _backendSocialLogin('apple', identityToken, nonce: rawNonce);
+        return await _backendSocialLogin(
+          'apple',
+          identityToken,
+          nonce: rawNonce,
+        );
       }
 
       final socialUserInfo = SocialUserInfo(
@@ -267,8 +313,7 @@ class SocialAuthService {
       if (await canLaunchUrl(authUrl)) {
         await launchUrl(authUrl, mode: LaunchMode.externalApplication);
         // Note: LINE callback will be handled by deep link
-        return SocialAuthResult.error(
-            'กรุณาดำเนินการต่อในหน้าต่าง LINE Login');
+        return SocialAuthResult.error('กรุณาดำเนินการต่อในหน้าต่าง LINE Login');
       } else {
         return SocialAuthResult.error('ไม่สามารถเปิด LINE Login ได้');
       }
@@ -316,16 +361,19 @@ class SocialAuthService {
     String? nonce,
   }) async {
     try {
-      final data = await auth_client.AuthenticatedHttpClient.instance.socialLogin(
-        provider: provider,
-        providerToken: providerToken,
-        nonce: nonce,
-      );
+      final data = await auth_client.AuthenticatedHttpClient.instance
+          .socialLogin(
+            provider: provider,
+            providerToken: providerToken,
+            nonce: nonce,
+          );
       final userJson = data['user'];
       if (userJson == null || data['accessToken'] == null) {
         return SocialAuthResult.error('การเข้าสู่ระบบล้มเหลว (no user)');
       }
-      final user = UserModel.fromBackendAuth(Map<String, dynamic>.from(userJson));
+      final user = UserModel.fromBackendAuth(
+        Map<String, dynamic>.from(userJson),
+      );
       // ยังไม่มีทางรู้ว่าเป็นผู้ใช้ใหม่จาก response → คืน isNewUser=false
       return SocialAuthResult.success(user);
     } on auth_client.AuthException catch (e) {
@@ -379,9 +427,10 @@ class SocialAuthService {
     String base = '';
 
     if (info.displayName != null && info.displayName!.isNotEmpty) {
-      base = info.displayName!
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]'), '');
+      base = info.displayName!.toLowerCase().replaceAll(
+        RegExp(r'[^a-z0-9]'),
+        '',
+      );
     } else if (info.firstName != null) {
       base = info.firstName!.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     } else {
@@ -400,8 +449,10 @@ class SocialAuthService {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 
   /// SHA256 hash of string
@@ -418,8 +469,9 @@ class SocialAuthService {
   /// Sign out from all social providers
   Future<void> signOut() async {
     try {
-      // Google
-      if (await _googleSignIn.isSignedIn()) {
+      // Google — บน web ไม่มี session ของ `_googleSignIn` (ใช้ GIS credential
+      // flow) และ isSignedIn() จะทริกเกอร์ One Tap prompt เอง → ข้ามไป
+      if (!kIsWeb && await _googleSignIn.isSignedIn()) {
         await _googleSignIn.signOut();
       }
 
