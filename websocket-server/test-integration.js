@@ -142,7 +142,7 @@ async function testVideoEmergencyList() {
   // ตรวจ structure รายการแรก (ถ้ามี)
   if (res.body.length > 0) {
     const first = res.body[0];
-    const required = ['id', 'type', 'status', 'title'];
+    const required = ['id', 'type', 'status', 'title', 'category_id', 'category_name'];
     for (const field of required) {
       if (first[field] === undefined) {
         fail(`รายการแรกไม่มี field '${field}'`);

@@ -8,14 +8,22 @@
 // Local-only columns that exist in the local PostgreSQL videos table but NOT in Cloud
 const VIDEO_LOCAL_ONLY_COLUMNS = new Set([
     'is_synced',
+    'category_id_synced',
     'address', 'alley', 'road', 'soi', 'village',
     'cached_like_count', 'cached_view_count',
-    'category_id',
     'incident_id',
     'peak_viewers',
     'peak_viewers_at',
     'photo_urls',
 ]);
+
+function toCloudVideo(video) {
+    const out = {};
+    for (const [column, value] of Object.entries(video)) {
+        if (!VIDEO_LOCAL_ONLY_COLUMNS.has(column)) out[column] = value;
+    }
+    return out;
+}
 
 async function reconcileLocalToCloud(pool, supabase) {
     if (!pool || !supabase) {
@@ -33,6 +41,9 @@ async function reconcileLocalToCloud(pool, supabase) {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='videos' AND column_name='is_synced') THEN
                     ALTER TABLE videos ADD COLUMN is_synced BOOLEAN DEFAULT false;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='videos' AND column_name='category_id_synced') THEN
+                    ALTER TABLE videos ADD COLUMN category_id_synced BOOLEAN DEFAULT false;
+                END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='video_interactions' AND column_name='is_synced') THEN
                     ALTER TABLE video_interactions ADD COLUMN is_synced BOOLEAN DEFAULT false;
                 END IF;
@@ -43,21 +54,22 @@ async function reconcileLocalToCloud(pool, supabase) {
         `);
 
         // --- 2. Synchronize Videos ---
-        const { rows: unsyncedVideos } = await pool.query(
-            `SELECT * FROM videos WHERE is_synced = false ORDER BY created_at ASC`
+        const { rows: pendingVideos } = await pool.query(
+            `SELECT * FROM videos
+             WHERE is_synced = false
+                OR (category_id IS NOT NULL AND category_id_synced = false)
+             ORDER BY created_at ASC`
+        );
+        const unsyncedVideos = pendingVideos.filter(video => !video.is_synced);
+        const categoryBackfillVideos = pendingVideos.filter(
+            video => video.is_synced && video.category_id && !video.category_id_synced
         );
 
         if (unsyncedVideos.length > 0) {
             console.log(`[Sync] Found ${unsyncedVideos.length} unsynced videos. Syncing...`);
 
             // Strip local-only columns before upserting to Cloud
-            const videosToSync = unsyncedVideos.map(v => {
-                const out = {};
-                for (const [col, val] of Object.entries(v)) {
-                    if (!VIDEO_LOCAL_ONLY_COLUMNS.has(col)) out[col] = val;
-                }
-                return out;
-            });
+            const videosToSync = unsyncedVideos.map(toCloudVideo);
 
             const { error: videoErr } = await supabase
                 .from('videos')
@@ -67,8 +79,61 @@ async function reconcileLocalToCloud(pool, supabase) {
                 console.error(`[Sync] Video Cloud Sync failed: ${videoErr.message}`);
             } else {
                 const syncedVideoIds = unsyncedVideos.map(v => v.id);
-                await pool.query(`UPDATE videos SET is_synced = true WHERE id = ANY($1)`, [syncedVideoIds]);
+                await pool.query(
+                    `UPDATE videos
+                     SET is_synced = true, category_id_synced = true
+                     WHERE id = ANY($1)`,
+                    [syncedVideoIds]
+                );
                 console.log(`✅ [Sync] Successfully synced ${unsyncedVideos.length} videos.`);
+            }
+        }
+
+        if (categoryBackfillVideos.length > 0) {
+            const videosByCategory = new Map();
+            for (const video of categoryBackfillVideos) {
+                const categoryId = video.category_id.toString();
+                const categoryVideos = videosByCategory.get(categoryId) || [];
+                categoryVideos.push(video);
+                videosByCategory.set(categoryId, categoryVideos);
+            }
+
+            for (const [categoryId, categoryVideos] of videosByCategory) {
+                for (let index = 0; index < categoryVideos.length; index += 500) {
+                    const batch = categoryVideos.slice(index, index + 500);
+                    const { data: updatedVideos, error: updateError } = await supabase
+                        .from('videos')
+                        .update({ category_id: categoryId })
+                        .in('id', batch.map(video => video.id))
+                        .select('id');
+
+                    if (updateError) {
+                        console.error(`[Sync] Video category Cloud backfill failed: ${updateError.message}`);
+                        continue;
+                    }
+
+                    const syncedVideoIds = new Set(
+                        (updatedVideos ?? []).map(video => video.id)
+                    );
+                    const missingVideos = batch.filter(video => !syncedVideoIds.has(video.id));
+                    if (missingVideos.length > 0) {
+                        const { error: insertError } = await supabase
+                            .from('videos')
+                            .upsert(missingVideos.map(toCloudVideo), { onConflict: 'id' });
+                        if (insertError) {
+                            console.error(`[Sync] Missing video Cloud backfill failed: ${insertError.message}`);
+                        } else {
+                            missingVideos.forEach(video => syncedVideoIds.add(video.id));
+                        }
+                    }
+
+                    if (syncedVideoIds.size > 0) {
+                        await pool.query(
+                            `UPDATE videos SET category_id_synced = true WHERE id = ANY($1)`,
+                            [[...syncedVideoIds]]
+                        );
+                    }
+                }
             }
         }
 
@@ -204,5 +269,7 @@ async function reconcileLocalToCloud(pool, supabase) {
 }
 
 module.exports = {
-    reconcileLocalToCloud
+    VIDEO_LOCAL_ONLY_COLUMNS,
+    reconcileLocalToCloud,
+    toCloudVideo,
 };

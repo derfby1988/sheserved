@@ -317,7 +317,7 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
                                 : '${diff.inMinutes} นาทีที่แล้ว'
                           : _formatThaiDate(createdAt);
 
-                      String displayTitle = video.categoryName ?? '';
+                      String displayTitle = video.categoryName?.trim() ?? '';
                       if (displayTitle.isEmpty || displayTitle == 'null') {
                         if (video.title.startsWith('Emergency Incident')) {
                           displayTitle = 'เหตุฉุกเฉิน';

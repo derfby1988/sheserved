@@ -115,6 +115,25 @@ class Video {
       return dt;
     }
 
+    String? parseCategoryName() {
+      final direct = json['category_name']?.toString().trim();
+      if (direct != null &&
+          direct.isNotEmpty &&
+          direct.toLowerCase() != 'null') {
+        return direct;
+      }
+      final categories = json['donation_categories'];
+      if (categories is Map) {
+        final related = categories['name']?.toString().trim();
+        if (related != null &&
+            related.isNotEmpty &&
+            related.toLowerCase() != 'null') {
+          return related;
+        }
+      }
+      return null;
+    }
+
     return Video(
       id: json['id']?.toString() ?? '',
       userId: json['user_id']?.toString() ?? '',
@@ -138,8 +157,7 @@ class Video {
       userName: json['user_name']?.toString(),
       userAvatar: json['user_avatar']?.toString(),
       userRole: json['user_role']?.toString(),
-      categoryName: json['category_name']?.toString() ?? 
-                    (json['donation_categories'] != null ? json['donation_categories']['name']?.toString() : null),
+      categoryName: parseCategoryName(),
       viewerCount: parseInt(json['viewer_count']),
       likeCount: parseInt(json['like_count']),
       latitude: parseDouble(json['latitude']),
@@ -193,8 +211,6 @@ class Video {
       AppConfig.localApiUrl,
     );
   }
-
-
 
   Video copyWith({
     String? id,
@@ -298,6 +314,17 @@ class Video {
 
   /// ใช้ Local file สำหรับ preview ถ้ามี ไม่เช่นนั้นใช้ bunnyUrl
   String? get previewUrl => localFilePath ?? bunnyUrl;
+}
+
+List<Video> resolveEmergencyVideoCategoryNames(
+  Iterable<Video> videos,
+  Map<String, String> categoryNames,
+) {
+  return videos.map((video) {
+    final categoryName = categoryNames[video.categoryId]?.trim();
+    if (categoryName == null || categoryName.isEmpty) return video;
+    return video.copyWith(categoryName: categoryName);
+  }).toList();
 }
 
 /// Model สำหรับ GPS Track ที่สัมพันธ์กับเวลาในวิดีโอ

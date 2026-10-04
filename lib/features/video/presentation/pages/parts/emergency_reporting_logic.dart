@@ -19,7 +19,20 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
     setState(() => _isLoadingCategories = true);
     try {
       final cats = await ServiceLocator.instance.donationRepository.getEmergencyCategories();
-      if (mounted) setState(() => _emergencyCategories = cats);
+      if (mounted) {
+        setState(() {
+          _emergencyCategories = cats;
+          _trendingVideos = _resolveEmergencyVideoNames(
+            _trendingVideos,
+            categories: cats,
+          );
+          if (_currentVideo != null) {
+            _currentVideo = _resolveEmergencyVideoNames([
+              _currentVideo!,
+            ], categories: cats).single;
+          }
+        });
+      }
     } catch (e) {
       debugPrint('Error loading emergency categories: $e');
     } finally {
@@ -94,12 +107,12 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
       _recordedGpsTracks = [];
       _isRecording = true;
       _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
-      
+
       try {
         Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
         _recordedGpsTracks.add({'latitude': pos.latitude, 'longitude': pos.longitude, 'timestampOffset': 0});
       } catch (_) {}
-      
+
       _durationTimer?.cancel();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
          if (!mounted) { timer.cancel(); return; }
@@ -312,7 +325,7 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         setState(() { _trendingVideos.insert(0, newVideo); _currentVideoId = videoId; _currentVideo = newVideo; });
         _initializePlayer(file.path, isLocal: true);
         _checkPrivacyPermissions();
-        
+
         // OWNER MUST JOIN ROOM TO BE COUNTED AS VIEWER
         if (!ws.isConnected) {
           await ws.connect(

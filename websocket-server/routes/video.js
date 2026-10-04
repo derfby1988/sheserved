@@ -1,16 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
 const socketService = require('../services/socket-service');
+const { resolveEmergencyCategoryNames } = require('../services/emergency-category-names');
 const faceBlurService = require('../services/face-blur-service');
 const { generateThumbnail, uploadThumbnailToBunny } = require('../services/thumbnail-service');
 const thumbnailQueue = require('../services/thumbnail-queue');
 const watermarkService = require('../services/watermark-service');
-const { assertUuid, assertUuidOrNull, safeJoin, safeExtension, sanitizeCacheKey } = require('../utils/safe-path');
+const { assertUuid, assertUuidOrNull, safeJoin, sanitizeCacheKey } = require('../utils/safe-path');
 const {
     strictRateLimiter,
     rateLimiter,
@@ -28,36 +28,15 @@ const {
 const uploadRateLimiter = rateLimiter({ maxRequests: 30, windowSec: 60, keyPrefix: 'rate:upload' });
 
 // Configure Multer for file upload
-const storage = multer.diskStorage({
-    destination: async (req, file, cb) => {
-        const destDir = process.env.TEMP_VIDEO_PATH || path.join(__dirname, '../temp/videos');
-        try {
-            await fs.promises.mkdir(destDir, { recursive: true });
-            cb(null, destDir);
-        } catch (err) {
-            cb(err);
-        }
-    },
-    filename: (req, file, cb) => {
-        try {
-            const ext = safeExtension(file.originalname, 'video');
-            cb(null, `${uuidv4()}${ext}`);
-        } catch (err) {
-            cb(err);
-        }
-    }
-});
-
-const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB — ตรงกับ business rule
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB สำหรับรูป
+const {
+    videoUpload: upload,
+    photoUpload,
+    photoUploadErrorHandler,
+    MAX_VIDEO_BYTES,
+} = require('../utils/video-upload');
 const MAX_GPS_TRACKS = 5000; // R3: จำกัด GPS tracks ต่อ request
 const MAX_PAGINATION_LIMIT = 100; // R2: เพดาน limit
 const MAX_PAGINATION_PAGE = 1000; // R2: เพดาน page
-
-const upload = multer({
-    storage,
-    limits: { fileSize: MAX_VIDEO_BYTES, files: 5 }, // R1: ตรงกับ business limit ตั้งแต่ multer
-});
 
 // R1: cleanup ไฟล์ที่ค้างเมื่อ reject หรือ error
 function cleanupUploadedFile(file) {
@@ -106,7 +85,7 @@ async function bulkInsertGpsTracks(pool, videoId, tracks) {
 // Phase 1 Middleware: Redis-based rate limiting, idempotency, and duplicate check
 // are now handled by the shared middleware layer instead of in-memory Maps.
 
-module.exports = (pool) => {
+module.exports = (pool, supabase = null) => {
     // Initialize video service with the pool
     videoService.init(pool);
 
@@ -225,7 +204,7 @@ module.exports = (pool) => {
     // Upload multiple photos
     // รองรับทั้ง Emergency Photo (max 5) และ Thai Mhung Photo (max 3)
     // โดย enforce ตาม isThaiMhung flag ที่ส่งมาจาก Flutter
-    router.post('/upload-photos', requireAuth, idempotencyMiddleware, uploadRateLimiter, uploadQuotaLimiter, upload.array('photos', 5), duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
+    router.post('/upload-photos', requireAuth, idempotencyMiddleware, uploadRateLimiter, uploadQuotaLimiter, photoUpload.array('photos', 5), photoUploadErrorHandler, duplicateCheckMiddleware('upload-photos', 5), async (req, res) => {
         try {
             const userIdFromRequest = req.userId;
             const files = req.files;
@@ -571,7 +550,7 @@ module.exports = (pool) => {
         // ห้าม proxy/browser cache; Redis internal cache ยังทำงานตามปกติ
         res.set('Cache-Control', 'no-store');
         const { page, limit, offset } = clampPagination(req);
-        const cacheKey = `video:emergency:list:v2:${page}:${limit}`;
+        const cacheKey = `video:emergency:list:v3:${page}:${limit}`;
 
         console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
         try {
@@ -604,7 +583,13 @@ module.exports = (pool) => {
                 return result.rows;
             }, TTL.DEFAULT);
 
-            res.json(data);
+            let videos = data;
+            try {
+                videos = await resolveEmergencyCategoryNames(supabase, data);
+            } catch (categoryError) {
+                console.warn('[API] Emergency category lookup failed:', categoryError.message);
+            }
+            res.json(videos);
         } catch (error) {
             console.error('Error fetching emergency videos:', error.message);
             res.status(500).json({ error: 'Failed to fetch emergency videos' });
@@ -1243,7 +1228,7 @@ module.exports = (pool) => {
     router.get('/:id', ipLimiter, async (req, res) => {
         try {
             const { id } = req.params;
-            const data = await cacheAside(`video:meta:${id}:v2`, async () => {
+            const data = await cacheAside(`video:meta:${id}:v3`, async () => {
                 const result = await pool.query('SELECT id, user_id, title, description, type, category_id, donation_request_id, status, thumbnail_url, bunny_url, photo_urls, address, road, soi, alley, village, progress, created_at, updated_at FROM videos WHERE id = $1', [id]);
                 return result.rows[0] || null;
             }, TTL.DEFAULT);
@@ -1252,7 +1237,13 @@ module.exports = (pool) => {
                 return res.status(404).json({ error: 'Video not found' });
             }
 
-            res.json(data);
+            let video = data;
+            try {
+                [video] = await resolveEmergencyCategoryNames(supabase, [data]);
+            } catch (categoryError) {
+                console.warn('[API] Video category lookup failed:', categoryError.message);
+            }
+            res.json(video);
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch video status' });
         }

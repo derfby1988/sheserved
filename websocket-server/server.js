@@ -58,6 +58,7 @@ if (supabaseUrl && supabaseServiceKey) {
 // Video System Services & Routes
 const socketService = require('./services/socket-service');
 const videoRoutes = require('./routes/video');
+const { resolveEmergencyCategoryNames } = require('./services/emergency-category-names');
 const adminRoutes = require('./routes/admin');
 const consultationRoutes = require('./routes/consultation');
 const victimsRoutes = require('./routes/victims');
@@ -330,7 +331,7 @@ if (pool) {
 
   // Write endpoints on videos require auth; reads remain open
   app.use('/api/videos', verifyToken(pool));
-  app.use('/api/videos', videoRoutes(pool));
+  app.use('/api/videos', videoRoutes(pool, supabase));
 
   // Triage System — victims routes (verifyToken for identity, requireAuth per-route inside)
   app.use('/api', verifyToken(pool));
@@ -433,7 +434,7 @@ function _isPointNearPolyline(userLat, userLng, polylinePoints, toleranceMeters 
  * 2. อยู่ในรัศมี yieldWayRadius จากจุดเกิดเหตุ
  * 3. ตำแหน่งปัจจุบันอยู่บนหรือใกล้เส้นทางของจิตอาสา
  */
-async function _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, incidentLat, incidentLng) {
+async function _broadcastYieldWayAlerts(io, pool, supabase, videoId, encodedPolyline, incidentLat, incidentLng) {
   try {
     const polylinePoints = _decodePolyline(encodedPolyline);
     if (polylinePoints.length === 0) return;
@@ -442,11 +443,19 @@ async function _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, inci
     let categoryName = 'เหตุฉุกเฉิน';
     try {
       const vRes = await pool.query(
-        `SELECT vc.name as category_name FROM videos v
-         LEFT JOIN video_categories vc ON v.category_id = vc.id
+        `SELECT v.category_id, dc.name AS category_name FROM videos v
+         LEFT JOIN donation_categories dc ON dc.id = v.category_id
          WHERE v.id = $1`, [videoId]
       );
-      if (vRes.rows.length > 0) categoryName = vRes.rows[0].category_name || categoryName;
+      if (vRes.rows.length > 0) {
+        categoryName = vRes.rows[0].category_name || categoryName;
+        try {
+          const [video] = await resolveEmergencyCategoryNames(supabase, vRes.rows);
+          categoryName = video.category_name || categoryName;
+        } catch (categoryError) {
+          console.warn('[Yield Way] Category lookup failed:', categoryError.message);
+        }
+      }
     } catch (_) {}
 
     // ตรวจสอบผู้ใช้ที่ connected อยู่ในห้อง
@@ -1260,7 +1269,7 @@ io.on('connection', (socket) => {
         console.log(`[Yield Way] Route saved for response ${responseId}`);
 
         // ทันทีหลังบันทึก route → ส่งการแจ้งเตือนให้ผู้ใช้ที่อยู่บนเส้นทาง
-        await _broadcastYieldWayAlerts(io, pool, videoId, encodedPolyline, toLat, toLng);
+        await _broadcastYieldWayAlerts(io, pool, supabase, videoId, encodedPolyline, toLat, toLng);
 
         // ✅ กระจาย route_polyline ไปยังห้องวิดีโอแบบเรียลไทม์ (ไม่มี cost)
         io.to(`room-video-${videoId}`).emit('responder-route-updated', {
@@ -1287,7 +1296,7 @@ io.on('connection', (socket) => {
       );
       if (res.rows.length > 0 && res.rows[0].route_polyline) {
         const { route_polyline, route_to_lat, route_to_lng } = res.rows[0];
-        await _broadcastYieldWayAlerts(io, pool, videoId, route_polyline, route_to_lat, route_to_lng);
+        await _broadcastYieldWayAlerts(io, pool, supabase, videoId, route_polyline, route_to_lat, route_to_lng);
       }
     } catch (err) {
       console.error('[Yield Way] request-yield-way-notification error:', err.message);

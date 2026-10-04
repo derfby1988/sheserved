@@ -1723,6 +1723,23 @@ final response = await http.get(url).timeout(const Duration(seconds: 5));
 
 ---
 
+### Bug Fix #14 — Photo Upload ตอบ 415 เพราะ Multer ใช้ Video Allowlist
+**ไฟล์ที่เกี่ยวข้อง:** `websocket-server/routes/video.js`, `websocket-server/utils/video-upload.js`, `lib/features/video/data/repositories/video_repository.dart`
+
+**อาการ:** กดส่งภาพแจ้งเหตุแล้วได้รับ `Upload failed with status 415` แม้ภาพเป็น JPEG ที่ถ่ายจากแอป
+
+**สาเหตุ:** `/upload` และ `/upload-photos` ใช้ Multer disk storage ตัวเดียวกัน โดย filename callback ตรวจนามสกุลด้วย `safeExtension(file.originalname, 'video')` ซึ่งอนุญาตเฉพาะ `.mp4`/`.mov` จึงปฏิเสธ `.jpg`/`.jpeg`/`.png`/`.webp` ก่อนถึง route handler ทั้งที่ `safe-path.js` มี image allowlist อยู่แล้ว นอกจากนี้ `MAX_PHOTO_BYTES` เคยประกาศไว้แต่ Multer ใช้ limit 20MB ของวิดีโอร่วมกัน
+
+**แนวทางแก้และกฎป้องกัน regression:**
+- แยก Multer storage/uploader ตาม media kind: video ใช้ `safeExtension(..., 'video')`; ภาพใช้ `safeExtension(..., 'image')` — ห้ามแชร์ storage ที่ hardcode allowlist ข้าม endpoint
+- ให้แต่ละ uploader ใช้ขนาดไฟล์สูงสุดของชนิดตนเอง (วิดีโอ 20MB, ภาพ 10MB ต่อไฟล์) และแปลง Multer size error เป็น HTTP 413; extension ผิดชนิดต้องเป็น 415
+- Flutter อ่าน error JSON จาก server เพื่อแสดงสาเหตุที่แก้ไขได้ แทนการแสดง status อย่างเดียว
+- คง UUID-generated filename และ upload directory เดิม เพื่อลดผลกระทบต่อเส้นทางจัดเก็บ/ประมวลผล
+- `.heic` ยังไม่อยู่ใน image allowlist โดยตั้งใจ; อย่าเพิ่มจากนามสกุลอย่างเดียวจนกว่าจะมีการ decode/re-encode ที่รองรับจริง รูปจาก flow กล้องปัจจุบันใช้ JPEG
+- Regression test ต้องยืนยันว่า photo endpoint รับ `.jpg`, ปฏิเสธนามสกุลวิดีโอด้วย 415, จำกัดภาพเกิน 10MB ด้วย 413 และ video endpoint ยังรับ `.mov`
+
+**ข้อจำกัดด้านความปลอดภัยที่ยังเป็นงานแยก:** allowlist ปัจจุบันตรวจนามสกุล ไม่ได้ยืนยัน magic bytes หรือ re-encode เนื้อหาจริงตาม Option B ใน `docs/secure/02_path_traversal_command_injection.md`; ห้ามถือว่า fix นี้ทำให้ content-based validation เสร็จแล้ว
+
 ---
 
 ## 🏥 Emergency Health Data Auto-Release System (Updated 2026-05-25 Rev.2)

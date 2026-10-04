@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS videos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     type VARCHAR(20) DEFAULT 'normal', -- normal, emergency
+    category_id UUID REFERENCES donation_categories(id) ON DELETE SET NULL,
     donation_request_id UUID REFERENCES donation_requests(id), -- Linked to existing donation system
     title VARCHAR(255) NOT NULL,
     description TEXT,

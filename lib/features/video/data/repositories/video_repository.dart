@@ -251,6 +251,47 @@ class VideoRepository {
     }
   }
 
+  Future<Map<String, String>> _loadEmergencyCategoryNames(
+    Iterable<dynamic> categoryIds,
+  ) async {
+    final ids = categoryIds
+        .map((id) => id?.toString().trim())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return {};
+
+    try {
+      final response = await _client
+          .from('donation_categories')
+          .select('id, name')
+          .inFilter('id', ids);
+      final categoryNames = <String, String>{};
+      for (final category in response as List) {
+        final id = category['id']?.toString();
+        final name = category['name']?.toString().trim();
+        if (id != null && id.isNotEmpty && name != null && name.isNotEmpty) {
+          categoryNames[id] = name;
+        }
+      }
+      return categoryNames;
+    } catch (e) {
+      debugPrint('VideoRepository: Emergency category lookup failed - $e');
+      return {};
+    }
+  }
+
+  Future<List<Video>> _parseEmergencyVideos(List<dynamic> data) async {
+    final categoryNames = await _loadEmergencyCategoryNames(
+      data.map((json) => json['category_id']),
+    );
+    final videos = data
+        .map((json) => Video.fromJson(Map<String, dynamic>.from(json as Map)))
+        .toList();
+    return resolveEmergencyVideoCategoryNames(videos, categoryNames);
+  }
+
   /// Fetch emergency list จาก network — คืน source ของข้อมูลเพื่อให้
   /// caller ตัดสินใจว่าเขียนลง shared cache ได้หรือไม่ (fallback มี field ไม่ครบ)
   Future<({List<Video> videos, String source})> _fetchEmergencyVideos({
@@ -267,9 +308,14 @@ class VideoRepository {
           )
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
         return (
-          videos: data.map((json) => Video.fromJson(json)).toList(),
+          videos: data
+              .map(
+                (json) =>
+                    Video.fromJson(Map<String, dynamic>.from(json as Map)),
+              )
+              .toList(),
           source: 'local',
         );
       }
@@ -287,7 +333,7 @@ class VideoRepository {
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
     return (
-      videos: (response as List).map((json) => Video.fromJson(json)).toList(),
+      videos: await _parseEmergencyVideos(response as List<dynamic>),
       source: 'supabase',
     );
   }
@@ -316,7 +362,9 @@ class VideoRepository {
           .get(Uri.parse('${AppConfig.localApiUrl}/api/videos/$id'))
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
-        return Video.fromJson(jsonDecode(response.body));
+        return Video.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+        );
       }
     } catch (e) {
       debugPrint('VideoRepository: Local video info $id failed - $e');
@@ -328,7 +376,8 @@ class VideoRepository {
         .eq('id', id)
         .maybeSingle();
     if (response == null) return null;
-    return Video.fromJson(response);
+    final videos = await _parseEmergencyVideos([response]);
+    return videos.single;
   }
 
   /// ดึง GPS Tracks ของวิดีโอ
@@ -839,7 +888,25 @@ class VideoRepository {
     );
 
     if (response.statusCode != 200) {
-      throw Exception("Upload failed with status ${response.statusCode}");
+      final responseBody = await response.stream.bytesToString();
+      String? errorMessage;
+      try {
+        final decoded = jsonDecode(responseBody);
+        if (decoded is Map) {
+          final error = decoded['error'];
+          errorMessage = error is Map
+              ? error['message']?.toString()
+              : error?.toString();
+        }
+      } on FormatException {
+        errorMessage = null;
+      }
+      final message = errorMessage?.trim();
+      throw Exception(
+        message == null || message.isEmpty
+            ? 'Upload failed with status ${response.statusCode}'
+            : 'Upload failed with status ${response.statusCode}: $message',
+      );
     }
 
     final respStr = await response.stream.bytesToString();
@@ -909,7 +976,7 @@ class VideoRepository {
       final response = await _client
           .from('videos')
           .select('''
-            id, user_id, type, status, created_at,
+            id, user_id, type, status, category_id, created_at,
             video_gps_tracks(latitude, longitude, timestamp_offset)
           ''')
           .eq('type', 'emergency')
@@ -926,10 +993,14 @@ class VideoRepository {
       final resolvedIds = (resolvedResponse as List)
           .map((r) => r['video_id'] as String)
           .toSet();
+      final videos = response as List;
+      final categoryNames = await _loadEmergencyCategoryNames(
+        videos.map((video) => video['category_id']),
+      );
 
       final List<Map<String, dynamic>> locations = [];
 
-      for (var video in response as List) {
+      for (var video in videos) {
         final videoId = video['id'] as String;
         // ข้ามเหตุการณ์ที่ resolve แล้ว
         if (resolvedIds.contains(videoId)) continue;
@@ -958,7 +1029,10 @@ class VideoRepository {
             'status': video['status'],
             'latitude': parseDouble(latestTrack['latitude']),
             'longitude': parseDouble(latestTrack['longitude']),
-            'categoryName': 'เหตุฉุกเฉิน',
+            'categoryId': video['category_id']?.toString(),
+            'categoryName':
+                categoryNames[video['category_id']?.toString()] ??
+                'เหตุฉุกเฉิน',
             'categoryIcon': 'warning',
             'createdAt': video['created_at'],
           });

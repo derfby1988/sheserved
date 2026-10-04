@@ -18,6 +18,9 @@
 
 require('dotenv').config();
 
+const assert = require('assert');
+const { resolveEmergencyCategoryNames } = require('./services/emergency-category-names');
+const { VIDEO_LOCAL_ONLY_COLUMNS, toCloudVideo } = require('./services/sync-service');
 const { resolveQueueOptions, resolveHealthThresholds } = require('./utils/queue-config');
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -251,9 +254,66 @@ function testCacheKeyFormatting() {
   }
 }
 
+async function testEmergencyCategoryNameResolution() {
+  section('Test 7: Emergency category name resolution');
+
+  const rows = [
+    { id: 'video-1', category_id: 'category-1', category_name: 'ชื่อเก่า' },
+    { id: 'video-2', category_id: 'category-2', category_name: 'ชื่อใน Local DB' },
+    { id: 'video-3', category_id: null, category_name: null },
+  ];
+  let requestedIds;
+  const supabase = {
+    from(table) {
+      assert.strictEqual(table, 'donation_categories');
+      return {
+        select(columns) {
+          assert.strictEqual(columns, 'id, name');
+          return {
+            async in(column, ids) {
+              assert.strictEqual(column, 'id');
+              requestedIds = ids;
+              return {
+                data: [{ id: 'category-1', name: 'อุบัติเหตุ' }],
+                error: null,
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const resolved = await resolveEmergencyCategoryNames(supabase, rows);
+  assert.strictEqual(resolved[0].category_name, 'อุบัติเหตุ');
+  assert.strictEqual(resolved[1].category_name, 'ชื่อใน Local DB');
+  assert.strictEqual(resolved[2].category_name, null);
+  assert.deepStrictEqual(requestedIds, ['category-1', 'category-2']);
+  assert.strictEqual(rows[0].category_name, 'ชื่อเก่า');
+  pass('Supabase names override stale local names and preserve local fallback');
+}
+
+function testVideoCategoryCloudPayload() {
+  section('Test 8: Video category cloud sync payload');
+
+  const payload = toCloudVideo({
+    id: 'video-1',
+    category_id: 'category-1',
+    is_synced: true,
+    category_id_synced: false,
+    address: 'local-only',
+  });
+  assert.strictEqual(payload.category_id, 'category-1');
+  assert.strictEqual('is_synced' in payload, false);
+  assert.strictEqual('category_id_synced' in payload, false);
+  assert.strictEqual('address' in payload, false);
+  assert.strictEqual(VIDEO_LOCAL_ONLY_COLUMNS.has('category_id'), false);
+  pass('category_id syncs to Cloud while local-only sync markers remain excluded');
+}
+
 // ─── Main Runner ─────────────────────────────────────────────
 
-function main() {
+async function main() {
   console.log('\n🚀 Unit Tests — Pure Logic / Helpers / Config');
 
   const tests = [
@@ -263,6 +323,8 @@ function main() {
     testResolveQueueOptionsInvalidEnv,
     testResolveHealthThresholds,
     testCacheKeyFormatting,
+    testEmergencyCategoryNameResolution,
+    testVideoCategoryCloudPayload,
   ];
 
   let passed = 0;
@@ -270,7 +332,7 @@ function main() {
 
   for (const test of tests) {
     try {
-      test();
+      await test();
       passed++;
     } catch (err) {
       failed++;

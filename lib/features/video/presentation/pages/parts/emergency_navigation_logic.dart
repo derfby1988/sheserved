@@ -741,6 +741,17 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   //   try { final interaction = VideoInteraction(id: '', videoId: _currentVideoId!, userId: userId, type: 'view', createdAt: AppConfig.currentUtc); await ServiceLocator.instance.videoRepository.addInteraction(interaction); } catch (_) {}
   // }
 
+  List<Video> _resolveEmergencyVideoNames(
+    List<Video> videos, {
+    List<DonationCategory>? categories,
+  }) {
+    final categoryNames = {
+      for (final category in categories ?? _emergencyCategories)
+        category.id: category.name,
+    };
+    return resolveEmergencyVideoCategoryNames(videos, categoryNames);
+  }
+
   Future<void> _loadTrendingVideos({
     bool forceRefresh = false,
     int? generation,
@@ -758,7 +769,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       // Phase 16: ทิ้งผลลัพธ์จาก init run ที่ stale (เช่น _switchVideo แล้ว)
       if (generation != null && generation != _initDataGeneration) return;
       setState(() {
-        _trendingVideos = videos;
+        _trendingVideos = _resolveEmergencyVideoNames(videos);
         _isLoadingTrending = false;
         if (videos.length < 20) _hasMoreTrending = false;
       });
@@ -783,7 +794,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           .getEmergencyVideos(page: _trendingPage, limit: 20);
       if (mounted) {
         setState(() {
-          _trendingVideos.addAll(videos);
+          _trendingVideos.addAll(_resolveEmergencyVideoNames(videos));
           _isLoadingMoreTrending = false;
           if (videos.length < 20) _hasMoreTrending = false;
         });
