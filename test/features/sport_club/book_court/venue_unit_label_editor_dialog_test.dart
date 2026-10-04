@@ -60,11 +60,12 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
   });
 
-  testWidgets('single sport auto-selects it as the reference', (
-    tester,
-  ) async {
+  testWidgets('single sport auto-selects it as the reference', (tester) async {
     await _open(tester);
-    expect(find.textContaining('ตัวอย่างที่ผู้ใช้จะเห็น: "ยิม"'), findsOneWidget);
+    expect(
+      find.textContaining('ตัวอย่างที่ผู้ใช้จะเห็น: "ยิม"'),
+      findsOneWidget,
+    );
     await tester.tap(_save);
     await tester.pumpAndSettle();
     expect(_result?.override, isNull);
@@ -76,10 +77,7 @@ void main() {
   ) async {
     await _open(tester, sports: {'s1': 'แบดมินตัน', 's2': 'เทนนิส'});
     // No current reference + multiple sports -> nothing preselected.
-    expect(
-      find.text('ตัวอย่างที่ผู้ใช้จะเห็น: "สนาม"'),
-      findsOneWidget,
-    );
+    expect(find.text('ตัวอย่างที่ผู้ใช้จะเห็น: "สนาม"'), findsOneWidget);
     await tester.tap(_save);
     await tester.pumpAndSettle();
     expect(_result?.override, isNull);
@@ -135,9 +133,7 @@ void main() {
     await _open(tester, override: 'โดม');
     expect(
       tester
-          .widget<TextField>(
-            find.widgetWithText(TextField, 'ชื่อเรียกสถานที่'),
-          )
+          .widget<TextField>(find.widgetWithText(TextField, 'ชื่อเรียกสถานที่'))
           .controller
           ?.text,
       'โดม',

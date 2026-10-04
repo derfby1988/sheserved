@@ -118,3 +118,21 @@ tiles — never raise `panelFillOpacity` to make the panel itself light/milky.
 - Runtime checks: `curl localhost:3000/health` (Node) and `curl localhost:8080/health`
   (Caddy); `redis-cli info clients` / `redis-cli client list` to catch connection
   leaks; publish to a channel with `redis-cli publish <channel> '<json>'`.
+
+## SQL smoke test (Sports Hub)
+
+`database/sports_hub_rpc_smoke_test.sql` creates real fixture users/venues/bookings,
+so never point it at production or a shared project — use a scratch database.
+
+It needs PostgreSQL 15+ (the migrations use `WITH (security_invoker = on)`), and it
+loads the migrations itself via `\ir`, so run it from the `database/` directory:
+
+```
+/opt/homebrew/opt/postgresql@15/bin/psql -h <host> -p <port> -d <scratch> \
+  -v ON_ERROR_STOP=1 -q -f sports_hub_rpc_smoke_test.sql > smoke.log 2>&1
+grep -c 'PASS:' smoke.log   # failures print `FAIL:` / `ERROR:`
+```
+
+The Homebrew `postgresql@15` formula is keg-only, so call its binaries by full path;
+it does not disturb a system PostgreSQL 14 installation. When adding a migration,
+add the matching `\ir` line to the smoke script and extend the phase assertions.

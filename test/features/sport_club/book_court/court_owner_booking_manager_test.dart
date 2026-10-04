@@ -4,7 +4,9 @@ import 'package:sheserved/features/sport_club/book_court/data/book_court_models.
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_owner_booking_manager.dart';
 
 void main() {
-  testWidgets('renders the booking range in the venue timezone', (tester) async {
+  testWidgets('renders the booking range in the venue timezone', (
+    tester,
+  ) async {
     final booking = VenueBooking.fromJson({
       'id': 'b1',
       'venueId': 'v1',

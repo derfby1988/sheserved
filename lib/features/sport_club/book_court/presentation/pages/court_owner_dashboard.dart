@@ -442,7 +442,8 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
             _statusTile(
               icon: Icons.stadium_outlined,
               color: NeumorphicTheme.primaryBlue,
-              title: 'มีสถานที่เล่นกีฬา? ลงทะเบียนเป็นเจ้าของสถานที่เพื่อเปิดรับการจอง',
+              title:
+                  'มีสถานที่เล่นกีฬา? ลงทะเบียนเป็นเจ้าของสถานที่เพื่อเปิดรับการจอง',
             ),
             const SizedBox(height: 12),
             NeumorphicVerifyButton(

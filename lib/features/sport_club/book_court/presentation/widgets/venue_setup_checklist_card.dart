@@ -49,52 +49,52 @@ class VenueSetupChecklistCard extends StatelessWidget {
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'ขั้นตอนการเปิดสถานที่',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'ขั้นตอนการเปิดสถานที่',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
-                Text(
-                  '$doneCount/${steps.length}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade600,
-                  ),
+              ),
+              Text(
+                '$doneCount/${steps.length}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: doneCount / steps.length,
-                minHeight: 6,
-                backgroundColor: Colors.grey.shade200,
-                color: AppColors.primaryDark,
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: doneCount / steps.length,
+              minHeight: 6,
+              backgroundColor: Colors.grey.shade200,
+              color: AppColors.primaryDark,
             ),
-            const SizedBox(height: 8),
-            for (var i = 0; i < steps.length; i++)
-              _StepRow(
-                step: steps[i],
-                order: i + 1,
-                venueStatus: steps[i].id == VenueSetupStepId.venueApproved
-                    ? venueStatus
-                    : null,
-                enabled:
-                    editableSteps &&
-                    _editable(steps[i].id) &&
-                    (steps[i].actionable || steps[i].done),
-                onTap: saving ? null : () => onRun(steps[i].id),
-              ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < steps.length; i++)
+            _StepRow(
+              step: steps[i],
+              order: i + 1,
+              venueStatus: steps[i].id == VenueSetupStepId.venueApproved
+                  ? venueStatus
+                  : null,
+              enabled:
+                  editableSteps &&
+                  _editable(steps[i].id) &&
+                  (steps[i].actionable || steps[i].done),
+              onTap: saving ? null : () => onRun(steps[i].id),
+            ),
+        ],
+      ),
     );
   }
 }

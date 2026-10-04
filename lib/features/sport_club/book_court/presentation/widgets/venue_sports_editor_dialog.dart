@@ -120,10 +120,7 @@ class _VenueSportsEditorDialogBodyState
           'unit_label_override': _unitControllers[sportId]?.text.trim() ?? '',
         },
     ];
-    Navigator.pop(context, {
-      'sports': draft,
-      'referenceSportId': _reference,
-    });
+    Navigator.pop(context, {'sports': draft, 'referenceSportId': _reference});
   }
 
   @override
@@ -183,14 +180,17 @@ class _VenueSportsEditorDialogBodyState
                   child: ListView(
                     controller: _scrollController,
                     shrinkWrap: true,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
                     children: [
                       for (final sport in widget.sports)
                         _SportRow(
                           name: _sportName(sport),
-                          selected:
-                              _selected.containsKey(sport['id']?.toString()),
+                          selected: _selected.containsKey(
+                            sport['id']?.toString(),
+                          ),
                           unitController:
                               _unitControllers[sport['id']?.toString() ?? ''],
                           onChanged: (value) =>
@@ -243,8 +243,7 @@ class _VenueSportsEditorDialogBodyState
                                     ),
                                   ),
                               ],
-                              onChanged: (v) =>
-                                  setState(() => _reference = v),
+                              onChanged: (v) => setState(() => _reference = v),
                             ),
                           ],
                         ),

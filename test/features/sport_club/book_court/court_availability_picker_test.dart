@@ -192,6 +192,7 @@ void main() {
           'releaseTime': '09:00',
           'windowDays': 14,
           'selectedDayReleaseTime': '10:00',
+          'selectedDayOpensAt': '2040-01-01T02:00:00Z',
         },
       });
 
@@ -205,6 +206,7 @@ void main() {
       expect(a.opensAtFor(DateTime.utc(2040, 1, 5, 4)), isNull);
       expect(a.release?.mode, 'inherit');
       expect(a.release?.selectedDayReleaseTime, '10:00');
+      expect(a.release?.selectedDayOpensAt, DateTime.utc(2040, 1, 1, 2));
       expect(a.release?.effectiveDaysOfWeek, [1, 3]);
       expect(a.release?.windowDays, 14);
     });
@@ -232,6 +234,7 @@ void main() {
         'windowDays': 7,
       });
       expect(release.effectiveDaysOfWeek, [5]);
+      expect(release.selectedDayOpensAt, isNull);
     });
 
     test('older payloads without release fields still decode', () {

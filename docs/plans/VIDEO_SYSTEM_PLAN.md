@@ -5791,93 +5791,151 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - ลำดับในแถบรายงานใช้ลิสต์เดียวกัน (`incident_report_widget.dart:405-412`) — ใช้ `_emergencyCategories` ที่โหลดอยู่แล้วเป็นแหล่งเดียวของ bottom sheet
 - Client มี fallback ไป Supabase ที่กรองแค่ `type` + `order by created_at` + `range` — `video_repository.dart:326-338`; fallback นี้ต้องกรองหมวดหมู่ให้ตรงกับ local API
 - มีเหตุที่ `category_id = NULL` อยู่จริง (กฎจิตอาสาตัดออกที่ `emergency_navigation_logic.dart:229-230`) จึงต้องนิยาม behavior ของการ์ดเหล่านี้ตอนกรอง
-- Cache invalidation ปัจจุบันใช้ wildcard prefix `video:emergency:list:*` (ตอนอัปโหลดเหตุใหม่ — `routes/video.js:161-163`) key ใหม่ต้องยังขึ้นต้นด้วย prefix นี้
+- Cache invalidation ปัจจุบันใช้ wildcard `video:emergency:list:*` (`routes/video.js:161-163`); เพราะ filtered requests จะ bypass Redis cache ไม่มี filtered key ใหม่ให้ invalidation แตะ และ unfiltered v3 key ยังคง prefix เดิม
 
 ### 20.3 การตัดสินใจที่ยืนยันแล้ว
 
 | เรื่อง | ค่าที่เลือก | หมายเหตุ |
 |---|---|---|
-| รูปแบบ UI | **Bottom sheet เลือกหลายตัว** เปิดจากไอคอนด้านขวาป้าย "ยอดนิยม" | มีปุ่ม "ล้างทั้งหมด"/"ยืนยัน" และแสดงจำนวนที่เลือกบนไอคอน |
+| รูปแบบ UI | **Bottom sheet เลือกหลายตัว** เปิดจากไอคอนด้านขวาป้าย "ยอดนิยม" | มีปุ่ม "ล้างทั้งหมด"/"ยกเลิก"/"แสดงผล"; icon ใช้สี active เมื่อมี filter เพื่อรักษาความกว้าง header |
 | semantics | **OR (union)** | เลือกหลายประเภท = เห็นรวมกัน; ไม่เลือกเลย = ทั้งหมด |
-| จุดกรอง | **Server-side เป็นหลัก + client re-filter เป็น safety net** | server แม่นทั้งชุดข้อมูลและ pagination; client กันกรณี fallback/field ไม่ครบ |
+| จุดกรอง | **Server-side + Supabase fallback + client-side guard** | ทั้ง Local API และ Supabase กรองก่อน pagination; client ตรวจ/กรองซ้ำเพื่อป้องกันการ์ดผิดประเภทหลุด |
 | ชุดประเภท | **ทุกหมวด `is_emergency = true` ตาม `display_order`** | ไม่จำกัดเฉพาะที่มีเหตุ; ใช้ลิสต์ที่โหลดอยู่แล้ว ไม่ยิง query ใหม่ |
 | การจำค่า | **จำเฉพาะในเซสชัน** | สลับแท็บ/เปลี่ยนเหตุแล้วคงค่า; รีเซ็ตเมื่อปิดแอปหรือสร้าง state ใหม่; ไม่เขียนลง storage |
 | ขอบเขต | **เฉพาะกล่องยอดนิยม** | ไม่กระทบแผนที่, ลิสต์อื่น, เหตุการณ์ที่กำลังเล่น, ตัวเลขผู้ชม หรือการแจ้งเตือน |
-| Mission Lock | **กฎบทบาทมีลำดับเหนือกว่า** | ตัวกรองเป็น intersection กับเซตที่บทบาทอนุญาต ไม่ override |
+| Mission Lock | **พัก category filter ทั้งหมด** | role filter เดิมคงเดิม; เมื่อ mission lock ทำงาน ไม่ส่ง `category_ids` และไม่กรองเซต role ด้วย category; เก็บค่าที่เลือกไว้เพื่อกลับมาใช้เมื่อปลดล็อก |
+| ไอคอนในโหมดล็อก | **ซ่อนไอคอน** | จิตอาสาระหว่างภารกิจ, มีภารกิจค้างอีกเหตุ (`_pendingMissionVideoId`), และ reporter lock — ป้องกันการซ่อนการ์ดภารกิจ |
+| ค่าตัวกรองเมื่อเข้าโหมดล็อก | **เก็บไว้แล้วกลับมาใช้** | ห้ามล้าง state; พ้นโหมดล็อกแล้วตัวกรองเดิมกลับมาทำงานเอง |
+| หมวดยังไม่พร้อม | **ซ่อนไอคอน** | แสดงเมื่อ `_emergencyCategories` พร้อมจริง; ไม่แสดงไอคอนจนกว่าจะโหลด category list สำเร็จและมีหมวดฉุกเฉิน |
+| แป้นพิมพ์/แชทเปิด | **เปิด bottom sheet ทับได้เลย** | ไม่ปิดแชท/คีย์บอร์ดอัตโนมัติ; sheet จัดการ safe area + keyboard inset |
+| Apply ล้มเหลว | **คง filter/list เดิม** | draft อยู่ใน sheet พร้อม error/retry; commit ค่าใหม่เมื่อโหลดหน้าแรกสำเร็จเท่านั้น |
 
 ### 20.4 สถาปัตยกรรมและ invariant
 
-1. **ตำแหน่งไอคอนและ layout:** header ของกล่องต้องเปลี่ยนจาก badge เดี่ยวเป็น **Stack** (badge อยู่กลางตามเดิม + `Positioned` ไอคอนชิดขวา) เพื่อให้ badge ไม่เลื่อนตำแหน่งและความสูง header คงที่ — ห้ามเปลี่ยนความสูงของกล่อง เพราะ Rescue Control Panel อ้างตำแหน่งจาก `_trendingPanelBottom`/`_trendingPanelRight` ที่วัดจากกล่องนี้ (`lib/features/video/presentation/pages/emergency_live_page.dart:676-694`)
-2. **ไอคอนและสถานะ:** ใช้ `Icons.filter_list`/`tune`; เมื่อเลือกแล้วให้แสดง badge จำนวนที่เลือกหรือเปลี่ยนสีเน้น; ปุ่มต้องมี `tooltip`/semantics และ hit area ไม่เล็กกว่า 32px
-3. **Bottom sheet:** รายการมาจาก `_emergencyCategories` (source เดียวกับแถบรายงาน) เรียงตาม `display_order`; checkbox หลายตัว + ปุ่ม "ล้างทั้งหมด" + "ยืนยัน"; ต้อง scroll ได้เมื่อหมวดเยอะ; ใช้ widget ที่มีในโปรเจกต์ (glass/shared) ให้สอดคล้อง ไม่สร้างสไตล์ใหม่
-4. **Server contract:** `GET /api/videos/emergency/list?page&limit&category_ids=a,b,c`
-   - validate ว่าเป็น UUID ที่ถูกต้องและ **cap จำนวน** (เช่น ≤ 50) → ไม่ผ่านคืน 400
-   - ไม่ส่ง param = พฤติกรรมเดิมเป๊ะ (backward compatible กับ client เก่า)
-   - SQL เพิ่ม `AND v.category_id = ANY($n::uuid[])` (คอลัมน์เป็น UUID + มี index อยู่แล้ว); NULL ไม่ผ่านเงื่อนไขนี้โดยอัตโนมัติ
-5. **Cache key:** ต้องรวมตัวกรองและ normalize ลำดับ id (sort) ก่อนสร้าง key เช่น `video:emergency:list:v4:{page}:{limit}:{catKey}` โดย `catKey = 'all'` เมื่อไม่กรอง; **key ต้องยังขึ้นต้นด้วย `video:emergency:list:`** เพื่อให้ invalidation wildcard เดิม (`invalidateCachePattern('video:emergency:list:*')`) ครอบคลุม; TTL คงเดิม
-6. **Pagination กับการกรอง:** ตัวกรองต้องมีผลต่อชุดข้อมูลที่ดึงจาก server ไม่ใช่กรองหลัง paginate; client ต้องยังเรียกหน้าถัดไปได้เมื่อผลลัพธ์ว่างแต่ยังมีข้อมูล (ไม่หยุด auto-load ที่หน้าแรก) และต้องมีเพดานกันการไล่โหลดไม่จบ
-7. **Client re-filter (safety net):** เพิ่มชั้นกรอง OR ตาม `categoryId` ใน `_filteredTrendingVideos()` **หลัง** กฎบทบาทเดิม; ใช้เมื่อ local API ยังไม่รองรับ param หรือข้อมูลมาจาก fallback; ต้อง**คงการ์ดของเหตุการณ์ที่กำลังดูอยู่ไว้เสมอ** แม้จะไม่ตรงตัวกรอง (ห้ามให้ player ลอยโดยไม่มี card) เหมือนที่กฎเดิมทำกับ `_currentVideoId`
-8. **Fallback parity:** Supabase fallback (`video_repository.dart:326-338`) ต้องเพิ่ม `.inFilter('category_id', ids)` ให้ตรง local API และยังคง normalize `type` เดิม
-9. **การ์ดที่ `category_id = NULL`:** แสดงเมื่อไม่ได้เลือกตัวกรองใด ๆ แต่ **ไม่แสดง** เมื่อมีการเลือก (เพราะระบุประเภทไม่ได้) — server และ client ต้องให้ผลตรงกัน
-10. **ชุดประเภทที่เลือกได้:** ใช้ `_emergencyCategories` ที่โหลดอยู่แล้ว; ถ้ายังไม่โหลดให้ lazy load แล้ว refresh; หมวดที่ถูกลบหรือถูกตั้ง `is_emergency = false` ต้องหายจากลิสต์และ **id ที่เลือกไว้ต้องถูกตัดออกอัตโนมัติ** ไม่ค้างใน state
-11. **Realtime/การ์ดใหม่:** การ์ดที่เข้ามาใหม่ (socket/thumbnail update) ต้องผ่านตัวกรองปัจจุบันทันทีโดยไม่ต้อง reload; ไม่แตะ thumbnail/viewer override ที่มีอยู่
-12. **Mission Lock precedence:** ถ้า `lockToCurrentVideo` หรือ reporter lock ทำงานอยู่ กล่องยังแสดงเฉพาะการ์ดที่อนุญาตตามเดิม; ตัวกรองเป็น intersection — ถ้า intersection ว่าง ให้คงการ์ดปัจจุบันไว้และแสดงข้อความอธิบาย ไม่ปล่อยกล่องว่าง
-13. **Empty state:** ถ้ากรองแล้วไม่พบเหตุ ให้ข้อความ "ไม่พบเหตุในประเภทที่เลือก" + ปุ่มล้างตัวกรองในกล่องเลย (ไม่ให้ผู้ใช้ต้องเปิด sheet ใหม่)
-14. **ต้นทุน:** ไม่มี infra หรือ dependency ใหม่ — เพิ่มเฉพาะจำนวน Redis cache key ตาม combination ที่ถูกใช้จริงในแต่ละ session (จำกัดเพราะ state เป็น session-scoped) และ query ใช้ index เดิม; ไม่มีค่าใช้จ่ายรายเดือนเพิ่ม
+1. **ตำแหน่งไอคอนและ layout:** ใช้ compact **Row** ที่จัดกลุ่ม label "ยอดนิยม" + ปุ่มกรองไว้ใกล้กัน โดยไอคอนอยู่ด้านขวาของ label; reserve slot ตามความสูงปัจจุบันของ header, จำกัด icon hit target ให้พอดีกับความกว้างแผง และห้ามใช้ overlay/`Positioned` ที่อาจทับ label บนจอแคบ. รักษาตำแหน่ง/ขนาดกล่องเดิมให้มากที่สุด; เพิ่ม golden/layout regression ที่ความกว้าง 320/375/390 dp และตรวจ `_trendingPanelBottom`/`_trendingPanelRight` เพื่อไม่ให้ Rescue Control Panel เคลื่อน (`emergency_live_page.dart:676-694`)
+2. **ไอคอนและสถานะ:** ใช้ `Icons.filter_list` หรือ `tune` ใน `IconButton` แบบ compact; เมื่อมี filter ให้ใช้สีเน้นแทน badge นับจำนวนเพื่อไม่ให้ header กว้าง/ซ้อนบนจอเล็ก; ปุ่มที่มองเห็นต้องมี tooltip/semantics, focus และ hit target ที่ทดสอบได้ในแผงความกว้างจริง
+3. **Bottom sheet:** ใช้ `_emergencyCategories` ชุดเดียวกับแถบรายงานโดยไม่ sort ซ้ำ; draft checkbox หลายตัว + "ล้างทั้งหมด" + "ยกเลิก" + "แสดงผล"; Cancel/barrier ไม่เปลี่ยน committed state. Apply เรียก fetch หน้าแรกแบบ transactional: ระหว่างโหลดปิดปุ่ม Apply, ถ้าสำเร็จ commit state/แทน list, ถ้าล้มเหลวคง state/list เดิมและแสดง retry ใน sheet. `isScrollControlled`, safe area, keyboard inset; scroll ได้เมื่อหมวดเยอะ; ใช้ shared/glass component เดิมและทดสอบ sheet ทับแชท/keyboard
+4. **Server contract:** `GET /api/videos/emergency/list?page&limit&category_ids=a,b,c`; client สร้าง query ด้วย `Uri`/URL encoder, server parse เป็น UUID list, trim/dedupe/canonicalize และ sort ก่อนใช้; empty param ที่ส่งมาอย่างชัดเจนหรือ UUID ผิดรูปแบบคืน 400, cap จำนวนต้องไม่น้อยกว่า emergency categories ที่เปิดใช้จริง (ตรวจ count ก่อน rollout; ห้าม truncate เงียบ ๆ). เพิ่ม `AND v.category_id = ANY($n::uuid[])` ก่อน `ORDER BY/LIMIT/OFFSET`; เมื่อมี filter ใช้ order `created_at DESC, id DESC` เพื่อให้ filtered offset pages deterministic; unfiltered query/order/cache คงเดิมทุกประการ. bind parameter เท่านั้น ไม่ interpolate SQL. เมื่อกรองแล้วตอบ marker header `X-Emergency-Category-Filter: applied`; expose header ผ่าน CORS สำหรับ Flutter Web; client ที่ไม่ได้รับ marker จาก local API ให้ทิ้งผล local ที่อาจไม่กรองแล้วใช้ Supabase fallback. ไม่ส่ง param = response body/semantics เดิมเป๊ะ.
+5. **Cache:** คง Redis key/cache-aside v3 และ client in-memory cache เฉพาะ request ไม่กรองไว้เหมือนเดิม. Request ที่มี `category_ids` **bypass Redis cache-aside และ shared in-memory page-1 cache** — ไม่สร้าง key ต่อ combination, ไม่มี key-space explosion/stale cross-filter data, และ wildcard invalidation เดิมยังใช้กับ unfiltered cache. Filtered query ใช้ index `idx_videos_category_id`; ยืนยันด้วย `EXPLAIN (ANALYZE, BUFFERS)`/latency ก่อน rollout; ถ้าต้องเพิ่ม index ให้แยกทบทวน migration แทนการเพิ่มโดยไม่วัด
+6. **Pagination / request race:** filter มีผลบน server/Supabase ก่อน pagination. ทุกการเปลี่ยน effective filter (selected IDs หรือ lock suspend/resume) สร้าง request generation ใหม่, reset page=1/hasMore/loading-more และ scroll list กลับบน; ผล response ของ generation/key เก่าทิ้งทั้ง first-page และ load-more. คำนวณ next page จาก raw server page length, commit page number เฉพาะเมื่อ request สำเร็จ; error ให้มี retry affordance ใน footer/โหลดหน้าถัดไปซ้ำหน้าเดิม; append แบบ dedupe ด้วย `video.id`. เมื่อ realtime refresh ให้โหลดหน้า 1 ใหม่ด้วย effective filter ปัจจุบันและแทนชุดเก่า — ไม่ทำ client scan ข้ามหน้าแบบไม่จำกัด. ใช้ offset contract เดิมเพื่อกระทบต่ำ; `id` tie-break + client dedupe + refresh ซ่อม drift หลังมี insert. ระบุเป็นข้อจำกัด inherited ว่า offset ไม่ให้ snapshot consistency ระหว่างการ insert พร้อม paging; ถ้าต้องการ guarantee no-gap/no-duplicate ระหว่าง live inserts ให้ทำ cursor-pagination เป็น phase แยก
+7. **Client category guard:** ประกอบผล role filter เดิมกับ OR filter ตาม `categoryId` ใน selector แยก (`_trendingVideosForPanel`); ใช้ filter เฉพาะเมื่อไม่อยู่ใน mission-suspended mode. ตรวจ Local API/Supabase response ซ้ำก่อน render; **ห้าม pin การ์ดปัจจุบัน/การ์ดอื่นที่ไม่ตรง selected IDs** เพราะขัดกับ "แสดงเฉพาะ" — player เดิมเล่นต่อได้โดยไม่เปลี่ยน currentVideoId/interaction/view count แม้การ์ดจะถูกกรองออก. Client guard ไม่ใช้แทน server-side pagination หรือไล่โหลดทุกหน้าเอง
+8. **Fallback parity/compatibility:** Supabase fallback (`video_repository.dart`) เมื่อกรองเพิ่ม `.inFilter('category_id', ids)` ก่อน `.order/.range` และใช้ `created_at DESC, id DESC`; เมื่อไม่กรองคง `.order('created_at')` เดิม; คง `type` และ client guard. Local API filtered response ต้องมี marker header และทุก row ต้องตรง selected IDs; หาก server เก่า/response 200 ไม่มี marker หรือมี row ผิดประเภท ให้ discard local page และใช้ Supabase filtered query แทน. Supabase response ที่ผิด contract ให้ fail closed (ไม่ commit filter) ไม่แสดงการ์ดนอกประเภท. Backend-first rollout; client เก่าไม่ส่ง param จึงไม่เปลี่ยน behavior
+9. **การ์ดที่ `category_id = NULL`:** เมื่อไม่เลือก category IDs (ไม่ส่ง param) แสดงตาม behavior เดิมรวม NULL; เมื่อเลือกอย่างน้อยหนึ่งประเภท card ที่ NULL/unknown ไม่แสดง. เลือกครบทุกหมวดที่รู้จักก็ยังคงไม่รวม NULL — server, Supabase และ client guard ใช้กฎเดียวกัน
+10. **Category source/lifecycle:** ใช้ `_emergencyCategories` จาก `DonationRepository.getEmergencyCategories()` (ตารางจริง, `is_emergency=true`, `display_order ASC`) โดยตรง; sheet ห้ามเรียงใหม่หรือยิง query แยก. ใช้ fields เดิม `_emergencyCategories`/`_isLoadingCategories` ไม่เพิ่ม status enum โดยไม่จำเป็น: initial load ยังว่าง/empty success/failure → ซ่อนไอคอน; load fail หลังมี list อยู่แล้วให้คง last-known-good. เมื่อมี fetch สำเร็จครั้งถัดไป หมวดที่ถูกลบ/ไม่ emergency จะถูก prune จาก selected IDs; refresh ล้มเหลวห้ามล้าง IDs/list เดิม
+11. **Realtime/การ์ดใหม่:** เหตุใหม่จาก Socket.IO สั่ง refetch หน้า 1 ด้วย effective category IDs ปัจจุบัน (หรือไม่ส่ง IDs ระหว่าง mission suspension); thumbnail/viewer override ปรับเฉพาะการ์ดที่อยู่ใน list และไม่เพิ่ม card นอก filter เอง; selected filter ไม่แตะ map, player หรือ counters
+12. **Mission filter suspension:** suspension เปิดเมื่อ `_currentResponseId != null` OR `_pendingMissionVideoId != null` OR reporter lock (`_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty` ตาม branch ใน `_filteredTrendingVideos`). ขณะ suspend ซ่อนไอคอน, ไม่ส่ง category IDs ไป API, ไม่กรอง `_filteredTrendingVideos()` ด้วย category; fetch unfiltered page เพื่อให้ mission/role cards ไม่หาย. เก็บ user selection ไว้และ refetch ด้วย IDs เมื่อพ้น suspension; reporter/volunteer eligibility rules เดิมไม่เปลี่ยน
+13. **Empty state/playing incident:** ถ้ากรองแล้วไม่พบเหตุ แสดง compact message "ไม่พบเหตุในประเภทที่เลือก" + ปุ่มล้าง filter ในพื้นที่ empty state เดิม. ถ้า current player ไม่ตรง filter ให้ซ่อนเฉพาะ card; ห้ามเปลี่ยน/หยุด player, currentVideoId หรือสร้าง interaction ใหม่. Empty state ยังเข้าถึงปุ่มล้างได้แม้ category list จะไม่พร้อม
+14. **Filter state/request transaction:** `_selectedTrendingCategoryIds` เป็น committed session state ใน `EmergencyLivePage`; sheet ใช้ draft แยก. Compare sets ไม่สน order; no-op เมื่อไม่เปลี่ยน. Apply ต้องโหลด page 1 ด้วย snapshot/generation ก่อน commit. Capture canonical filter key + mission-suspend state ในทุก request; response เก่าทิ้ง. เข้าสู่/ออกจาก mission suspension เปลี่ยน effective query และ reset pagination แต่ไม่แก้ committed selection
+15. **ต้นทุน/cache:** ไม่มี dependency, schema หรือ subscription ใหม่; filtered requests bypass Redis/cache-aside และ shared in-memory cache เดิม จึงไม่มี cache key per combination แต่เกิด DB reads เพิ่มตามการใช้งาน. ใช้ `idx_videos_category_id`, วัด query latency/DB CPU/rows examined; ห้ามรับรองว่าไม่มีค่าใช้จ่าย/โหลดเพิ่มก่อนวัด
 
-### 20.5 ลำดับดำเนินงาน
+### 20.5 โหมดการแสดงไอคอนตัวกรอง (show / hide / enable)
 
-1. **Server:** เพิ่ม `category_ids` param + validation/cap + SQL `ANY` + cache key v4 + unit test (ไม่ส่ง param = ผลเดิม, OR ถูกต้อง, NULL ถูกตัด, key ขึ้นต้น prefix เดิม)
-2. **Client repository:** ส่ง `categoryIds` ใน `_fetchEmergencyVideos` ทั้งเส้น local API และ Supabase fallback; คง contract/typed result เดิม
-3. **State:** เก็บ `Set<String> _selectedTrendingCategoryIds` ที่ระดับหน้า (session state) + ตัด id ที่ไม่รู้จัก + สั่ง refetch/`_computeMissionTrendingFilter` ใหม่เมื่อเปลี่ยนตัวกรอง
-4. **UI:** header Stack + ไอคอน + badge count; bottom sheet multi-select เรียงตาม `display_order`; empty state + ปุ่มล้าง
-5. **Composition:** ประกอบตัวกรองกับ `_filteredTrendingVideos()`, pagination/`onLoadMore`, Mission Lock และ realtime update
-6. **Tests + rollout:** ตาม §20.6–§20.7
+กล่องยอดนิยมถูกสร้างเฉพาะใน `_buildMainContent()` ตอน `_selectedTab == 0` และ `!_isThaiMhungReporting`; อยู่ใน content ของ `EmergencyUiOverlay` ที่มี `IgnorePointer(ignoring: !isUiVisible)` + `AnimatedOpacity`. คำนวณ `missionFilterSuspended` ที่หน้า (current response, pending response หรือ reporter lock) และ `canShowCategoryFilter` จาก `_emergencyCategories.isNotEmpty`, initial trending/mission gate, และ suspension — แยกจาก refresh loading; ส่งค่าผ่าน `LiveViewWidget` ไป `TrendingPanelWidget` เพื่อไม่ให้ child เดาสถานะจาก UI เอง.
 
-### 20.6 Risk register และ mitigation
+| โหมด / สถานะ | เงื่อนไขในโค้ด | พฤติกรรมกล่องยอดนิยม | ไอคอนตัวกรอง |
+|---|---|---|---|
+| ปกติ (ผู้ชมทั่วไป / จิตอาสาที่มีสิทธิ์และยังไม่มีภารกิจค้าง) | `_selectedTab == 0`, `!_isThaiMhungReporting`, `!missionFilterSuspended`, `_emergencyCategories.isNotEmpty`, initial trending/mission gate พร้อม | แสดงการ์ดตาม role filter เดิมและ category filter ที่ commit แล้ว | **แสดง + ใช้งานได้** |
+| UI ถูกซ่อน (แตะจอ) | `_isUiVisible == false` → `IgnorePointer` + opacity 0 | ยัง render แต่กดไม่ได้ | ไม่ต้องเขียนเงื่อนไขเพิ่ม — inert อัตโนมัติ; ห้ามให้การเปิด/ปิด sheet ไปสลับ `_isUiVisible` |
+| จิตอาสามีภารกิจที่เหตุปัจจุบัน | `_currentResponseId != null` → `lockToCurrentVideo` | แสดงตาม mission lock เดิม | **ซ่อน + suspend** (query ใช้ unfiltered list; selection คงอยู่) |
+| จิตอาสามีภารกิจค้างที่อีกเหตุ | `_pendingMissionVideoId != null && _currentResponseId == null` | browse ได้ตาม role rules เดิม; ต้องไม่กรอง/ทำให้ card ภารกิจหาย | **ซ่อน + suspend** (query unfiltered; selection คงอยู่) |
+| ผู้แจ้งมีภารกิจค้าง | `_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty && _currentResponseId == null && _pendingMissionVideoId == null` | แสดงเฉพาะการ์ดภารกิจตนเอง + การ์ดปัจจุบันตามกฎเดิม | **ซ่อน + suspend** (query unfiltered; selection คงอยู่) |
+| รอข้อมูลรอบแรก | `_isLoadingTrending \|\| !_missionFilterReady` → skeleton | skeleton | **ซ่อน**; การ refresh หลัง initial load ไม่ซ่อนไอคอนถ้าหมวดพร้อมและไม่ locked |
+| หมวดยังไม่พร้อม | `_emergencyCategories.isEmpty` (initial loading, load fail หรือ successful empty); failed refresh หลังมี list ให้คง list เดิม | แสดงการ์ดตามพฤติกรรมเดิม; ไม่มี filter ใหม่ให้เลือก | **ซ่อนเสมอ** ตามการตัดสินใจ; last-known-good list ทำให้ยังพร้อมใช้ |
+| แป้นพิมพ์แชทเปิด | `_isKeyboardOpen == true` (กล่องย่อเป็น `videoHeight`, Rescue Control Panel ถูกซ่อน) | กล่องย่อ | แสดง + ใช้งานได้; เปิด sheet ทับได้โดยไม่ต้องปิดคีย์บอร์ด/แชทก่อน |
+| แชทเปิด | `_isChatVisible == true` | กล่องปกติ | แสดง + ใช้งานได้ (sheet เป็น modal ทับแชท) |
+| overlay ภาพจากแกลอรี่ | `_isOverlayVisible == true` | กล่องปกติ | ไม่กระทบ (ปุ่มอื่นที่ซ่อนไม่เกี่ยวกับไอคอนนี้) |
+| Tab 1 | `_selectedTab == 1` → `SizedBox.shrink()` | ไม่มีกล่อง | ไม่มีไอคอน (ไม่ต้องทำอะไร) |
+| Tab 2 / โหมดรายงานไทยมุง | `_selectedTab == 2` หรือ `_isThaiMhungReporting == true` → `IncidentReportWidget` | ไม่มีกล่อง | ไม่มีไอคอน |
+| Fullscreen player | ไม่มี `TrendingPanelWidget` | ไม่มีกล่อง | ไม่มีไอคอน |
+| เหตุการณ์ที่กำลังดูถูกกรองออก | `_currentVideo.categoryId` ไม่อยู่ใน selected IDs ในโหมดปกติ | player เดิมเล่นต่อและ interaction ไม่เปลี่ยน; การ์ดไม่อยู่ใน panel จนกว่าจะล้าง/เลือก category ให้ตรง | **ไม่ยกเว้นการ์ดจาก filter** เพื่อรักษาความหมาย "แสดงเฉพาะ" |
+| WebSocket ขาด | `_isConnected == false` (ไม่ได้แปลว่า HTTP/Supabase ล่ม) | กล่องใช้ข้อมูลล่าสุด/refresh ตาม endpoint | แสดงได้ถ้าหมวดพร้อมและไม่ locked; ถ้า Apply โหลดทั้ง Local API/Supabase ไม่สำเร็จ ให้คง selection/list ที่ commit ก่อนหน้าและแสดง retry |
+
+**กฎรวมของโหมด (ต้องคงไว้ทุกข้อ)**
+
+1. การซ่อนไอคอน **ห้ามล้าง** `_selectedTrendingCategoryIds` — ค่าอยู่ใน session state และกลับมาทำงานเองเมื่อพ้นเงื่อนไขที่ซ่อน
+2. ไอคอนแสดงก็ต่อเมื่อกล่องถูกสร้าง, `_emergencyCategories.isNotEmpty`, initial trending/mission gate พร้อม, และไม่มี mission suspension — ไม่มีข้อยกเว้นเพื่อแสดงไอคอนตอนข้อมูลไม่พร้อม
+3. การซ่อน/แสดงไอคอนต้อง **ไม่เปลี่ยนความสูง header** ของกล่อง เพราะ Rescue Control Panel อ้างตำแหน่งจาก `_trendingPanelBottom`/`_trendingPanelRight` ที่วัดจากกล่องนี้ (`emergency_live_page.dart:676-694`)
+4. เปิด/ปิด bottom sheet ต้องไม่เปลี่ยน `_isUiVisible`, `_selectedTab`, `_isThaiMhungReporting`, `_isChatVisible` และไม่เรียก `_toggleUiVisibility()`
+5. Bottom sheet เป็น modal route (`isScrollControlled`, `useSafeArea`, keyboard inset) และ barrier ต้องกันการ tap แผนที่/การ์ด — ห้ามให้ map-tap ปิด UI ระหว่าง sheet เปิด; child `IconButton` tap ต้องไม่ bubble ไป `_toggleUiVisibility()`
+6. ถ้าขณะ sheet เปิดอยู่แล้วผู้ใช้เข้าสู่โหมดล็อก (เช่น รับภารกิจสำเร็จจากที่อื่น) → sheet ปิดตัวเอง และ **ค่าที่ติ๊กไว้แต่ยังไม่กดยืนยันต้องไม่ถูกนำไปใช้**
+7. ไอคอนที่แสดงต้องมี tooltip/semantics และสี active เมื่อมี committed filter; เมื่อซ่อนตามนโยบายไม่ต้อง render disabled icon/tooltip — ค่าที่เลือกพักอยู่และไอคอนกลับมาอัตโนมัติเมื่อพ้น mode
+8. โหมดที่ไม่มีกล่อง (Tab 1/2, โหมดรายงาน, fullscreen) ไม่ต้องเพิ่มเงื่อนไขใด ๆ — หลีกเลี่ยงการแก้ widget อื่นโดยไม่จำเป็น
+9. เมื่อ mission suspension เข้า/ออก ให้เปลี่ยน effective query ด้วย request generation ใหม่, โหลด unfiltered/filtered page 1 ตามโหมด และทิ้ง response จาก state ก่อนหน้า; ห้ามใช้ filtered pages ค้างมาสร้างชุดภารกิจ
+
+### 20.6 ลำดับดำเนินงาน
+
+1. **Server:** เพิ่ม parser/validation สำหรับ `category_ids`, SQL filter ก่อน pagination, applied-marker header/CORS exposure, และ bypass cache เฉพาะ filtered request; คง unfiltered key/handler เดิม. Tests ครอบคลุม OR/NULL/invalid/cap/marker/cache bypass.
+2. **Repository:** ส่ง canonical `categoryIds` ให้ Local API และ Supabase fallback; ถ้า local response ไม่มี applied marker ให้ discard แล้ว query Supabase ด้วย filter. Filtered calls bypass `_trendingCacheData`/`_trendingInFlight` ที่มีไว้แชร์ unfiltered page 1; unfiltered consumers ไม่เปลี่ยน.
+3. **State + pagination:** page-owned committed `Set<String>` (session) + sheet draft; transactional Apply; effective filter ว่างเมื่อ `missionFilterSuspended`; generation/key guard first-page/load-more; reset page/scroll/loading state เมื่อ filter/mode เปลี่ยน; advance page เฉพาะ success, retry page เดิมเมื่อ fail, dedupe IDs; recompute role eligibility หลัง list เปลี่ยน.
+4. **UI:** compact fixed-height Row (label + icon ด้านขวา); modal multi-select ใช้ category list order เดิม; Apply/Cancel/Clear, loading/error/retry, empty state. Keep filter state/page-owned; ส่ง `_emergencyCategories`, committed IDs, `canShowCategoryFilter` และ callback ผ่าน `LiveViewWidget` ไป `TrendingPanelWidget` — ไม่ย้าย session state เข้า widget ที่ถูก dispose ตาม tab.
+5. **Composition/realtime:** separate selector สำหรับ role rules + strict category guard; ไม่ pin current card นอกประเภท; lock enter → unfiltered fetch, lock exit → reload selected filter; realtime refresh ใช้ effective filter ปัจจุบัน.
+6. **Tests + rollout:** ตาม §20.8–§20.9
+
+### 20.7 Risk register และ mitigation
 
 | ความเสี่ยง | ระดับ | การป้องกันที่ต้องทำ |
 |---|---|---|
-| Cache key ใหม่ทำให้ invalidation เดิมหลุด → เห็นรายการค้างหลังมีเหตุใหม่ | สูง | key ต้องขึ้นต้น `video:emergency:list:` เสมอ + test ว่า `invalidateCachePattern('video:emergency:list:*')` ล้าง key ที่มีตัวกรองด้วย |
-| กรองแล้วกล่องว่าง ทำให้ผู้ใช้คิดว่าเหตุหาย/ระบบพัง | สูง | empty state + ปุ่มล้างตัวกรอง + badge จำนวนที่เลือก; คงการ์ดเหตุการณ์ปัจจุบันเสมอ |
-| Header สูงเปลี่ยน → Rescue Control Panel ลอยผิดตำแหน่ง | ปานกลาง | ใช้ Stack ตรึงความสูง header + test วัด `_trendingPanelBottom` เทียบก่อน/หลัง |
-| Server กับ client กรองไม่ตรงกัน (NULL, id ที่ถูกลบ, fallback) | สูง | parity test Local API vs Supabase fallback + กฎ NULL ข้อเดียวใช้ทั้งสองฝั่ง |
-| ผู้ใช้ส่ง id ปลอม/จำนวนมาก → query หนักหรือ 500 | ปานกลาง | validate UUID + cap จำนวน + คืน 400 แทน 500 + rate limit เดิม |
-| ตัวกรองไป override Mission Lock → จิตอาสาเห็นการ์ดที่ไม่ควรเห็น | สูง | บังคับลำดับ: role filter → category filter (intersection เท่านั้น) + test เคสภารกิจค้าง |
-| หมวดถูกลบ/ปิด emergency ระหว่าง session → id ค้าง | ต่ำ | ล้าง id ที่ไม่อยู่ใน `_emergencyCategories` ล่าสุดทุกครั้งที่โหลด |
-| เลือกหลายประเภทแล้ว auto-load ไล่ไม่จบ | ต่ำ | จำกัดจำนวนรอบดึงต่อการเปลี่ยนตัวกรอง + หยุดเมื่อไม่มีข้อมูลเพิ่ม |
+| Filtered cache ปะปนข้าม combination หรือเพิ่ม Redis cardinality | สูง | filtered requests bypass Redis/client shared caches; unfiltered v3 cache คงเดิม; tests ยืนยัน no filtered result เขียนทับหรืออ่านจาก cache unfiltered |
+| กรองแล้วกล่องว่าง หรือ current card หายจาก panel | สูง | compact empty state + ปุ่มล้าง; ระบุว่าตัวกรองมีผลเฉพาะ panel และ player ปัจจุบันยังเล่นต่อ; ไม่ pin card ที่ไม่ตรง filter |
+| เพิ่มไอคอนทำให้ header/แผงแคบเปลี่ยนตำแหน่งหรือ overflow | สูง | compact Row โดยไม่ overlay ทับ label; เก็บ header slot height; golden/layout test 320/375/390 dp และวัด panel/Rescue Control Panel rect |
+| Server กับ client กรองไม่ตรงกัน (NULL, deleted ID, fallback) | สูง | parity test Local API vs Supabase; marker header บอกว่า server apply filter; client guard ใช้กฎเดียวกัน |
+| Local API รุ่นเก่า ignore query param แต่ตอบ 200 | สูง | filtered Local response ต้องมี applied-marker; ไม่มี marker ให้ discard body แล้วใช้ Supabase fallback ที่ filter ก่อน range; CORS expose header + compatibility test |
+| ผู้ใช้ส่ง id ปลอม/จำนวนมาก → query หนักหรือ 500 | ปานกลาง | validate UUID + cap จำนวนอย่างน้อยเท่ากับจำนวนหมวดฉุกเฉินจริง + คืน 400 แทน 500 + rate limit เดิม |
+| Bypass cache สำหรับ filtered query เพิ่ม DB load | ปานกลาง | query ใช้ index เดิม; load/EXPLAIN benchmark, measure DB CPU/latency, retain cache for unfiltered path; เพิ่ม index เฉพาะเมื่อมีหลักฐานและอนุมัติ migration |
+| category filter ทำให้การ์ดภารกิจ/สิทธิ์หายระหว่าง pending หรือ reporter lock | วิกฤต | effective category IDs = empty ทุก mission-suspended mode (`currentResponseId`, `pendingMissionVideoId`, reporter lock); reload unfiltered list; retain user selection; test transitions ทั้งเข้า/ออก |
+| Category list refresh stale/failed | ปานกลาง | ใช้ last-known-good เมื่อ refresh fail; prune IDs เฉพาะเมื่อ fetch list ใหม่สำเร็จ; no successful list → hide filter control and don't apply new category filter |
+| Filter change/realtime ขณะ load-more ทำให้หน้าคนละ filter ปนหรือข้ามหน้า | สูง | generation + canonical filter key guard; reset page/list; advance page only on success; retry same page; dedupe IDs; real-time refresh replaces page 1 |
+| Bottom sheet กับ parent GestureDetector/keyboard กดแล้วซ่อน UI หรือ content ถูกบัง | ปานกลาง | child IconButton ต้องชนะ tap gesture, modal barrier block map, keyboard inset/safe area; widget test ตอน keyboard/chat เปิดและ UI visibility คงเดิม |
 | Layout/ชิปใน bottom sheet กับหมวดเยอะ | ต่ำ | scrollable sheet + จำกัดความสูง + test จอเล็ก |
+| ซ่อนไอคอนในโหมดล็อกแต่ committed filter ยังพักอยู่ | ปานกลาง | คงค่าใน state; เมื่อกลับสู่โหมดปกติให้ไอคอนใช้สี active + reload ด้วย filter เดิม; ไม่แสดง hidden tooltip ที่กดไม่ได้ |
+| Category load fail ทำให้ stale filter ใช้โดยไม่มีรายการให้แก้ | ปานกลาง | เก็บ last-known-good category snapshot; initial load fail ไม่มี filter selection ใหม่; failed refresh ไม่ล้าง snapshot/state; ถ้าไม่มี last-known-good ให้ไม่เริ่ม filtered query |
+| การซ่อน/แสดงไอคอนไปเปลี่ยน state ของหน้าจอ (UI/แชท/แท็บ) หรือความสูงกล่อง | ปานกลาง | ห้ามแตะ `_isUiVisible`/`_selectedTab`/`_isChatVisible` เมื่อเปิด-ปิด sheet + ตรึงความสูง header + test วัดตำแหน่ง Rescue Control Panel |
+| sheet ค้างเปิดขณะเข้าสู่โหมดล็อก → ค่าที่ยังไม่ยืนยันถูกนำไปใช้ | ต่ำ | ปิด sheet อัตโนมัติเมื่อเงื่อนไขล็อกเปลี่ยน และไม่ commit ค่าที่ยังไม่กดยืนยัน |
 
-### 20.7 Test และ exit gate
+### 20.8 Test และ exit gate
 
 **Backend**
-- [ ] ไม่ส่ง `category_ids` → ผลลัพธ์และ cache key เท่าเดิมเป๊ะ (regression)
-- [ ] ส่ง 1 ประเภท, หลายประเภท (OR), และประเภทที่ไม่มีเหตุ → ผลถูกต้อง
-- [ ] เหตุ `category_id = NULL` ไม่ปรากฏเมื่อมีการกรอง แต่ปรากฏเมื่อไม่กรอง
-- [ ] `category_ids` ผิดรูปแบบ/เกิน cap → 400 ไม่ใช่ 500; SQL ใช้ index (`EXPLAIN` ยืนยัน)
-- [ ] อัปโหลดเหตุใหม่แล้ว `invalidateCachePattern('video:emergency:list:*')` ล้าง key ที่มีตัวกรองด้วย
-- [ ] Pagination กับตัวกรอง: หน้า 2/3 ต่อเนื่องไม่ซ้ำไม่ขาด; page แรกว่างแต่ hasMore → ยังดึงต่อได้
+- [ ] ไม่ส่ง `category_ids` → SQL/response และ Redis v3 behavior เดิม; filtered requests ไม่อ่าน/เขียน Redis cache-aside
+- [ ] ส่ง 1 ID/หลาย ID (OR), ID ไม่มีเหตุ, และทุกหมวดที่รู้จัก → ผลถูกต้อง; NULL ถูกตัดเมื่อ filter มีค่าและรวมเมื่อไม่ส่ง
+- [ ] UUID ผิดรูปแบบ, token ว่าง, หรือเกิน cap → deterministic 400; duplicate IDs ถูก dedupe/canonicalize; cap ตรวจเทียบจำนวน emergency categories จริงและไม่ truncate
+- [ ] filtered response ส่ง `X-Emergency-Category-Filter: applied`; unfiltered response semantics เดิม; CORS expose marker ใน Flutter Web
+- [ ] Local API รุ่นเก่าที่ ignore param/ไม่มี marker → Client ต้อง fallback ไป Supabase query ที่ `.inFilter` ก่อน `.range`; ห้ามใช้ unfiltered page เป็น filtered result
+- [ ] `EXPLAIN (ANALYZE, BUFFERS)` และ load test ยืนยัน query latency/rows/CPU เหมาะกับปริมาณจริง; ใช้ `idx_videos_category_id` หรือเปิด issue แยกหากต้องเพิ่ม index
+- [ ] Static filtered fixture pagination หน้า 1/2/3 รวม records ที่ `created_at` เท่ากัน ยืนยัน order `created_at DESC, id DESC`/ไม่มี duplicate; unfiltered order/cache ไม่เปลี่ยน. Insert ระหว่างหน้าอาจ shift offset (known limitation), realtime refresh reset page 1 และ generation ทิ้ง response stale
 
 **Flutter / UI**
-- [ ] ไอคอนอยู่ด้านขวาป้าย "ยอดนิยม", badge จำนวนถูกต้อง, เปิด/ปิด bottom sheet ได้
-- [ ] รายการใน sheet เรียงตาม `display_order` ตรงกับแถบหมวดหมู่ในหน้าแจ้งเหตุและหน้า admin
-- [ ] เลือกหลายตัวแล้วการ์ดกรองแบบ union; ล้างทั้งหมดกลับมาแสดงครบ
-- [ ] Empty state แสดงพร้อมปุ่มล้าง; ไม่มีสถานะที่ player แสดงเหตุแต่ไม่มีการ์ด
-- [ ] สลับแท็บ/เปลี่ยนเหตุการณ์แล้วค่าตัวกรองคงอยู่; ปิด-เปิดแอปแล้วรีเซ็ตเป็นทั้งหมด
-- [ ] ระหว่างภารกิจ (Mission Lock/reporter lock) ผลลัพธ์เป็น intersection และไม่เห็นการ์ดนอกสิทธิ์
-- [ ] หมวดที่ถูกลบ/ปิด emergency หายจาก sheet และ id ค้างถูกตัดออก
-- [ ] การ์ดใหม่จาก realtime เข้ามาผ่านตัวกรองปัจจุบันโดยไม่ต้อง reload
-- [ ] ความสูง/ตำแหน่งกล่องยอดนิยมไม่เปลี่ยน → Rescue Control Panel ยังอยู่ตำแหน่งเดิม
-- [ ] Local API กับ Supabase fallback ให้ผลกรองเหมือนกัน
+- [ ] ไอคอนอยู่ด้านขวาของ label; visual golden/layout ที่ 320/375/390 dp ยืนยันว่า label ไม่ทับปุ่ม, header/panel rect ไม่เพิ่มความสูง และ Rescue Control Panel ไม่เลื่อน
+- [ ] Sheet ใช้ `_emergencyCategories` source/order เดียวกับแถบแจ้งเหตุ; multi-select OR, draft/Apply/Cancel/Clear ทำงาน; cancel/barrier ไม่ commit
+- [ ] Apply สำเร็จแล้ว filter cards ตรง selected IDs; ปุ่มล้างคืน list ทั้งหมด; active tint แสดงสถานะโดยไม่เพิ่ม badge/ความกว้าง
+- [ ] Empty state มี clear action; currentVideo ที่ไม่ตรง filter หายจาก panel แต่ player/ID/view/like/GPS/category/mission ไม่เปลี่ยน
+- [ ] Apply ล้มเหลวทั้ง Local API และ Supabase → committed selection/list เดิมคงอยู่, sheet แสดง error/retry; success จึง commit
+- [ ] Filter change ขณะ first page/load-more/realtime กำลัง in-flight → stale response ไม่เขียน state; page reset, scroll top, retry ไม่ข้ามหน้า, append dedupe ด้วย ID
+- [ ] สลับแท็บ/เหตุการณ์ใน route เดิมคง committed selection; dispose/reopen route หรือ app เริ่มเป็นทั้งหมด
+- [ ] Local API ที่ไม่มี applied marker → fallback Supabase; Local API/Supabase และ client guard ให้ผลสอดคล้องกัน
+- [ ] WebSocket update หลังเลือก filter reloads ด้วย effective IDs; ไม่ inject card ที่อยู่นอก filter และ thumbnail/viewer update ไม่เปลี่ยน membership
+- [ ] Category refresh สำเร็จ prune IDs ที่หาย/ไม่ emergency; refresh fail คง last-known-good categories + selection
+
+**โหมดการแสดงไอคอน (ตาม §20.5)**
+- [ ] Initial load/mission gate ยังไม่ ready → ไอคอนซ่อน; initial refresh หลังจากนั้นไม่ทำให้ toolbar กระพริบ
+- [ ] `_currentResponseId != null` → ซ่อนไอคอน/พัก category filter, ใช้ role set เดิม; จบภารกิจ reload ด้วย selection เดิม
+- [ ] `_pendingMissionVideoId != null` ขณะดูเหตุอื่น → ซ่อนไอคอน/พัก filter; pending mission card ยังไม่ถูก category filter ซ่อน
+- [ ] Reporter lock → ซ่อนไอคอน/ใช้ reporter set เดิม; ปลด lock แล้ว reload filter เดิม
+- [ ] Category list loading/failed/empty และไม่มี last-known-good → ซ่อนไอคอน; refresh fail เมื่อมี last-known-good ไม่ล้าง list/state
+- [ ] `_isUiVisible == false` → parent IgnorePointer ทำงาน; icon tap ไม่เปิด sheet; เปิด/ปิด sheet ไม่เปลี่ยน `_isUiVisible`/tab/chat state
+- [ ] Keyboard/chat เปิด → bottom sheet ทับได้, safe area/keyboard inset ถูกต้อง, ไม่ unfocus/ปิด chat เอง; modal barrier กัน tap ที่ map
+- [ ] Tab 1/2, Thai Mhung reporting, fullscreen → ไม่มีไอคอน/ไม่มี exception
+- [ ] Sheet เปิดแล้วเกิด mission suspension → ปิดเฉพาะ route ของ sheet; draft ไม่ commit; ห้าม pop หน้า EmergencyLivePage
+- [ ] พ้น suspension → ไอคอนกลับมา active เมื่อมี selection และ panel geometry เดิม
 
 **Acceptance Criteria**
 - ผู้ใช้กดไอคอนขวาป้าย "ยอดนิยม" แล้วเลือกได้หลายประเภทพร้อมกัน และการ์ดแสดงเฉพาะประเภทที่เลือก
 - รายการประเภทมาจากตารางจริง เรียงตาม `display_order` ตรงกับแถบหมวดหมู่และหน้า admin
-- ไม่มี regression ต่อ Mission Lock, สิทธิ์จิตอาสา, จำนวนผู้ชม, thumbnail realtime, แผนที่ และ trending list เดิม
-- ไม่มี dependency/infra/cost เพิ่ม และไม่มีการเปลี่ยนแปลง schema หรือ migration
+- ไม่มี regression ต่อ Mission Lock/สิทธิ์จิตอาสา, viewer/interactions, thumbnail realtime, แผนที่ และ existing no-filter trending behavior
+- ไอคอนปรากฏเฉพาะ category-ready + unlocked; ระหว่าง mission ซ่อน/พัก filter แล้วคืนค่าเดิมหลังปลดล็อก; matching cards เข้มงวดและ player ไม่เปลี่ยน (ตาม §20.5)
+- ไม่มี dependency, paid service, new infra หรือ schema migration; filtered reads มี DB load เพิ่มจากการ bypass cache และต้องผ่าน latency/CPU budget ก่อน rollout
 
-### 20.8 Rollout และ rollback
+### 20.9 Rollout และ rollback
 
-- **Rollout:** backend (param + cache key v4) ขึ้นก่อน แล้ว client ใหม่จึงเริ่มส่ง param; client เก่าไม่ส่ง param จึงยังทำงานเดิมได้ทันที; เปิดใช้ทีละกลุ่มผู้ใช้ได้ด้วย feature flag ฝั่ง client ถ้าต้องการ; หลัง deploy ให้เฝ้า cache hit rate และขนาด key space ของ `video:emergency:list:*`
-- **Rollback:** ปิดการส่ง param ฝั่ง client (หรือปิด flag) → กลับพฤติกรรมเดิมทันทีโดยไม่ต้องแก้ server; server ยังรับ param ต่อไปได้แบบไม่มีผล; ไม่มีการลบตาราง/คอลัมน์และไม่มี migration ที่ต้องย้อน
+- **Rollout:** deploy backend support/validation/applied marker + CORS header exposure ก่อน; verify filtered response and Supabase fallback. จากนั้น deploy client ที่ feature flag ปิดเป็นค่าเริ่มต้น/เปิด canary; client เก่าที่ไม่ส่ง param ใช้ unfiltered v3 cache เดิม. เฝ้า filtered query latency, DB CPU/rows, fallback rate, filter errors และ geometry metrics; filtered request ไม่สร้าง Redis cache keys
+- **Rollback:** ปิด client feature flag แล้วกลับ `category_ids` ว่าง/ไม่ส่ง param และใช้ UI เดิม; backend คง backward-compatible. ไม่ต้อง rollback schema/migration (ไม่มีเพิ่ม); ถ้า query load เกิน budget ให้ปิด feature และทบทวน index/query ก่อนเปิดใหม่
 - **Out of scope:** ตัวกรองในแผนที่/ลิสต์อื่น, ตัวกรองฝั่ง admin, การเปลี่ยน semantics ของ `GET /api/videos/` (ค่า `category_id` เดี่ยว), การจำค่าตัวกรองข้ามการเปิดแอป, การเพิ่มหมวดหมู่ใหม่หรือแก้ `display_order`

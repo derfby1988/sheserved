@@ -57,9 +57,7 @@ class _VenueUnitLabelEditorDialogBodyState
   static const _generic = 'สนาม';
 
   late bool _custom = widget.currentOverride != null;
-  late final _text = TextEditingController(
-    text: widget.currentOverride ?? '',
-  );
+  late final _text = TextEditingController(text: widget.currentOverride ?? '');
   late String? _reference = _initialReference();
   final ScrollController _scrollController = ScrollController();
 
@@ -93,13 +91,10 @@ class _VenueUnitLabelEditorDialogBodyState
 
   void _submit() {
     if (!_valid) return;
-    Navigator.pop(
-      context,
-      (
-        override: _custom ? _text.text.trim() : null,
-        referenceSportId: _reference,
-      ),
-    );
+    Navigator.pop(context, (
+      override: _custom ? _text.text.trim() : null,
+      referenceSportId: _reference,
+    ));
   }
 
   @override
@@ -169,10 +164,7 @@ class _VenueUnitLabelEditorDialogBodyState
                               value: false,
                               label: Text('ตามประเภทกีฬา'),
                             ),
-                            ButtonSegment(
-                              value: true,
-                              label: Text('กำหนดเอง'),
-                            ),
+                            ButtonSegment(value: true, label: Text('กำหนดเอง')),
                           ],
                           selected: {_custom},
                           onSelectionChanged: (s) =>
@@ -204,8 +196,7 @@ class _VenueUnitLabelEditorDialogBodyState
                                   ),
                                 ),
                             ],
-                            onChanged: (v) =>
-                                setState(() => _reference = v),
+                            onChanged: (v) => setState(() => _reference = v),
                           ),
                           if (widget.sports.isEmpty)
                             Padding(

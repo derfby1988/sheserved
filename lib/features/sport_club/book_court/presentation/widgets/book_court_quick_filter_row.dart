@@ -87,9 +87,7 @@ class BookCourtQuickFilterRow extends StatelessWidget {
                     text,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: selected
-                          ? FontWeight.w600
-                          : FontWeight.w500,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                       color: selected
                           ? AppColors.primaryDark
                           : Colors.grey.shade800,

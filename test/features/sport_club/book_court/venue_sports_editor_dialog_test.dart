@@ -22,10 +22,7 @@ Widget _host({
             context,
             sports: _sports,
             selectedUnits: selectedUnits,
-            venueUnitSuggestions: const {
-              's1': 'ยิม',
-              's2': 'สระว่ายน้ำ',
-            },
+            venueUnitSuggestions: const {'s1': 'ยิม', 's2': 'สระว่ายน้ำ'},
             referenceSportId: reference,
           );
         },
@@ -92,15 +89,9 @@ void main() {
   testWidgets('deselecting the reference sport clears the reference', (
     tester,
   ) async {
-    await _open(
-      tester,
-      selectedUnits: {'s1': '', 's2': ''},
-      reference: 's2',
-    );
+    await _open(tester, selectedUnits: {'s1': '', 's2': ''}, reference: 's2');
     // Uncheck ว่ายน้ำ — the reference must not point outside the member set.
-    await tester.tap(
-      find.widgetWithText(CheckboxListTile, 'ว่ายน้ำ'),
-    );
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'ว่ายน้ำ'));
     await tester.pumpAndSettle();
     await tester.tap(_save);
     await tester.pumpAndSettle();

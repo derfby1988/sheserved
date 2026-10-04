@@ -130,8 +130,7 @@ class CourtBookingActionDialogs {
                   Expanded(
                     child: GlassActionButton(
                       label: 'ยกเลิกคำขอ',
-                      onTap: () =>
-                          Navigator.of(dialogContext).pop('cancel'),
+                      onTap: () => Navigator.of(dialogContext).pop('cancel'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -140,8 +139,7 @@ class CourtBookingActionDialogs {
                       label: 'เปลี่ยนเวลา',
                       isFilled: true,
                       fillColor: const Color(0xFF2563EB),
-                      onTap: () =>
-                          Navigator.of(dialogContext).pop('change'),
+                      onTap: () => Navigator.of(dialogContext).pop('change'),
                     ),
                   ),
                 ],

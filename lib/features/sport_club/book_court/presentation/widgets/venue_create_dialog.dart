@@ -48,13 +48,10 @@ class _VenueCreateDialogBodyState extends State<_VenueCreateDialogBody> {
 
   void _submit() {
     if (!_valid) return;
-    Navigator.pop(
-      context,
-      (
-        name: _name.text.trim(),
-        venueUnitLabelOverride: _custom ? _label.text.trim() : null,
-      ),
-    );
+    Navigator.pop(context, (
+      name: _name.text.trim(),
+      venueUnitLabelOverride: _custom ? _label.text.trim() : null,
+    ));
   }
 
   @override
@@ -133,10 +130,7 @@ class _VenueCreateDialogBodyState extends State<_VenueCreateDialogBody> {
                           value: false,
                           label: Text('คำกลาง "สนาม"'),
                         ),
-                        ButtonSegment(
-                          value: true,
-                          label: Text('กำหนดเอง'),
-                        ),
+                        ButtonSegment(value: true, label: Text('กำหนดเอง')),
                       ],
                       selected: {_custom},
                       onSelectionChanged: (s) =>
@@ -151,8 +145,7 @@ class _VenueCreateDialogBodyState extends State<_VenueCreateDialogBody> {
                           decoration: const InputDecoration(
                             counterText: '',
                             labelText: 'ชื่อเรียกสถานที่ *',
-                            hintText:
-                                'เช่น สนาม, ยิม, ฟิตเนส, สตูดิโอ, ห้อง',
+                            hintText: 'เช่น สนาม, ยิม, ฟิตเนส, สตูดิโอ, ห้อง',
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (_) => setState(() {}),

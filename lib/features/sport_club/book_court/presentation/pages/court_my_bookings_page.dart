@@ -153,8 +153,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       await _load();
       final expired = _bookings.any(
         (booking) =>
-            booking.id == b.id &&
-            booking.status == VenueBookingStatus.expired,
+            booking.id == b.id && booking.status == VenueBookingStatus.expired,
       );
       _toast(
         expired

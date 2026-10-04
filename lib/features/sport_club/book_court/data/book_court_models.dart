@@ -907,6 +907,11 @@ class CourtBookingRelease {
   final int windowDays;
   final String? selectedDayReleaseTime;
 
+  /// Instant at which the whole selected date becomes bookable. It can fall on
+  /// an earlier date than the booking date, so the UI names it directly instead
+  /// of guessing a weekday.
+  final DateTime? selectedDayOpensAt;
+
   const CourtBookingRelease({
     required this.mode,
     required this.dayOfWeek,
@@ -914,6 +919,7 @@ class CourtBookingRelease {
     required this.releaseTime,
     required this.windowDays,
     this.selectedDayReleaseTime,
+    this.selectedDayOpensAt,
   });
 
   /// Selected weekdays, falling back to the legacy one-day response alias.
@@ -935,6 +941,9 @@ class CourtBookingRelease {
       releaseTime: j['releaseTime']?.toString() ?? '00:00',
       windowDays: (j['windowDays'] as num?)?.toInt() ?? 7,
       selectedDayReleaseTime: j['selectedDayReleaseTime']?.toString(),
+      selectedDayOpensAt: DateTime.tryParse(
+        j['selectedDayOpensAt']?.toString() ?? '',
+      ),
     );
   }
 }

@@ -141,8 +141,7 @@ class _VenueAmenitiesEditorDialogBodyState
                     label: 'บันทึก',
                     isFilled: true,
                     fillColor: AppColors.primaryDark,
-                    onTap: () =>
-                        Navigator.of(context).pop(_selected.toList()),
+                    onTap: () => Navigator.of(context).pop(_selected.toList()),
                   ),
                 ),
               ],

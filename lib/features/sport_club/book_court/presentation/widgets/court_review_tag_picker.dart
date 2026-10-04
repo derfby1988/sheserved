@@ -30,8 +30,7 @@ class CourtReviewTagPicker extends StatefulWidget {
 class _CourtReviewTagPickerState extends State<CourtReviewTagPicker> {
   final _customController = TextEditingController();
 
-  int get _total =>
-      widget.selectedTagIds.length + widget.customTags.length;
+  int get _total => widget.selectedTagIds.length + widget.customTags.length;
 
   bool get _atLimit => _total >= CourtReviewTagPicker.maxTags;
 

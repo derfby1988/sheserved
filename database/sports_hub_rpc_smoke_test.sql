@@ -98,6 +98,7 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261005100000_sports_hub_unit_labels.sql
 \ir ../supabase/migrations/20261006100000_sports_hub_booking_release_days.sql
 \ir ../supabase/migrations/20261007100000_sports_hub_booking_release_weekday_overrides.sql
+\ir ../supabase/migrations/20261008100000_sports_hub_booking_release_venue_fallback_all_days.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -944,10 +945,12 @@ BEGIN
       %L, %L, %L, %L, 'Court 1', 1, 200, 'hour', 'synthetic', true,
       'instant', NULL, true, NULL, 'weekly', 1, '09:00', 14)$$,
       v_owner, v_rel_court, v_venue, v_sport), 'INVALID_RELEASE_RULE');
+  -- The override applies on its own weekday, where its 14-day window opens a
+  -- slot the venue's 7-day rule still seals.
   PERFORM public.upsert_sports_venue_court(
     v_owner, v_rel_court, v_venue, v_sport, 'Court 1',
     1, 200, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
-    'custom', v_rel_dow2, '00:00'::time, 14);
+    'custom', v_rel_dow, '00:00'::time, 14);
   PERFORM pg_temp.expect(public.create_sports_venue_booking(
     v_cust, v_rel_court, pg_temp.bkk_ts(7, '10:00'),
     pg_temp.bkk_ts(7, '11:00'), v_terms, 'release-custom-1') IS NOT NULL,
@@ -2089,13 +2092,20 @@ BEGIN
         '2026-10-10 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
       ) AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') = '10:00',
     'court custom weekday uses the court release time');
+  PERFORM pg_temp.expect(to_char(
+      public.sports_venue_booking_release_opens_at_for_slot(
+        'Asia/Bangkok', 'custom', ARRAY[6]::SMALLINT[], '10:00', 7,
+        ARRAY[1,2,3,4,5]::SMALLINT[], '09:00', 7,
+        '2026-10-11 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
+      ) AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') = '2026-10-05 09:00',
+    'venue rule covers a weekday outside the court custom days');
   PERFORM pg_temp.expect(
     public.sports_venue_booking_release_opens_at_for_slot(
       'Asia/Bangkok', 'custom', ARRAY[6]::SMALLINT[], '10:00', 7,
-      ARRAY[1,2,3,4,5]::SMALLINT[], '09:00', 7,
+      NULL::SMALLINT[], '09:00', 7,
       '2026-10-11 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
     ) IS NULL,
-    'weekday without a venue or court rule has no release gate');
+    'weekday without any venue or court rule has no release gate');
   PERFORM pg_temp.expect(
     public.sports_venue_booking_release_next_at(
       'Asia/Bangkok', '2026-10-04 18:00'::TIMESTAMP
@@ -2120,6 +2130,10 @@ BEGIN
   PERFORM pg_temp.expect(
     left(v_availability->'release'->>'selectedDayReleaseTime', 5) = '09:00',
     'availability returns venue time for a normal booking weekday');
+  PERFORM pg_temp.expect(
+    to_char((v_availability->'release'->>'selectedDayOpensAt')::TIMESTAMPTZ
+      AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') = '2030-01-01 09:00',
+    'availability dates the release that governs the selected weekday');
   v_availability := public.get_court_availability(
     v_court,
     '2030-01-05 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
@@ -2127,14 +2141,22 @@ BEGIN
   PERFORM pg_temp.expect(
     left(v_availability->'release'->>'selectedDayReleaseTime', 5) = '10:00',
     'availability returns court time for its custom booking weekday');
+  PERFORM pg_temp.expect(
+    to_char((v_availability->'release'->>'selectedDayOpensAt')::TIMESTAMPTZ
+      AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') = '2030-01-05 10:00',
+    'court custom weekday opens on its own release date');
   v_availability := public.get_court_availability(
     v_court,
     '2030-01-06 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
     '2030-01-07 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
   PERFORM pg_temp.expect(
-    v_availability->'release'->>'selectedDayReleaseTime' IS NULL
+    left(v_availability->'release'->>'selectedDayReleaseTime', 5) = '09:00'
     AND v_availability->>'nextReleaseAt' IS NOT NULL,
-    'availability includes next release when the selected weekday has no rule');
+    'venue rule also covers a weekday outside every selected day set');
+  PERFORM pg_temp.expect(
+    to_char((v_availability->'release'->>'selectedDayOpensAt')::TIMESTAMPTZ
+      AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') = '2029-12-31 09:00',
+    'the governing release may fall on an earlier date than the booking date');
   PERFORM pg_temp.expect_raise(
     'booking gate uses venue rule for a normal weekday',
     format($s$SELECT public.assert_sports_venue_booking_release(
@@ -2149,10 +2171,34 @@ BEGIN
       '2030-01-05 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')$s$,
       v_court),
     'BOOKING_NOT_OPEN_YET');
+  PERFORM pg_temp.expect_raise(
+    'booking gate also covers a weekday outside every selected day set',
+    format($s$SELECT public.assert_sports_venue_booking_release(
+      %L, '2030-01-06 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+      '2030-01-06 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')$s$,
+      v_court),
+    'BOOKING_NOT_OPEN_YET');
+  PERFORM public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => v_court,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Custom-only schedule',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'custom',
+    p_booking_release_time => '10:00',
+    p_booking_release_window_days => 7,
+    p_booking_release_days => '[6]'::JSONB);
+  PERFORM public.set_sports_venue_booking_release_days(
+    v_owner, v_venue, NULL, NULL, NULL);
   PERFORM public.assert_sports_venue_booking_release(
     v_court,
     '2030-01-06 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
     '2030-01-06 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
   PERFORM pg_temp.expect(true,
-    'booking gate does not apply to weekdays with no selected rule');
+    'booking gate does not apply without any venue or court rule');
 END $release_days$;

@@ -104,10 +104,7 @@ void main() {
       await _tapChip(tester, 'category-${c.key}-7');
     }
 
-    await tester.enterText(
-      find.byType(TextField).first,
-      'สนามสะอาดดี',
-    );
+    await tester.enterText(find.byType(TextField).first, 'สนามสะอาดดี');
     await tester.ensureVisible(find.text('สะอาด/ดูแลดี'));
     await tester.tap(find.text('สะอาด/ดูแลดี'));
     await tester.pump();

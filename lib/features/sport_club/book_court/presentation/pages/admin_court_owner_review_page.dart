@@ -167,7 +167,11 @@ class _AdminCourtOwnerReviewPanelState
   }
 
   Future<String?> _askReason(String title) {
-    return GlassTextPromptDialog.show(context, title: title, hint: 'ระบุเหตุผล');
+    return GlassTextPromptDialog.show(
+      context,
+      title: title,
+      hint: 'ระบุเหตุผล',
+    );
   }
 
   void _toast(String message) {
@@ -186,7 +190,9 @@ class _AdminCourtOwnerReviewPanelState
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 12),
               children: [
-                _sectionHeader('คำขอเป็นเจ้าของสถานที่ (${_applications.length})'),
+                _sectionHeader(
+                  'คำขอเป็นเจ้าของสถานที่ (${_applications.length})',
+                ),
                 if (_applications.isEmpty)
                   _empty('ไม่มีคำขอรอตรวจสอบ')
                 else
@@ -209,44 +215,44 @@ class _AdminCourtOwnerReviewPanelState
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            app.businessName.isNotEmpty ? app.businessName : app.contactName,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'ผู้ติดต่อ: ${[app.contactName, if (app.contactPhone.isNotEmpty) app.contactPhone].join(' • ')}',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          if (app.contactEmail?.isNotEmpty == true)
             Text(
-              app.businessName.isNotEmpty ? app.businessName : app.contactName,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              app.contactEmail!,
+              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'ผู้ติดต่อ: ${[app.contactName, if (app.contactPhone.isNotEmpty) app.contactPhone].join(' • ')}',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            if (app.contactEmail?.isNotEmpty == true)
-              Text(
-                app.contactEmail!,
-                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => _reviewApplication(app, false),
+                child: const Text(
+                  'ปฏิเสธ',
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () => _reviewApplication(app, false),
-                  child: const Text(
-                    'ปฏิเสธ',
-                    style: TextStyle(color: Colors.red),
-                  ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                  ),
-                  onPressed: () => _reviewApplication(app, true),
-                  child: const Text('อนุมัติ'),
-                ),
-              ],
-            ),
-          ],
-        ),
+                onPressed: () => _reviewApplication(app, true),
+                child: const Text('อนุมัติ'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -258,64 +264,62 @@ class _AdminCourtOwnerReviewPanelState
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              venue.name,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              [venue.district, venue.province].whereType<String>().join(', '),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                dense: true,
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: 4),
-                title: Text(
-                  'ความพร้อมก่อนอนุมัติ',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.primaryDark,
-                    fontWeight: FontWeight.w600,
-                  ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            venue.name,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [venue.district, venue.province].whereType<String>().join(', '),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              dense: true,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 4),
+              title: Text(
+                'ความพร้อมก่อนอนุมัติ',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.primaryDark,
+                  fontWeight: FontWeight.w600,
                 ),
-                onExpansionChanged: (expanded) {
-                  if (expanded &&
-                      !_venueDetails.containsKey(venue.id) &&
-                      !_detailErrors.contains(venue.id)) {
-                    _loadVenueDetail(venue.id);
-                  }
-                },
-                children: [_buildVenueReadiness(venue)],
               ),
+              onExpansionChanged: (expanded) {
+                if (expanded &&
+                    !_venueDetails.containsKey(venue.id) &&
+                    !_detailErrors.contains(venue.id)) {
+                  _loadVenueDetail(venue.id);
+                }
+              },
+              children: [_buildVenueReadiness(venue)],
             ),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () => _reviewVenue(venue, false),
-                  child: const Text(
-                    'ปฏิเสธ',
-                    style: TextStyle(color: Colors.red),
-                  ),
+          ),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => _reviewVenue(venue, false),
+                child: const Text(
+                  'ปฏิเสธ',
+                  style: TextStyle(color: Colors.red),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                  ),
-                  onPressed: () => _reviewVenue(venue, true),
-                  child: const Text('อนุมัติ'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
                 ),
-              ],
-            ),
-          ],
-        ),
+                onPressed: () => _reviewVenue(venue, true),
+                child: const Text('อนุมัติ'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

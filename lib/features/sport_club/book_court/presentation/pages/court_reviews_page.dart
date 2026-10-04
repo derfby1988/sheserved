@@ -72,10 +72,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
     });
     try {
       final results = await Future.wait([
-        widget.repo.getVenueReviewSummary(
-          widget.venue.id,
-          courtId: _courtId,
-        ),
+        widget.repo.getVenueReviewSummary(widget.venue.id, courtId: _courtId),
         widget.repo.listVenueReviewsV2(
           widget.venue.id,
           courtId: _courtId,
@@ -136,8 +133,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
   }
 
   void _maybeLoadMore() {
-    if (_scroll.position.pixels >=
-        _scroll.position.maxScrollExtent - 200) {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
       _loadMore();
     }
   }
@@ -163,8 +159,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
             if (r.id == review.id)
               r.copyWith(
                 viewerVoted: !r.viewerVoted,
-                helpfulCount:
-                    r.helpfulCount + (r.viewerVoted ? -1 : 1),
+                helpfulCount: r.helpfulCount + (r.viewerVoted ? -1 : 1),
               )
             else
               r,
@@ -172,9 +167,9 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
       });
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกการโหวตไม่สำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('บันทึกการโหวตไม่สำเร็จ')));
       }
     }
   }
@@ -306,10 +301,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
                   const SizedBox(height: 2),
                   Text(
                     'อ้างอิงจากรีวิวจากการจองที่เสร็จสมบูรณ์จริง',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -453,17 +445,11 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
                 ),
               ),
               items: [
-                const DropdownMenuItem(
-                  value: null,
-                  child: Text('ทุกสถานที่'),
-                ),
+                const DropdownMenuItem(value: null, child: Text('ทุกสถานที่')),
                 for (final court in _courts)
                   DropdownMenuItem(
                     value: court.id,
-                    child: Text(
-                      court.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text(court.name, overflow: TextOverflow.ellipsis),
                   ),
               ],
               onChanged: (v) {
@@ -493,8 +479,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
   }
 
   Widget _buildReviewItem(VenueReview review) {
-    final isMine =
-        _userId != null && review.userId == _userId;
+    final isMine = _userId != null && review.userId == _userId;
     return NeumorphicContainer(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -502,135 +487,123 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
       depth: 4,
       blur: 8,
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        review.userDisplayName ?? 'ผู้ใช้',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        [
-                          if (review.courtName?.isNotEmpty == true)
-                            review.courtName!,
-                          if (review.sportName?.isNotEmpty == true)
-                            review.sportName!,
-                          _reviewDate(review.createdAt),
-                        ].join(' • '),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryDark,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    review.rating10.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (review.comment?.isNotEmpty == true) ...[
-              const SizedBox(height: 8),
-              Text(review.comment!, style: const TextStyle(fontSize: 13)),
-            ],
-            if (review.tagLabels.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final label in review.tagLabels)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        label,
-                        style: const TextStyle(fontSize: 11),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.userDisplayName ?? 'ผู้ใช้',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (review.courtName?.isNotEmpty == true)
+                          review.courtName!,
+                        if (review.sportName?.isNotEmpty == true)
+                          review.sportName!,
+                        _reviewDate(review.createdAt),
+                      ].join(' • '),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDark,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  review.rating10.toStringAsFixed(1),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
               ),
             ],
+          ),
+          if (review.comment?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
-            Row(
+            Text(review.comment!, style: const TextStyle(fontSize: 13)),
+          ],
+          if (review.tagLabels.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
               children: [
-                Icon(
-                  Icons.verified_rounded,
-                  size: 14,
-                  color: AppColors.primaryDark,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'จองจริง',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const Spacer(),
-                if (!isMine)
-                  TextButton.icon(
-                    onPressed: () => _toggleHelpful(review),
-                    icon: Icon(
-                      review.viewerVoted
-                          ? Icons.thumb_up_rounded
-                          : Icons.thumb_up_outlined,
-                      size: 15,
+                for (final label in review.tagLabels)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
                     ),
-                    label: Text('มีประโยชน์ (${review.helpfulCount})'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: review.viewerVoted
-                          ? AppColors.primaryDark
-                          : Colors.grey.shade700,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  )
-                else
-                  Text(
-                    'มีประโยชน์ ${review.helpfulCount}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    child: Text(label, style: const TextStyle(fontSize: 11)),
                   ),
               ],
             ),
           ],
-        ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.verified_rounded,
+                size: 14,
+                color: AppColors.primaryDark,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'จองจริง',
+                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+              ),
+              const Spacer(),
+              if (!isMine)
+                TextButton.icon(
+                  onPressed: () => _toggleHelpful(review),
+                  icon: Icon(
+                    review.viewerVoted
+                        ? Icons.thumb_up_rounded
+                        : Icons.thumb_up_outlined,
+                    size: 15,
+                  ),
+                  label: Text('มีประโยชน์ (${review.helpfulCount})'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: review.viewerVoted
+                        ? AppColors.primaryDark
+                        : Colors.grey.shade700,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                )
+              else
+                Text(
+                  'มีประโยชน์ ${review.helpfulCount}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

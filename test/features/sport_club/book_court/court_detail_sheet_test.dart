@@ -758,6 +758,69 @@ void main() {
     },
   );
 
+  testWidgets(
+    'sealed slots name the release date even when it is earlier than the date',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      final today = VenueLocalTime.today(_venue.timezone);
+      final releaseDate = VenueLocalTime.addCalendarDays(today, 1);
+      final opensAt = VenueLocalTime.atWallTime(
+        releaseDate,
+        _venue.timezone,
+        9,
+      );
+      repo.availability = CourtAvailability(
+        courtId: 'court-1',
+        serverNow: VenueLocalTime.now(_venue.timezone),
+        hours: [
+          for (var day = 0; day < DateTime.daysPerWeek; day++)
+            VenueOperatingHours(
+              dayOfWeek: day,
+              openTime: '06:00',
+              closeTime: '23:00',
+            ),
+        ],
+        release: CourtBookingRelease(
+          mode: 'inherit',
+          dayOfWeek: 1,
+          daysOfWeek: [1, 2, 3, 4, 5],
+          releaseTime: '09:00:00',
+          windowDays: 7,
+          selectedDayReleaseTime: '09:00:00',
+          selectedDayOpensAt: opensAt,
+        ),
+        notOpen: [
+          for (var hour = 6; hour < 23; hour++)
+            (
+              slotStart: VenueLocalTime.atWallTime(
+                today,
+                _venue.timezone,
+                hour,
+              ),
+              opensAt: opensAt,
+            ),
+        ],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await _openSheet(tester);
+
+      await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'เปิดจองครั้งถัดไปในวันที่ '
+          '${ThaiDateUtils.formatShortDateBE2Digit(releaseDate)} '
+          'เริ่มเวลา 09:00 น.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('เวลาเปิดรับจอง: 09:00'), findsNothing);
+    },
+  );
+
   testWidgets('all-closed availability shows the next release date and time', (
     tester,
   ) async {

@@ -25,8 +25,7 @@ class VenueHoursEditorDialog {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       panelAccentColor: AppColors.primary,
       contentPadding: EdgeInsets.zero,
-      builder: (dialogContext) =>
-          _VenueHoursEditorDialogBody(current: current),
+      builder: (dialogContext) => _VenueHoursEditorDialogBody(current: current),
     );
   }
 }
@@ -269,10 +268,9 @@ class _VenueHoursEditorDialogBodyState
                                                 ),
                                               ),
                                               const Padding(
-                                                padding:
-                                                    EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                    ),
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                ),
                                                 child: Text('–'),
                                               ),
                                               Expanded(
@@ -280,10 +278,8 @@ class _VenueHoursEditorDialogBodyState
                                                   label: day.close == null
                                                       ? '--:--'
                                                       : _fmt(day.close!),
-                                                  onTap: () => _pick(
-                                                        day,
-                                                        isOpen: false,
-                                                      ),
+                                                  onTap: () =>
+                                                      _pick(day, isOpen: false),
                                                 ),
                                               ),
                                             ],
@@ -291,9 +287,8 @@ class _VenueHoursEditorDialogBodyState
                                   ),
                                   Switch(
                                     value: !day.closed,
-                                    onChanged: (open) => setState(
-                                      () => day.closed = !open,
-                                    ),
+                                    onChanged: (open) =>
+                                        setState(() => day.closed = !open),
                                   ),
                                 ],
                               ),

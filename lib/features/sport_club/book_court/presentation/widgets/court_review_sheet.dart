@@ -14,14 +14,13 @@ import 'court_review_tag_picker.dart';
 /// the entry point when the booking is not reviewable. Pass the previous
 /// draft as [CourtReviewSheet.show]'s `initial` to retry a failed submit
 /// without losing the reviewer's input.
-typedef CourtReviewDraft =
-    ({
-      int rating10,
-      Map<String, int> categoryScores,
-      String? comment,
-      Set<String> tagIds,
-      List<String> customTags,
-    });
+typedef CourtReviewDraft = ({
+  int rating10,
+  Map<String, int> categoryScores,
+  String? comment,
+  Set<String> tagIds,
+  List<String> customTags,
+});
 
 class CourtReviewSheet {
   static Future<CourtReviewDraft?> show(
@@ -179,9 +178,8 @@ class _CourtReviewSheetBodyState extends State<_CourtReviewSheetBody> {
                 const SizedBox(height: 4),
                 _scorePicker(
                   selected: _categoryScores[category.id],
-                  onSelected: (i) => setState(
-                    () => _categoryScores[category.id] = i,
-                  ),
+                  onSelected: (i) =>
+                      setState(() => _categoryScores[category.id] = i),
                   valueKeyPrefix: 'category-${category.key}',
                 ),
                 const SizedBox(height: 10),

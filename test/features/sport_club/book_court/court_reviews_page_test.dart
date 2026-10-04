@@ -122,11 +122,7 @@ const _summary = VenueReviewSummary(
     ),
   ],
   topics: [
-    VenueReviewTopic(
-      tagId: 'tag-1',
-      labelTh: 'ความสะอาด',
-      reviewCount: 4,
-    ),
+    VenueReviewTopic(tagId: 'tag-1', labelTh: 'ความสะอาด', reviewCount: 4),
   ],
 );
 
@@ -181,9 +177,7 @@ void main() {
     expect(repo.lastSort, VenueReviewSort.helpful);
   });
 
-  testWidgets('tapping a band filters the list server-side', (
-    tester,
-  ) async {
+  testWidgets('tapping a band filters the list server-side', (tester) async {
     await tester.pumpWidget(_harness(repo));
     await tester.pumpAndSettle();
 
@@ -213,9 +207,7 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('guest sees a login snackbar instead of voting', (
-    tester,
-  ) async {
+  testWidgets('guest sees a login snackbar instead of voting', (tester) async {
     useTallViewport(tester);
     await tester.pumpWidget(_harness(repo));
     await tester.pumpAndSettle();
@@ -227,9 +219,7 @@ void main() {
     expect(repo.helpfulCalls, isEmpty);
   });
 
-  testWidgets('logged-in vote toggles the helpful count once', (
-    tester,
-  ) async {
+  testWidgets('logged-in vote toggles the helpful count once', (tester) async {
     useTallViewport(tester);
     await tester.pumpWidget(_harness(repo, viewerId: 'user-1'));
     await tester.pumpAndSettle();

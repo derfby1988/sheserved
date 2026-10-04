@@ -1174,18 +1174,33 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
     );
   }
 
-  String? _bookingReleaseTime(CourtAvailability? availability) {
-    final rawTime = availability?.release?.selectedDayReleaseTime;
+  /// Release line for the selected booking date: the date and time the release
+  /// runs while it is still ahead, then the release time of the day's rule once
+  /// the date is already bookable.
+  String? _bookingReleaseLine(
+    CourtAvailability availability,
+    bool allSlotsClosed,
+  ) {
+    if (allSlotsClosed) {
+      final nextReleaseAt = availability.nextReleaseAt;
+      return nextReleaseAt == null ? null : _releaseDateMessage(nextReleaseAt);
+    }
+    final release = availability.release;
+    if (release == null) return null;
+    final opensAt = release.selectedDayOpensAt;
+    final serverNow = availability.serverNow;
+    if (opensAt != null && (serverNow == null || opensAt.isAfter(serverNow))) {
+      return _releaseDateMessage(opensAt);
+    }
+    final rawTime = release.selectedDayReleaseTime;
     if (rawTime == null) return null;
     final releaseTime = rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime;
     return 'เวลาเปิดรับจอง: $releaseTime';
   }
 
-  String? _nextReleaseMessage(CourtAvailability availability) {
-    final nextReleaseAt = availability.nextReleaseAt;
-    if (nextReleaseAt == null) return null;
+  String _releaseDateMessage(DateTime instant) {
     final wall = VenueLocalTime.wallTimeOfInstant(
-      nextReleaseAt,
+      instant,
       widget.venue.timezone,
     );
     final date = _formatDate(DateTime(wall.year, wall.month, wall.day));
@@ -1212,9 +1227,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
             : (start, end) => _verifySlotAndBook(court, start, end),
       );
       picker = availabilityPicker;
-      releaseSummary = availabilityPicker.allSlotsClosed
-          ? _nextReleaseMessage(availability)
-          : _bookingReleaseTime(availability);
+      releaseSummary = _bookingReleaseLine(
+        availability,
+        availabilityPicker.allSlotsClosed,
+      );
     }
     return NeumorphicInsetBox(
       height: null,

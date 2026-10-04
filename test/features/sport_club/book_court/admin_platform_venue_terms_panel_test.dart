@@ -93,7 +93,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('platform-venue-terms-save')));
     await tester.pumpAndSettle();
 
-    expect(find.text('ยืนยันการเปลี่ยนเงื่อนไขมาตรฐานของสถานที่'), findsOneWidget);
+    expect(
+      find.text('ยืนยันการเปลี่ยนเงื่อนไขมาตรฐานของสถานที่'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('ยืนยันและบันทึก'));
     await tester.pumpAndSettle();
 

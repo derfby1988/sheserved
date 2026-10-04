@@ -89,7 +89,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสถานที่'));
+    await tester.tap(
+      find.text('ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสถานที่'),
+    );
     expect(ran, VenueSetupStepId.terms);
   });
 
