@@ -27,6 +27,9 @@ class NeumorphicInputField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final ValueChanged<String>? onChanged;
   final bool obscureText;
+
+  /// เมื่อ false ช่องกรอกจะจางลงและแตะ/โฟกัสไม่ได้ — ใช้ตอนกำลัง submit
+  final bool enabled;
   final double height;
   final double borderRadius;
   final Color activeColor;
@@ -44,6 +47,7 @@ class NeumorphicInputField extends StatefulWidget {
     this.onSubmitted,
     this.onChanged,
     this.obscureText = false,
+    this.enabled = true,
     this.height = 52.0,
     this.borderRadius = 16.0,
     this.activeColor = NeumorphicTheme.accentCyan,
@@ -85,39 +89,42 @@ class _NeumorphicInputFieldState extends State<NeumorphicInputField> {
 
   @override
   Widget build(BuildContext context) {
-    final isFocused = _focusNode.hasFocus;
+    final isFocused = _focusNode.hasFocus && widget.enabled;
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(widget.borderRadius),
-        boxShadow: isFocused
-            ? [
-                BoxShadow(
-                  color: widget.activeColor.withValues(alpha: 0.5),
-                  blurRadius: 12,
-                  spreadRadius: 1.5,
-                ),
-              ]
-            : null,
-      ),
-      child: CustomPaint(
-        painter: NeumorphicInsetPainter(
-          borderRadius: widget.borderRadius,
-          distance: 4.0,
-          blur: 6.0,
-          shadowDark: const Color.fromRGBO(163, 177, 198, 0.90),
-          shadowLight: const Color.fromRGBO(255, 255, 255, 0.95),
-          border: isFocused
-              ? BorderSide(
-                  color: widget.activeColor,
-                  width: 2.0,
-                )
-              : BorderSide(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  width: 1.0,
-                ),
+    return Opacity(
+      opacity: widget.enabled ? 1.0 : 0.6,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.borderRadius),
+          boxShadow: isFocused
+              ? [
+                  BoxShadow(
+                    color: widget.activeColor.withValues(alpha: 0.5),
+                    blurRadius: 12,
+                    spreadRadius: 1.5,
+                  ),
+                ]
+              : null,
         ),
-        child: _buildTextField(isFocused),
+        child: CustomPaint(
+          painter: NeumorphicInsetPainter(
+            borderRadius: widget.borderRadius,
+            distance: 4.0,
+            blur: 6.0,
+            shadowDark: const Color.fromRGBO(163, 177, 198, 0.90),
+            shadowLight: const Color.fromRGBO(255, 255, 255, 0.95),
+            border: isFocused
+                ? BorderSide(
+                    color: widget.activeColor,
+                    width: 2.0,
+                  )
+                : BorderSide(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    width: 1.0,
+                  ),
+          ),
+          child: _buildTextField(isFocused),
+        ),
       ),
     );
   }
@@ -129,6 +136,7 @@ class _NeumorphicInputFieldState extends State<NeumorphicInputField> {
     final textField = TextField(
       controller: widget.controller,
       focusNode: _focusNode,
+      enabled: widget.enabled,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
       onSubmitted: widget.onSubmitted,

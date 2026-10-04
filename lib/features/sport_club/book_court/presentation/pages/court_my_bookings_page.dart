@@ -149,10 +149,19 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
           priceScheduleVersion: slot.priceQuote.priceScheduleVersion,
         );
       }
-      _toast('เปลี่ยนเวลาแล้ว รอเจ้าของอนุมัติ');
       await _load();
+      final expired = _bookings.any(
+        (booking) =>
+            booking.id == b.id &&
+            booking.status == VenueBookingStatus.expired,
+      );
+      _toast(
+        expired
+            ? 'คำขอหมดอายุแล้ว เนื่องจากถึงเวลาเริ่ม'
+            : 'เปลี่ยนเวลาแล้ว รอเจ้าของอนุมัติ',
+      );
     } catch (e) {
-      _toast(_mapError(e));
+      _toast(_mapError(e, timezone: b.timezone));
     }
   }
 
@@ -704,8 +713,16 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
         '–${two(end.hour)}:${two(end.minute)}';
   }
 
-  static String _mapError(Object e) {
+  static String _mapError(Object e, {String? timezone}) {
     final raw = e.toString();
+    if (raw.contains('BOOKING_NOT_OPEN_YET')) {
+      final opensAt = bookingReleaseOpensAt(e);
+      if (opensAt != null && timezone != null) {
+        return 'ช่วงเวลานี้ยังไม่เปิดจอง — เปิดรับจอง '
+            '${VenueLocalTime.formatInstantWall(opensAt, timezone)}';
+      }
+      return 'ช่วงเวลานี้ยังไม่เปิดจอง กรุณาลองใหม่ภายหลัง';
+    }
     if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
       return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
     }

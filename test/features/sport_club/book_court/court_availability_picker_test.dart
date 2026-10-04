@@ -169,4 +169,150 @@ void main() {
       expect(find.byTooltip('ถูกจอง'), findsNothing);
     }
   });
+
+  group('booking release (21.7.18)', () {
+    test('decodes serverNow, notOpen slots and the effective rule', () {
+      final a = CourtAvailability.fromJson({
+        'courtId': 'c1',
+        'serverNow': '2040-01-01T02:00:00Z',
+        'booked': [],
+        'blocked': [],
+        'hours': [],
+        'notOpen': [
+          {
+            'slotStart': '2040-01-05T03:00:00Z',
+            'opensAt': '2040-01-02T02:00:00Z',
+          },
+        ],
+        'release': {
+          'mode': 'inherit',
+          'dayOfWeek': 1,
+          'releaseTime': '09:00',
+          'windowDays': 14,
+        },
+      });
+
+      expect(a.serverNow, DateTime.utc(2040, 1, 1, 2));
+      expect(a.notOpen.single.slotStart, DateTime.utc(2040, 1, 5, 3));
+      expect(
+        a.opensAtFor(DateTime.utc(2040, 1, 5, 3)),
+        DateTime.utc(2040, 1, 2, 2),
+      );
+      expect(a.opensAtFor(DateTime.utc(2040, 1, 5, 4)), isNull);
+      expect(a.release?.mode, 'inherit');
+      expect(a.release?.windowDays, 14);
+    });
+
+    test('older payloads without release fields still decode', () {
+      final a = CourtAvailability.fromJson({
+        'courtId': 'c1',
+        'booked': [],
+        'blocked': [],
+        'hours': [],
+      });
+
+      expect(a.serverNow, isNull);
+      expect(a.notOpen, isEmpty);
+      expect(a.release, isNull);
+    });
+
+    testWidgets('sealed slots show opensAt, stay visible and reject taps', (
+      tester,
+    ) async {
+      const timezone = 'Asia/Bangkok';
+      final date = DateTime(2040, 1, 1);
+      DateTime at(int hour, [int minute = 0]) =>
+          VenueLocalTime.atWallTime(date, timezone, hour, minute);
+      final opensAt = at(20);
+      final availability = CourtAvailability(
+        courtId: 'court-1',
+        hours: [
+          VenueOperatingHours(
+            dayOfWeek: at(0).weekday % 7,
+            openTime: '14:00',
+            closeTime: '22:00',
+          ),
+        ],
+        notOpen: [(slotStart: at(15), opensAt: opensAt)],
+      );
+      DateTime? tapped;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: availability,
+              date: date,
+              timezone: timezone,
+              now: at(14, 30),
+              freeOnly: true,
+              onSlotTap: (start, end) => tapped = start,
+            ),
+          ),
+        ),
+      );
+
+      // The sealed slot is shown for discovery but is not bookable.
+      expect(find.text('15:00'), findsOneWidget);
+      expect(
+        find.byTooltip(
+          'เปิดจอง ${VenueLocalTime.formatInstantWall(opensAt, timezone)}',
+        ),
+        findsOneWidget,
+      );
+      final picker = CourtAvailabilityPicker(
+        availability: availability,
+        date: date,
+        timezone: timezone,
+        now: at(14, 30),
+        freeOnly: true,
+      );
+      // freeSlots stays bookable-only; visibleSlots keeps the sealed
+      // chip for discovery.
+      expect(picker.freeSlots.map((s) => s.start), isNot(contains(at(15))));
+      expect(picker.visibleSlots.map((s) => s.start), contains(at(15)));
+      await tester.tap(find.text('15:00'));
+      expect(tapped, isNull);
+    });
+
+    testWidgets('a slot becomes free once its opensAt has passed', (
+      tester,
+    ) async {
+      const timezone = 'Asia/Bangkok';
+      final date = DateTime(2040, 1, 1);
+      DateTime at(int hour, [int minute = 0]) =>
+          VenueLocalTime.atWallTime(date, timezone, hour, minute);
+      final availability = CourtAvailability(
+        courtId: 'court-1',
+        hours: [
+          VenueOperatingHours(
+            dayOfWeek: at(0).weekday % 7,
+            openTime: '14:00',
+            closeTime: '22:00',
+          ),
+        ],
+        // Stale entry: the release instant is behind serverNow, so the
+        // slot must render free — server time wins over a cached payload.
+        notOpen: [(slotStart: at(15), opensAt: at(14))],
+      );
+      DateTime? tapped;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: availability,
+              date: date,
+              timezone: timezone,
+              now: at(14, 30),
+              freeOnly: true,
+              onSlotTap: (start, end) => tapped = start,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('ว่าง'), findsNWidgets(7));
+      await tester.tap(find.text('15:00'));
+      expect(tapped, at(15));
+    });
+  });
 }

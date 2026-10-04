@@ -23,7 +23,7 @@ class AppConfig {
   // =====================================================
 
   /// ค่าเริ่มต้น IP หรือ Local Hostname ของเครื่องหลักที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '192.168.0.123:8080';
+  static const String mainMachineIp = '192.168.0.101:8080';
 
   /// Base URL ของ backend/Caddy ใช้ร่วมกันทั้ง API และ WebSocket
   static const String backendApiUrl = String.fromEnvironment(
@@ -87,7 +87,8 @@ class AppConfig {
   /// สำหรับ development ชั่วคราว ให้สลับเป็น legacy direct path ด้วย
   /// --dart-define=USE_BACKEND_AUTH=false เพื่อทดสอบโดยไม่ต้องเปิด backend
   /// ทุกครั้ง (Supabase ต้องยังเข้าถึงได้)
-  /// ค่า default ยังคง true เพื่อไม่ให้ release build เผลอใช้ legacy auth
+  /// ⚠️ default ปัจจุบันคือ false (dev compatibility) — release/staging build
+  /// ต้องส่ง --dart-define=USE_BACKEND_AUTH=true เสมอ ไม่งั้นจะใช้ legacy auth
   /// ⚠️ อย่าเปิด true พร้อมกันกับการลบ backend URL — ต้องตั้ง [backendApiUrl] ก่อน
   static const bool useBackendAuth = bool.fromEnvironment(
     'USE_BACKEND_AUTH',

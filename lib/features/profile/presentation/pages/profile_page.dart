@@ -397,7 +397,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: NeumorphicTheme.baseColor,
       extendBody:
           true, // สำคัญมาก เพื่อให้ Navigation Bar ลอยทับเนื้อหาได้สวยงาม
       drawer: const TlzDrawer(),
@@ -423,9 +423,19 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์ของคุณ'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
+                  const Text(
+                    'กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์ของคุณ',
+                    style: TextStyle(color: NeumorphicTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 20),
+                  NeumorphicVerifyButton(
+                    text: 'เข้าสู่ระบบ / สมัครสมาชิก',
+                    width: 260,
+                    icon: const Icon(
+                      Icons.login_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     onPressed: () {
                       Navigator.pushNamed(
                         context,
@@ -433,11 +443,6 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         arguments: '/profile',
                       );
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('เข้าสู่ระบบ / สมัครสมาชิก'),
                   ),
                 ],
               ),
@@ -480,88 +485,50 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        _buildSectionHeader(
           'ระบบเฝ้าระวังความปลอดภัย',
-          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+          icon: Icons.watch_later_outlined,
+          accent: Colors.red.shade700,
         ),
         const SizedBox(height: 8),
         Text(
           'ระบบจะตรวจสอบว่าคุณยังปลอดภัยอยู่โดยให้คุณกดยืนยันภายในระยะเวลาที่กำหนด หากคุณไม่กดยืนยันภายในเวลาที่กำหนด ระบบจะถือว่าอาจมีเหตุฉุกเฉินเกิดขึ้น',
-          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+          style: AppTextStyles.bodySmall.copyWith(
+            color: NeumorphicTheme.textSecondary,
           ),
+        ),
+        const SizedBox(height: 12),
+        _buildNeuCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.watch_later_outlined,
-                      color: Colors.red.shade700,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'ระบบเฝ้าระวัง',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          _isLoadingDeadManSettings
-                              ? 'กำลังโหลดการตั้งค่า...'
-                              : isEnabled
-                              ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการยืนยันความปลอดภัยล่าสุด'
-                              : 'ยังไม่เปิดใช้งาน',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: isEnabled,
-                    onChanged: _isSavingDeadManSettings
-                        ? null
-                        : (value) => _toggleDeadManEnabled(value),
-                    activeThumbColor: Colors.red.shade700,
-                  ),
-                ],
+              NeumorphicSwitchTile(
+                leading: _neuIconBadge(
+                  Icons.watch_later_outlined,
+                  Colors.red.shade700,
+                ),
+                title: 'ระบบเฝ้าระวัง',
+                subtitle: _isLoadingDeadManSettings
+                    ? 'กำลังโหลดการตั้งค่า...'
+                    : isEnabled
+                    ? 'เปิดใช้งานอยู่ • ระบบจะนับเวลาจากการยืนยันความปลอดภัยล่าสุด'
+                    : 'ยังไม่เปิดใช้งาน',
+                value: isEnabled,
+                activeColor: Colors.red.shade700,
+                onChanged: _isSavingDeadManSettings
+                    ? null
+                    : (value) => _toggleDeadManEnabled(value),
               ),
               const SizedBox(height: 16),
               Text(
                 'ช่วงเวลายืนยันความปลอดภัย',
                 style: AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
-              Slider(
+              NeumorphicSlider(
                 value: _deadManCheckInIntervalMinutes.toDouble().clamp(
                   60,
                   1440,
@@ -589,7 +556,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 children: [
                   Text(
                     '1 ชม.',
-                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                   Text(
                     '$_deadManCheckInIntervalMinutes นาที',
@@ -600,7 +569,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   ),
                   Text(
                     '24 ชม.',
-                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -623,22 +594,32 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: NeumorphicPillButton(
+                      text: 'ยืนยันความปลอดภัยตอนนี้',
+                      icon: Icons.touch_app,
+                      color: Colors.red.shade700,
+                      height: 46,
+                      fontSize: 12.5,
+                      depth: 4,
+                      blur: 8,
                       onPressed: _isSavingDeadManSettings
                           ? null
                           : _checkInDeadManNow,
-                      icon: const Icon(Icons.touch_app),
-                      label: const Text('ยืนยันความปลอดภัยตอนนี้'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: NeumorphicVerifyButton(
+                      text: 'บันทึก',
+                      height: 46,
+                      icon: const Icon(
+                        Icons.save_outlined,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                       onPressed: _isSavingDeadManSettings
                           ? null
                           : () => _saveDeadManSettings(isEnabled: isEnabled),
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('บันทึก'),
                     ),
                   ),
                 ],
@@ -655,22 +636,22 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   Widget _buildMiniStatusChip(String label, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
+    return NeumorphicContainer(
+      borderRadius: 12,
+      depth: 3,
+      blur: 6,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: Colors.grey.shade700),
+          Icon(icon, size: 16, color: NeumorphicTheme.textSecondary),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
               label,
-              style: AppTextStyles.bodySmall,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: NeumorphicTheme.textPrimary,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -679,42 +660,36 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     );
   }
 
-  Widget _buildContent() {
+  /// แถบ Top Bar สีเขียว (app chrome เดียวกับทุกหน้า)
+  Widget _buildTopBarContent() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: TlzAppTopBar.onPrimary(
+        searchHintText: 'ค้นหา...',
+        notificationCategory: 'profile',
+        leading: const TlzHamburgerMenu(),
+        actions: const [],
+      ),
+    );
+  }
+
+  /// แถบแท็บ Neumorphic — ใช้ร่วมกันทั้งใน SliverAppBar และ layout แบบคงที่
+  Widget _buildTabStrip() {
     final bool isConsumer = !(_user?.isProvider ?? false);
     final bool isProvider = !isConsumer;
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          floating: false,
-          backgroundColor: AppColors.primary,
-          automaticallyImplyLeading: false,
-          elevation: 2,
-          titleSpacing: 0,
-          toolbarHeight: 65,
-          title: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TlzAppTopBar.onPrimary(
-              searchHintText: 'ค้นหา...',
-              notificationCategory: 'profile',
-              leading: const TlzHamburgerMenu(),
-              actions: const [],
-            ),
-          ),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(49),
-            child: Container(
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
-              ),
-              child: SingleChildScrollView(
-                controller: _tabScrollController,
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
+    return Container(
+      width: double.infinity,
+      color: NeumorphicTheme.baseColor,
+      child: SingleChildScrollView(
+        controller: _tabScrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 8,
+        ),
+        child: Row(
+          children: [
                     _buildTabItem(
                       icon: Icons.person_outline,
                       text: _profession?.name ?? 'โปรไฟล์',
@@ -783,69 +758,104 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   ],
                 ),
               ),
-            ),
-          ),
+            );
+  }
+
+  /// ปุ่มย้อนกลับแบบวงกลมนูน — ใช้ร่วมกันทุก tab
+  Widget _buildBackButtonRow() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+        child: NeumorphicIconButton(
+          icon: Icons.arrow_back,
+          tooltip: 'ย้อนกลับ',
+          color: NeumorphicTheme.primaryBlue,
+          onPressed: () {
+            final navigator = Navigator.of(context);
+            if (navigator.canPop()) {
+              navigator.pop();
+            } else {
+              navigator.pushReplacementNamed('/home');
+            }
+          },
         ),
-        SliverToBoxAdapter(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                tooltip: 'ย้อนกลับ',
-                color: AppColors.primary,
-                onPressed: () {
-                  final navigator = Navigator.of(context);
-                  if (navigator.canPop()) {
-                    navigator.pop();
-                  } else {
-                    navigator.pushReplacementNamed('/home');
-                  }
-                },
-              ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    final bool isConsumer = !(_user?.isProvider ?? false);
+    final bool isProvider = !isConsumer;
+
+    // แท็บประวัติฝังหน้าที่เลื่อนเองอยู่แล้ว — ใช้ layout คงที่
+    // เพื่อไม่ให้การ์ดใบบนเลื่อนลอดใต้ tab strip ที่ปักหมุดอยู่
+    if (_selectedTab == ProfileTab.history) {
+      return Column(
+        children: [
+          Container(
+            color: AppColors.primary,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top,
             ),
+            child: SizedBox(height: 65, child: _buildTopBarContent()),
           ),
-        ),
-        if (_selectedTab == ProfileTab.history) ...[
-          SliverFillRemaining(
+          _buildTabStrip(),
+          _buildBackButtonRow(),
+          const SizedBox(height: 8),
+          Expanded(
             child: isConsumer
                 ? MyConsultationsPage(
                     key: _myConsultationsKey,
                     isEmbedded: true,
                   )
-                : ProviderHistoryPage(key: _historyPageKey, isEmbedded: true),
+                : ProviderHistoryPage(
+                    key: _historyPageKey,
+                    isEmbedded: true,
+                  ),
           ),
-        ] else ...[
+        ],
+      );
+    }
+
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(
+          pinned: true,
+          floating: false,
+          backgroundColor: AppColors.primary,
+          automaticallyImplyLeading: false,
+          elevation: 2,
+          titleSpacing: 0,
+          toolbarHeight: 65,
+          title: _buildTopBarContent(),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(58),
+            child: _buildTabStrip(),
+          ),
+        ),
+        SliverToBoxAdapter(child: _buildBackButtonRow()),
           SliverPadding(
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 if (_selectedTab == ProfileTab.profile) ...[
                   _buildHeader(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   _buildCoreInfo(),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  Text(
+                  const SizedBox(height: 20),
+                  _buildSectionHeader(
                     'ความปลอดภัยของบัญชี',
-                    style: AppTextStyles.heading3.copyWith(
-                      color: AppColors.primary,
-                    ),
+                    icon: Icons.shield_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   _buildChangePasswordTile(),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  Text(
+                  const SizedBox(height: 20),
+                  _buildSectionHeader(
                     'ข้อมูลเพิ่มเติม (${_profession?.name ?? ""})',
-                    style: AppTextStyles.heading3.copyWith(
-                      color: AppColors.primary,
-                    ),
+                    icon: Icons.badge_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   ..._buildDynamicFields(),
                 ] else if (_selectedTab == ProfileTab.volunteer) ...[
                   _buildNotificationSettings(),
@@ -864,17 +874,20 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   const SizedBox(height: 24),
                 ],
                 if (_isEditing && _selectedTab == ProfileTab.profile) ...[
-                  const SizedBox(height: 32),
-                  TlzButton(
+                  const SizedBox(height: 28),
+                  NeumorphicVerifyButton(
                     text: 'บันทึกข้อมูล',
                     onPressed: _isSaving ? null : _handleSave,
                     isLoading: _isSaving,
+                    icon: const Icon(
+                      Icons.save_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ],
                 if (_selectedTab == ProfileTab.profile) ...[
-                  const SizedBox(height: 40),
-                  const Divider(thickness: 1.5, color: Color(0xFFEEEEEE)),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 32),
                   DonationRequestManagementPanel(
                     repository: _donationRepository,
                     userId: _user?.id,
@@ -889,19 +902,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               ]),
             ),
           ),
-        ],
       ],
     );
   }
 
   Widget _buildBeneficiaryRegistrationEntry() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.orange.shade200),
-      ),
-      color: Colors.orange.shade50,
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
         onTap: () {
           // TODO: สร้างและนำทางไปยัง BeneficiaryRegistrationPage
@@ -911,18 +918,26 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
+        borderRadius: BorderRadius.circular(20),
+        child: _buildNeuCard(
+          color: Color.alphaBlend(
+            Colors.orange.withValues(alpha: 0.10),
+            NeumorphicTheme.baseColor,
+          ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: const BoxDecoration(
-                  color: Colors.orange,
-                  shape: BoxShape.circle,
+              NeumorphicContainer(
+                width: 44,
+                height: 44,
+                shape: BoxShape.circle,
+                depth: 3,
+                blur: 6,
+                color: Colors.orange,
+                child: const Icon(
+                  Icons.account_balance,
+                  color: Colors.white,
+                  size: 22,
                 ),
-                child: const Icon(Icons.account_balance, color: Colors.white),
               ),
               const SizedBox(width: 16),
               const Expanded(
@@ -953,6 +968,66 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     );
   }
 
+  /// แผงการ์ดนูน Neumorphic มาตรฐานของหน้าโปรไฟล์
+  Widget _buildNeuCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    Color? color,
+    double borderRadius = 20,
+    double depth = 6,
+    double blur = 12,
+  }) {
+    return NeumorphicContainer(
+      borderRadius: borderRadius,
+      depth: depth,
+      blur: blur,
+      color: color ?? NeumorphicTheme.baseColor,
+      padding: padding ?? const EdgeInsets.all(16),
+      child: child,
+    );
+  }
+
+  /// หัวข้อ section พร้อม badge ไอคอนวงกลมนูน — ใช้ร่วมกันทุก tab
+  Widget _buildSectionHeader(
+    String title, {
+    IconData icon = Icons.tune_rounded,
+    Color accent = NeumorphicTheme.primaryBlue,
+  }) {
+    return Row(
+      children: [
+        NeumorphicContainer(
+          width: 36,
+          height: 36,
+          shape: BoxShape.circle,
+          depth: 3,
+          blur: 6,
+          child: Icon(icon, size: 18, color: accent),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            style: AppTextStyles.heading3.copyWith(
+              color: NeumorphicTheme.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// label เหนือช่องกรอก Neumorphic — โทนเดียวกับหน้า login/register
+  Widget _buildFieldLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: NeumorphicTheme.textSecondary,
+      ),
+    );
+  }
+
   Widget _buildTabItem({
     required IconData icon,
     required String text,
@@ -960,86 +1035,121 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     required Color activeColor,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 49,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isActive ? activeColor : Colors.transparent,
-              width: 3,
-            ),
+    const padding = EdgeInsets.symmetric(horizontal: 14, vertical: 9);
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: isActive ? activeColor : NeumorphicTheme.textSecondary,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: isActive ? activeColor : NeumorphicTheme.textSecondary,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: isActive ? activeColor : Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: AppTextStyles.bodySmall.copyWith(
-                color: isActive ? activeColor : Colors.grey,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: isActive
+              ? NeumorphicInsetBox(
+                  height: null,
+                  borderRadius: 16,
+                  padding: padding,
+                  child: content,
+                )
+              : NeumorphicContainer(
+                  borderRadius: 16,
+                  depth: 4,
+                  blur: 8,
+                  padding: padding,
+                  child: content,
+                ),
         ),
       ),
     );
   }
 
   Widget _buildHeader() {
-    return Center(
+    return _buildNeuCard(
+      borderRadius: 28,
+      depth: 10,
+      blur: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: Column(
         children: [
-          const SizedBox(height: 16),
           Stack(
             children: [
               GestureDetector(
                 onTap: _isUploadingAvatar ? null : _showImagePickerDropdown,
-                child: ClipOval(
-                  child: Container(
-                    width: 120, // radius 60
-                    height: 120,
-                    color: AppColors.primary.withOpacity(0.1),
-                    child: _isUploadingAvatar
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                            ),
-                          )
-                        : _user?.profileImageUrl != null
-                        ? Image.network(
-                            _user!.profileImageUrl!,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.primary,
-                                  value:
-                                      loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                      : null,
+                child: NeumorphicContainer(
+                  width: 124,
+                  height: 124,
+                  shape: BoxShape.circle,
+                  depth: 6,
+                  blur: 12,
+                  padding: const EdgeInsets.all(5),
+                  child: ClipOval(
+                    child: Container(
+                      color: NeumorphicTheme.primaryBlue.withValues(
+                        alpha: 0.08,
+                      ),
+                      child: _isUploadingAvatar
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: NeumorphicTheme.primaryBlue,
+                              ),
+                            )
+                          : _user?.profileImageUrl != null
+                          ? Image.network(
+                              _user!.profileImageUrl!,
+                              fit: BoxFit.cover,
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Center(
+                                      child: CircularProgressIndicator(
+                                        color: NeumorphicTheme.primaryBlue,
+                                        value:
+                                            loadingProgress
+                                                    .expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                              errorBuilder: (c, e, s) => const Center(
+                                child: Icon(
+                                  Icons.person,
+                                  size: 56,
+                                  color: NeumorphicTheme.primaryBlue,
                                 ),
-                              );
-                            },
-                            errorBuilder: (c, e, s) => const Icon(
-                              Icons.person,
-                              size: 60,
-                              color: AppColors.primary,
+                              ),
+                            )
+                          : const Center(
+                              child: Icon(
+                                Icons.person,
+                                size: 56,
+                                color: NeumorphicTheme.primaryBlue,
+                              ),
                             ),
-                          )
-                        : const Icon(
-                            Icons.person,
-                            size: 60,
-                            color: AppColors.primary,
-                          ),
+                    ),
                   ),
                 ),
               ),
@@ -1049,16 +1159,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   right: 0,
                   child: GestureDetector(
                     onTap: _showImagePickerDropdown,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                      ),
+                    child: NeumorphicContainer(
+                      width: 36,
+                      height: 36,
+                      shape: BoxShape.circle,
+                      depth: 3,
+                      blur: 6,
                       child: const Icon(
                         Icons.camera_alt,
-                        color: Colors.white,
-                        size: 20,
+                        color: NeumorphicTheme.primaryBlue,
+                        size: 17,
                       ),
                     ),
                   ),
@@ -1070,87 +1180,114 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_user?.fullName ?? '', style: AppTextStyles.heading2),
+              Flexible(
+                child: Text(
+                  _user?.fullName ?? '',
+                  style: AppTextStyles.heading2.copyWith(
+                    color: NeumorphicTheme.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               const SizedBox(width: 8),
               if (!_isEditing)
-                GestureDetector(
-                  onTap: () => setState(() => _isEditing = true),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5A623).withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.edit,
-                      color: Color(0xFFF5A623),
-                      size: 18,
-                    ),
-                  ),
+                NeumorphicIconButton(
+                  icon: Icons.edit,
+                  color: const Color(0xFFF5A623),
+                  size: 32,
+                  iconSize: 16,
+                  tooltip: 'แก้ไขโปรไฟล์',
+                  onPressed: () => setState(() => _isEditing = true),
                 )
               else
-                GestureDetector(
-                  onTap: () {
+                NeumorphicIconButton(
+                  icon: Icons.close,
+                  color: Colors.red,
+                  size: 32,
+                  iconSize: 16,
+                  tooltip: 'ยกเลิกการแก้ไข',
+                  onPressed: () {
                     setState(() {
                       _isEditing = false;
                       _tempProfileImage = null;
                     });
                     _loadProfile();
                   },
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.close, color: Colors.red, size: 18),
-                  ),
                 ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                _profession?.category.name ?? _user?.userType.displayName ?? '',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
+              Flexible(
+                child: Text(
+                  _profession?.category.name ??
+                      _user?.userType.displayName ??
+                      '',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: NeumorphicTheme.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (_user?.verificationStatus == VerificationStatus.verified) ...[
-                const SizedBox(width: 8),
-                const Icon(Icons.verified, color: AppColors.primary, size: 16),
+              if (_user?.verificationStatus ==
+                  VerificationStatus.verified) ...[
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.verified,
+                  color: NeumorphicTheme.primaryBlue,
+                  size: 16,
+                ),
               ],
             ],
           ),
-          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
   Widget _buildCoreInfo() {
-    return Column(
-      children: [
-        _buildFieldRow('ชื่อผู้ใช้', _user?.username ?? '', isEditable: false),
-        const SizedBox(height: 12),
-        if (_isEditing) ...[
-          TlzTextField(label: 'ชื่อ', controller: _controllers['first_name']),
+    return _buildNeuCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFieldRow(
+            'ชื่อผู้ใช้',
+            _user?.username ?? '',
+            isEditable: false,
+          ),
           const SizedBox(height: 12),
-          TlzTextField(label: 'นามสกุล', controller: _controllers['last_name']),
-        ] else ...[
-          _buildFieldRow('ชื่อ', _user?.firstName ?? ''),
+          if (_isEditing) ...[
+            _buildFieldLabel('ชื่อ'),
+            const SizedBox(height: 8),
+            NeumorphicInputField(
+              controller: _controllers['first_name'],
+              hintText: 'กรอกชื่อ',
+              prefixIcon: Icons.person_outline_rounded,
+            ),
+            const SizedBox(height: 16),
+            _buildFieldLabel('นามสกุล'),
+            const SizedBox(height: 8),
+            NeumorphicInputField(
+              controller: _controllers['last_name'],
+              hintText: 'กรอกนามสกุล',
+              prefixIcon: Icons.person_outline_rounded,
+            ),
+          ] else ...[
+            _buildFieldRow('ชื่อ', _user?.firstName ?? ''),
+            const SizedBox(height: 12),
+            _buildFieldRow('นามสกุล', _user?.lastName ?? ''),
+          ],
           const SizedBox(height: 12),
-          _buildFieldRow('นามสกุล', _user?.lastName ?? ''),
+          _buildProfessionRow(),
+          if (_pendingApplication != null) ...[
+            const SizedBox(height: 12),
+            _buildPendingApplicationCard(),
+          ],
         ],
-        const SizedBox(height: 12),
-        _buildProfessionRow(),
-        if (_pendingApplication != null) ...[
-          const SizedBox(height: 12),
-          _buildPendingApplicationCard(),
-        ],
-      ],
+      ),
     );
   }
 
@@ -1175,17 +1312,28 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             width: 100,
             child: Text(
               'อาชีพ',
-              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: NeumorphicTheme.textSecondary,
+              ),
             ),
           ),
           Expanded(
             child: Row(
               children: [
                 Expanded(
-                  child: Text(professionName, style: AppTextStyles.bodyMedium),
+                  child: Text(
+                    professionName,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: NeumorphicTheme.textPrimary,
+                    ),
+                  ),
                 ),
                 if (isVerified)
-                  const Icon(Icons.verified, color: AppColors.primary, size: 16)
+                  const Icon(
+                    Icons.verified,
+                    color: NeumorphicTheme.primaryBlue,
+                    size: 16,
+                  )
                 else if (isPending)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1248,7 +1396,11 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else
-                  Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+                  const Icon(
+                    Icons.edit,
+                    size: 14,
+                    color: NeumorphicTheme.textSecondary,
+                  ),
               ],
             ),
           ),
@@ -1270,13 +1422,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final createdDate =
         '${app.createdAt.day}/${app.createdAt.month}/${app.createdAt.year + 543}';
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.orange.withOpacity(0.3), width: 1),
+    return _buildNeuCard(
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      color: Color.alphaBlend(
+        Colors.orange.withValues(alpha: 0.10),
+        NeumorphicTheme.baseColor,
       ),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1301,26 +1455,42 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 ? 'เดิมอาชีพ $previousProfessionName กำลังขออนุมัติเพื่อเปลี่ยนเป็น $requestedProfessionName'
                 : 'อาชีพ: $requestedProfessionName${isOwnerRequest ? ' (สมัครเป็นเจ้าขององค์กร)' : ''}',
             style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
+              color: NeumorphicTheme.textSecondary,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             'สมัครเมื่อ: $createdDate',
             style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
+              color: NeumorphicTheme.textSecondary,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(
-              onPressed: _isCancellingApplication
-                  ? null
-                  : () {
+            child: _isCancellingApplication
+                ? const Center(
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : NeumorphicPillButton(
+                    text: 'ยกเลิกใบสมัคร',
+                    icon: Icons.cancel_outlined,
+                    color: Colors.red.shade600,
+                    height: 42,
+                    depth: 4,
+                    blur: 8,
+                    onPressed: () {
                       showDialog(
                         context: context,
                         builder: (ctx) => AlertDialog(
+                          backgroundColor: NeumorphicTheme.baseColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
                           title: const Text('ยืนยันการยกเลิก'),
                           content: const Text(
                             'คุณแน่ใจหรือไม่ว่าต้องการยกเลิกใบสมัครนี้?',
@@ -1344,21 +1514,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         ),
                       );
                     },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: BorderSide(color: Colors.red.withOpacity(0.5)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isCancellingApplication
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('ยกเลิกใบสมัคร'),
-            ),
+                  ),
           ),
         ],
       ),
@@ -1366,19 +1522,32 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   }
 
   List<Widget> _buildDynamicFields() {
-    return _fields.map((field) {
-      if (_isEditing) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: _buildEditableDynamicField(field),
-        );
-      } else {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _buildReadonlyDynamicField(field),
-        );
-      }
-    }).toList();
+    if (_fields.isEmpty) return const [];
+
+    if (_isEditing) {
+      return _fields
+          .map(
+            (field) => Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _buildEditableDynamicField(field),
+            ),
+          )
+          .toList();
+    }
+
+    return [
+      _buildNeuCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(
+          children: [
+            for (var i = 0; i < _fields.length; i++) ...[
+              if (i > 0) const SizedBox(height: 12),
+              _buildReadonlyDynamicField(_fields[i]),
+            ],
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _buildReadonlyDynamicField(RegistrationFieldConfig field) {
@@ -1396,21 +1565,29 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         children: [
           Text(
             field.label,
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
           const SizedBox(height: 8),
           if (value.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                value,
-                height: 150,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
+            NeumorphicContainer(
+              borderRadius: 12,
+              depth: 4,
+              blur: 8,
+              padding: const EdgeInsets.all(4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Image.network(
+                  value,
                   height: 150,
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.broken_image),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 150,
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.broken_image),
+                  ),
                 ),
               ),
             )
@@ -1429,29 +1606,43 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(field.label, style: AppTextStyles.bodyMedium),
+          _buildFieldLabel(field.label),
           const SizedBox(height: 8),
-          InkWell(
-            onTap: () => _selectDate(field.fieldId),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    date != null
-                        ? '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}'
-                        : field.hint ?? 'เลือกวันที่',
-                    style: TextStyle(
-                      color: date != null ? Colors.black : Colors.grey,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _selectDate(field.fieldId),
+              borderRadius: BorderRadius.circular(16),
+              child: NeumorphicInsetBox(
+                height: 52,
+                borderRadius: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      date != null
+                          ? '${date.day} ${_getThaiShortMonth(date.month)} ${date.year + 543}'
+                          : field.hint ?? 'เลือกวันที่',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: date != null
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: date != null
+                            ? NeumorphicTheme.textPrimary
+                            : NeumorphicTheme.textSecondary.withValues(
+                                alpha: 0.65,
+                              ),
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.calendar_today, size: 20),
-                ],
+                    const Icon(
+                      Icons.calendar_today,
+                      size: 18,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1464,18 +1655,24 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(field.label, style: AppTextStyles.bodyMedium),
+          _buildFieldLabel(field.label),
           const SizedBox(height: 8),
           if (currentUrl != null && currentUrl.isNotEmpty)
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    currentUrl,
-                    height: 100,
-                    width: 100,
-                    fit: BoxFit.cover,
+                NeumorphicContainer(
+                  borderRadius: 12,
+                  depth: 4,
+                  blur: 8,
+                  padding: const EdgeInsets.all(4),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: Image.network(
+                      currentUrl,
+                      height: 100,
+                      width: 100,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -1490,19 +1687,30 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
               ],
             )
           else
-            const Text('อัพโหลดรูปภาพ (เร็วๆ นี้)'),
+            Text(
+              'อัพโหลดรูปภาพ (เร็วๆ นี้)',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: NeumorphicTheme.textSecondary,
+              ),
+            ),
         ],
       );
     }
 
-    return TlzTextField(
-      label: field.label,
-      controller: _controllers[field.fieldId],
-      hint: field.hint,
-      keyboardType: field.fieldType == FieldType.phone
-          ? TextInputType.phone
-          : TextInputType.text,
-      maxLines: field.fieldType == FieldType.multilineText ? 3 : 1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildFieldLabel(field.label),
+        const SizedBox(height: 8),
+        NeumorphicInputField(
+          controller: _controllers[field.fieldId],
+          hintText: field.hint ?? 'กรอก${field.label}',
+          keyboardType: field.fieldType == FieldType.phone
+              ? TextInputType.phone
+              : TextInputType.text,
+          maxLines: field.fieldType == FieldType.multilineText ? 3 : 1,
+        ),
+      ],
     );
   }
 
@@ -1514,10 +1722,19 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           width: 100,
           child: Text(
             label,
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
         ),
-        Expanded(child: Text(value, style: AppTextStyles.bodyMedium)),
+        Expanded(
+          child: Text(
+            value,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: NeumorphicTheme.textPrimary,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1549,61 +1766,75 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final ScrollController scrollController = ScrollController();
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) => SizedBox(
           height: MediaQuery.of(context).size.height * 0.55,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(32),
-              topRight: Radius.circular(32),
-            ),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              children: [
+                const Center(child: NeumorphicSheetDragHandle()),
+                const SizedBox(height: 12),
+                Row(
                   children: [
-                    Text(
-                      'เลือกอาชีพ',
-                      style: AppTextStyles.heading5.copyWith(
-                        fontWeight: FontWeight.bold,
+                    NeumorphicContainer(
+                      width: 36,
+                      height: 36,
+                      shape: BoxShape.circle,
+                      depth: 3,
+                      blur: 6,
+                      child: const Icon(
+                        Icons.work_outline_rounded,
+                        size: 18,
+                        color: NeumorphicTheme.primaryBlue,
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'เลือกอาชีพ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.heading5.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: NeumorphicTheme.textPrimary,
+                        ),
+                      ),
+                    ),
                     if (_isLoadingAllProfessions)
                       const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      NeumorphicSheetCloseButton(
+                        onPressed: () => Navigator.pop(sheetContext),
                       ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: _isLoadingAllProfessions
-                    ? const Center(child: CircularProgressIndicator())
-                    : Scrollbar(
-                        controller: scrollController,
-                        thumbVisibility: true,
-                        child: ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                          itemCount: sortedCatIds.length,
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _isLoadingAllProfessions
+                      ? const Center(child: CircularProgressIndicator())
+                      : NeumorphicContainer(
+                          borderRadius: 20,
+                          depth: 4,
+                          blur: 8,
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Scrollbar(
+                            controller: scrollController,
+                            thumbVisibility: true,
+                            child: ListView.builder(
+                              controller: scrollController,
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                              itemCount: sortedCatIds.length,
                           itemBuilder: (context, index) {
                             final catId = sortedCatIds[index];
                             final category = categories[catId]!;
@@ -1642,15 +1873,15 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                                 childrenPadding: EdgeInsets.zero,
                                 leading: Icon(
                                   _getIconForProfession(category.iconName),
-                                  color: AppColors.primary,
+                                  color: NeumorphicTheme.primaryBlue,
                                   size: 22,
                                 ),
                                 title: Text(
                                   category.name,
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: hasSelectedInGroup
-                                        ? AppColors.primary
-                                        : AppColors.textPrimary,
+                                        ? NeumorphicTheme.primaryBlue
+                                        : NeumorphicTheme.textPrimary,
                                   ),
                                 ),
                                 children: proList.map((p) {
@@ -1667,11 +1898,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                           },
                         ),
                       ),
+                    ),
               ),
             ],
           ),
         ),
       ),
+    ),
     ).whenComplete(() => scrollController.dispose());
   }
 
@@ -1695,7 +1928,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       title: Text(
         p.name,
         style: AppTextStyles.bodyMedium.copyWith(
-          color: isSelected ? AppColors.primary : AppColors.textPrimary,
+          color: isSelected
+              ? NeumorphicTheme.primaryBlue
+              : NeumorphicTheme.textPrimary,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
       ),
@@ -1709,10 +1944,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             )
           : null,
       trailing: isSelected
-          ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+          ? const Icon(
+              Icons.check_circle,
+              color: NeumorphicTheme.primaryBlue,
+              size: 20,
+            )
           : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      tileColor: isSelected ? AppColors.primary.withOpacity(0.05) : null,
+      tileColor: isSelected
+          ? NeumorphicTheme.primaryBlue.withValues(alpha: 0.08)
+          : null,
     );
   }
 
@@ -1759,6 +2000,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: NeumorphicTheme.baseColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             title: const Text('เปลี่ยนอาชีพ'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1916,53 +2161,23 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        _buildSectionHeader(
           'การตั้งค่าการแจ้งเตือน',
-          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+          icon: Icons.notifications_active_outlined,
         ),
-        const SizedBox(height: 16),
-        Container(
+        const SizedBox(height: 12),
+        _buildNeuCard(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'แจ้งเหตุฉุกเฉินใกล้ตัว (ไทยมุง)',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'รับแจ้งเตือนเมื่อมีเหตุการณ์เกิดขึ้นในรัศมี 500 เมตร',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _thaiMhungEnabled,
-                onChanged: (value) => _updateVolunteerSettings(enabled: value),
-                activeThumbColor: AppColors.primary,
-              ),
-            ],
+          child: NeumorphicSwitchTile(
+            title: 'แจ้งเหตุฉุกเฉินใกล้ตัว (ไทยมุง)',
+            subtitle: 'รับแจ้งเตือนเมื่อมีเหตุการณ์เกิดขึ้นในรัศมี 500 เมตร',
+            value: _thaiMhungEnabled,
+            activeColor: AppColors.primaryDark,
+            onChanged: (value) => _updateVolunteerSettings(enabled: value),
+            leading: _neuIconBadge(
+              Icons.crisis_alert_outlined,
+              AppColors.primaryDark,
+            ),
           ),
         ),
         if (_thaiMhungEnabled || (_profession?.isVolunteer ?? false)) ...[
@@ -1970,48 +2185,18 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           _buildRadiusSection(),
         ],
         const SizedBox(height: 16),
-        Container(
+        _buildNeuCard(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'แจ้งเตือนช่วยเปิดทาง (Yield Way)',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'รับแจ้งเตือนเมื่อมีรถฉุกเฉินกำลังวิ่งมาบนเส้นทางของคุณ',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _isYieldWayEnabled,
-                onChanged: (value) => _updateYieldWayStatus(value),
-                activeThumbColor: const Color(0xFF007AFF),
-              ),
-            ],
+          child: NeumorphicSwitchTile(
+            title: 'แจ้งเตือนช่วยเปิดทาง (Yield Way)',
+            subtitle: 'รับแจ้งเตือนเมื่อมีรถฉุกเฉินกำลังวิ่งมาบนเส้นทางของคุณ',
+            value: _isYieldWayEnabled,
+            activeColor: const Color(0xFF007AFF),
+            onChanged: (value) => _updateYieldWayStatus(value),
+            leading: _neuIconBadge(
+              Icons.airport_shuttle,
+              const Color(0xFF007AFF),
+            ),
           ),
         ),
         if (_isYieldWayEnabled) ...[
@@ -2025,6 +2210,34 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           _buildUnblurredProfessionSection(),
         ],
       ],
+    );
+  }
+
+  /// badge ไอคอนนูนสี่เหลี่ยมมน — ใช้เป็น leading ของ switch/การ์ดย่อย
+  Widget _neuIconBadge(IconData icon, Color color, {double size = 42}) {
+    return NeumorphicContainer(
+      width: size,
+      height: size,
+      borderRadius: 13,
+      depth: 3,
+      blur: 6,
+      child: Icon(icon, size: size * 0.5, color: color),
+    );
+  }
+
+  /// ป้ายค่าจม (Inset) แสดงค่าปัจจุบัน เช่น รัศมี/นาที
+  Widget _buildInsetValueBadge(String text, Color color) {
+    return NeumorphicInsetBox(
+      height: null,
+      borderRadius: 10,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: Text(
+        text,
+        style: AppTextStyles.bodySmall.copyWith(
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -2048,50 +2261,40 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
         ? 'ระบุระยะทางที่คุณสามารถเดินทางไปช่วยเหลือเหตุฉุกเฉินได้'
         : 'รัศมีสำหรับการแจ้งเตือนเหตุ เพื่ออำนวยความสะดวก "เส้นทาง"แก่เจ้าหน้าที่';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
+    return _buildNeuCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              Expanded(
                 child: Text(
-                  _alertRadius >= 1000
-                      ? '${(_alertRadius / 1000).toStringAsFixed(1)} กม.'
-                      : '$_alertRadius ม.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.primary,
+                  title,
+                  style: AppTextStyles.bodyMedium.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: NeumorphicTheme.textPrimary,
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              _buildInsetValueBadge(
+                _alertRadius >= 1000
+                    ? '${(_alertRadius / 1000).toStringAsFixed(1)} กม.'
+                    : '$_alertRadius ม.',
+                AppColors.primaryDark,
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             description,
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
-          const SizedBox(height: 16),
-          Slider(
+          const SizedBox(height: 12),
+          NeumorphicSlider(
             value: _alertRadius.toDouble().clamp(500, 100000),
             min: 500,
             max: 100000,
@@ -2099,19 +2302,22 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
             onChanged: (value) => setState(() => _alertRadius = value.round()),
             onChangeEnd: (value) =>
                 _updateVolunteerSettings(radius: value.round()),
-            activeColor: AppColors.primary,
-            inactiveColor: Colors.grey[200],
+            activeColor: AppColors.primaryDark,
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '500 ม.',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: NeumorphicTheme.textSecondary,
+                ),
               ),
               Text(
                 '100 กม.',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: NeumorphicTheme.textSecondary,
+                ),
               ),
             ],
           ),
@@ -2122,20 +2328,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   /// Section แยกสำหรับตั้งรัศมีการให้ทาง
   Widget _buildYieldWayRadiusSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF007AFF).withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF007AFF).withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return _buildNeuCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2150,39 +2343,36 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                     size: 18,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'รัศมีรับแจ้งเตือนให้ทาง',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.bold,
+                  Flexible(
+                    child: Text(
+                      'รัศมีรับแจ้งเตือนให้ทาง',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: NeumorphicTheme.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF007AFF).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _yieldWayRadius >= 1000
-                      ? '${(_yieldWayRadius / 1000).toStringAsFixed(1)} กม.'
-                      : '$_yieldWayRadius ม.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: const Color(0xFF007AFF),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              const SizedBox(width: 8),
+              _buildInsetValueBadge(
+                _yieldWayRadius >= 1000
+                    ? '${(_yieldWayRadius / 1000).toStringAsFixed(1)} กม.'
+                    : '$_yieldWayRadius ม.',
+                const Color(0xFF007AFF),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             'รัศมีรอบจุดเกิดเหตุ ที่คุณยินดีช่วยเปิดทางให้รถฉุกเฉิน (หากอยู่บนเส้นทางของจิตอาสา)',
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: NeumorphicTheme.textSecondary,
+            ),
           ),
-          const SizedBox(height: 16),
-          Slider(
+          const SizedBox(height: 12),
+          NeumorphicSlider(
             value: _yieldWayRadius.toDouble().clamp(500, 20000),
             min: 500,
             max: 20000,
@@ -2191,18 +2381,21 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 setState(() => _yieldWayRadius = value.round()),
             onChangeEnd: (value) => _updateYieldWayRadius(value.round()),
             activeColor: const Color(0xFF007AFF),
-            inactiveColor: Colors.grey[200],
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '500 ม.',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: NeumorphicTheme.textSecondary,
+                ),
               ),
               Text(
                 '20 กม.',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: NeumorphicTheme.textSecondary,
+                ),
               ),
             ],
           ),
@@ -2299,78 +2492,39 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        _buildSectionHeader(
           'ข้อมูลสุขภาพสำหรับผู้ช่วยเหลือ',
-          style: AppTextStyles.heading3.copyWith(color: AppColors.primary),
+          icon: Icons.health_and_safety_outlined,
+          accent: AppColors.primaryDark,
         ),
         const SizedBox(height: 8),
         Text(
           'ตั้งค่าระบบเฝ้าระวังความปลอดภัยและข้อมูลสุขภาพที่จะเปิดเผยอัตโนมัติเมื่อเกิดเหตุฉุกเฉิน',
-          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[700]),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+          style: AppTextStyles.bodySmall.copyWith(
+            color: NeumorphicTheme.textSecondary,
           ),
+        ),
+        const SizedBox(height: 12),
+        _buildNeuCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.health_and_safety_outlined,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Emergency Health Auto-Release',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          _isLoadingEmergencyHealthSettings
-                              ? 'กำลังโหลดการตั้งค่า...'
-                              : isEnabled
-                              ? 'เปิดใช้งานอยู่ • พร้อมปลดล็อกเมื่อครบเงื่อนไข'
-                              : 'ยังไม่เปิดใช้งาน',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: isEnabled,
-                    onChanged: _isSavingEmergencyHealthSettings
-                        ? null
-                        : (value) => _toggleEmergencyHealthEnabled(value),
-                    activeThumbColor: AppColors.primary,
-                  ),
-                ],
+              NeumorphicSwitchTile(
+                leading: _neuIconBadge(
+                  Icons.health_and_safety_outlined,
+                  AppColors.primaryDark,
+                ),
+                title: 'Emergency Health Auto-Release',
+                subtitle: _isLoadingEmergencyHealthSettings
+                    ? 'กำลังโหลดการตั้งค่า...'
+                    : isEnabled
+                    ? 'เปิดใช้งานอยู่ • พร้อมปลดล็อกเมื่อครบเงื่อนไข'
+                    : 'ยังไม่เปิดใช้งาน',
+                value: isEnabled,
+                activeColor: AppColors.primaryDark,
+                onChanged: _isSavingEmergencyHealthSettings
+                    ? null
+                    : (value) => _toggleEmergencyHealthEnabled(value),
               ),
               if (settings?.consentGivenAt != null) ...[
                 const SizedBox(height: 12),
@@ -2408,10 +2562,11 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 'เวลารอปลดล็อกข้อมูล',
                 style: AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
-              Slider(
+              NeumorphicSlider(
                 value: _emergencyHealthReleaseDelayMinutes.toDouble().clamp(
                   1,
                   120,
@@ -2420,7 +2575,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 max: 120,
                 divisions: 119,
                 label: '$_emergencyHealthReleaseDelayMinutes นาที',
-                activeColor: AppColors.primary,
+                activeColor: AppColors.primaryDark,
                 onChanged: _isSavingEmergencyHealthSettings
                     ? null
                     : (value) {
@@ -2439,18 +2594,22 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 children: [
                   Text(
                     '1 นาที',
-                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                   Text(
                     '$_emergencyHealthReleaseDelayMinutes นาที',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
+                      color: AppColors.primaryDark,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     '120 นาที',
-                    style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -2459,6 +2618,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 'ข้อมูลที่จะแชร์',
                 style: AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -2469,14 +2629,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   final key = option['key']!;
                   final label = option['label']!;
                   final selected = _emergencyHealthEnabledFields.contains(key);
-                  return FilterChip(
-                    label: Text(label),
+                  return NeumorphicChoiceChip(
+                    label: label,
                     selected: selected,
+                    accentColor: AppColors.primaryDark,
                     onSelected: _isSavingEmergencyHealthSettings
-                        ? null
+                        ? (_) {}
                         : (value) => _toggleEmergencyField(key, value),
-                    selectedColor: AppColors.primary.withOpacity(0.15),
-                    checkmarkColor: AppColors.primary,
                   );
                 }).toList(),
               ),
@@ -2485,6 +2644,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 'เงื่อนไขการปลดล็อก',
                 style: AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: NeumorphicTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 12),
@@ -2496,7 +2656,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 onChanged: (value) =>
                     _saveEmergencyBooleanSetting(requireActiveResponder: value),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               _buildEmergencyBooleanSetting(
                 title: 'ต้องเป็นสายอาชีพแพทย์/สาธารณสุข',
                 subtitle: 'ใช้กรองผู้ช่วยเหลือที่มีสิทธิ์พิเศษด้านการรักษา',
@@ -2505,7 +2665,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   requireMedicalProfession: value,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               _buildEmergencyBooleanSetting(
                 title: 'ต้องยืนยันตัวตนแล้ว',
                 subtitle: 'จำกัดการเข้าถึงเฉพาะผู้ใช้ที่ยืนยันตัวตนแล้ว',
@@ -2513,7 +2673,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                 onChanged: (value) =>
                     _saveEmergencyBooleanSetting(requireVerified: value),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               _buildEmergencyBooleanSetting(
                 title: 'เปิด fallback หากไม่มีคนผ่านเงื่อนไข',
                 subtitle:
@@ -2540,39 +2700,17 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: _isSavingEmergencyHealthSettings ? null : onChanged,
-            activeThumbColor: AppColors.primary,
-          ),
-        ],
+    return _buildNeuCard(
+      borderRadius: 14,
+      depth: 3,
+      blur: 6,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: NeumorphicSwitchTile(
+        title: title,
+        subtitle: subtitle,
+        value: value,
+        activeColor: AppColors.primaryDark,
+        onChanged: _isSavingEmergencyHealthSettings ? null : onChanged,
       ),
     );
   }
@@ -2650,6 +2788,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       context: context,
       builder: (context) {
         return AlertDialog(
+          backgroundColor: NeumorphicTheme.baseColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
           title: const Text('ยินยอมเปิดใช้ข้อมูลสุขภาพ'),
           content: const Text(
             'การเปิดใช้งานนี้จะอนุญาตให้ระบบปลดล็อกข้อมูลสุขภาพอัตโนมัติเมื่อครบเงื่อนไขฉุกเฉิน\n\nคุณยืนยันว่าจะเปิดใช้ฟังก์ชันนี้หรือไม่?',
@@ -2797,42 +2939,13 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
 
   /// UI เลือกอาชีพที่อนุญาตให้เห็นวิดีโอไม่เบลอ
   Widget _buildUnblurredProfessionSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return _buildNeuCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: _isSavingUnblurred
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
-                        ),
-                      )
-                    : const Icon(Icons.visibility, color: Colors.red, size: 18),
-              ),
+              _neuIconBadge(Icons.visibility, Colors.red),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -2842,17 +2955,27 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                       'สิทธิ์ดูวิดีโอต้นฉบับ',
                       style: AppTextStyles.bodyMedium.copyWith(
                         fontWeight: FontWeight.bold,
+                        color: NeumorphicTheme.textPrimary,
                       ),
                     ),
                     Text(
                       'เลือกอาชีพจิตอาสาที่อนุญาตให้เห็นภาพ/วิดีโอไม่ผ่านการเบลอ',
                       style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.grey,
+                        color: NeumorphicTheme.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
+              if (_isSavingUnblurred)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -2861,7 +2984,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
           else if (_allVolunteerProfessions.isEmpty)
             Text(
               'ไม่พบรายการอาชีพ',
-              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: NeumorphicTheme.textSecondary,
+              ),
             )
           else ...[
             // 1. ส่วนเลือกกลุ่มอาชีพ (Category Selector)
@@ -2872,26 +2997,18 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   final isSelected = _selectedCategory == cat.id;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(cat.displayName),
+                    child: NeumorphicChoiceChip(
+                      label: cat.displayName,
                       selected: isSelected,
+                      accentColor: AppColors.primaryDark,
                       onSelected: (val) {
                         if (val) setState(() => _selectedCategory = cat.id);
                       },
-                      selectedColor: AppColors.primary.withOpacity(0.1),
-                      labelStyle: AppTextStyles.bodySmall.copyWith(
-                        color: isSelected ? AppColors.primary : Colors.grey,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
                     ),
                   );
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
             const SizedBox(height: 16),
             // 2. ส่วนเลือกอาชีพในกลุ่มที่เลือก (Professions in Selected Category)
             Wrap(
@@ -2901,7 +3018,7 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   .where((p) => p.category.id == _selectedCategory)
                   .map((p) {
                     final isSelected = _selectedUnblurredIds.contains(p.id);
-                    Color chipColor = AppColors.primary;
+                    Color chipColor = AppColors.primaryDark;
                     if (p.colorHex != null && p.colorHex!.isNotEmpty) {
                       try {
                         chipColor = Color(
@@ -2909,23 +3026,12 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                         );
                       } catch (_) {}
                     }
-                    return FilterChip(
-                      label: Text(p.name),
+                    return NeumorphicChoiceChip(
+                      label: p.name,
                       selected: isSelected,
-                      selectedColor: chipColor.withOpacity(0.2),
-                      checkmarkColor: chipColor,
-                      labelStyle: AppTextStyles.bodySmall.copyWith(
-                        color: isSelected ? chipColor : Colors.grey[700],
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                      side: BorderSide(
-                        color: isSelected ? chipColor : Colors.grey[300]!,
-                        width: isSelected ? 1.5 : 1,
-                      ),
+                      accentColor: chipColor,
                       onSelected: _isSavingUnblurred
-                          ? null
+                          ? (_) {}
                           : (val) {
                               setState(() {
                                 if (val) {
@@ -2940,11 +3046,11 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
                   })
                   .toList(),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               'หมายเหตุ: อาชีพที่ไม่ได้เลือกจะเห็นเพียงภาพเบลอ (Privacy Mode)',
               style: AppTextStyles.bodySmall.copyWith(
-                color: Colors.grey[500],
+                color: NeumorphicTheme.textSecondary.withValues(alpha: 0.8),
                 fontSize: 11,
               ),
             ),
@@ -3113,29 +3219,74 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
   void _showImagePickerDropdown() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (context) => SafeArea(
-        child: Wrap(
+      builder: (sheetContext) => SafeArea(
+        child: NeumorphicFormSheetShell(
+          title: 'เปลี่ยนรูปโปรไฟล์',
+          icon: Icons.camera_alt_outlined,
+          onClose: () => Navigator.pop(sheetContext),
           children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('ถ่ายรูป (Camera)'),
+            _buildImagePickerOption(
+              icon: Icons.camera_alt,
+              label: 'ถ่ายรูป (Camera)',
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _processAndUploadAvatar(ImageSource.camera);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('เลือกจากคลังภาพ (Gallery)'),
+            const SizedBox(height: 12),
+            _buildImagePickerOption(
+              icon: Icons.photo_library,
+              label: 'เลือกจากคลังภาพ (Gallery)',
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _processAndUploadAvatar(ImageSource.gallery);
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImagePickerOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: NeumorphicContainer(
+          borderRadius: 16,
+          depth: 4,
+          blur: 8,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              _neuIconBadge(icon, NeumorphicTheme.primaryBlue, size: 40),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: NeumorphicTheme.textPrimary,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: NeumorphicTheme.textSecondary,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3419,9 +3570,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
       isScrollControlled: true,
       isDismissible: true,
       enableDrag: true,
-      backgroundColor: Colors.white,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) => const ChangePasswordBottomSheet(),
     );
@@ -3444,84 +3596,90 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware {
     final noPassword = !_hasPassword;
     final disabled = isLocalOnly || noPassword;
 
-    return InkWell(
-      onTap: disabled ? null : _openChangePasswordBottomSheet,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: disabled ? Colors.grey.shade100 : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: disabled
-                    ? Colors.grey.shade200
-                    : AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.key,
-                color: disabled ? Colors.grey.shade600 : AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'เปลี่ยนรหัสผ่าน',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: disabled ? Colors.grey : AppColors.textPrimary,
-                    ),
+    return Opacity(
+      opacity: disabled ? 0.55 : 1.0,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled ? null : _openChangePasswordBottomSheet,
+          borderRadius: BorderRadius.circular(20),
+          child: _buildNeuCard(
+            child: Row(
+              children: [
+                NeumorphicContainer(
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  depth: 3,
+                  blur: 6,
+                  child: Icon(
+                    Icons.key,
+                    color: disabled
+                        ? NeumorphicTheme.textSecondary
+                        : NeumorphicTheme.primaryBlue,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isLocalOnly
-                        ? 'ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมด Local Only'
-                        : noPassword
-                        ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
-                        : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: disabled ? Colors.grey : AppColors.textSecondary,
-                    ),
-                  ),
-                  // §8 R5: แจ้งเตือนเมื่อถูกบังคับให้เปลี่ยนรหัสผ่าน
-                  // (ต้องกรอกรหัสผ่านเดิมให้ถูกต้องก่อนเสมอ — §6.5 ปกติ)
-                  if (!noPassword &&
-                      (_user?.requiresPasswordReset ?? false)) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          size: 16,
-                          color: Colors.orange,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'เปลี่ยนรหัสผ่าน',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: disabled
+                              ? NeumorphicTheme.textSecondary
+                              : NeumorphicTheme.textPrimary,
                         ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'จำเป็นต้องเปลี่ยนรหัสผ่านเพื่อความปลอดภัยของบัญชี',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: Colors.orange.shade800,
-                              fontWeight: FontWeight.w600,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isLocalOnly
+                            ? 'ฟีเจอร์นี้ต้องเชื่อมต่ออินเทอร์เน็ต ไม่รองรับในโหมด Local Only'
+                            : noPassword
+                            ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน'
+                            : 'เปลี่ยนรหัสผ่านเพื่อรักษาความปลอดภัยของบัญชี',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: NeumorphicTheme.textSecondary,
+                        ),
+                      ),
+                      // §8 R5: แจ้งเตือนเมื่อถูกบังคับให้เปลี่ยนรหัสผ่าน
+                      // (ต้องกรอกรหัสผ่านเดิมให้ถูกต้องก่อนเสมอ — §6.5 ปกติ)
+                      if (!noPassword &&
+                          (_user?.requiresPasswordReset ?? false)) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              size: 16,
+                              color: Colors.orange,
                             ),
-                          ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'จำเป็นต้องเปลี่ยนรหัสผ่านเพื่อความปลอดภัยของบัญชี',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                if (!disabled)
+                  const Icon(
+                    Icons.chevron_right,
+                    color: NeumorphicTheme.textSecondary,
+                  ),
+              ],
             ),
-            if (!disabled) const Icon(Icons.chevron_right, color: Colors.grey),
-          ],
+          ),
         ),
       ),
     );

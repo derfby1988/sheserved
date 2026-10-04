@@ -4,6 +4,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../services/service_locator.dart';
 import '../../../../services/auth_service.dart';
 import '../../data/models/consultation_request_model.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import 'health_program_request_dashboard.dart' show dashboardRouteObserver;
 
@@ -167,13 +168,7 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
         itemCount: 5,
         physics: const NeverScrollableScrollPhysics(),
         itemBuilder: (context, index) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 2,
-            shadowColor: Colors.black12,
+          return _wrapCardShell(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -231,7 +226,73 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
     );
   }
 
+  /// ครอบการ์ด: เมื่อฝังใน Profile (isEmbedded) ใช้ผิว Neumorphic,
+  /// เมื่อเปิดเป็นหน้าเต็มใช้ Material Card เดิม
+  Widget _wrapCardShell({required Widget child}) {
+    if (widget.isEmbedded) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: NeumorphicContainer(
+          borderRadius: 16,
+          depth: 5,
+          blur: 10,
+          child: child,
+        ),
+      );
+    }
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      shadowColor: Colors.black12,
+      child: child,
+    );
+  }
+
   Widget _buildEmptyState() {
+    if (widget.isEmbedded) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            NeumorphicInsetBox(
+              width: 72,
+              height: 72,
+              borderRadius: 36,
+              child: Icon(
+                Icons.history_edu,
+                size: 34,
+                color: Colors.grey.shade400,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'ยังไม่มีประวัติการให้คำปรึกษา',
+              style: TextStyle(
+                color: NeumorphicTheme.textSecondary,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'เมื่อรับเคสแล้วประวัติจะปรากฏที่นี่',
+              style: TextStyle(
+                color: NeumorphicTheme.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 20),
+            NeumorphicPillButton(
+              text: 'รีเฟรช',
+              icon: Icons.refresh,
+              height: 40,
+              color: NeumorphicTheme.primaryBlue,
+              onPressed: loadHistory,
+            ),
+          ],
+        ),
+      );
+    }
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -264,12 +325,72 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
       req.createdAt.toLocal(),
     );
 
+    if (widget.isEmbedded) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: NeumorphicContainer(
+          borderRadius: 16,
+          depth: 5,
+          blur: 10,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: _buildHistoryCardInkWell(req, statusColor, dateStr),
+          ),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 2,
       shadowColor: Colors.black12,
-      child: InkWell(
+      child: _buildHistoryCardInkWell(req, statusColor, dateStr),
+    );
+  }
+
+  /// ชิปสถานะ — embedded ใช้กล่องฝัง Neumorphic โทนสีตามสถานะ
+  Widget _buildStatusChip(ConsultationRequestModel req, Color statusColor) {
+    final label = Text(
+      _formatStatus(req.status),
+      style: TextStyle(
+        color: statusColor,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    if (widget.isEmbedded) {
+      return NeumorphicInsetBox(
+        height: null,
+        borderRadius: 10,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        baseColor: Color.alphaBlend(
+          statusColor.withValues(alpha: 0.08),
+          NeumorphicTheme.baseColor,
+        ),
+        child: label,
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: label,
+    );
+  }
+
+  Widget _buildHistoryCardInkWell(
+    ConsultationRequestModel req,
+    Color statusColor,
+    String dateStr,
+  ) {
+    final subtle =
+        widget.isEmbedded ? NeumorphicTheme.textSecondary : Colors.grey;
+    return InkWell(
         onTap: () {
           final isFinished = req.status == 'completed';
           final isReadOnly =
@@ -296,40 +417,26 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
                   Expanded(
                     child: Text(
                       req.packageName ?? 'ให้คำปรึกษาแพทย์',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
+                        color: widget.isEmbedded
+                            ? NeumorphicTheme.textPrimary
+                            : null,
                       ),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _formatStatus(req.status),
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  _buildStatusChip(req, statusColor),
                 ],
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.access_time, size: 16, color: Colors.grey),
+                  Icon(Icons.access_time, size: 16, color: subtle),
                   const SizedBox(width: 8),
                   Text(
                     'วันที่: $dateStr',
-                    style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    style: TextStyle(color: subtle, fontSize: 13),
                   ),
                 ],
               ),
@@ -353,7 +460,6 @@ class ProviderHistoryPageState extends State<ProviderHistoryPage>
             ],
           ),
         ),
-      ),
     );
   }
 }

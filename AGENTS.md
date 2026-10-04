@@ -106,3 +106,15 @@ tiles — never raise `panelFillOpacity` to make the panel itself light/milky.
   reports the confirmed prefix; terms retries reuse the remaining ranges' keys.
 - Moving an existing pending booking uses `allowDisjoint: false` and keeps the
   single-booking change-slot RPC. Multi-range creation is not atomic.
+
+## websocket-server (Node)
+
+- `npm test` runs `node --test 'test/**/*.test.js'` (built-in runner, no extra deps). Unit
+  tests stub `middleware/redis-client` and `services/room-authorization` in
+  `require.cache` before loading the module under test — its `require()` calls
+  are lazy, so no real Redis is needed.
+- `npm run dev` uses nodemon watching `*.*`, so saving a file under
+  `websocket-server/` auto-restarts the server — read its log to confirm behaviour.
+- Runtime checks: `curl localhost:3000/health` (Node) and `curl localhost:8080/health`
+  (Caddy); `redis-cli info clients` / `redis-cli client list` to catch connection
+  leaks; publish to a channel with `redis-cli publish <channel> '<json>'`.

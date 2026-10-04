@@ -62,21 +62,39 @@ async function handleRevocation({ userId, sessionId = null }) {
 
 /** Wire one dedicated subscriber connection to the revoke channel. */
 function _subscribe(redis) {
+  let sub;
   try {
-    _subscriber = redis.duplicate();
-    _subscriber.on('error', (err) => {
-      console.warn('[Revocation] subscriber error:', err.message);
-    });
-    _subscriber.on('message', (channel, message) => {
-      if (channel !== REVOKE_CHANNEL) return;
-      try {
-        handleRevocation(JSON.parse(message));
-      } catch (err) {
-        console.error('[Revocation] malformed message:', err.message);
-      }
-    });
-    _subscriber.subscribe(REVOKE_CHANNEL, (err) => {
+    sub = redis.duplicate();
+  } catch (err) {
+    console.error('[Revocation] init failed:', err.message);
+    _scheduleSubscribeRetry(redis);
+    return;
+  }
+
+  sub.on('error', (err) => {
+    console.warn('[Revocation] subscriber error:', err.message);
+  });
+  sub.on('message', (channel, message) => {
+    if (channel !== REVOKE_CHANNEL) return;
+    try {
+      handleRevocation(JSON.parse(message));
+    } catch (err) {
+      console.error('[Revocation] malformed message:', err.message);
+    }
+  });
+  // A subscriber that ends permanently (retryStrategy exhausted) must not stay
+  // registered as "propagation handled" — otherwise publishRevocation() skips
+  // the local fallback and live revocations are silently dropped here.
+  sub.on('end', () => {
+    if (_subscriber !== sub) return;
+    _subscriber = null;
+    _scheduleSubscribeRetry(redis);
+  });
+
+  const start = () => {
+    sub.subscribe(REVOKE_CHANNEL, (err) => {
       if (!err) {
+        _subscriber = sub;
         console.log('[Revocation] subscribed to', REVOKE_CHANNEL);
         return;
       }
@@ -84,19 +102,23 @@ function _subscribe(redis) {
       // Leave no half-open subscriber: publishRevocation() treats a non-null
       // _subscriber as "propagation handled" and would skip the local
       // fallback, silently dropping live revocations on this instance.
-      _subscriber = null;
+      sub.disconnect();
       _scheduleSubscribeRetry(redis);
     });
-  } catch (err) {
-    console.error('[Revocation] init failed:', err.message);
-    _subscriber = null;
-    _scheduleSubscribeRetry(redis);
-  }
+  };
+
+  // The duplicated client inherits enableOfflineQueue=false from the shared
+  // client, so a subscribe issued before its OWN 'ready' is rejected outright
+  // ("Stream isn't writeable and enableOfflineQueue options is false").
+  // Wait for this connection — not the shared one — before subscribing.
+  if (sub.status === 'ready') start();
+  else sub.once('ready', start);
 }
 
-// initSocketRevocation() runs while the shared Redis client is still
-// connecting (enableOfflineQueue=false), so the first subscribe can fail.
-// Retry until the client is ready instead of degrading for the whole run.
+// Retry after a subscribe failure or a permanently-ended subscriber so
+// propagation recovers instead of staying degraded for the whole run.
+// Skipped while Redis itself is not ready — _subscribe() already waits for
+// the duplicated connection's own 'ready' event.
 function _scheduleSubscribeRetry(redis) {
   if (_subscribeRetryTimer) return;
   _subscribeRetryTimer = setTimeout(() => {

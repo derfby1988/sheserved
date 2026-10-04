@@ -19,6 +19,7 @@ import '../../application/book_court_query.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/book_court_filter.dart';
+import '../../domain/venue_local_time.dart';
 import '../widgets/book_court_filter_sheet.dart';
 import '../widgets/book_court_quick_filter_row.dart';
 import '../widgets/court_booking_dialog.dart';
@@ -438,7 +439,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
           court,
           ranges,
           completed,
-          _mapBookingError(error),
+          _mapBookingError(error, timezone: venue.timezone),
         );
         return;
       }
@@ -448,7 +449,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
           court,
           ranges,
           completed,
-          _mapBookingError(error),
+          _mapBookingError(error, timezone: venue.timezone),
         );
       }
     }
@@ -769,8 +770,18 @@ class _BookCourtPageState extends State<BookCourtPage> {
     return distanceKm(_userLat!, _userLng!, venue.lat!, venue.lng!);
   }
 
-  static String _mapBookingError(Object e) {
+  static String _mapBookingError(Object e, {String? timezone}) {
     final raw = e.toString();
+    if (raw.contains('BOOKING_NOT_OPEN_YET')) {
+      // The RPC carries the opensAt instant in the PostgREST detail —
+      // show it venue-local when available, else a generic fallback.
+      final opensAt = bookingReleaseOpensAt(e);
+      if (opensAt != null && timezone != null) {
+        return 'ช่วงเวลานี้ยังไม่เปิดจอง — เปิดรับจอง '
+            '${VenueLocalTime.formatInstantWall(opensAt, timezone)}';
+      }
+      return 'ช่วงเวลานี้ยังไม่เปิดจอง กรุณาลองใหม่ภายหลัง';
+    }
     if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
       return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
     }

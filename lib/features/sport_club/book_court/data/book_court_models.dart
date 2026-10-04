@@ -229,6 +229,15 @@ class VenueCourt {
   final String? unitLabel;
   final bool isActive;
 
+  /// Court-level recurring booking release override (Phase 21.7.18).
+  /// 'inherit' follows the venue rule, 'always_open' disables the gate
+  /// for this court and 'custom' uses this court's own day/time/window.
+  /// The custom triple is only populated when the mode is 'custom'.
+  final String bookingReleaseMode;
+  final int? bookingReleaseDayOfWeek; // 0 = Sunday
+  final String? bookingReleaseTime; // 'HH:MM' venue-local
+  final int? bookingReleaseWindowDays;
+
   const VenueCourt({
     required this.id,
     required this.venueId,
@@ -244,6 +253,10 @@ class VenueCourt {
     this.approvalMode = BookingApprovalMode.instant,
     this.unitLabel,
     this.isActive = true,
+    this.bookingReleaseMode = 'inherit',
+    this.bookingReleaseDayOfWeek,
+    this.bookingReleaseTime,
+    this.bookingReleaseWindowDays,
   });
 
   factory VenueCourt.fromJson(Map<String, dynamic> j) => VenueCourt(
@@ -263,6 +276,13 @@ class VenueCourt {
     ),
     unitLabel: j['unit_label']?.toString(),
     isActive: j['is_active'] != false,
+    bookingReleaseMode:
+        j['booking_release_mode']?.toString() ?? 'inherit',
+    bookingReleaseDayOfWeek:
+        (j['booking_release_day_of_week'] as num?)?.toInt(),
+    bookingReleaseTime: j['booking_release_time']?.toString(),
+    bookingReleaseWindowDays:
+        (j['booking_release_window_days'] as num?)?.toInt(),
   );
 }
 
@@ -820,6 +840,32 @@ class VenueReviewListPage {
   });
 }
 
+/// Effective recurring booking release rule echoed by
+/// `get_court_availability` (Phase 21.7.18). Null when the court has no
+/// effective rule, i.e. advance booking is unlimited.
+class CourtBookingRelease {
+  /// 'inherit' (venue rule applies) or 'custom' (court override).
+  final String mode;
+  final int dayOfWeek; // 0 = Sunday
+  final String releaseTime; // 'HH:MM' venue-local
+  final int windowDays;
+
+  const CourtBookingRelease({
+    required this.mode,
+    required this.dayOfWeek,
+    required this.releaseTime,
+    required this.windowDays,
+  });
+
+  factory CourtBookingRelease.fromJson(Map<String, dynamic> j) =>
+      CourtBookingRelease(
+        mode: j['mode']?.toString() ?? 'inherit',
+        dayOfWeek: (j['dayOfWeek'] as num?)?.toInt() ?? 0,
+        releaseTime: j['releaseTime']?.toString() ?? '00:00',
+        windowDays: (j['windowDays'] as num?)?.toInt() ?? 7,
+      );
+}
+
 /// Busy ranges for the read-only availability view of one court.
 class CourtAvailability {
   final String courtId;
@@ -827,12 +873,37 @@ class CourtAvailability {
   final List<({DateTime startsAt, DateTime endsAt})> blocked;
   final List<VenueOperatingHours> hours;
 
+  /// Server clock at response time — slot state decisions use this
+  /// instead of the device clock so a skewed client cannot book early
+  /// or hide released slots.
+  final DateTime? serverNow;
+
+  /// Slots whose recurring release has not happened yet. Each entry
+  /// carries the exact `opensAt` instant the slot becomes bookable.
+  final List<({DateTime slotStart, DateTime opensAt})> notOpen;
+
+  /// The effective release rule for this court, when one exists.
+  final CourtBookingRelease? release;
+
   const CourtAvailability({
     required this.courtId,
     this.booked = const [],
     this.blocked = const [],
     this.hours = const [],
+    this.serverNow,
+    this.notOpen = const [],
+    this.release,
   });
+
+  /// opensAt lookup keyed by the slot-start instant; microseconds avoid
+  /// DateTime identity issues between TZDateTime and parsed DateTimes.
+  Map<int, DateTime> get opensAtBySlotStart => {
+    for (final e in notOpen)
+      e.slotStart.toUtc().microsecondsSinceEpoch: e.opensAt,
+  };
+
+  DateTime? opensAtFor(DateTime slotStart) =>
+      opensAtBySlotStart[slotStart.toUtc().microsecondsSinceEpoch];
 
   factory CourtAvailability.fromJson(Map<String, dynamic> j) {
     List<({DateTime startsAt, DateTime endsAt})> ranges(Object? raw) =>
@@ -867,6 +938,28 @@ class CourtAvailability {
               )
               .toList() ??
           const [],
+      serverNow: DateTime.tryParse(j['serverNow']?.toString() ?? ''),
+      notOpen:
+          (j['notOpen'] as List?)
+              ?.map(
+                (e) => (
+                  slotStart:
+                      DateTime.tryParse(
+                        (e as Map)['slotStart']?.toString() ?? '',
+                      ) ??
+                      DateTime.fromMillisecondsSinceEpoch(0),
+                  opensAt:
+                      DateTime.tryParse(e['opensAt']?.toString() ?? '') ??
+                      DateTime.fromMillisecondsSinceEpoch(0),
+                ),
+              )
+              .toList() ??
+          const [],
+      release: j['release'] is Map
+          ? CourtBookingRelease.fromJson(
+              Map<String, dynamic>.from(j['release'] as Map),
+            )
+          : null,
     );
   }
 }

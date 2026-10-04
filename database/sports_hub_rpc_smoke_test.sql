@@ -86,6 +86,8 @@ END $$;
 \ir ../supabase/migrations/20261001140000_sports_hub_booking_venue_timezone.sql
 \ir ../supabase/migrations/20261002100000_sports_hub_public_venue_owner_profile.sql
 \ir ../supabase/migrations/20261003100000_sports_hub_court_time_pricing.sql
+\ir ../supabase/migrations/20261004100000_sports_hub_booking_release.sql
+\ir ../supabase/migrations/20261004110000_sports_hub_booking_housekeeping.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -105,6 +107,28 @@ EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'PASS: % (%)', label, SQLERRM;
   ELSE
     RAISE WARNING 'FAIL: % (got %, expected %)', label, SQLERRM, expected;
+  END IF;
+END $$;
+
+-- Variant that also asserts on the exception DETAIL field — the release
+-- gate carries opensAt there (Postgres surfaces it in PG_EXCEPTION_DETAIL).
+CREATE OR REPLACE FUNCTION pg_temp.expect_raise_detail(label text, sql text,
+                                                expected text,
+                                                expected_detail text)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  v_detail text;
+BEGIN
+  EXECUTE sql;
+  RAISE WARNING 'FAIL: % (no error raised)', label;
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_detail = PG_EXCEPTION_DETAIL;
+  IF position(expected IN SQLERRM) > 0
+     AND position(expected_detail IN COALESCE(v_detail, '')) > 0 THEN
+    RAISE NOTICE 'PASS: % (% | %)', label, SQLERRM, v_detail;
+  ELSE
+    RAISE WARNING 'FAIL: % (got % detail %, expected % / %)',
+      label, SQLERRM, v_detail, expected, expected_detail;
   END IF;
 END $$;
 
@@ -133,6 +157,13 @@ DECLARE
   v_price_court uuid; v_price_booking uuid; v_price_quote jsonb;
   v_price_version bigint; v_pending_price_booking uuid;
   v_b4 uuid; v_b5 uuid; v_review uuid; v_missing text[];
+  v_rel_court uuid; v_rel_booking uuid; v_pending_rel uuid;
+  v_expiry_my uuid; v_expiry_manager uuid; v_expiry_approval uuid;
+  v_expiry_change uuid; v_completion_lazy uuid;
+  v_rel_dow smallint; v_rel_dow2 smallint;
+  v_slot timestamptz; v_avail jsonb; v_opens_detail text;
+  v_booking_rows jsonb; v_housekeeping jsonb; v_cron_scheduled boolean;
+  v_decision text;
 BEGIN
   INSERT INTO public.users (id, first_name, last_name, role) VALUES
     (v_admin,'Admin','A','admin'), (v_owner,'Owner','O','user'),
@@ -753,6 +784,322 @@ BEGIN
   PERFORM pg_temp.expect_raise('reject without reason rejected',
     format($s$SELECT public.review_sports_venue(%L, %L, 'rejected')$s$,
       v_admin, v_venue));
+
+  -- =============== 21.7.18 recurring booking release ===============
+  -- Court 1 on v_venue (instant approval) is the release test court.
+  SELECT id INTO v_rel_court FROM public.sports_venue_courts
+  WHERE venue_id = v_venue AND name = 'Court 1';
+
+  -- Validation + manager scope for the venue-level setter.
+  PERFORM pg_temp.expect_raise('release rule requires a venue manager',
+    format($$SELECT public.set_sports_venue_booking_release(
+      %L, %L, 1, '09:00', 14)$$, v_cust, v_venue), 'NOT_VENUE_MANAGER');
+  PERFORM pg_temp.expect_raise('partial release rule rejected',
+    format($$SELECT public.set_sports_venue_booking_release(
+      %L, %L, NULL, '09:00', 14)$$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+  PERFORM pg_temp.expect_raise('release day outside 0-6 rejected',
+    format($$SELECT public.set_sports_venue_booking_release(
+      %L, %L, 7, '09:00', 14)$$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+  PERFORM pg_temp.expect_raise('release window below 7 days rejected',
+    format($$SELECT public.set_sports_venue_booking_release(
+      %L, %L, 1, '09:00', 6)$$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+
+  -- Rule: release today at 00:00 venue-local with a 7-day window, so the
+  -- open interval is [today 00:00, +7d 00:00) local.
+  v_rel_dow := EXTRACT(dow FROM (now() AT TIME ZONE 'Asia/Bangkok')::date)
+    ::smallint;
+  PERFORM public.set_sports_venue_booking_release(
+    v_owner, v_venue, v_rel_dow, '00:00'::time, 7);
+  PERFORM pg_temp.expect((SELECT booking_release_day_of_week
+    FROM public.sports_venues WHERE id = v_venue) = v_rel_dow
+    AND (SELECT booking_release_window_days
+      FROM public.sports_venues WHERE id = v_venue) = 7,
+    'venue release rule stored');
+
+  -- opensAt helper: first weekly release R with local(R) > S - N and
+  -- R <= S. Fixed dates keep these assertions independent of run time.
+  v_slot := '2026-10-20 10:00'::timestamp AT TIME ZONE 'Asia/Bangkok';
+  v_rel_dow2 := EXTRACT(dow FROM '2026-10-20'::date)::smallint;
+  PERFORM pg_temp.expect(public.sports_venue_booking_release_opens_at(
+    'Asia/Bangkok', v_rel_dow2, '09:00'::time, 7, v_slot)
+    = '2026-10-20 09:00'::timestamp AT TIME ZONE 'Asia/Bangkok',
+    'opensAt uses the same-weekday release before the slot');
+  PERFORM pg_temp.expect(public.sports_venue_booking_release_opens_at(
+    'Asia/Bangkok', v_rel_dow2, '11:00'::time, 7, v_slot)
+    = '2026-10-13 11:00'::timestamp AT TIME ZONE 'Asia/Bangkok',
+    'opensAt falls back to the previous weekly release');
+  -- DST gap: 2026-03-08 02:30 never happens in New York; the helper must
+  -- still resolve the skipped local release through the zone rules.
+  PERFORM pg_temp.expect(public.sports_venue_booking_release_opens_at(
+    'America/New_York', 0, '02:30'::time, 7,
+    '2026-03-09 10:00'::timestamp AT TIME ZONE 'America/New_York')
+    = '2026-03-08 02:30'::timestamp AT TIME ZONE 'America/New_York',
+    'opensAt resolves a release inside the DST gap');
+
+  -- Availability payload gains serverNow, notOpen entries and the
+  -- effective rule echo.
+  v_avail := public.get_court_availability(
+    v_rel_court, now(), now() + interval '14 days');
+  PERFORM pg_temp.expect(v_avail->'serverNow' IS NOT NULL,
+    'availability carries serverNow');
+  PERFORM pg_temp.expect((v_avail->'release'->>'windowDays')::int = 7,
+    'availability echoes the effective release rule');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM jsonb_array_elements(v_avail->'notOpen') e
+    WHERE (e->>'slotStart')::timestamptz = pg_temp.bkk_ts(7, '10:00')
+      AND (e->>'opensAt')::timestamptz = pg_temp.bkk_ts(7, '00:00')),
+    'notOpen opensAt matches the release helper');
+
+  -- Gate: released slots book normally; unreleased ones fail with
+  -- BOOKING_NOT_OPEN_YET and the opensAt timestamp in the DETAIL.
+  v_rel_booking := public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(6, '10:00'),
+    pg_temp.bkk_ts(6, '11:00'), v_terms, 'release-idem-1');
+  PERFORM pg_temp.expect(v_rel_booking IS NOT NULL,
+    'released slot books normally');
+  v_opens_detail := to_char(
+    pg_temp.bkk_ts(7, '00:00') AT TIME ZONE 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  PERFORM pg_temp.expect_raise_detail(
+    'unreleased slot rejected with opensAt detail',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(7, '10:00'), pg_temp.bkk_ts(7, '11:00'),
+      %s, 'release-closed-1')$$, v_cust, v_rel_court, v_terms),
+    'BOOKING_NOT_OPEN_YET', v_opens_detail);
+  PERFORM pg_temp.expect_raise('release boundary is exclusive',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(7, '00:30'), pg_temp.bkk_ts(7, '01:30'),
+      %s, 'release-closed-2')$$, v_cust, v_rel_court, v_terms),
+    'BOOKING_NOT_OPEN_YET');
+  PERFORM pg_temp.expect_raise(
+    'multi-hour booking crossing the release boundary rejected',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(6, '20:00'), pg_temp.bkk_ts(7, '02:00'),
+      %s, 'release-closed-3')$$, v_cust, v_rel_court, v_terms),
+    'BOOKING_NOT_OPEN_YET');
+  -- v_court is 'Court 2' (owner_approval) — approval bookings are gated
+  -- the same way as instant bookings.
+  PERFORM pg_temp.expect_raise('owner-approval bookings are gated too',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(7, '10:00'), pg_temp.bkk_ts(7, '11:00'),
+      %s, 'release-closed-4')$$, v_cust2, v_court, v_terms),
+    'BOOKING_NOT_OPEN_YET');
+
+  -- Pending bookings: created while open, then rescheduling into an
+  -- unreleased slot is rejected with the same error contract.
+  v_pending_rel := public.create_sports_venue_booking(
+    v_cust2, v_court, pg_temp.bkk_ts(5, '14:00'),
+    pg_temp.bkk_ts(5, '15:00'), v_terms, 'release-pending-1');
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
+    WHERE id = v_pending_rel) = 'pending',
+    'release test pending booking created');
+  PERFORM pg_temp.expect_raise_detail(
+    'pending reschedule into unreleased slot rejected',
+    format($$SELECT public.change_pending_venue_booking_slot(%L, %L,
+      pg_temp.bkk_ts(7, '10:00'), pg_temp.bkk_ts(7, '11:00'), %s)$$,
+      v_cust2, v_pending_rel, v_terms),
+    'BOOKING_NOT_OPEN_YET', v_opens_detail);
+
+  -- Rule changes apply to future operations only: the existing pending
+  -- booking stays approvable and the idempotent retry still resolves.
+  v_rel_dow2 := EXTRACT(dow FROM
+    ((now() AT TIME ZONE 'Asia/Bangkok')::date + 1))::smallint;
+  PERFORM public.set_sports_venue_booking_release(
+    v_owner, v_venue, v_rel_dow2, '00:00'::time, 7);
+  PERFORM pg_temp.expect_raise('rule change applies to new bookings',
+    format($$SELECT public.create_sports_venue_booking(%L, %L,
+      pg_temp.bkk_ts(6, '12:00'), pg_temp.bkk_ts(6, '13:00'),
+      %s, 'release-new-rule')$$, v_cust, v_rel_court, v_terms),
+    'BOOKING_NOT_OPEN_YET');
+  PERFORM pg_temp.expect(public.decide_sports_venue_booking(
+    v_owner, v_pending_rel, 'approve') = 'confirmed',
+    'pending booking stays approvable after rule change');
+  PERFORM pg_temp.expect(public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(6, '10:00'),
+    pg_temp.bkk_ts(6, '11:00'), v_terms, 'release-idem-1')
+    = v_rel_booking,
+    'idempotent retry returns the original booking after rule change');
+
+  -- Court-level overrides on Court 1.
+  PERFORM pg_temp.expect_raise('court custom release needs full triple',
+    format($$SELECT public.upsert_sports_venue_court(
+      %L, %L, %L, %L, 'Court 1', 1, 200, 'hour', 'synthetic', true,
+      'instant', NULL, true, NULL, 'custom', NULL, '09:00', 14)$$,
+      v_owner, v_rel_court, v_venue, v_sport), 'INVALID_RELEASE_RULE');
+  PERFORM pg_temp.expect_raise('unknown release mode rejected',
+    format($$SELECT public.upsert_sports_venue_court(
+      %L, %L, %L, %L, 'Court 1', 1, 200, 'hour', 'synthetic', true,
+      'instant', NULL, true, NULL, 'weekly', 1, '09:00', 14)$$,
+      v_owner, v_rel_court, v_venue, v_sport), 'INVALID_RELEASE_RULE');
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_rel_court, v_venue, v_sport, 'Court 1',
+    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'custom', v_rel_dow2, '00:00'::time, 14);
+  PERFORM pg_temp.expect(public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(7, '10:00'),
+    pg_temp.bkk_ts(7, '11:00'), v_terms, 'release-custom-1') IS NOT NULL,
+    'court custom window releases the slot');
+  -- NULL release params keep the override (and price rules) untouched.
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_rel_court, v_venue, v_sport, 'Court 1',
+    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true);
+  PERFORM pg_temp.expect((SELECT booking_release_mode
+    FROM public.sports_venue_courts WHERE id = v_rel_court) = 'custom'
+    AND (SELECT booking_release_window_days
+      FROM public.sports_venue_courts WHERE id = v_rel_court) = 14,
+    'upsert without release params keeps the court override');
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_rel_court, v_venue, v_sport, 'Court 1',
+    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'always_open', NULL, NULL, NULL);
+  PERFORM pg_temp.expect((SELECT booking_release_day_of_week IS NULL
+    AND booking_release_time IS NULL
+    AND booking_release_window_days IS NULL
+    FROM public.sports_venue_courts WHERE id = v_rel_court),
+    'always_open clears the custom triple');
+  PERFORM pg_temp.expect(public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(60, '10:00'),
+    pg_temp.bkk_ts(60, '11:00'), v_terms, 'release-always-1') IS NOT NULL,
+    'always_open court books far ahead');
+  -- Back to inherit; clearing the venue rule restores unlimited booking.
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_rel_court, v_venue, v_sport, 'Court 1',
+    1, 200, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'inherit', NULL, NULL, NULL);
+  PERFORM public.set_sports_venue_booking_release(
+    v_owner, v_venue, NULL, NULL, NULL);
+  PERFORM pg_temp.expect(public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(400, '10:00'),
+    pg_temp.bkk_ts(400, '11:00'), v_terms, 'release-unlimited-1')
+    IS NOT NULL, 'no effective rule means unlimited advance booking');
+
+  v_expiry_my := public.create_sports_venue_booking(
+    v_cust2, v_court, pg_temp.bkk_ts(2, '12:00'),
+    pg_temp.bkk_ts(2, '13:00'), v_terms, 'housekeeping-booker-lazy');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_expiry_my;
+  v_booking_rows := public.list_my_sports_venue_bookings(
+    v_cust2, ARRAY['pending']::varchar[]);
+  PERFORM pg_temp.expect(
+    (SELECT status FROM public.sports_venue_bookings
+     WHERE id = v_expiry_my) = 'expired'
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_booking_rows) AS bookings(item)
+      WHERE item->>'id' = v_expiry_my::text),
+    'booker list expires started requests before filtering');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.app_notifications
+    WHERE recipient_id = v_cust2
+      AND event_type = 'venue_booking.expired'
+      AND payload->>'bookingId' = v_expiry_my::text),
+    'lazy expiry persists a notification for the booker');
+
+  v_expiry_manager := public.create_sports_venue_booking(
+    v_cust, v_court, pg_temp.bkk_ts(2, '14:00'),
+    pg_temp.bkk_ts(2, '15:00'), v_terms, 'housekeeping-manager-lazy');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_expiry_manager;
+  v_booking_rows := public.list_sports_venue_bookings_for_manager(
+    v_owner, v_venue, ARRAY['pending']::varchar[]);
+  PERFORM pg_temp.expect(
+    (SELECT status FROM public.sports_venue_bookings
+     WHERE id = v_expiry_manager) = 'expired'
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_booking_rows) AS bookings(item)
+      WHERE item->>'id' = v_expiry_manager::text),
+    'manager queue expires started requests before filtering');
+
+  v_expiry_approval := public.create_sports_venue_booking(
+    v_cust2, v_court, pg_temp.bkk_ts(3, '12:00'),
+    pg_temp.bkk_ts(3, '13:00'), v_terms, 'housekeeping-late-approval');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_expiry_approval;
+  -- The decision must run as its own statement: a sibling scalar subquery
+  -- in the same statement keeps the pre-statement snapshot and would still
+  -- read 'pending' after the function's lazy expiry UPDATE.
+  v_decision := public.decide_sports_venue_booking(
+    v_owner, v_expiry_approval, 'approve');
+  PERFORM pg_temp.expect(
+    v_decision = 'expired'
+    AND (SELECT status FROM public.sports_venue_bookings
+         WHERE id = v_expiry_approval) = 'expired',
+    'owner cannot approve a request after its slot starts');
+  PERFORM pg_temp.expect(
+    public.decide_sports_venue_booking(
+      v_owner, v_expiry_approval, 'approve') = 'expired',
+    'decision retry reports an already-expired request');
+
+  v_expiry_change := public.create_sports_venue_booking(
+    v_cust2, v_court, pg_temp.bkk_ts(4, '12:00'),
+    pg_temp.bkk_ts(4, '13:00'), v_terms, 'housekeeping-late-reschedule');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_expiry_change;
+  PERFORM public.change_pending_venue_booking_slot(
+    v_cust2, v_expiry_change, pg_temp.bkk_ts(5, '12:00'),
+    pg_temp.bkk_ts(5, '13:00'), v_terms);
+  PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
+    WHERE id = v_expiry_change) = 'expired',
+    'rescheduling cannot reopen a request after its slot starts');
+
+  v_completion_lazy := public.create_sports_venue_booking(
+    v_cust, v_rel_court, pg_temp.bkk_ts(4, '12:00'),
+    pg_temp.bkk_ts(4, '13:00'), v_terms, 'housekeeping-completion-lazy');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_completion_lazy;
+  v_booking_rows := public.list_my_sports_venue_bookings(
+    v_cust, ARRAY['confirmed']::varchar[]);
+  PERFORM pg_temp.expect(
+    (SELECT status FROM public.sports_venue_bookings
+     WHERE id = v_completion_lazy) = 'completed'
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_booking_rows) AS bookings(item)
+      WHERE item->>'id' = v_completion_lazy::text),
+    'booker list completes ended bookings before filtering');
+
+  v_expiry_my := public.create_sports_venue_booking(
+    v_cust, v_court, pg_temp.bkk_ts(6, '12:00'),
+    pg_temp.bkk_ts(6, '13:00'), v_terms, 'housekeeping-cron-sweep');
+  UPDATE public.sports_venue_bookings
+  SET starts_at = now() - interval '2 hours',
+      ends_at = now() - interval '1 hour'
+  WHERE id = v_expiry_my;
+  v_housekeeping := public.housekeep_sports_venue_bookings();
+  PERFORM pg_temp.expect(
+    (v_housekeeping->>'expiredPending')::int >= 1
+    AND (SELECT status FROM public.sports_venue_bookings
+         WHERE id = v_expiry_my) = 'expired',
+    'global housekeeping expires pending requests');
+  v_housekeeping := public.housekeep_sports_venue_bookings();
+  PERFORM pg_temp.expect(
+    (v_housekeeping->>'expiredPending')::int = 0
+    AND (v_housekeeping->>'completedBookings')::int = 0,
+    'repeated housekeeping is idempotent');
+  PERFORM pg_temp.expect(
+    NOT has_function_privilege(
+      'anon', 'public.housekeep_sports_venue_bookings()', 'EXECUTE')
+    AND NOT has_function_privilege(
+      'authenticated', 'public.housekeep_sports_venue_bookings()', 'EXECUTE'),
+    'global housekeeping is not exposed to client roles');
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    EXECUTE 'SELECT EXISTS (SELECT 1 FROM cron.job WHERE jobname = $1)'
+      INTO v_cron_scheduled
+      USING 'sports-hub-booking-housekeeping';
+    PERFORM pg_temp.expect(v_cron_scheduled,
+      'pg_cron registers the recurring booking housekeeping job');
+  END IF;
 
   RAISE NOTICE 'venue smoke test complete';
 END $smoke$;

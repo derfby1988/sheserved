@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../data/repositories/donation_repository.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 
 /// Widget แสดงประวัติการอนุมัติ (Approval History Timeline) ของคำร้องบริจาค
 /// ใช้งานได้ทั้งในแถบ "คำร้องของฉัน" ใน Profile และแถบ "อนุมัติบริจาค" ของผู้ดูแล
@@ -64,12 +65,12 @@ class _DonationApprovalHistoryWidgetState
         // ── Header ──
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.deepPurple.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
+            NeumorphicContainer(
+              width: 32,
+              height: 32,
+              shape: BoxShape.circle,
+              depth: 3,
+              blur: 6,
               child: const Icon(Icons.history_edu, size: 16, color: Colors.deepPurple),
             ),
             const SizedBox(width: 8),
@@ -81,12 +82,13 @@ class _DonationApprovalHistoryWidgetState
               ),
             ),
             const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 16, color: Colors.deepPurple),
+            NeumorphicIconButton(
+              icon: Icons.refresh,
+              color: Colors.deepPurple,
+              size: 32,
+              iconSize: 15,
               tooltip: 'โหลดใหม่',
               onPressed: _loadHistory,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
             ),
           ],
         ),
@@ -157,20 +159,19 @@ class _DonationApprovalHistoryWidgetState
   }
 
   Widget _buildEmpty() {
-    return Container(
+    return NeumorphicInsetBox(
+      height: null,
+      borderRadius: 12,
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
       child: Row(
         children: [
           Icon(Icons.hourglass_empty, color: Colors.grey.shade400, size: 20),
           const SizedBox(width: 8),
-          Text(
-            'ยังไม่มีรายการอนุมัติ — รอการพิจารณาจากกลุ่มอาชีพ',
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade500),
+          Expanded(
+            child: Text(
+              'ยังไม่มีรายการอนุมัติ — รอการพิจารณาจากกลุ่มอาชีพ',
+              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade500),
+            ),
           ),
         ],
       ),
@@ -211,18 +212,17 @@ class _DonationApprovalHistoryWidgetState
               // ── Left: Icon + Line ──
               Column(
                 children: [
-                  Container(
+                  NeumorphicContainer(
                     width: 36,
                     height: 36,
-                    decoration: BoxDecoration(
-                      color: isApproved
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.red.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isApproved ? Colors.green : Colors.red,
-                        width: 1.5,
+                    shape: BoxShape.circle,
+                    depth: 3,
+                    blur: 6,
+                    color: Color.alphaBlend(
+                      (isApproved ? Colors.green : Colors.red).withValues(
+                        alpha: 0.10,
                       ),
+                      NeumorphicTheme.baseColor,
                     ),
                     child: Icon(
                       isApproved ? Icons.check_rounded : Icons.close_rounded,
@@ -245,58 +245,58 @@ class _DonationApprovalHistoryWidgetState
 
               // ── Right: Info ──
               Expanded(
-                child: Container(
-                  margin: EdgeInsets.only(bottom: isLast ? 0 : 16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isApproved
-                        ? Colors.green.withOpacity(0.04)
-                        : Colors.red.withOpacity(0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isApproved
-                          ? Colors.green.withOpacity(0.2)
-                          : Colors.red.withOpacity(0.2),
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+                  child: NeumorphicInsetBox(
+                    height: null,
+                    borderRadius: 12,
+                    padding: const EdgeInsets.all(12),
+                    baseColor: Color.alphaBlend(
+                      (isApproved ? Colors.green : Colors.red).withValues(
+                        alpha: 0.05,
+                      ),
+                      NeumorphicTheme.baseColor,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isApproved ? 'อนุมัติแล้ว' : 'ปฏิเสธ',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: isApproved ? Colors.green.shade700 : Colors.red,
-                          fontWeight: FontWeight.bold,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isApproved ? 'อนุมัติแล้ว' : 'ปฏิเสธ',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color:
+                                isApproved ? Colors.green.shade700 : Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$approverName · $profName',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (dateStr.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          dateStr,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.grey.shade500,
+                          '$approverName · $profName',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
-                      if (item['note'] != null &&
-                          item['note'].toString().isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'หมายเหตุ: ${item['note']}',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.grey.shade600,
-                            fontStyle: FontStyle.italic,
+                        if (dateStr.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            dateStr,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.grey.shade500,
+                            ),
                           ),
-                        ),
+                        ],
+                        if (item['note'] != null &&
+                            item['note'].toString().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'หมายเหตุ: ${item['note']}',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.grey.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),

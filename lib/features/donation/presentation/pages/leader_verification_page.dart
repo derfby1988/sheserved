@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../services/service_locator.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
 
@@ -154,7 +155,15 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: NeumorphicTheme.baseColor,
+        titleTextStyle: AppTextStyles.heading3.copyWith(
+          color: NeumorphicTheme.textPrimary,
+        ),
+        contentTextStyle: const TextStyle(
+          color: NeumorphicTheme.textSecondary,
+          fontSize: 14,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('ยืนยันการปฏิเสธ'),
         content: Text('คุณแน่ใจหรือไม่ว่าต้องการปฏิเสธคำร้อง\n"${req.title}"'),
         actions: [
@@ -194,95 +203,98 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         maxChildSize: 0.95,
         minChildSize: 0.4,
         builder: (_, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+          color: NeumorphicTheme.baseColor,
           child: ListView(
             controller: scrollController,
             padding: const EdgeInsets.all(24),
             children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300], borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+              const Center(child: NeumorphicSheetDragHandle()),
+              const SizedBox(height: 16),
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      shape: BoxShape.circle,
+                  NeumorphicContainer(
+                    width: 44,
+                    height: 44,
+                    shape: BoxShape.circle,
+                    depth: 3,
+                    blur: 6,
+                    color: Color.alphaBlend(
+                      AppColors.primary.withValues(alpha: 0.10),
+                      NeumorphicTheme.baseColor,
                     ),
-                    child: const Icon(Icons.assignment, color: AppColors.primary),
+                    child: const Icon(Icons.assignment, color: AppColors.primary, size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(req.title, style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold)),
+                        Text(req.title, style: AppTextStyles.heading4.copyWith(fontWeight: FontWeight.bold, color: NeumorphicTheme.textPrimary)),
                         Text(
                           'ส่งคำร้องเมื่อ: ${req.createdAt.toString().split(' ')[0]}',
-                          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey),
+                          style: AppTextStyles.bodySmall.copyWith(color: NeumorphicTheme.textSecondary),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              const Divider(height: 32),
-              _detailRow(Icons.info_outline, 'รายละเอียด', req.description ?? '-'),
-              _detailRow(Icons.location_on_outlined, 'สถานที่ใช้', req.usageLocation ?? '-'),
-              _detailRow(Icons.home_outlined, 'ที่อยู่ผู้ร้อง', req.requesterAddress ?? '-'),
-              if (req.neededDate != null)
-                _detailRow(Icons.event, 'วันที่จำเป็นต้องใช้', req.neededDate!.toString().split(' ')[0]),
-              if (req.targetAmount != null)
-                _detailRow(Icons.monetization_on_outlined, 'ยอดที่ต้องการ', '฿${req.targetAmount!.toInt()}'),
-              const Divider(height: 32),
+              const SizedBox(height: 20),
+              NeumorphicContainer(
+                borderRadius: 16,
+                depth: 4,
+                blur: 8,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _detailRow(Icons.info_outline, 'รายละเอียด', req.description ?? '-'),
+                    _detailRow(Icons.location_on_outlined, 'สถานที่ใช้', req.usageLocation ?? '-'),
+                    _detailRow(Icons.home_outlined, 'ที่อยู่ผู้ร้อง', req.requesterAddress ?? '-'),
+                    if (req.neededDate != null)
+                      _detailRow(Icons.event, 'วันที่จำเป็นต้องใช้', req.neededDate!.toString().split(' ')[0]),
+                    if (req.targetAmount != null)
+                      _detailRow(Icons.monetization_on_outlined, 'ยอดที่ต้องการ', '฿${req.targetAmount!.toInt()}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
               // ปุ่มตัดสินใจใน Bottom Sheet
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: NeumorphicPillButton(
+                      text: 'ปฏิเสธ',
+                      icon: Icons.close,
+                      height: 48,
+                      color: Colors.red,
                       onPressed: () {
                         Navigator.pop(ctx);
                         _rejectRequest(req);
                       },
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      label: const Text('ปฏิเสธ', style: TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        side: const BorderSide(color: Colors.red),
-                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: NeumorphicPillButton(
+                      text: 'อนุญาต',
+                      icon: Icons.check,
+                      height: 48,
+                      color: AppColors.primary,
                       onPressed: () {
                         Navigator.pop(ctx);
                         _approveRequest(req);
                       },
-                      icon: const Icon(Icons.check, color: Colors.white),
-                      label: const Text('อนุญาต', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
                     ),
                   ),
                 ],
@@ -306,9 +318,9 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[600])),
+                Text(label, style: AppTextStyles.bodySmall.copyWith(color: NeumorphicTheme.textSecondary)),
                 const SizedBox(height: 2),
-                Text(value, style: AppTextStyles.bodyMedium),
+                Text(value, style: AppTextStyles.bodyMedium.copyWith(color: NeumorphicTheme.textPrimary)),
               ],
             ),
           ),
@@ -337,22 +349,24 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header Section
-        Container(
+        NeumorphicContainer(
+          borderRadius: 20,
+          depth: 6,
+          blur: 12,
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.teal.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.teal.withOpacity(0.2)),
-          ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.15),
-                  shape: BoxShape.circle,
+              NeumorphicContainer(
+                width: 44,
+                height: 44,
+                shape: BoxShape.circle,
+                depth: 3,
+                blur: 6,
+                color: Color.alphaBlend(
+                  Colors.teal.withValues(alpha: 0.12),
+                  NeumorphicTheme.baseColor,
                 ),
-                child: const Icon(Icons.how_to_vote, color: Colors.teal),
+                child: const Icon(Icons.how_to_vote, color: Colors.teal, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -365,14 +379,15 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                     ),
                     Text(
                       'รายการต่อไปนี้รอการยืนยันจากคุณ ($_userCategoryNamesStr)',
-                      style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[600]),
+                      style: AppTextStyles.bodySmall.copyWith(color: NeumorphicTheme.textSecondary),
                     ),
                   ],
                 ),
               ),
               // Pull to refresh button
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.teal),
+              NeumorphicIconButton(
+                icon: Icons.refresh,
+                color: Colors.teal,
                 onPressed: () => _fetchPendingRequests(_currentUserId!),
               ),
             ],
@@ -381,42 +396,45 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
         const SizedBox(height: 16),
 
         if (_pendingRequests.isEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            alignment: Alignment.center,
-            child: Column(
-              children: [
-                Icon(Icons.check_circle_outline, size: 56, color: Colors.grey[300]),
-                const SizedBox(height: 12),
-                Text(
-                  'ไม่มีคำร้องที่รอการอนุมัติ',
-                  style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey[500]),
-                ),
-              ],
+          NeumorphicContainer(
+            borderRadius: 16,
+            depth: 4,
+            blur: 8,
+            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
+            child: Center(
+              child: Column(
+                children: [
+                  NeumorphicInsetBox(
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    child: Icon(Icons.check_circle_outline, size: 32, color: Colors.grey[400]),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'ไม่มีคำร้องที่รอการอนุมัติ',
+                    style: AppTextStyles.bodyMedium.copyWith(color: NeumorphicTheme.textSecondary),
+                  ),
+                ],
+              ),
             ),
           )
         else
           ...List.generate(_pendingRequests.length, (index) {
             final req = _pendingRequests[index];
-            return GestureDetector(
-              onTap: () => _showRequestDetail(req),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _showRequestDetail(req),
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                  border: Border.all(color: Colors.grey[100]!),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+                  child: NeumorphicContainer(
+                    borderRadius: 16,
+                    depth: 5,
+                    blur: 10,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
@@ -426,7 +444,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                           Expanded(
                             child: Text(
                               req.title,
-                              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: NeumorphicTheme.textPrimary),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -448,7 +466,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                       if (req.description != null && req.description!.isNotEmpty)
                         Text(
                           req.description!,
-                          style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[600]),
+                          style: AppTextStyles.bodySmall.copyWith(color: NeumorphicTheme.textSecondary),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -460,7 +478,7 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                           Expanded(
                             child: Text(
                               req.usageLocation ?? 'ไม่ระบุสถานที่',
-                              style: AppTextStyles.bodySmall.copyWith(color: Colors.grey[500], fontSize: 11),
+                              style: AppTextStyles.bodySmall.copyWith(color: NeumorphicTheme.textSecondary, fontSize: 11),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -471,33 +489,32 @@ class _LeaderVerificationPageState extends State<LeaderVerificationPage> {
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton.icon(
+                            child: NeumorphicPillButton(
+                              text: 'ปฏิเสธ',
+                              icon: Icons.close,
+                              height: 40,
+                              fontSize: 13,
+                              iconSize: 16,
+                              color: Colors.red,
                               onPressed: () => _rejectRequest(req),
-                              icon: const Icon(Icons.close, color: Colors.red, size: 16),
-                              label: const Text('ปฏิเสธ', style: TextStyle(color: Colors.red, fontSize: 13)),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                side: const BorderSide(color: Colors.red),
-                              ),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: ElevatedButton.icon(
+                            child: NeumorphicPillButton(
+                              text: 'อนุญาต',
+                              icon: Icons.check,
+                              height: 40,
+                              fontSize: 13,
+                              iconSize: 16,
+                              color: AppColors.primary,
                               onPressed: () => _approveRequest(req),
-                              icon: const Icon(Icons.check, color: Colors.white, size: 16),
-                              label: const Text('อนุญาต', style: TextStyle(color: Colors.white, fontSize: 13)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
                             ),
                           ),
                         ],
                       ),
                     ],
+                  ),
                   ),
                 ),
               ),

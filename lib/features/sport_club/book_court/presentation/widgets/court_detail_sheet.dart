@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
@@ -97,7 +99,8 @@ class CourtDetailSheet extends StatefulWidget {
   State<CourtDetailSheet> createState() => _CourtDetailSheetState();
 }
 
-class _CourtDetailSheetState extends State<CourtDetailSheet> {
+class _CourtDetailSheetState extends State<CourtDetailSheet>
+    with WidgetsBindingObserver {
   List<VenueCourt> _courts = [];
   List<VenueBooking> _upcomingBookings = [];
   List<VenueOperatingHours> _hours = [];
@@ -114,6 +117,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   CourtAvailability? _availability;
   late DateTime _availabilityDate;
   int _availabilityRequestId = 0;
+  Timer? _opensAtTimer;
 
   late final BookCourtBookingService _booking = BookCourtBookingService(
     create: widget.repo.createBooking,
@@ -125,8 +129,44 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _availabilityDate = VenueLocalTime.today(widget.venue.timezone);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _opensAtTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Foreground resume refreshes the expanded grid — a sealed slot may
+  /// have reached its opensAt while the app was suspended.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final courtId = _expandedCourtId;
+    if (courtId == null) return;
+    final court = _courts.where((c) => c.id == courtId).firstOrNull;
+    if (court != null) _loadAvailability(court);
+  }
+
+  /// Reloads shortly after the nearest upcoming opensAt so sealed slots
+  /// flip to selectable while the panel stays open.
+  void _scheduleOpensAtRefresh(VenueCourt court, CourtAvailability a) {
+    _opensAtTimer?.cancel();
+    _opensAtTimer = null;
+    if (a.notOpen.isEmpty) return;
+    var next = a.notOpen.first.opensAt;
+    for (final entry in a.notOpen) {
+      if (entry.opensAt.isBefore(next)) next = entry.opensAt;
+    }
+    var delay = next.difference(DateTime.now());
+    if (delay.isNegative) delay = Duration.zero;
+    _opensAtTimer = Timer(delay + const Duration(seconds: 1), () {
+      if (mounted && _expandedCourtId == court.id) _loadAvailability(court);
+    });
   }
 
   Future<void> _load() async {
@@ -240,6 +280,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
     if (_checkingSlot) return;
     if (_expandedCourtId == court.id) {
       _availabilityRequestId++;
+      _opensAtTimer?.cancel();
       setState(() {
         _expandedCourtId = null;
         _availability = null;
@@ -276,6 +317,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
         _availability = availability;
         _availabilityLoading = false;
       });
+      _scheduleOpensAtRefresh(court, availability);
     } catch (_) {
       if (mounted &&
           requestId == _availabilityRequestId &&
@@ -329,15 +371,29 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
           availability: latestAvailability!,
           date: date,
           timezone: widget.venue.timezone,
+          now: latestAvailability.serverNow,
         ).freeSlots.any(
           (slot) =>
               slot.start.isAtSameMomentAs(start) &&
               slot.end.isAtSameMomentAs(end),
         );
     if (!isFree) {
-      setState(
-        () => _availabilityNotice = 'เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น',
-      );
+      // A sealed slot deserves its own notice with the opensAt instant.
+      final opensAt = latestAvailability.opensAtFor(start);
+      final serverNow = latestAvailability.serverNow;
+      if (opensAt != null &&
+          (serverNow == null || opensAt.isAfter(serverNow))) {
+        setState(
+          () => _availabilityNotice =
+              'ช่วงเวลานี้ยังไม่เปิดจอง — '
+              '${VenueLocalTime.formatInstantWall(opensAt, widget.venue.timezone)}',
+        );
+      } else {
+        setState(
+          () =>
+              _availabilityNotice = 'เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น',
+        );
+      }
       await _loadAvailability(court, preserveNotice: true);
       return;
     }
@@ -371,7 +427,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
           ? today
           : _availabilityDate,
       firstDate: today,
-      lastDate: VenueLocalTime.addCalendarDays(today, 90),
+      lastDate: VenueLocalTime.addCalendarDays(
+        today,
+        VenueLocalTime.maxAdvanceDays,
+      ),
     );
     if (picked == null || courtId == null || !mounted) return;
     final court = _courts.where((c) => c.id == courtId).firstOrNull;
@@ -1190,6 +1249,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet> {
               availability: availability,
               date: _availabilityDate,
               timezone: widget.venue.timezone,
+              now: availability.serverNow,
               onSlotTap: widget.onBookCourt == null || _checkingSlot
                   ? null
                   : (start, end) => _verifySlotAndBook(court, start, end),

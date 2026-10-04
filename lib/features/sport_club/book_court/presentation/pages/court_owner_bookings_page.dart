@@ -101,7 +101,9 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
         booking: b,
         approve: true,
       );
-      if (result == 'conflict') {
+      if (result == 'expired') {
+        _toast('คำขอหมดอายุแล้ว เนื่องจากถึงเวลาเริ่ม');
+      } else if (result == 'conflict') {
         _toast('ช่วงเวลานี้มีการจองยืนยันแล้ว — คำขอยังคงรออนุมัติ');
       } else {
         _toast('อนุมัติการจองแล้ว');
@@ -114,13 +116,17 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
 
   Future<void> _reject(VenueBooking b, String reason) async {
     try {
-      await _booking.decideBooking(
+      final result = await _booking.decideBooking(
         userId: _userId,
         booking: b,
         approve: false,
         reason: reason,
       );
-      _toast('ปฏิเสธคำขอแล้ว');
+      _toast(
+        result == 'expired'
+            ? 'คำขอหมดอายุแล้ว เนื่องจากถึงเวลาเริ่ม'
+            : 'ปฏิเสธคำขอแล้ว',
+      );
       await _load();
     } catch (e) {
       _toast(_mapError(e));

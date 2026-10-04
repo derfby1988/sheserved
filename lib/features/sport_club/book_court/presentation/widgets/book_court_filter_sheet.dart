@@ -4,6 +4,7 @@ import 'package:sheserved/shared/widgets/thai_address_picker/thai_address_reposi
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/book_court_filter.dart';
+import '../../domain/venue_local_time.dart';
 
 class BookCourtFilterSheetResult {
   const BookCourtFilterSheetResult({
@@ -233,7 +234,12 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
       context: context,
       initialDate: _date ?? now,
       firstDate: now,
-      lastDate: now.add(const Duration(days: 90)),
+      // Technical widget bound, not a business cap — venues without a
+      // release rule allow unlimited advance booking (Phase 21.7.18).
+      lastDate: VenueLocalTime.addCalendarDays(
+        now,
+        VenueLocalTime.maxAdvanceDays,
+      ),
     );
     if (picked != null) setState(() => _date = picked);
   }

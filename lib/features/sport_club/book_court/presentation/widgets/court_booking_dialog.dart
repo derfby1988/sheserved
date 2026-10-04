@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/thai_address_picker/glass_date_time_picker.dart';
@@ -118,7 +120,8 @@ class _CourtBookingDialogBody extends StatefulWidget {
       _CourtBookingDialogBodyState();
 }
 
-class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
+class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody>
+    with WidgetsBindingObserver {
   late DateTime _date;
   final _selectedStarts = <DateTime>{};
   CourtAvailability? _availability;
@@ -131,12 +134,17 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
   String? _priceError;
   int _requestId = 0;
   int _priceRequestId = 0;
+  Timer? _opensAtTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final today = VenueLocalTime.today(widget.timezone);
-    final lastDate = VenueLocalTime.addCalendarDays(today, 90);
+    final lastDate = VenueLocalTime.addCalendarDays(
+      today,
+      VenueLocalTime.maxAdvanceDays,
+    );
     final requested =
         widget.initialDate ??
         (widget.initialSlotStart == null
@@ -156,6 +164,39 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
     _loadAvailability();
   }
 
+  @override
+  void dispose() {
+    _opensAtTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Foreground resume refreshes the grid — a sealed slot may have
+  /// reached its opensAt while the app was suspended.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadAvailability(keepSelection: true);
+    }
+  }
+
+  /// Reloads shortly after the nearest upcoming opensAt so sealed slots
+  /// flip to selectable without the user having to back out.
+  void _scheduleOpensAtRefresh(CourtAvailability availability) {
+    _opensAtTimer?.cancel();
+    _opensAtTimer = null;
+    if (availability.notOpen.isEmpty) return;
+    var next = availability.notOpen.first.opensAt;
+    for (final entry in availability.notOpen) {
+      if (entry.opensAt.isBefore(next)) next = entry.opensAt;
+    }
+    var delay = next.difference(DateTime.now());
+    if (delay.isNegative) delay = Duration.zero;
+    _opensAtTimer = Timer(delay + const Duration(seconds: 1), () {
+      if (mounted) _loadAvailability(keepSelection: true);
+    });
+  }
+
   void _applyInitialSlot(CourtAvailability availability) {
     final initialSlotStart = widget.initialSlotStart;
     if (_initialSlotResolved || initialSlotStart == null) return;
@@ -172,6 +213,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
               availability: availability,
               date: _date,
               timezone: widget.timezone,
+              now: availability.serverNow,
             ).freeSlots
             .where((slot) => slot.start.isAtSameMomentAs(initialSlotStart))
             .firstOrNull;
@@ -182,7 +224,21 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
     _selectedStarts.add(matchingSlot.start);
   }
 
-  Future<void> _loadAvailability() async {
+  /// Drops selections whose slot is no longer free after a refresh —
+  /// sealed or newly booked slots must never carry into a submit.
+  void _pruneSelections(CourtAvailability availability) {
+    final freeStarts = CourtAvailabilityPicker(
+      availability: availability,
+      date: _date,
+      timezone: widget.timezone,
+      now: availability.serverNow,
+    ).freeSlots.map((slot) => slot.start).toList();
+    _selectedStarts.removeWhere(
+      (s) => !freeStarts.any((f) => f.isAtSameMomentAs(s)),
+    );
+  }
+
+  Future<void> _loadAvailability({bool keepSelection = false}) async {
     final requestId = ++_requestId;
     ++_priceRequestId;
     setState(() {
@@ -193,7 +249,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
       _priceLoading = false;
       _priceError = null;
       _priceQuotes = const [];
-      _selectedStarts.clear();
+      if (!keepSelection) _selectedStarts.clear();
     });
     try {
       final availability = await widget.loadAvailability(
@@ -210,7 +266,9 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
         _availability = availability;
         _loading = false;
         _applyInitialSlot(availability);
+        _pruneSelections(availability);
       });
+      _scheduleOpensAtRefresh(availability);
       await _refreshPriceQuotes();
     } catch (_) {
       if (!mounted || requestId != _requestId) return;
@@ -223,7 +281,10 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
 
   Future<void> _pickDate() async {
     final today = VenueLocalTime.today(widget.timezone);
-    final lastDate = VenueLocalTime.addCalendarDays(today, 90);
+    final lastDate = VenueLocalTime.addCalendarDays(
+      today,
+      VenueLocalTime.maxAdvanceDays,
+    );
     final initialDate = _date.isBefore(today)
         ? today
         : _date.isAfter(lastDate)
@@ -248,6 +309,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
         availability: availability,
         date: _date,
         timezone: widget.timezone,
+        now: availability.serverNow,
       ).freeSlots.where((slot) => _selectedStarts.contains(slot.start)),
     );
   }
@@ -442,6 +504,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody> {
                           availability: _availability!,
                           date: _date,
                           timezone: widget.timezone,
+                          now: _availability!.serverNow,
                           freeOnly: true,
                           centered: true,
                           selectedStarts: _selectedStarts,

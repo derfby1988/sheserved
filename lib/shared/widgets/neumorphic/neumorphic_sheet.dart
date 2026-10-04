@@ -328,6 +328,7 @@ class NeumorphicChoiceChip extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     this.icon,
+    this.accentColor,
   });
 
   final String label;
@@ -335,9 +336,12 @@ class NeumorphicChoiceChip extends StatelessWidget {
   final ValueChanged<bool> onSelected;
   final IconData? icon;
 
+  /// สี accent ของไอคอน/ข้อความตอนถูกเลือก — ค่าเริ่มต้น [NeumorphicTheme.primaryBlue]
+  final Color? accentColor;
+
   @override
   Widget build(BuildContext context) {
-    final accent = NeumorphicTheme.primaryBlue;
+    final accent = accentColor ?? NeumorphicTheme.primaryBlue;
     const padding = EdgeInsets.symmetric(horizontal: 14, vertical: 9);
     final content = Row(
       mainAxisSize: MainAxisSize.min,
@@ -455,12 +459,20 @@ class NeumorphicSwitchTile extends StatelessWidget {
     this.subtitle,
     required this.value,
     required this.onChanged,
+    this.activeColor = NeumorphicTheme.primaryBlue,
+    this.leading,
   });
 
   final String title;
   final String? subtitle;
   final bool value;
   final ValueChanged<bool>? onChanged;
+
+  /// สีของปุ่มเลื่อนเมื่อเปิด — ค่าเริ่มต้น [NeumorphicTheme.primaryBlue]
+  final Color activeColor;
+
+  /// Widget นำหน้า (เช่น badge ไอคอนนูน) — วางก่อนคอลัมน์ title/subtitle
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -479,6 +491,10 @@ class NeumorphicSwitchTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
+                if (leading != null) ...[
+                  leading!,
+                  const SizedBox(width: 12),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,7 +559,7 @@ class NeumorphicSwitchTile extends StatelessWidget {
                   depth: 2,
                   blur: 4,
                   color: value
-                      ? NeumorphicTheme.primaryBlue
+                      ? activeColor
                       : NeumorphicTheme.baseColor,
                   child: value
                       ? const Icon(

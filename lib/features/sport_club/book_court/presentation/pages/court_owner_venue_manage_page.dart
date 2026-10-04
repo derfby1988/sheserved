@@ -20,6 +20,7 @@ import '../widgets/owner_court_editor_dialog.dart';
 import '../widgets/venue_amenities_editor_dialog.dart';
 import '../widgets/venue_hours_editor_dialog.dart';
 import '../widgets/venue_profile_editor_sheet.dart';
+import '../widgets/venue_release_editor_dialog.dart';
 import '../widgets/venue_setup_checklist_card.dart';
 import '../widgets/venue_sports_editor_dialog.dart';
 import '../widgets/venue_terms_editor_dialog.dart';
@@ -535,8 +536,42 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
               ),
             )
             .toList(),
+        bookingReleaseMode: draft['booking_release_mode'] as String?,
+        bookingReleaseDayOfWeek:
+            draft['booking_release_day_of_week'] as int?,
+        bookingReleaseTime: draft['booking_release_time'] as String?,
+        bookingReleaseWindowDays:
+            draft['booking_release_window_days'] as int?,
       ),
       court == null ? 'เพิ่มคอร์ทแล้ว' : 'บันทึกคอร์ทแล้ว',
+    );
+  }
+
+  /// Venue-level recurring booking release (Phase 21.7.18). Courts set to
+  /// "ตามสนาม" inherit this rule; clearing it makes advance booking
+  /// unlimited again.
+  Future<void> _editVenueRelease() async {
+    final userId = _userId;
+    if (userId == null || _saving) return;
+    final v = _venueMap;
+    final draft = await VenueReleaseEditorDialog.show(
+      context,
+      currentDayOfWeek:
+          (v['booking_release_day_of_week'] as num?)?.toInt(),
+      currentTime: v['booking_release_time']?.toString(),
+      currentWindowDays:
+          (v['booking_release_window_days'] as num?)?.toInt(),
+    );
+    if (draft == null) return;
+    await _persist(
+      () => widget.repo.setVenueBookingRelease(
+        userId,
+        _venue.id,
+        dayOfWeek: draft.cleared ? null : draft.dayOfWeek,
+        releaseTime: draft.cleared ? null : draft.time,
+        windowDays: draft.cleared ? null : draft.windowDays,
+      ),
+      draft.cleared ? 'ปิดการจำกัดการจองล่วงหน้าแล้ว' : 'บันทึกรอบเปิดจองแล้ว',
     );
   }
 
@@ -648,6 +683,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                             children: [
                               _buildStatusCard(),
                               _buildVenueInfoCard(),
+                              _buildReleaseCard(),
                               VenueSetupChecklistCard(
                                 steps: steps,
                                 venueStatus: _venueStatus,
@@ -894,6 +930,68 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     );
   }
 
+  /// 21.7.18 venue-level recurring release card. Shows the effective rule
+  /// (or "unlimited") and opens [VenueReleaseEditorDialog] to change it.
+  Widget _buildReleaseCard() {
+    const weekdayLabels = {
+      0: 'อาทิตย์',
+      1: 'จันทร์',
+      2: 'อังคาร',
+      3: 'พุธ',
+      4: 'พฤหัสบดี',
+      5: 'ศุกร์',
+      6: 'เสาร์',
+    };
+    final v = _venueMap;
+    final day = (v['booking_release_day_of_week'] as num?)?.toInt();
+    final time = v['booking_release_time']?.toString();
+    final window = (v['booking_release_window_days'] as num?)?.toInt();
+    final ruleSet = day != null && time != null && window != null;
+    final summary = ruleSet
+        ? 'เปิดจองทุกวัน${weekdayLabels[day] ?? ''} เวลา ${time.substring(0, time.length >= 5 ? 5 : time.length)} · ล่วงหน้า $window วัน'
+        : 'ไม่จำกัด — จองล่วงหน้าได้ทุกวัน';
+    final overridden =
+        _courts.where((c) => c.bookingReleaseMode != 'inherit').length;
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'รอบเปิดรับจองล่วงหน้า',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _saving ? null : _editVenueRelease,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('แก้ไข'),
+              ),
+            ],
+          ),
+          _infoLine(Icons.event_available_outlined, summary),
+          if (overridden > 0)
+            _infoLine(
+              Icons.tune_rounded,
+              '$overridden คอร์ทตั้งรอบเปิดจองเอง (ดูในหน้าแก้ไขคอร์ท)',
+            ),
+          const SizedBox(height: 4),
+          Text(
+            'สล็อตที่ยังไม่ถึงรอบเปิดจองจะแสดงแต่ผู้ใช้เลือกจองไม่ได้ — กฎมีผลทันทีกับการจองใหม่',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _infoLine(IconData icon, String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -983,6 +1081,10 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                     court.approvalMode == BookingApprovalMode.ownerApproval
                         ? 'รออนุมัติ'
                         : 'ยืนยันทันที',
+                    if (court.bookingReleaseMode == 'always_open')
+                      'เปิดจองตลอด'
+                    else if (court.bookingReleaseMode == 'custom')
+                      'รอบเปิดจองเฉพาะคอร์ท',
                     if (!court.isActive) 'ปิดใช้งาน',
                   ].where((s) => s.isNotEmpty).join(' · '),
                   style: const TextStyle(fontSize: 12),
@@ -1034,6 +1136,9 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     }
     if (raw.contains('INVALID_PRICE_RULE')) {
       return 'ข้อมูลช่วงราคาหรือราคา/ชั่วโมงไม่ถูกต้อง';
+    }
+    if (raw.contains('INVALID_RELEASE_RULE')) {
+      return 'รอบเปิดจองไม่ถูกต้อง — เลือกวัน/เวลาและจองล่วงหน้าอย่างน้อย 7 วัน';
     }
     if (raw.contains('INCOMPLETE_HOURS')) {
       return 'กรุณาระบุเวลาเปิด–ปิดให้ครบทั้ง 7 วัน';

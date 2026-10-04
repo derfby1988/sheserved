@@ -95,12 +95,40 @@ class _OwnerCourtEditorDialogBodyState
   late bool _isActive = widget.court?.isActive ?? true;
   late String? _courtType = widget.court?.courtType;
 
+  // 21.7.18 recurring release override. 'inherit' follows the venue rule,
+  // 'always_open' books without limit, 'custom' needs the full triple.
+  late String _releaseMode = widget.court?.bookingReleaseMode ?? 'inherit';
+  late int _releaseDay = widget.court?.bookingReleaseDayOfWeek ?? 1;
+  late TimeOfDay _releaseTime = _parseReleaseTime(
+    widget.court?.bookingReleaseTime,
+  );
+  late final _releaseWindow = TextEditingController(
+    text: (widget.court?.bookingReleaseWindowDays ?? 7).toString(),
+  );
+
+  static TimeOfDay _parseReleaseTime(String? hhmm) {
+    final parts = (hhmm ?? '09:00').split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 9,
+      minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+    );
+  }
+
+  /// Custom window in days — server requires >= 7; there is no product
+  /// ceiling beyond SMALLINT.
+  int? get _releaseWindowValue {
+    final parsed = int.tryParse(_releaseWindow.text.trim());
+    if (parsed == null || parsed < 7) return null;
+    return parsed;
+  }
+
   @override
   void dispose() {
     _name.dispose();
     _unitLabel.dispose();
     _price.dispose();
     _capacity.dispose();
+    _releaseWindow.dispose();
     for (final rule in _priceRules) {
       rule.price.dispose();
     }
@@ -174,7 +202,8 @@ class _OwnerCourtEditorDialogBodyState
       _capacityValue != null &&
       _priceValue != -1 &&
       _priceRulesError == null &&
-      _sportId != null;
+      _sportId != null &&
+      (_releaseMode != 'custom' || _releaseWindowValue != null);
 
   int _minutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
@@ -217,17 +246,19 @@ class _OwnerCourtEditorDialogBodyState
     setState(() {});
   }
 
+  static const _weekdayLabels = {
+    0: 'อาทิตย์',
+    1: 'จันทร์',
+    2: 'อังคาร',
+    3: 'พุธ',
+    4: 'พฤหัสบดี',
+    5: 'ศุกร์',
+    6: 'เสาร์',
+  };
+
   Widget _priceRuleTile(int index) {
     final rule = _priceRules[index];
-    const weekdayLabels = {
-      0: 'อาทิตย์',
-      1: 'จันทร์',
-      2: 'อังคาร',
-      3: 'พุธ',
-      4: 'พฤหัสบดี',
-      5: 'ศุกร์',
-      6: 'เสาร์',
-    };
+    const weekdayLabels = _weekdayLabels;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -590,6 +621,117 @@ class _OwnerCourtEditorDialogBodyState
                           onSelectionChanged: (sel) =>
                               setState(() => _approvalMode = sel.first),
                         ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'รอบเปิดรับจองล่วงหน้า',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'สล็อตที่ยังไม่ถึงรอบเปิดจองจะแสดงแต่เลือกไม่ได้',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 6),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                              value: 'inherit',
+                              label: Text('ตามสนาม'),
+                            ),
+                            ButtonSegment(
+                              value: 'always_open',
+                              label: Text('เปิดตลอด'),
+                            ),
+                            ButtonSegment(
+                              value: 'custom',
+                              label: Text('กำหนดเอง'),
+                            ),
+                          ],
+                          selected: {_releaseMode},
+                          onSelectionChanged: (sel) =>
+                              setState(() => _releaseMode = sel.first),
+                        ),
+                        if (_releaseMode == 'inherit')
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Text(
+                              'ใช้รอบเปิดจองของสนาม — ถ้าสนามไม่ได้ตั้งไว้ จองล่วงหน้าได้ไม่จำกัด',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        if (_releaseMode == 'always_open')
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Text(
+                              'คอร์ทนี้รับจองล่วงหน้าได้ไม่จำกัด ไม่ว่าสนามจะตั้งรอบไว้หรือไม่',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        if (_releaseMode == 'custom') ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  isExpanded: true,
+                                  initialValue: _releaseDay,
+                                  decoration: const InputDecoration(
+                                    labelText: 'เปิดจองทุกวัน',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: [
+                                    for (final entry
+                                        in _weekdayLabels.entries)
+                                      DropdownMenuItem(
+                                        value: entry.key,
+                                        child: Text(entry.value),
+                                      ),
+                                  ],
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      setState(() => _releaseDay = v);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    final picked = await showTimePicker(
+                                      context: context,
+                                      initialTime: _releaseTime,
+                                    );
+                                    if (picked != null && mounted) {
+                                      setState(
+                                        () => _releaseTime = picked,
+                                      );
+                                    }
+                                  },
+                                  child: Text(
+                                    'เวลา ${_formatTime(_releaseTime)}',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _releaseWindow,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'จองล่วงหน้าได้ (วัน)',
+                              helperText: 'อย่างน้อย 7 วัน',
+                              errorText:
+                                  _releaseWindow.text.trim().isNotEmpty &&
+                                      _releaseWindowValue == null
+                                  ? 'อย่างน้อย 7 วัน'
+                                  : null,
+                              border: const OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -627,6 +769,18 @@ class _OwnerCourtEditorDialogBodyState
                             'is_active': _isActive,
                             'approval_mode': _approvalMode,
                             'price_rules': _priceRulesJson,
+                            // Always explicit so 'ตามสนาม' clears an old
+                            // override server-side (NULL = keep unseen).
+                            'booking_release_mode': _releaseMode,
+                            'booking_release_day_of_week':
+                                _releaseMode == 'custom' ? _releaseDay : null,
+                            'booking_release_time': _releaseMode == 'custom'
+                                ? _formatTime(_releaseTime)
+                                : null,
+                            'booking_release_window_days':
+                                _releaseMode == 'custom'
+                                ? _releaseWindowValue
+                                : null,
                             if (widget.court != null) 'id': widget.court!.id,
                           })
                         : null,

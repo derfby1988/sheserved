@@ -545,6 +545,14 @@ class BookCourtRepository {
     String? unitLabel,
     bool isActive = true,
     List<VenueCourtPriceRule>? priceRules,
+    // 21.7.18: release params use NULL-means-keep — omit them entirely
+    // (bookingReleaseMode == null) to preserve the court's override.
+    // 'inherit'/'always_open' clear the custom triple server-side;
+    // 'custom' requires the full dayOfWeek/releaseTime/windowDays triple.
+    String? bookingReleaseMode,
+    int? bookingReleaseDayOfWeek,
+    String? bookingReleaseTime,
+    int? bookingReleaseWindowDays,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
@@ -570,9 +578,39 @@ class BookCourtRepository {
                     .map((rule) => rule.toJson())
                     .toList(),
               }),
+        ...?(bookingReleaseMode == null
+            ? null
+            : {
+                'p_booking_release_mode': bookingReleaseMode,
+                'p_booking_release_day_of_week': bookingReleaseDayOfWeek,
+                'p_booking_release_time': bookingReleaseTime,
+                'p_booking_release_window_days': bookingReleaseWindowDays,
+              }),
       },
     );
     return res.toString();
+  }
+
+  /// Venue-level recurring booking release (Phase 21.7.18). Passing all
+  /// nulls clears the rule — advance booking becomes unlimited again.
+  Future<void> setVenueBookingRelease(
+    String userId,
+    String venueId, {
+    int? dayOfWeek,
+    String? releaseTime,
+    int? windowDays,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_booking_release',
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_day_of_week': dayOfWeek,
+        'p_time': releaseTime,
+        'p_window_days': windowDays,
+      },
+    );
   }
 
   Future<void> setVenueOperatingHours(
@@ -966,4 +1004,16 @@ class BookCourtRepository {
       },
     );
   }
+}
+
+/// Extracts the `opensAt` instant carried in the DETAIL clause of a
+/// `BOOKING_NOT_OPEN_YET` PostgREST error (Phase 21.7.18). Returns null
+/// for other errors or a malformed detail so callers can fall back to a
+/// generic message.
+DateTime? bookingReleaseOpensAt(Object error) {
+  if (error is PostgrestException &&
+      error.message.contains('BOOKING_NOT_OPEN_YET')) {
+    return DateTime.tryParse(error.details?.toString() ?? '');
+  }
+  return null;
 }

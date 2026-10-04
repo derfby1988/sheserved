@@ -28,6 +28,8 @@ class NeumorphicSlider extends StatelessWidget {
     this.max = 1,
     this.divisions,
     this.onChanged,
+    this.onChangeStart,
+    this.onChangeEnd,
     this.label,
     this.activeColor = NeumorphicTheme.primaryBlue,
     this.trackHeight = 30,
@@ -41,6 +43,13 @@ class NeumorphicSlider extends StatelessWidget {
   final double max;
   final int? divisions;
   final ValueChanged<double>? onChanged;
+
+  /// ส่งต่อไปยัง [Slider.onChangeStart] โดยตรง (เช่น ใช้เก็บค่าก่อนลาก)
+  final ValueChanged<double>? onChangeStart;
+
+  /// ส่งต่อไปยัง [Slider.onChangeEnd] โดยตรง — ใช้ persist ค่าเมื่อปล่อยนิ้ว
+  /// เพื่อไม่ให้ยิง save ทุกเฟรมระหว่างลาก
+  final ValueChanged<double>? onChangeEnd;
 
   /// ข้อความบนป้ายลอยขณะลาก (ถ้าไม่ส่งจะไม่แสดงป้าย)
   final String? label;
@@ -92,6 +101,8 @@ class NeumorphicSlider extends StatelessWidget {
         divisions: divisions,
         label: label,
         onChanged: onChanged,
+        onChangeStart: onChangeStart,
+        onChangeEnd: onChangeEnd,
         semanticFormatterCallback: semanticFormatterCallback,
       ),
     );

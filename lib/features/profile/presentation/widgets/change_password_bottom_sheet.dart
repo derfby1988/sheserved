@@ -7,8 +7,8 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/password_policy.dart';
 import '../../../auth/data/models/password_change_result.dart';
 import '../../../auth/data/repositories/user_repository.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../shared/widgets/tlz_button.dart';
-import '../../../../shared/widgets/tlz_text_field.dart';
 
 /// Bottom Sheet สำหรับเปลี่ยนรหัสผ่านของผู้ใช้ปัจจุบัน
 ///
@@ -231,28 +231,62 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
       child: Padding(
         padding: EdgeInsets.only(bottom: viewInsets.bottom),
         child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'เปลี่ยนรหัสผ่าน',
-              key: const Key('change_password_title'),
-              style: AppTextStyles.heading2,
+            const Center(child: NeumorphicSheetDragHandle()),
+            const SizedBox(height: 16),
+
+            // Header: badge ไอคอนนูน + หัวข้อ + ปุ่มปิด
+            Row(
+              children: [
+                NeumorphicContainer(
+                  width: 44,
+                  height: 44,
+                  shape: BoxShape.circle,
+                  depth: 3,
+                  blur: 6,
+                  child: const Icon(
+                    Icons.key_rounded,
+                    size: 20,
+                    color: NeumorphicTheme.primaryBlue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'เปลี่ยนรหัสผ่าน',
+                    key: const Key('change_password_title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.heading2.copyWith(
+                      color: NeumorphicTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                NeumorphicSheetCloseButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // รหัสผ่านปัจจุบัน
-            TlzTextField(
-              label: 'รหัสผ่านปัจจุบัน',
+            _buildFieldLabel('รหัสผ่านปัจจุบัน'),
+            const SizedBox(height: 8),
+            NeumorphicInputField(
               controller: _currentPasswordController,
+              hintText: 'กรอกรหัสผ่านปัจจุบัน',
+              prefixIcon: Icons.lock_outline_rounded,
               obscureText: _obscureCurrentPassword,
               enabled: !_isChangingPassword,
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureCurrentPassword ? Icons.visibility_off : Icons.visibility,
-                  color: AppColors.textSecondary,
+                  color: NeumorphicTheme.textSecondary,
                 ),
                 onPressed: () {
                   setState(() {
@@ -264,26 +298,32 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
             const SizedBox(height: 16),
 
             // รหัสผ่านใหม่
-            TlzTextField(
-              label: 'รหัสผ่านใหม่',
+            _buildFieldLabel('รหัสผ่านใหม่'),
+            const SizedBox(height: 8),
+            NeumorphicInputField(
               controller: _newPasswordController,
+              hintText: 'กรอกรหัสผ่านใหม่',
+              prefixIcon: Icons.lock_reset_rounded,
               obscureText: _obscureNewPassword,
               enabled: !_isChangingPassword,
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
-                  color: AppColors.textSecondary,
+                  color: NeumorphicTheme.textSecondary,
                 ),
                 onPressed: _toggleNewPasswordVisibility,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
             // ช่องยืนยัน — แสดงเฉพาะเมื่อไม่ได้เปิดการมองเห็น
             if (!_isPasswordVisibleMode) ...[
-              TlzTextField(
-                label: 'ยืนยันรหัสผ่านใหม่',
+              _buildFieldLabel('ยืนยันรหัสผ่านใหม่'),
+              const SizedBox(height: 8),
+              NeumorphicInputField(
                 controller: _confirmPasswordController,
+                hintText: 'กรอกรหัสผ่านใหม่อีกครั้ง',
+                prefixIcon: Icons.lock_outline_rounded,
                 obscureText: _obscureConfirmPassword,
                 enabled: !_isChangingPassword,
                 suffixIcon: IconButton(
@@ -291,7 +331,7 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
                     _obscureConfirmPassword
                         ? Icons.visibility_off
                         : Icons.visibility,
-                    color: AppColors.textSecondary,
+                    color: NeumorphicTheme.textSecondary,
                   ),
                   onPressed: () {
                     setState(() {
@@ -300,22 +340,22 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
                   },
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
             ] else ...[
               Text(
                 'เปิดการมองเห็นแล้ว ไม่ต้องกรอกรหัสผ่านซ้ำ',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
+                  color: NeumorphicTheme.textSecondary,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
             ],
 
             // Password policy hint
             Text(
               PasswordPolicy.minLengthMessage,
               style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textHint,
+                color: NeumorphicTheme.textSecondary.withValues(alpha: 0.8),
               ),
             ),
             const SizedBox(height: 16),
@@ -352,6 +392,7 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
                     type: TlzButtonType.primary,
                     isFullWidth: true,
                     isLoading: _isChangingPassword,
+                    backgroundColor: NeumorphicTheme.primaryBlue,
                     onPressed: (_isChangingPassword || _isCooldownActive)
                         ? null
                         : _handleSubmit,
@@ -363,6 +404,18 @@ class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  /// label เหนือช่องกรอก — โทนเดียวกับหน้า login/register ในระบบ Neumorphic
+  Widget _buildFieldLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: NeumorphicTheme.textSecondary,
       ),
     );
   }

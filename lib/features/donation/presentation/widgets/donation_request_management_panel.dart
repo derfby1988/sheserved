@@ -6,6 +6,7 @@ import '../../data/repositories/donation_repository.dart';
 import '../../models/donation_models.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/neumorphic/neumorphic.dart';
 import '../../../../shared/widgets/thai_buddhist_date_picker.dart';
 import '../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../pages/donation_create_page.dart';
@@ -209,161 +210,136 @@ class _DonationRequestManagementPanelState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 24,
-            right: 24,
-            top: 24,
           ),
           child: SafeArea(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        request == null ? 'เพิ่มคำร้องใหม่' : 'แก้ไขคำร้อง',
-                        style: AppTextStyles.heading3,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
+            child: NeumorphicFormSheetShell(
+              title: request == null ? 'เพิ่มคำร้องใหม่' : 'แก้ไขคำร้อง',
+              icon: Icons.volunteer_activism_outlined,
+              onClose: () => Navigator.pop(sheetContext),
+              children: [
+                  _buildSheetLabel('ชื่อเรื่อง'),
+                  const SizedBox(height: 8),
+                  NeumorphicInputField(
                     controller: titleController,
-                    decoration: InputDecoration(
-                      labelText: 'ชื่อเรื่อง',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    hintText: 'ชื่อเรื่อง',
+                    prefixIcon: Icons.title_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSheetLabel('หมวดหมู่'),
+                  const SizedBox(height: 8),
+                  NeumorphicInsetBox(
+                    height: null,
+                    borderRadius: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedCategoryId,
+                        isExpanded: true,
+                        hint: const Text('เลือกหมวดหมู่'),
+                        dropdownColor: NeumorphicTheme.baseColor,
+                        borderRadius: BorderRadius.circular(16),
+                        items: _categories
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.id,
+                                child: Text(c.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) =>
+                            setModalState(() => selectedCategoryId = val),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedCategoryId,
-                    decoration: InputDecoration(
-                      labelText: 'หมวดหมู่',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  _buildSheetLabel('ชุมชน/พื้นที่'),
+                  const SizedBox(height: 8),
+                  NeumorphicInsetBox(
+                    height: null,
+                    borderRadius: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedCommunityId,
+                        isExpanded: true,
+                        hint: const Text('เลือกชุมชน/พื้นที่'),
+                        dropdownColor: NeumorphicTheme.baseColor,
+                        borderRadius: BorderRadius.circular(16),
+                        items: _communities
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c['id'].toString(),
+                                child: Text(c['name'] ?? 'ไม่ทราบชื่อ'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) =>
+                            setModalState(() => selectedCommunityId = val),
                       ),
                     ),
-                    items: _categories
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c.id,
-                            child: Text(c.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) =>
-                        setModalState(() => selectedCategoryId = val),
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedCommunityId,
-                    decoration: InputDecoration(
-                      labelText: 'ชุมชน/พื้นที่',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    items: _communities
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c['id'].toString(),
-                            child: Text(c['name'] ?? 'ไม่ทราบชื่อ'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) =>
-                        setModalState(() => selectedCommunityId = val),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
+                  _buildSheetLabel('รายละเอียด'),
+                  const SizedBox(height: 8),
+                  NeumorphicInputField(
                     controller: descController,
-                    decoration: InputDecoration(
-                      labelText: 'รายละเอียด',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                    hintText: 'รายละเอียด',
+                    prefixIcon: Icons.description_outlined,
                     maxLines: 3,
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: targetController,
-                          decoration: InputDecoration(
-                            labelText: 'ยอดที่ต้องการ',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                    ],
+                  _buildSheetLabel('ยอดที่ต้องการ'),
+                  const SizedBox(height: 8),
+                  NeumorphicInputField(
+                    controller: targetController,
+                    hintText: 'ยอดที่ต้องการ (บาท)',
+                    prefixIcon: Icons.payments_outlined,
+                    keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 24),
                   const Text(
                     'ข้อมูลเพิ่มเติม',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue,
+                      color: NeumorphicTheme.primaryBlue,
                       fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextField(
+                  _buildSheetLabel('สถานที่ใช้ความช่วยเหลือ'),
+                  const SizedBox(height: 8),
+                  NeumorphicInputField(
                     controller: usageLocationController,
-                    decoration: InputDecoration(
-                      labelText: 'สถานที่ใช้ความช่วยเหลือ',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                    hintText: 'สถานที่ใช้ความช่วยเหลือ',
+                    prefixIcon: Icons.location_on_outlined,
                   ),
                   const SizedBox(height: 16),
 
                   if (existingRequesterAddress != null &&
                       existingRequesterAddress.isNotEmpty) ...[
-                    Text(
-                      'ที่อยู่ปัจจุบัน',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    _buildSheetLabel('ที่อยู่ปัจจุบัน'),
                     const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
+                    NeumorphicInsetBox(
+                      height: null,
+                      borderRadius: 12,
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Text(
-                        existingRequesterAddress,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade800,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          existingRequesterAddress,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: NeumorphicTheme.textSecondary,
+                          ),
                         ),
                       ),
                     ),
@@ -374,14 +350,7 @@ class _DonationRequestManagementPanelState
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'ที่อยู่ผู้ร้องขอ',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      _buildSheetLabel('ที่อยู่ผู้ร้องขอ'),
                       const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
@@ -389,7 +358,9 @@ class _DonationRequestManagementPanelState
                           border: Border.all(
                             color: addressError
                                 ? Colors.redAccent
-                                : Colors.grey.shade300,
+                                : NeumorphicTheme.shadowDark.withValues(
+                                    alpha: 0.4,
+                                  ),
                             width: 1.5,
                           ),
                         ),
@@ -425,32 +396,21 @@ class _DonationRequestManagementPanelState
                         setModalState(() => selectedNeededDate = date),
                   ),
                   const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text(
-                      'กำลังยอดนิยม?',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                  NeumorphicSwitchTile(
+                    title: 'กำลังยอดนิยม?',
                     value: isTrending,
-                    activeThumbColor: Colors.orange,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    tileColor: Colors.orange.withOpacity(0.1),
+                    activeColor: Colors.orange,
                     onChanged: (val) => setModalState(() => isTrending = val),
                   ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: () async {
+                  const SizedBox(height: 24),
+                  NeumorphicVerifyButton(
+                    text: 'บันทึก',
+                    icon: const Icon(
+                      Icons.save_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    onPressed: () async {
                         if (selectedCategoryId == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('กรุณาเลือกหมวดหมู่')),
@@ -493,21 +453,24 @@ class _DonationRequestManagementPanelState
                             );
                         }
                       },
-                      child: const Text(
-                        'บันทึก',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
+    );
+  }
+
+  /// label เหนือช่องกรอกใน bottom sheet — โทนเดียวกับหน้า login/register
+  Widget _buildSheetLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: NeumorphicTheme.textSecondary,
       ),
     );
   }
@@ -543,12 +506,12 @@ class _DonationRequestManagementPanelState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
@@ -556,20 +519,30 @@ class _DonationRequestManagementPanelState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 12),
+              const NeumorphicSheetDragHandle(),
+              const SizedBox(height: 12),
               // ── Header ──
-              Container(
+              Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
-                  vertical: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.05),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
-                  ),
+                  vertical: 8,
                 ),
                 child: Row(
                   children: [
+                    NeumorphicContainer(
+                      width: 40,
+                      height: 40,
+                      shape: BoxShape.circle,
+                      depth: 3,
+                      blur: 6,
+                      child: const Icon(
+                        Icons.volunteer_activism_outlined,
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -578,22 +551,22 @@ class _DonationRequestManagementPanelState
                             req.title,
                             style: AppTextStyles.heading3.copyWith(
                               fontSize: 18,
+                              color: NeumorphicTheme.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'สร้างเมื่อ ${_formatThaiDate(req.createdAt)}',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade600,
+                              color: NeumorphicTheme.textSecondary,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
+                    NeumorphicSheetCloseButton(
+                      onPressed: () => Navigator.pop(sheetContext),
                     ),
                   ],
                 ),
@@ -856,18 +829,18 @@ class _DonationRequestManagementPanelState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+      backgroundColor: NeumorphicTheme.baseColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 24,
-            right: 24,
-            top: 24,
+            left: 20,
+            right: 20,
+            top: 12,
           ),
           child: SafeArea(
             child: SingleChildScrollView(
@@ -875,22 +848,43 @@ class _DonationRequestManagementPanelState
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Center(child: NeumorphicSheetDragHandle()),
+                  const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('ปิดรับบริจาค', style: AppTextStyles.heading3),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
+                      NeumorphicContainer(
+                        width: 40,
+                        height: 40,
+                        shape: BoxShape.circle,
+                        depth: 3,
+                        blur: 6,
+                        child: const Icon(
+                          Icons.task_alt_rounded,
+                          size: 20,
+                          color: Color(0xFF0066CC),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'ปิดรับบริจาค',
+                          style: AppTextStyles.heading3.copyWith(
+                            color: NeumorphicTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                      NeumorphicSheetCloseButton(
+                        onPressed: () => Navigator.pop(sheetContext),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   Text(
                     'คำร้อง: ${req.title}',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      color: NeumorphicTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -898,34 +892,55 @@ class _DonationRequestManagementPanelState
                   const SizedBox(height: 4),
                   Text(
                     'ยอดที่ได้รับ: ${NumberFormat('#,###').format(req.currentAmount.toInt())} บาท',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: NeumorphicTheme.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   const Text(
                     'เหตุผลการปิดรับ',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: NeumorphicTheme.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  ...reasons.map(
-                    (r) => RadioListTile<String>(
-                      title: Text(r, style: const TextStyle(fontSize: 14)),
-                      value: r,
-                      groupValue: selectedReason,
-                      contentPadding: EdgeInsets.zero,
-                      onChanged: (val) =>
-                          setModalState(() => selectedReason = val!),
+                  NeumorphicContainer(
+                    borderRadius: 16,
+                    depth: 4,
+                    blur: 8,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      children: reasons
+                          .map(
+                            (r) => RadioListTile<String>(
+                              title: Text(
+                                r,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: NeumorphicTheme.textPrimary,
+                                ),
+                              ),
+                              value: r,
+                              groupValue: selectedReason,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              activeColor: const Color(0xFF0066CC),
+                              onChanged: (val) =>
+                                  setModalState(() => selectedReason = val!),
+                            ),
+                          )
+                          .toList(),
                     ),
                   ),
                   if (selectedReason == 'อื่น ๆ') ...[
-                    const SizedBox(height: 8),
-                    TextField(
+                    const SizedBox(height: 12),
+                    NeumorphicInputField(
                       controller: reasonController,
-                      decoration: InputDecoration(
-                        hintText: 'ระบุเหตุผล',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
+                      hintText: 'ระบุเหตุผล',
+                      prefixIcon: Icons.edit_note_rounded,
                       maxLines: 2,
                     ),
                   ],
@@ -1059,18 +1074,18 @@ class _DonationRequestManagementPanelState
     final progressPercent = target > 0 ? (current / target * 100).toInt() : 0;
     final canEdit = req.approvalStatus == DonationApprovalStatus.pending_local;
 
-    return InkWell(
-      onTap: () => _showRequestDetail(req, cat),
-      borderRadius: BorderRadius.circular(16),
-      child: Card(
-        margin: const EdgeInsets.only(bottom: 16),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showRequestDetail(req, cat),
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey.shade200),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+          child: NeumorphicContainer(
+            borderRadius: 16,
+            depth: 5,
+            blur: 10,
+            padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1280,17 +1295,13 @@ class _DonationRequestManagementPanelState
                         : req.id;
                   });
                 },
-                child: Container(
+                child: NeumorphicContainer(
+                  borderRadius: 12,
+                  depth: 3,
+                  blur: 6,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.deepPurple.withOpacity(0.2),
-                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1381,37 +1392,44 @@ class _DonationRequestManagementPanelState
                   else if (req.approvalStatus ==
                           DonationApprovalStatus.active &&
                       req.currentAmount > 0) ...[
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.check_circle, size: 16),
-                      label: const Text('ปิดรับ'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0066CC),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                    NeumorphicPillButton(
+                      text: 'ปิดรับ',
+                      icon: Icons.check_circle,
+                      height: 34,
+                      fontSize: 12,
+                      iconSize: 14,
+                      depth: 3,
+                      blur: 6,
+                      color: const Color(0xFF0066CC),
                       onPressed: () => _showCloseDialog(req),
                     ),
                   ] else if (req.approvalStatus ==
                           DonationApprovalStatus.active &&
                       req.currentAmount == 0) ...[
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.cancel_outlined, size: 16),
-                      label: const Text('ยกเลิก'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                    NeumorphicPillButton(
+                      text: 'ยกเลิก',
+                      icon: Icons.cancel_outlined,
+                      height: 34,
+                      fontSize: 12,
+                      iconSize: 14,
+                      depth: 3,
+                      blur: 6,
+                      color: Colors.orange,
                       onPressed: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
                           builder: (context) => AlertDialog(
+                            backgroundColor: NeumorphicTheme.baseColor,
+                            titleTextStyle: AppTextStyles.heading3.copyWith(
+                              color: NeumorphicTheme.textPrimary,
+                            ),
+                            contentTextStyle: const TextStyle(
+                              color: NeumorphicTheme.textSecondary,
+                              fontSize: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                             title: const Text('ยืนยันการยกเลิก'),
                             content: const Text(
                               'คุณแน่ใจหรือไม่ว่าต้องการยกเลิกคำร้องขอนี้?',
@@ -1422,6 +1440,10 @@ class _DonationRequestManagementPanelState
                                 child: const Text('ปิด'),
                               ),
                               ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
                                 onPressed: () => Navigator.pop(context, true),
                                 child: const Text('ยืนยัน'),
                               ),
@@ -1435,15 +1457,18 @@ class _DonationRequestManagementPanelState
                       },
                     ),
                   ] else if (canEdit) ...[
-                    TextButton.icon(
-                      icon: const Icon(Icons.edit, size: 16),
-                      label: const Text('แก้ไข'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
+                    NeumorphicPillButton(
+                      text: 'แก้ไข',
+                      icon: Icons.edit,
+                      height: 34,
+                      fontSize: 12,
+                      iconSize: 14,
+                      depth: 3,
+                      blur: 6,
+                      color: NeumorphicTheme.primaryBlue,
                       onPressed: () => _showRequestDialog(req),
                     ),
+                    const SizedBox(width: 8),
                     _buildOverflowMenu(req),
                   ] else if (req.approvalStatus ==
                       DonationApprovalStatus.cancelled)
@@ -1507,6 +1532,7 @@ class _DonationRequestManagementPanelState
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -1527,20 +1553,35 @@ class _DonationRequestManagementPanelState
 
   Widget _buildOverflowMenu(DonationRequest req) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, size: 20, color: Colors.grey),
+      icon: const Icon(
+        Icons.more_vert,
+        size: 18,
+        color: NeumorphicTheme.textSecondary,
+      ),
       padding: EdgeInsets.zero,
+      color: NeumorphicTheme.baseColor,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       onSelected: (value) async {
         switch (value) {
           case 'cancel':
             final confirm = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
+                backgroundColor: NeumorphicTheme.baseColor,
+                titleTextStyle: AppTextStyles.heading3.copyWith(
+                  color: NeumorphicTheme.textPrimary,
+                ),
+                contentTextStyle: const TextStyle(
+                  color: NeumorphicTheme.textSecondary,
+                  fontSize: 14,
+                ),
                 title: const Text('ยืนยันการยกเลิก'),
                 content: const Text(
                   'คุณแน่ใจหรือไม่ว่าต้องการยกเลิกคำร้องขอนี้? คำร้องจะไม่ออกแสดงสู่สาธารณะ',
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 actions: [
                   TextButton(
@@ -1607,35 +1648,63 @@ class _DonationRequestManagementPanelState
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.showCreateButton ? 'ขอรับบริจาค' : 'คำร้องขอของคุณ',
-                  style: AppTextStyles.heading3.copyWith(
-                    color: AppColors.primary,
-                  ),
-                ),
-                if (!widget.showCreateButton)
-                  Text(
-                    'คำร้องที่ส่งแล้ว รอสถานะจากกลุ่มอาชีพ',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: Colors.grey.shade500,
+            Expanded(
+              child: Row(
+                children: [
+                  NeumorphicContainer(
+                    width: 36,
+                    height: 36,
+                    shape: BoxShape.circle,
+                    depth: 3,
+                    blur: 6,
+                    child: const Icon(
+                      Icons.volunteer_activism_outlined,
+                      size: 18,
+                      color: AppColors.primary,
                     ),
                   ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.showCreateButton
+                              ? 'ขอรับบริจาค'
+                              : 'คำร้องขอของคุณ',
+                          style: AppTextStyles.heading3.copyWith(
+                            color: NeumorphicTheme.textPrimary,
+                          ),
+                        ),
+                        if (!widget.showCreateButton)
+                          Text(
+                            'คำร้องที่ส่งแล้ว รอสถานะจากกลุ่มอาชีพ',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: NeumorphicTheme.textSecondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             Row(
               children: [
                 // ปุ่มรีเฟรชรายการ
-                IconButton(
+                NeumorphicIconButton(
                   onPressed: _loadRequests,
-                  icon: const Icon(Icons.refresh, size: 20),
+                  icon: Icons.refresh,
                   tooltip: 'รีเฟรชรายการ',
                   color: AppColors.primary,
                 ),
-                const SizedBox(width: 4),
-                ElevatedButton.icon(
+                const SizedBox(width: 8),
+                NeumorphicPillButton(
+                  text: 'ขอ',
+                  icon: Icons.add,
+                  height: 38,
+                  fontSize: 13,
+                  color: AppColors.primary,
                   onPressed: () =>
                       Navigator.push(
                         context,
@@ -1646,22 +1715,6 @@ class _DonationRequestManagementPanelState
                         // รีโหลดเสมอหลังจากกลับมา แม้ create page จะใช้ pushNamedAndRemoveUntil
                         _loadRequests();
                       }),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text(
-                    'ขอ',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -1670,24 +1723,30 @@ class _DonationRequestManagementPanelState
         const SizedBox(height: 16),
 
         if (_requests.isEmpty)
-          Container(
+          NeumorphicContainer(
+            borderRadius: 16,
+            depth: 4,
+            blur: 8,
             padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
             child: Column(
               children: [
-                Icon(
-                  Icons.assignment_outlined,
-                  size: 48,
-                  color: Colors.grey.shade400,
+                NeumorphicInsetBox(
+                  height: 72,
+                  width: 72,
+                  borderRadius: 36,
+                  child: Icon(
+                    Icons.assignment_outlined,
+                    size: 34,
+                    color: Colors.grey.shade400,
+                  ),
                 ),
                 const SizedBox(height: 16),
-                Text(
+                const Text(
                   'ยังไม่ได้ขอรับบริจาค',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                  style: TextStyle(
+                    color: NeumorphicTheme.textSecondary,
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),

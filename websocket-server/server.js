@@ -136,7 +136,10 @@ const io = new Server(server, {
 socketService.init(io);
 
 // Phase 13.3 Step 7 — revocation propagation (Redis Pub/Sub → force-disconnect)
-const { initSocketRevocation } = require('./services/socket-revocation');
+const {
+  initSocketRevocation,
+  shutdown: shutdownSocketRevocation,
+} = require('./services/socket-revocation');
 initSocketRevocation(io);
 
 // ── Phase 13.3 — Socket.IO Connection-Level Auth ──
@@ -2024,6 +2027,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received — shutting down gracefully');
+  shutdownSocketRevocation();
   escrowDeadlineChecker.stop();
   inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();
@@ -2039,6 +2043,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('[Server] SIGINT received — shutting down gracefully');
+  shutdownSocketRevocation();
   escrowDeadlineChecker.stop();
   inventoryAlertChecker.stop();
   emergencyHealthReleaseChecker.stop();

@@ -81,6 +81,9 @@ class CourtAvailabilityPicker extends StatelessWidget {
     return h * 60 + m;
   }
 
+  /// Slots the user can actually book — genuinely free and not past.
+  /// Not-yet-released slots are deliberately excluded; they render via
+  /// [visibleSlots] so the user can see when they open.
   List<({DateTime start, DateTime end})> get freeSlots =>
       hourlySlots(date, timezone: timezone)
           .where(
@@ -90,9 +93,23 @@ class CourtAvailabilityPicker extends StatelessWidget {
           )
           .toList();
 
+  /// freeOnly view: free slots plus not-yet-released slots (shown
+  /// disabled with their opensAt so the user can see them coming).
+  List<({DateTime start, DateTime end})> get visibleSlots {
+    if (!freeOnly) return hourlySlots(date, timezone: timezone);
+    final nowRef = now ?? VenueLocalTime.now(timezone);
+    return hourlySlots(date, timezone: timezone)
+        .where((slot) {
+          if (slot.start.isBefore(nowRef)) return false;
+          final state = _slotState(slot.start, slot.end);
+          return state == _SlotState.free || state == _SlotState.notOpen;
+        })
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final slots = freeOnly ? freeSlots : hourlySlots(date, timezone: timezone);
+    final slots = visibleSlots;
     final wrapAlignment = centered ? WrapAlignment.center : WrapAlignment.start;
     return Column(
       crossAxisAlignment: centered
@@ -120,6 +137,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
                 _SlotChip(
                   slot: slot,
                   state: _slotState(slot.start, slot.end),
+                  opensAtLabel: _opensAtLabel(slot.start),
                   selected: selectedStarts.contains(slot.start),
                   onTap: onSlotTap == null
                       ? null
@@ -141,6 +159,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
                 _legend(Colors.red.shade100, 'ถูกจอง'),
                 _legend(Colors.grey.shade300, 'ปิด'),
                 _legend(Colors.orange.shade100, 'ไม่พร้อม'),
+                _legend(Colors.blueGrey.shade100, 'ยังไม่เปิดจอง'),
               ],
             ),
           ),
@@ -167,6 +186,13 @@ class CourtAvailabilityPicker extends StatelessWidget {
     );
   }
 
+  /// Venue-local label for a not-yet-released slot's opensAt instant.
+  String? _opensAtLabel(DateTime slotStart) {
+    final opensAt = availability.opensAtFor(slotStart);
+    if (opensAt == null) return null;
+    return 'เปิดจอง ${VenueLocalTime.formatInstantWall(opensAt, timezone)}';
+  }
+
   _SlotState _slotState(DateTime start, DateTime end) {
     if (!_withinHours(start, end)) return _SlotState.closed;
     if (_overlaps(start, end, availability.booked)) return _SlotState.booked;
@@ -174,21 +200,30 @@ class CourtAvailabilityPicker extends StatelessWidget {
         !end.isAfter(now ?? VenueLocalTime.now(timezone))) {
       return _SlotState.unavailable;
     }
+    // 21.7.18: recurring release gate — the server lists which candidate
+    // slots are still sealed and when they open (venue-local instant).
+    final opensAt = availability.opensAtFor(start);
+    if (opensAt != null &&
+        opensAt.isAfter(now ?? VenueLocalTime.now(timezone))) {
+      return _SlotState.notOpen;
+    }
     return _SlotState.free;
   }
 }
 
-enum _SlotState { free, booked, closed, unavailable }
+enum _SlotState { free, booked, closed, unavailable, notOpen }
 
 class _SlotChip extends StatelessWidget {
   final ({DateTime start, DateTime end}) slot;
   final _SlotState state;
+  final String? opensAtLabel;
   final bool selected;
   final VoidCallback? onTap;
 
   const _SlotChip({
     required this.slot,
     required this.state,
+    this.opensAtLabel,
     this.selected = false,
     this.onTap,
   });
@@ -221,6 +256,12 @@ class _SlotChip extends StatelessWidget {
         Colors.orange.shade900,
         'ไม่พร้อมให้จอง',
       ),
+      _SlotState.notOpen => (
+        Colors.blueGrey.shade100,
+        Colors.blueGrey.shade300,
+        Colors.blueGrey.shade800,
+        opensAtLabel ?? 'ยังไม่เปิดจอง',
+      ),
     };
     final label = '${slot.start.hour.toString().padLeft(2, '0')}:00';
     return Tooltip(
@@ -228,6 +269,7 @@ class _SlotChip extends StatelessWidget {
       child: Semantics(
         selected: selected,
         button: onTap != null,
+        label: state == _SlotState.notOpen ? message : null,
         child: InkWell(
           onTap: free ? onTap : null,
           borderRadius: BorderRadius.circular(8),
@@ -238,13 +280,26 @@ class _SlotChip extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: border),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : foreground,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : foreground,
+                  ),
+                ),
+                if (state == _SlotState.notOpen && opensAtLabel != null)
+                  Text(
+                    opensAtLabel!,
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      color: Colors.blueGrey.shade700,
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

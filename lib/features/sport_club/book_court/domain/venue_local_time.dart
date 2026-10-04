@@ -4,6 +4,11 @@ import 'package:timezone/timezone.dart' as timezone;
 class VenueLocalTime {
   static bool _initialized = false;
 
+  /// Technical bound for date pickers (they require a finite lastDate).
+  /// NOT a business cap — venues without a release rule allow unlimited
+  /// advance booking (Phase 21.7.18). Roughly five years.
+  static const int maxAdvanceDays = 1826;
+
   static timezone.Location _location(String timeZone) {
     if (!_initialized) {
       timezone_data.initializeTimeZones();
@@ -49,4 +54,13 @@ class VenueLocalTime {
 
   static DateTime addCalendarDays(DateTime date, int days) =>
       DateTime(date.year, date.month, date.day + days);
+
+  /// 'd/M/BE HH:mm น.' in the venue timezone — the shared renderer for
+  /// booking-release opensAt instants on user-facing surfaces.
+  static String formatInstantWall(DateTime instant, String timeZone) {
+    final wall = wallTimeOfInstant(instant, timeZone);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${wall.day}/${wall.month}/${wall.year + 543} '
+        '${two(wall.hour)}:${two(wall.minute)} น.';
+  }
 }
