@@ -91,11 +91,11 @@ class _AdminPlatformVenueTermsPanelState
     final confirmed = await GlassConfirmDialog.show(
       context,
       icon: Icons.policy_outlined,
-      title: 'ยืนยันการเปลี่ยนเงื่อนไขมาตรฐานสนาม',
+      title: 'ยืนยันการเปลี่ยนเงื่อนไขมาตรฐานของสถานที่',
       content: Text(
         isUpdate
-            ? 'การบันทึกจะสร้างเวอร์ชันใหม่และมีผลกับสนามที่ใช้เงื่อนไขแพลตฟอร์ม ผู้จองจะต้องยอมรับเวอร์ชันใหม่ก่อนจองครั้งถัดไป ส่วนรายการจองเดิมจะคง snapshot เดิมไว้'
-            : 'เมื่อบันทึกแล้ว เจ้าของสนามจะเลือกใช้เงื่อนไขมาตรฐานนี้ได้ และผู้จองจะเห็นข้อความกับเวลายกเลิกที่กำหนดไว้',
+            ? 'การบันทึกจะสร้างเวอร์ชันใหม่และมีผลกับสถานที่ที่ใช้เงื่อนไขแพลตฟอร์ม ผู้จองจะต้องยอมรับเวอร์ชันใหม่ก่อนจองครั้งถัดไป ส่วนรายการจองเดิมจะคง snapshot เดิมไว้'
+            : 'เมื่อบันทึกแล้ว เจ้าของสถานที่จะเลือกใช้เงื่อนไขมาตรฐานนี้ได้ และผู้จองจะเห็นข้อความกับเวลายกเลิกที่กำหนดไว้',
         style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
       ),
       accentColor: AppColors.primary,
@@ -125,7 +125,7 @@ class _AdminPlatformVenueTermsPanelState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'บันทึกเงื่อนไขมาตรฐานสนามเวอร์ชัน ${updated.version} แล้ว',
+            'บันทึกเงื่อนไขมาตรฐานเวอร์ชัน ${updated.version} แล้ว',
           ),
         ),
       );
@@ -199,7 +199,7 @@ class _AdminPlatformVenueTermsPanelState
                       children: [
                         const Expanded(
                           child: Text(
-                            'เงื่อนไขมาตรฐานสนาม',
+                            'เงื่อนไขมาตรฐาน',
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -217,7 +217,7 @@ class _AdminPlatformVenueTermsPanelState
                     Text(
                       terms.isConfigured
                           ? 'เวอร์ชันปัจจุบัน ${terms.version}'
-                          : 'ยังไม่ได้ตั้งค่าโดยแอดมิน — เจ้าของสนามยังเลือกใช้เงื่อนไขแพลตฟอร์มไม่ได้',
+                          : 'ยังไม่ได้ตั้งค่าโดยแอดมิน — เจ้าของสถานที่ยังเลือกใช้เงื่อนไขแพลตฟอร์มไม่ได้',
                       style: TextStyle(
                         fontSize: 12,
                         color: terms.isConfigured
@@ -230,7 +230,7 @@ class _AdminPlatformVenueTermsPanelState
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'ข้อความนี้จะแสดงให้ผู้จองก่อนยืนยันการจอง เมื่อสนามเลือกใช้เงื่อนไขมาตรฐานของแพลตฟอร์ม',
+                      'ข้อความนี้จะแสดงให้ผู้จองก่อนยืนยันการจอง เมื่อสถานที่เลือกใช้เงื่อนไขมาตรฐานของแพลตฟอร์ม',
                       style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 16),
@@ -241,7 +241,7 @@ class _AdminPlatformVenueTermsPanelState
                       maxLines: 10,
                       maxLength: 10000,
                       decoration: const InputDecoration(
-                        labelText: 'ข้อความเงื่อนไขมาตรฐานสนาม',
+                        labelText: 'ข้อความเงื่อนไขมาตรฐาน',
                         alignLabelWithHint: true,
                         border: OutlineInputBorder(),
                       ),
@@ -292,7 +292,7 @@ class _AdminPlatformVenueTermsPanelState
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               child: Text(
-                'การแก้ไขสร้างเวอร์ชันใหม่ รายการจองเดิมเก็บข้อความและเวลายกเลิกที่ผู้จองยอมรับไว้ ส่วนการจองใหม่ของสนามที่ใช้มาตรฐานจะใช้เวอร์ชันล่าสุด',
+                'การแก้ไขสร้างเวอร์ชันใหม่ รายการจองเดิมเก็บข้อความและเวลายกเลิกที่ผู้จองยอมรับไว้ ส่วนการจองใหม่ของสถานที่ที่ใช้มาตรฐานจะใช้เวอร์ชันล่าสุด',
                 style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ),

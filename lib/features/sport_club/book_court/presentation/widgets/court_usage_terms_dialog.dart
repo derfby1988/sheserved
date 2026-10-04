@@ -59,7 +59,7 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'เงื่อนไขการใช้สนาม',
+              'เงื่อนไขการใช้งาน',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -86,7 +86,7 @@ class _CourtUsageTermsDialogBody extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text(
                         effective?.termsText ??
-                            'สนามนี้ยังไม่ได้ตั้งค่าเงื่อนไขมาตรฐาน จึงยังจองไม่ได้ กรุณากลับมาลองใหม่ภายหลัง',
+                            'สถานที่นี้ยังไม่ได้ตั้งค่าเงื่อนไขมาตรฐาน จึงยังจองไม่ได้ กรุณากลับมาลองใหม่ภายหลัง',
                         style: const TextStyle(
                           fontSize: 14,
                           height: 1.4,

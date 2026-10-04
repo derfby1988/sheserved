@@ -140,6 +140,11 @@ class VenueSummary {
   /// reported by `list_my_sports_venues`. Null on public surfaces.
   final String? memberRole;
 
+  /// Resolved venue-level unit label (สนาม/ยิม/ฟิตเนส/ห้อง…) — Phase 21.7.19.
+  /// Distinct from the resource labels of the courts inside the venue.
+  /// Null when the surface does not return it.
+  final String? venueUnitLabel;
+
   const VenueSummary({
     required this.id,
     required this.name,
@@ -160,6 +165,7 @@ class VenueSummary {
     this.photoUrls = const [],
     this.sportIds = const {},
     this.memberRole,
+    this.venueUnitLabel,
   });
 
   factory VenueSummary.fromJson(Map<String, dynamic> j) => VenueSummary(
@@ -179,6 +185,8 @@ class VenueSummary {
     startingPriceAmount: (j['starting_price_amount'] as num?)?.toDouble(),
     rejectionReason: j['rejection_reason']?.toString(),
     memberRole: j['member_role']?.toString(),
+    venueUnitLabel:
+        j['venue_unit_label']?.toString() ?? j['venueUnitLabel']?.toString(),
   );
 
   VenueSummary copyWith({
@@ -209,6 +217,7 @@ class VenueSummary {
     photoUrls: photoUrls ?? this.photoUrls,
     sportIds: sportIds ?? this.sportIds,
     memberRole: memberRole,
+    venueUnitLabel: venueUnitLabel,
   );
 }
 
@@ -226,17 +235,35 @@ class VenueCourt {
   final String? courtType;
   final bool? indoor;
   final BookingApprovalMode approvalMode;
+
+  /// Effective resource-level unit label (คอร์ท/โต๊ะ/เลน…) resolved
+  /// server-side — Phase 21.7.19.
   final String? unitLabel;
+
+  /// Raw per-court override the owner typed; null means this court inherits
+  /// the venue+sport resource default (then the sport catalog, then สนาม).
+  final String? unitLabelOverride;
   final bool isActive;
+
+  /// Explicit two-level name for [unitLabel] — the resource booked inside
+  /// the venue (คอร์ท/โต๊ะ/เลน), never the venue-level label.
+  String? get resourceUnitLabel => unitLabel;
 
   /// Court-level recurring booking release override (Phase 21.7.18).
   /// 'inherit' follows the venue rule, 'always_open' disables the gate
-  /// for this court and 'custom' uses this court's own day/time/window.
-  /// The custom triple is only populated when the mode is 'custom'.
+  /// for this court and 'custom' uses this court's selected days/time/window.
   final String bookingReleaseMode;
-  final int? bookingReleaseDayOfWeek; // 0 = Sunday
+  final int? bookingReleaseDayOfWeek; // 0 = Sunday, legacy first-day alias
+  final List<int> bookingReleaseDays; // 0 = Sunday
   final String? bookingReleaseTime; // 'HH:MM' venue-local
   final int? bookingReleaseWindowDays;
+
+  /// Selected release weekdays, falling back to the legacy singleton field.
+  List<int> get effectiveBookingReleaseDays {
+    if (bookingReleaseDays.isNotEmpty) return bookingReleaseDays;
+    final legacyDay = bookingReleaseDayOfWeek;
+    return legacyDay == null ? const [] : [legacyDay];
+  }
 
   const VenueCourt({
     required this.id,
@@ -252,38 +279,53 @@ class VenueCourt {
     this.indoor,
     this.approvalMode = BookingApprovalMode.instant,
     this.unitLabel,
+    this.unitLabelOverride,
     this.isActive = true,
     this.bookingReleaseMode = 'inherit',
     this.bookingReleaseDayOfWeek,
+    this.bookingReleaseDays = const [],
     this.bookingReleaseTime,
     this.bookingReleaseWindowDays,
   });
 
-  factory VenueCourt.fromJson(Map<String, dynamic> j) => VenueCourt(
-    id: j['id']?.toString() ?? '',
-    venueId: j['venue_id']?.toString() ?? '',
-    sportId: j['sport_id']?.toString() ?? '',
-    name: j['name']?.toString() ?? '',
-    capacity: (j['capacity'] as num?)?.toInt() ?? 1,
-    priceAmount: (j['price_amount'] as num?)?.toDouble(),
-    pricingUnit: j['pricing_unit']?.toString() ?? 'hour',
-    startingPriceAmount: (j['starting_price_amount'] as num?)?.toDouble(),
-    hasTimePricing: j['has_time_pricing'] == true,
-    courtType: j['court_type']?.toString(),
-    indoor: j['indoor'] as bool?,
-    approvalMode: bookingApprovalModeFrom(
-      j['booking_approval_mode']?.toString(),
-    ),
-    unitLabel: j['unit_label']?.toString(),
-    isActive: j['is_active'] != false,
-    bookingReleaseMode:
-        j['booking_release_mode']?.toString() ?? 'inherit',
-    bookingReleaseDayOfWeek:
-        (j['booking_release_day_of_week'] as num?)?.toInt(),
-    bookingReleaseTime: j['booking_release_time']?.toString(),
-    bookingReleaseWindowDays:
-        (j['booking_release_window_days'] as num?)?.toInt(),
-  );
+  factory VenueCourt.fromJson(Map<String, dynamic> j) {
+    final legacyDay = (j['booking_release_day_of_week'] as num?)?.toInt();
+    final parsedDays =
+        (j['booking_release_days'] as List?)
+            ?.whereType<num>()
+            .map((day) => day.toInt())
+            .toList() ??
+        const <int>[];
+    return VenueCourt(
+      id: j['id']?.toString() ?? '',
+      venueId: j['venue_id']?.toString() ?? '',
+      sportId: j['sport_id']?.toString() ?? '',
+      name: j['name']?.toString() ?? '',
+      capacity: (j['capacity'] as num?)?.toInt() ?? 1,
+      priceAmount: (j['price_amount'] as num?)?.toDouble(),
+      pricingUnit: j['pricing_unit']?.toString() ?? 'hour',
+      startingPriceAmount: (j['starting_price_amount'] as num?)?.toDouble(),
+      hasTimePricing: j['has_time_pricing'] == true,
+      courtType: j['court_type']?.toString(),
+      indoor: j['indoor'] as bool?,
+      approvalMode: bookingApprovalModeFrom(
+        j['booking_approval_mode']?.toString(),
+      ),
+      unitLabel: j['unit_label']?.toString(),
+      unitLabelOverride: j['unit_label_override']?.toString(),
+      isActive: j['is_active'] != false,
+      bookingReleaseMode: j['booking_release_mode']?.toString() ?? 'inherit',
+      bookingReleaseDayOfWeek: legacyDay,
+      bookingReleaseDays: parsedDays.isNotEmpty
+          ? parsedDays
+          : legacyDay == null
+          ? const []
+          : [legacyDay],
+      bookingReleaseTime: j['booking_release_time']?.toString(),
+      bookingReleaseWindowDays: (j['booking_release_window_days'] as num?)
+          ?.toInt(),
+    );
+  }
 }
 
 class VenueCourtPriceRule {
@@ -391,7 +433,7 @@ class VenueTerms {
   /// Legacy defaults mirrored by the unconfigured platform-terms seed.
   static const int baseVersion = 0;
   static const int baseCutoffMinutes = 60;
-  static const String baseTermsText = 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม';
+  static const String baseTermsText = 'เงื่อนไขการใช้งานมาตรฐานของแพลตฟอร์ม';
 
   factory VenueTerms.fromJson(Map<String, dynamic> j) => VenueTerms(
     id: j['id']?.toString() ?? '',
@@ -441,6 +483,15 @@ class VenueBooking {
   final String timezone;
   final String? courtName;
   final String? unitLabel;
+
+  /// Venue-level unit label snapshotted at booking creation — Phase 21.7.19.
+  /// Null for bookings created before the migration; render the neutral
+  /// term สถานที่ for those rows.
+  final String? venueUnitLabel;
+
+  /// Explicit two-level name for [unitLabel] — the resource-level snapshot
+  /// (คอร์ท/โต๊ะ/เลน) kept immutable on this booking.
+  String? get resourceUnitLabel => unitLabel;
   final double? priceAmount;
   final String? pricingUnit;
   final double? priceTotal;
@@ -470,6 +521,7 @@ class VenueBooking {
     this.timezone = 'Asia/Bangkok',
     this.courtName,
     this.unitLabel,
+    this.venueUnitLabel,
     this.priceAmount,
     this.pricingUnit,
     this.priceTotal,
@@ -520,6 +572,9 @@ class VenueBooking {
         'Asia/Bangkok',
     courtName: j['courtName']?.toString() ?? j['court_name']?.toString(),
     unitLabel: j['unitLabel']?.toString() ?? j['unit_label']?.toString(),
+    venueUnitLabel:
+        j['venueUnitLabel']?.toString() ??
+        j['venue_unit_label_snapshot']?.toString(),
     priceAmount:
         (j['priceAmount'] as num?)?.toDouble() ??
         (j['price_amount'] as num?)?.toDouble(),
@@ -846,24 +901,42 @@ class VenueReviewListPage {
 class CourtBookingRelease {
   /// 'inherit' (venue rule applies) or 'custom' (court override).
   final String mode;
-  final int dayOfWeek; // 0 = Sunday
+  final int dayOfWeek; // 0 = Sunday, legacy first-day alias
+  final List<int> daysOfWeek;
   final String releaseTime; // 'HH:MM' venue-local
   final int windowDays;
+  final String? selectedDayReleaseTime;
 
   const CourtBookingRelease({
     required this.mode,
     required this.dayOfWeek,
+    this.daysOfWeek = const [],
     required this.releaseTime,
     required this.windowDays,
+    this.selectedDayReleaseTime,
   });
 
-  factory CourtBookingRelease.fromJson(Map<String, dynamic> j) =>
-      CourtBookingRelease(
-        mode: j['mode']?.toString() ?? 'inherit',
-        dayOfWeek: (j['dayOfWeek'] as num?)?.toInt() ?? 0,
-        releaseTime: j['releaseTime']?.toString() ?? '00:00',
-        windowDays: (j['windowDays'] as num?)?.toInt() ?? 7,
-      );
+  /// Selected weekdays, falling back to the legacy one-day response alias.
+  List<int> get effectiveDaysOfWeek =>
+      daysOfWeek.isNotEmpty ? daysOfWeek : [dayOfWeek];
+
+  factory CourtBookingRelease.fromJson(Map<String, dynamic> j) {
+    final legacyDay = (j['dayOfWeek'] as num?)?.toInt() ?? 0;
+    final parsedDays =
+        (j['daysOfWeek'] as List?)
+            ?.whereType<num>()
+            .map((day) => day.toInt())
+            .toList() ??
+        const <int>[];
+    return CourtBookingRelease(
+      mode: j['mode']?.toString() ?? 'inherit',
+      dayOfWeek: legacyDay,
+      daysOfWeek: parsedDays.isNotEmpty ? parsedDays : [legacyDay],
+      releaseTime: j['releaseTime']?.toString() ?? '00:00',
+      windowDays: (j['windowDays'] as num?)?.toInt() ?? 7,
+      selectedDayReleaseTime: j['selectedDayReleaseTime']?.toString(),
+    );
+  }
 }
 
 /// Busy ranges for the read-only availability view of one court.
@@ -878,6 +951,8 @@ class CourtAvailability {
   /// or hide released slots.
   final DateTime? serverNow;
 
+  final DateTime? nextReleaseAt;
+
   /// Slots whose recurring release has not happened yet. Each entry
   /// carries the exact `opensAt` instant the slot becomes bookable.
   final List<({DateTime slotStart, DateTime opensAt})> notOpen;
@@ -891,6 +966,7 @@ class CourtAvailability {
     this.blocked = const [],
     this.hours = const [],
     this.serverNow,
+    this.nextReleaseAt,
     this.notOpen = const [],
     this.release,
   });
@@ -939,6 +1015,7 @@ class CourtAvailability {
               .toList() ??
           const [],
       serverNow: DateTime.tryParse(j['serverNow']?.toString() ?? ''),
+      nextReleaseAt: DateTime.tryParse(j['nextReleaseAt']?.toString() ?? ''),
       notOpen:
           (j['notOpen'] as List?)
               ?.map(

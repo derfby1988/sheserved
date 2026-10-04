@@ -95,12 +95,12 @@ class _CourtOwnerRegisterSheetBodyState
               ),
               const SizedBox(height: 16),
               const Text(
-                'ลงทะเบียนเจ้าของสนาม',
+                'ลงทะเบียนเจ้าของสถานที่',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Text(
-                'ส่งคำขอเป็นเจ้าของสนาม ทีมงานจะตรวจสอบและอนุมัติภายใน 1–3 วันทำการ',
+                'ส่งคำขอเป็นเจ้าของสถานที่ ทีมงานจะตรวจสอบและอนุมัติภายใน 1–3 วันทำการ',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
               const SizedBox(height: 16),

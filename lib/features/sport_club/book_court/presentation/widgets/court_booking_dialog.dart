@@ -34,6 +34,7 @@ class CourtBookingDialog {
     required VenueCourt court,
     required String venueName,
     required String timezone,
+    String? venueUnitLabel,
     required Future<CourtAvailability> Function(
       String courtId,
       DateTime from,
@@ -59,6 +60,7 @@ class CourtBookingDialog {
         court: court,
         venueName: venueName,
         timezone: timezone,
+        venueUnitLabel: venueUnitLabel,
         loadAvailability: loadAvailability,
         quotePrice: quotePrice,
         initialDate: initialDate,
@@ -88,6 +90,9 @@ class _CourtBookingDialogBody extends StatefulWidget {
   final VenueCourt court;
   final String venueName;
   final String timezone;
+
+  /// Resolved venue-level label (สนาม/ยิม/ฟิตเนส…) — Phase 21.7.19.
+  final String? venueUnitLabel;
   final DateTime? initialDate;
   final DateTime? initialSlotStart;
   final Future<CourtAvailability> Function(
@@ -108,6 +113,7 @@ class _CourtBookingDialogBody extends StatefulWidget {
     required this.court,
     required this.venueName,
     required this.timezone,
+    this.venueUnitLabel,
     required this.loadAvailability,
     required this.quotePrice,
     required this.allowDisjoint,
@@ -354,7 +360,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody>
   String? get _priceQuoteError {
     if (_priceError != null) return _priceError;
     if (_priceQuotes.any((quote) => quote.errorCode != null)) {
-      return 'สนามยังไม่ได้กำหนดราคาครบในช่วงเวลาที่เลือก';
+      return '${widget.court.unitLabel ?? 'สนาม'} ยังไม่ได้กำหนดราคาครบในช่วงเวลาที่เลือก';
     }
     return null;
   }
@@ -430,7 +436,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody>
                 ),
               ),
               Text(
-                'เวลาท้องถิ่นของสนาม (${widget.timezone})',
+                'เวลาท้องถิ่นของ${widget.venueUnitLabel ?? 'สนาม'} (${widget.timezone})',
                 style: TextStyle(
                   fontSize: 11.5,
                   color: Colors.white.withValues(alpha: 0.55),
@@ -613,7 +619,7 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody>
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                'สนามนี้ต้องรอเจ้าของอนุมัติ',
+                                '${court.unitLabel ?? 'สนาม'}นี้ต้องรอเจ้าของอนุมัติ',
                                 style: TextStyle(
                                   fontSize: 12.5,
                                   color: Colors.orange.shade900,

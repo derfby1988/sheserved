@@ -119,11 +119,17 @@ List<VenueOperatingHours> _weekHours() => [
     ),
 ];
 
-Future<void> _selectAvailabilityDate(WidgetTester tester, DateTime date) async {
-  final today = VenueLocalTime.today(_venue.timezone);
-  await tester.tap(find.text(ThaiDateUtils.formatShortDateBE2Digit(today)));
+Future<void> _selectAvailabilityDate(
+  WidgetTester tester,
+  DateTime date, {
+  DateTime? fromDate,
+}) async {
+  final currentDate = fromDate ?? VenueLocalTime.today(_venue.timezone);
+  await tester.tap(
+    find.text(ThaiDateUtils.formatShortDateBE2Digit(currentDate)),
+  );
   await tester.pumpAndSettle();
-  if (today.year != date.year || today.month != date.month) {
+  if (currentDate.year != date.year || currentDate.month != date.month) {
     await tester.tap(find.bySemanticsLabel('เดือนถัดไป'));
     await tester.pumpAndSettle();
   }
@@ -586,7 +592,7 @@ void main() {
 
     expect(find.text('สนามหลังจวน'), findsOneWidget);
     expect(find.text('ยังไม่มีรีวิว'), findsOneWidget);
-    expect(find.text('เจ้าของสนาม'), findsNothing);
+    expect(find.text('เจ้าของสถานที่'), findsNothing);
   });
 
   testWidgets('review section loads the owner avatar and name', (tester) async {
@@ -597,7 +603,7 @@ void main() {
     await tester.pumpWidget(_harness(repo));
     await _openSheet(tester);
 
-    expect(find.text('เจ้าของสนาม'), findsOneWidget);
+    expect(find.text('เจ้าของสถานที่'), findsOneWidget);
     expect(find.text('สมชาย ศ.'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
     expect(find.byIcon(Icons.person_rounded), findsOneWidget);
@@ -660,6 +666,9 @@ void main() {
 
     expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
     expect(find.text('ตารางว่าง'), findsOneWidget);
+    expect(find.text('เวลาเปิดรับจอง: 09:00'), findsNothing);
+    expect(find.text('เปิดจองล่วงหน้าได้ไม่จำกัดวัน'), findsNothing);
+    expect(find.textContaining('เวลาท้องถิ่นของ'), findsNothing);
     expect(
       tester.getTopLeft(find.text('ตารางว่าง')).dy,
       greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
@@ -670,6 +679,130 @@ void main() {
 
     expect(find.text('ตารางว่าง'), findsNothing);
     expect(find.byType(NeumorphicInsetBox), findsOneWidget);
+  });
+
+  testWidgets(
+    'venue release applies on weekdays and court override applies Saturday',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      final today = VenueLocalTime.today(_venue.timezone);
+      final venueDateOffset = List.generate(7, (offset) => offset).firstWhere((
+        offset,
+      ) {
+        final day = VenueLocalTime.addCalendarDays(today, offset);
+        final weekDay = day.weekday % DateTime.daysPerWeek;
+        return weekDay >= 1 && weekDay <= 5;
+      });
+      final venueDate = VenueLocalTime.addCalendarDays(today, venueDateOffset);
+      final saturdayOffset = List.generate(7, (offset) => offset + 1)
+          .firstWhere(
+            (offset) =>
+                VenueLocalTime.addCalendarDays(venueDate, offset).weekday %
+                    DateTime.daysPerWeek ==
+                6,
+          );
+      final saturday = VenueLocalTime.addCalendarDays(
+        venueDate,
+        saturdayOffset,
+      );
+      CourtBookingRelease releaseForDate(String? selectedDayTime) =>
+          CourtBookingRelease(
+            mode: 'custom',
+            dayOfWeek: 1,
+            daysOfWeek: [1, 2, 3, 4, 5, 6],
+            releaseTime: '10:00:00',
+            windowDays: 7,
+            selectedDayReleaseTime: selectedDayTime,
+          );
+      final hours = [
+        for (var day = 0; day < DateTime.daysPerWeek; day++)
+          VenueOperatingHours(
+            dayOfWeek: day,
+            openTime: '06:00',
+            closeTime: '23:00',
+          ),
+      ];
+      repo.courts = [_instantCourt];
+      repo.availabilityResponses.addAll([
+        CourtAvailability(
+          courtId: 'court-1',
+          hours: hours,
+          release: releaseForDate(null),
+        ),
+        CourtAvailability(
+          courtId: 'court-1',
+          hours: hours,
+          release: releaseForDate('09:00:00'),
+        ),
+        CourtAvailability(
+          courtId: 'court-1',
+          hours: hours,
+          release: releaseForDate('10:00:00'),
+        ),
+      ]);
+      await tester.pumpWidget(_harness(repo));
+      await _openSheet(tester);
+
+      await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+      await tester.pumpAndSettle();
+      await _selectAvailabilityDate(tester, venueDate);
+
+      expect(find.text('เวลาเปิดรับจอง: 09:00'), findsOneWidget);
+
+      await _selectAvailabilityDate(tester, saturday, fromDate: venueDate);
+
+      expect(find.text('เวลาเปิดรับจอง: 10:00'), findsOneWidget);
+      expect(find.textContaining('Asia/Bangkok'), findsNothing);
+    },
+  );
+
+  testWidgets('all-closed availability shows the next release date and time', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final today = VenueLocalTime.today(_venue.timezone);
+    final nextReleaseDate = VenueLocalTime.addCalendarDays(today, 1);
+    final nextReleaseDay = nextReleaseDate.weekday % DateTime.daysPerWeek;
+    repo.availability = CourtAvailability(
+      courtId: 'court-1',
+      hours: [
+        VenueOperatingHours(
+          dayOfWeek: today.weekday % DateTime.daysPerWeek,
+          isClosed: true,
+        ),
+      ],
+      release: CourtBookingRelease(
+        mode: 'inherit',
+        dayOfWeek: nextReleaseDay,
+        daysOfWeek: [nextReleaseDay],
+        releaseTime: '09:00:00',
+        windowDays: 7,
+      ),
+      nextReleaseAt: VenueLocalTime.atWallTime(
+        nextReleaseDate,
+        _venue.timezone,
+        9,
+      ),
+    );
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'เปิดจองครั้งถัดไปในวันที่ '
+        '${ThaiDateUtils.formatShortDateBE2Digit(nextReleaseDate)} '
+        'เริ่มเวลา 09:00 น.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('เวลาเปิดรับจอง:'), findsNothing);
   });
 
   testWidgets('only one court grid stays open at a time', (tester) async {
@@ -897,7 +1030,7 @@ void main() {
 
     expect(find.text('สนามลาดพร้าว'), findsOneWidget);
     expect(
-      find.text('เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง'),
+      find.text('เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อเจ้าของสถานที่โดยตรง'),
       findsOneWidget,
     );
   });

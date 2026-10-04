@@ -41,7 +41,7 @@ class BookCourtQuickFilterRow extends StatelessWidget {
       child: Semantics(
         button: true,
         checked: selected,
-        label: 'ตัวกรองสนาม$text ${selected ? 'เปิดอยู่' : 'ปิดอยู่'}',
+        label: 'ตัวกรองสถานที่$text ${selected ? 'เปิดอยู่' : 'ปิดอยู่'}',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -131,7 +131,7 @@ class BookCourtQuickFilterRow extends StatelessWidget {
             ),
             _chip(
               key: 'available',
-              label: 'คอร์ทว่าง',
+              label: 'มีรายการว่าง',
               selected: availableOnly,
               icon: Icons.event_available_rounded,
             ),

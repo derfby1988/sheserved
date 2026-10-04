@@ -24,6 +24,9 @@ typedef VenueUpsert =
       double? lat,
       double? lng,
       String? timezone,
+      // 21.7.19: optional custom venue-level label at create time
+      // (sport-derived labels come later via the reference sport).
+      String? venueUnitLabelOverride,
     });
 typedef AdminApplicationsList =
     Future<List<VenueOwnerProfile>> Function(String adminId, {String status});

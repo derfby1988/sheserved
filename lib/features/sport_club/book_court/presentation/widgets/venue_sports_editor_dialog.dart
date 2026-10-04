@@ -5,15 +5,19 @@ import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 /// Owner editor dialog for a venue's sport set. Multi-selects from the
 /// approved sports catalog and captures an optional `unit_label_override`
-/// per sport. Returns the `p_sports` list for `set_sports_venue_sports`:
-/// `[{sport_id, unit_label_override}]`.
+/// per sport (resource-level, e.g. "คอร์ท", "โต๊ะ"), plus the venue's
+/// unit-label reference sport (Phase 21.7.19). Returns
+/// `{'sports': [{sport_id, unit_label_override}], 'referenceSportId': …}`
+/// for `set_sports_venue_sports` / `set_sports_venue_unit_label`.
 class VenueSportsEditorDialog {
-  static Future<List<Map<String, dynamic>>?> show(
+  static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required List<Map<String, dynamic>> sports,
     required Map<String, String> selectedUnits,
+    required Map<String, String> venueUnitSuggestions,
+    String? referenceSportId,
   }) {
-    return GlassDialog.show<List<Map<String, dynamic>>>(
+    return GlassDialog.show<Map<String, dynamic>>(
       context: context,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       panelAccentColor: AppColors.primary,
@@ -21,6 +25,8 @@ class VenueSportsEditorDialog {
       builder: (dialogContext) => _VenueSportsEditorDialogBody(
         sports: sports,
         selectedUnits: selectedUnits,
+        venueUnitSuggestions: venueUnitSuggestions,
+        referenceSportId: referenceSportId,
       ),
     );
   }
@@ -30,9 +36,15 @@ class _VenueSportsEditorDialogBody extends StatefulWidget {
   final List<Map<String, dynamic>> sports;
   final Map<String, String> selectedUnits;
 
+  /// sport_id → suggested venue label from the th catalog (missing → สนาม).
+  final Map<String, String> venueUnitSuggestions;
+  final String? referenceSportId;
+
   const _VenueSportsEditorDialogBody({
     required this.sports,
     required this.selectedUnits,
+    required this.venueUnitSuggestions,
+    this.referenceSportId,
   });
 
   @override
@@ -42,9 +54,12 @@ class _VenueSportsEditorDialogBody extends StatefulWidget {
 
 class _VenueSportsEditorDialogBodyState
     extends State<_VenueSportsEditorDialogBody> {
+  static const _generic = 'สนาม';
+
   late final Map<String, String> _selected = Map.of(widget.selectedUnits);
   final Map<String, TextEditingController> _unitControllers = {};
   final ScrollController _scrollController = ScrollController();
+  late String? _reference = _initialReference();
 
   @override
   void initState() {
@@ -52,6 +67,13 @@ class _VenueSportsEditorDialogBodyState
     for (final entry in _selected.entries) {
       _unitControllers[entry.key] = TextEditingController(text: entry.value);
     }
+  }
+
+  String? _initialReference() {
+    final current = widget.referenceSportId;
+    if (current != null && _selected.containsKey(current)) return current;
+    if (_selected.length == 1) return _selected.keys.first;
+    return null;
   }
 
   @override
@@ -69,6 +91,13 @@ class _VenueSportsEditorDialogBodyState
       sport['id']?.toString() ??
       '';
 
+  String _sportNameById(String sportId) {
+    for (final sport in widget.sports) {
+      if (sport['id']?.toString() == sportId) return _sportName(sport);
+    }
+    return sportId;
+  }
+
   void _toggle(String sportId, bool selected) {
     setState(() {
       if (selected) {
@@ -76,6 +105,9 @@ class _VenueSportsEditorDialogBodyState
         _unitControllers.putIfAbsent(sportId, () => TextEditingController());
       } else {
         _selected.remove(sportId);
+        // The reference sport must stay a member — dropping it here mirrors
+        // the server's auto-clear.
+        if (_reference == sportId) _reference = null;
       }
     });
   }
@@ -88,7 +120,10 @@ class _VenueSportsEditorDialogBodyState
           'unit_label_override': _unitControllers[sportId]?.text.trim() ?? '',
         },
     ];
-    Navigator.pop(context, draft);
+    Navigator.pop(context, {
+      'sports': draft,
+      'referenceSportId': _reference,
+    });
   }
 
   @override
@@ -111,7 +146,7 @@ class _VenueSportsEditorDialogBodyState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'กีฬาของสนาม',
+                        'กีฬาของสถานที่',
                         style: TextStyle(
                           fontSize: 15.5,
                           fontWeight: FontWeight.w700,
@@ -120,7 +155,7 @@ class _VenueSportsEditorDialogBodyState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'เลือกกีฬาที่สนามเปิดให้จอง และกำหนดหน่วยนับได้ตามต้องการ',
+                        'เลือกกีฬาที่สถานที่เปิดให้จอง และกำหนดหน่วยนับได้ตามต้องการ',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.white.withValues(alpha: 0.65),
@@ -145,24 +180,76 @@ class _VenueSportsEditorDialogBodyState
                   controller: _scrollController,
                   thumbVisibility: true,
                   interactive: true,
-                  child: ListView.builder(
+                  child: ListView(
                     controller: _scrollController,
                     shrinkWrap: true,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    itemCount: widget.sports.length,
-                    itemBuilder: (context, index) {
-                      final sport = widget.sports[index];
-                      return _SportRow(
-                        name: _sportName(sport),
-                        selected:
-                            _selected.containsKey(sport['id']?.toString()),
-                        unitController:
-                            _unitControllers[sport['id']?.toString() ?? ''],
-                        onChanged: (value) =>
-                            _toggle(sport['id']?.toString() ?? '', value),
-                      );
-                    },
+                    children: [
+                      for (final sport in widget.sports)
+                        _SportRow(
+                          name: _sportName(sport),
+                          selected:
+                              _selected.containsKey(sport['id']?.toString()),
+                          unitController:
+                              _unitControllers[sport['id']?.toString() ?? ''],
+                          onChanged: (value) =>
+                              _toggle(sport['id']?.toString() ?? '', value),
+                        ),
+                      const SizedBox(height: 4),
+                      const Divider(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'กีฬาอ้างอิงชื่อสถานที่',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'ใช้กำหนดว่าเรียกสถานที่นี้ว่าอะไร '
+                              '(เช่น สนาม, ยิม, สตูดิโอ) เมื่อเจ้าของไม่ได้ตั้งเอง',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String?>(
+                              key: const ValueKey('venue-label-reference'),
+                              isExpanded: true,
+                              initialValue: _reference,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('ไม่เลือก — ใช้คำกลาง "สนาม"'),
+                                ),
+                                for (final sportId in _selected.keys)
+                                  DropdownMenuItem<String?>(
+                                    value: sportId,
+                                    child: Text(
+                                      '${_sportNameById(sportId)} → '
+                                      '${widget.venueUnitSuggestions[sportId] ?? _generic}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (v) =>
+                                  setState(() => _reference = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -229,7 +316,7 @@ class _SportRow extends StatelessWidget {
               decoration: const InputDecoration(
                 isDense: true,
                 counterText: '',
-                labelText: 'หน่วยนับ (เช่น คอร์ท, โต๊ะ)',
+                labelText: 'หน่วยที่จองได้ของกีฬานี้ (เช่น คอร์ท, โต๊ะ)',
                 border: OutlineInputBorder(),
               ),
             ),

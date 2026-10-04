@@ -71,7 +71,7 @@ class CourtBookingActionDialogs {
               ),
               const SizedBox(height: 12),
               Text(
-                'การจองนี้เลยกำหนดยกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง',
+                'การจองนี้เลยกำหนดยกเลิกฟรีแล้ว กรุณาติดต่อเจ้าของสถานที่โดยตรง',
                 style: TextStyle(
                   fontSize: 12.5,
                   color: Colors.white.withValues(alpha: 0.75),
@@ -117,7 +117,7 @@ class CourtBookingActionDialogs {
               const SizedBox(height: 12),
               Text(
                 'ช่วงเวลาที่คุณขอถูกจองไปแล้ว คำขอยังคงรออนุมัติอยู่ — '
-                'คุณสามารถเปลี่ยนเวลาในสนามเดิมหรือยกเลิกคำขอได้',
+                'คุณสามารถเปลี่ยนเวลาในสถานที่เดิมหรือยกเลิกคำขอได้',
                 style: TextStyle(
                   fontSize: 12.5,
                   color: Colors.white.withValues(alpha: 0.75),

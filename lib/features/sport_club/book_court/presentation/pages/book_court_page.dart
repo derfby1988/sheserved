@@ -368,6 +368,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       court: court,
       venueName: venue.name,
       timezone: venue.timezone,
+      venueUnitLabel: venue.venueUnitLabel,
       loadAvailability: _repo.getCourtAvailability,
       quotePrice: _repo.quoteCourtPrice,
       initialDate: initialDate ?? _filter.date,
@@ -422,7 +423,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
           if (ranges.length == 1) {
             _toast(
               court.approvalMode == BookingApprovalMode.instant
-                  ? 'จองสนามสำเร็จ'
+                  ? 'จองสำเร็จ'
                   : 'ส่งคำขอจองแล้ว รอเจ้าของอนุมัติ',
             );
           } else {
@@ -576,7 +577,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
         contactEmail: result.contactEmail,
       );
       if (!mounted) return;
-      _toast('ส่งใบสมัครเจ้าของสนามแล้ว รอการอนุมัติ');
+      _toast('ส่งใบสมัครเจ้าของสถานที่แล้ว รอการอนุมัติ');
     } catch (e) {
       _toast(_mapOwnerApplicationError(e));
     }
@@ -588,7 +589,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
       return 'มีใบสมัครที่รอการอนุมัติอยู่แล้ว';
     }
     if (raw.contains('ALREADY_APPROVED')) {
-      return 'บัญชีนี้เป็นเจ้าของสนามที่อนุมัติแล้ว';
+      return 'บัญชีนี้เป็นเจ้าของสถานที่ที่อนุมัติแล้ว';
     }
     if (raw.contains('OWNER_SUSPENDED')) {
       return 'บัญชีเจ้าของถูกระงับ กรุณาติดต่อทีมงาน';
@@ -634,10 +635,10 @@ class _BookCourtPageState extends State<BookCourtPage> {
             bottom: 120,
             child: FloatingActionButton.extended(
               heroTag: 'book_court_register_venue',
-              tooltip: 'ลงทะเบียนสนาม',
+              tooltip: 'ลงทะเบียนสถานที่',
               onPressed: _openOwnerRegistration,
               icon: const Icon(Icons.storefront_rounded),
-              label: const Text('ลงทะเบียนสนาม'),
+              label: const Text('ลงทะเบียนสถานที่'),
             ),
           ),
       ],
@@ -688,7 +689,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
                         onPressed: _openMyBookings,
                       ),
                       IconButton(
-                        tooltip: 'จัดการสนามของฉัน',
+                        tooltip: 'จัดการสถานที่ของฉัน',
                         icon: const Icon(Icons.storefront_rounded),
                         onPressed: _openOwnerDashboard,
                       ),
@@ -727,7 +728,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'ไม่พบสนามที่ตรงกับตัวกรอง',
+                              'ไม่พบสถานที่ที่ตรงกับตัวกรอง',
                               style: TextStyle(
                                 fontSize: 15,
                                 color: Colors.grey.shade700,
@@ -783,19 +784,19 @@ class _BookCourtPageState extends State<BookCourtPage> {
       return 'ช่วงเวลานี้ยังไม่เปิดจอง กรุณาลองใหม่ภายหลัง';
     }
     if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
-      return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
+      return 'สถานที่ยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อเจ้าของสถานที่หรือกลับมาลองใหม่ภายหลัง';
     }
     if (raw.contains('TERMS_VERSION_CHANGED')) {
-      return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาลองใหม่';
+      return 'เงื่อนไขของสถานที่เปลี่ยนแล้ว กรุณาลองใหม่';
     }
     if (raw.contains('PRICE_CHANGED')) {
-      return 'ราคาสนามเปลี่ยนแล้ว กรุณาเลือกเวลาใหม่เพื่อตรวจสอบราคา';
+      return 'ราคาของสถานที่เปลี่ยนแล้ว กรุณาเลือกเวลาใหม่เพื่อตรวจสอบราคา';
     }
     if (raw.contains('PRICE_VERSION_REQUIRED')) {
-      return 'กรุณาอัปเดตแอปก่อนจองสนามที่กำหนดราคาแยกช่วงเวลา';
+      return 'กรุณาอัปเดตแอปก่อนจองสถานที่ที่กำหนดราคาแยกช่วงเวลา';
     }
     if (raw.contains('PRICE_NOT_CONFIGURED')) {
-      return 'สนามยังไม่ได้กำหนดราคาในช่วงเวลานี้';
+      return 'สถานที่ยังไม่ได้กำหนดราคาในช่วงเวลานี้';
     }
     if (raw.contains('SLOT_TAKEN') ||
         raw.contains('OVERLAP') ||
@@ -803,12 +804,12 @@ class _BookCourtPageState extends State<BookCourtPage> {
       return 'ช่วงเวลานี้ถูกจองแล้ว กรุณาเลือกเวลาอื่น';
     }
     if (raw.contains('VENUE_NOT_APPROVED') || raw.contains('COURT_INACTIVE')) {
-      return 'สนามนี้ไม่เปิดรับจองแล้ว';
+      return 'สถานที่นี้ไม่เปิดรับจองแล้ว';
     }
     if (raw.contains('PGRST202') ||
         raw.contains('PGRST203') ||
         raw.contains('PGRST204')) {
-      return 'ระบบจองสนามยังไม่พร้อม กรุณาอัปเดต Supabase migrations แล้วลองใหม่';
+      return 'ระบบจองยังไม่พร้อม กรุณาอัปเดต Supabase migrations แล้วลองใหม่';
     }
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
     return 'จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';

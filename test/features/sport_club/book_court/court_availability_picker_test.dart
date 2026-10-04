@@ -175,6 +175,7 @@ void main() {
       final a = CourtAvailability.fromJson({
         'courtId': 'c1',
         'serverNow': '2040-01-01T02:00:00Z',
+        'nextReleaseAt': '2040-01-02T03:00:00Z',
         'booked': [],
         'blocked': [],
         'hours': [],
@@ -187,12 +188,15 @@ void main() {
         'release': {
           'mode': 'inherit',
           'dayOfWeek': 1,
+          'daysOfWeek': [1, 3],
           'releaseTime': '09:00',
           'windowDays': 14,
+          'selectedDayReleaseTime': '10:00',
         },
       });
 
       expect(a.serverNow, DateTime.utc(2040, 1, 1, 2));
+      expect(a.nextReleaseAt, DateTime.utc(2040, 1, 2, 3));
       expect(a.notOpen.single.slotStart, DateTime.utc(2040, 1, 5, 3));
       expect(
         a.opensAtFor(DateTime.utc(2040, 1, 5, 3)),
@@ -200,7 +204,34 @@ void main() {
       );
       expect(a.opensAtFor(DateTime.utc(2040, 1, 5, 4)), isNull);
       expect(a.release?.mode, 'inherit');
+      expect(a.release?.selectedDayReleaseTime, '10:00');
+      expect(a.release?.effectiveDaysOfWeek, [1, 3]);
       expect(a.release?.windowDays, 14);
+    });
+
+    test('court details parse selected release weekdays', () {
+      final court = VenueCourt.fromJson({
+        'id': 'c1',
+        'venue_id': 'v1',
+        'sport_id': 's1',
+        'name': 'Court 1',
+        'booking_release_mode': 'custom',
+        'booking_release_day_of_week': 0,
+        'booking_release_days': [0, 1, 2, 3, 4, 5, 6],
+        'booking_release_time': '09:00',
+        'booking_release_window_days': 1,
+      });
+      expect(court.effectiveBookingReleaseDays, [0, 1, 2, 3, 4, 5, 6]);
+    });
+
+    test('legacy one-day release payload maps to one selected day', () {
+      final release = CourtBookingRelease.fromJson({
+        'mode': 'custom',
+        'dayOfWeek': 5,
+        'releaseTime': '09:00',
+        'windowDays': 7,
+      });
+      expect(release.effectiveDaysOfWeek, [5]);
     });
 
     test('older payloads without release fields still decode', () {
@@ -216,7 +247,7 @@ void main() {
       expect(a.release, isNull);
     });
 
-    testWidgets('sealed slots show opensAt, stay visible and reject taps', (
+    testWidgets('sealed slots keep button size, stay visible and reject taps', (
       tester,
     ) async {
       const timezone = 'Asia/Bangkok';
@@ -253,12 +284,22 @@ void main() {
 
       // The sealed slot is shown for discovery but is not bookable.
       expect(find.text('15:00'), findsOneWidget);
+      expect(find.textContaining('เปิดจอง '), findsNothing);
       expect(
         find.byTooltip(
           'เปิดจอง ${VenueLocalTime.formatInstantWall(opensAt, timezone)}',
         ),
         findsOneWidget,
       );
+      final sealedChip = find.ancestor(
+        of: find.text('15:00'),
+        matching: find.byType(InkWell),
+      );
+      final freeChip = find.ancestor(
+        of: find.text('16:00'),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.getSize(sealedChip), tester.getSize(freeChip));
       final picker = CourtAvailabilityPicker(
         availability: availability,
         date: date,

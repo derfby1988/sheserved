@@ -72,21 +72,21 @@ List<VenueSetupStep> computeVenueSetupSteps({
   return [
     VenueSetupStep(
       id: VenueSetupStepId.ownerApproved,
-      label: 'เจ้าของสนามได้รับอนุมัติ',
+      label: 'เจ้าของสถานที่ได้รับอนุมัติ',
       done: ownerApproved,
       note: ownerApproved
           ? null
-          : 'บัญชีเจ้าของของสนามนี้ยังไม่อนุมัติ — ตรวจสอบที่แดชบอร์ด',
+          : 'บัญชีเจ้าของของสถานที่นี้ยังไม่อนุมัติ — ตรวจสอบที่แดชบอร์ด',
     ),
     VenueSetupStep(
       id: VenueSetupStepId.venueCreated,
-      label: 'สร้างสนาม',
+      label: 'สร้างสถานที่',
       done: venueCreated,
-      note: venueCreated ? null : 'สร้างสนามจากแดชบอร์ด',
+      note: venueCreated ? null : 'สร้างสถานที่จากแดชบอร์ด',
     ),
     VenueSetupStep(
       id: VenueSetupStepId.sports,
-      label: 'ตั้งค่ากีฬาของสนาม',
+      label: 'ตั้งค่ากีฬาของสถานที่',
       done: hasSports,
       actionable: venueCreated && !hasSports,
     ),
@@ -104,19 +104,19 @@ List<VenueSetupStep> computeVenueSetupSteps({
     ),
     VenueSetupStep(
       id: VenueSetupStepId.terms,
-      label: 'ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสนาม',
+      label: 'ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสถานที่',
       done: termsDone,
       actionable: venueCreated && !termsDone,
     ),
     VenueSetupStep(
       id: VenueSetupStepId.courts,
-      label: 'มีคอร์ทที่เปิดใช้งานอย่างน้อย 1 รายการ',
+      label: 'มีรายการที่เปิดใช้งานอย่างน้อย 1 รายการ',
       done: hasActiveCourts,
       actionable: hasSports && !hasActiveCourts,
     ),
     VenueSetupStep(
       id: VenueSetupStepId.venueApproved,
-      label: 'ทีมงานอนุมัติสนาม → เปิดรับการจอง',
+      label: 'ทีมงานอนุมัติสถานที่ → เปิดรับการจอง',
       done: venueApproved,
       note: reviewNote,
     ),

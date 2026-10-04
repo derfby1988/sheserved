@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
+import '../../domain/court_booking_release_schedule.dart';
 import '../../domain/venue_setup_progress.dart';
 import '../widgets/owner_court_editor_dialog.dart';
 import '../widgets/venue_amenities_editor_dialog.dart';
@@ -24,6 +25,7 @@ import '../widgets/venue_release_editor_dialog.dart';
 import '../widgets/venue_setup_checklist_card.dart';
 import '../widgets/venue_sports_editor_dialog.dart';
 import '../widgets/venue_terms_editor_dialog.dart';
+import '../widgets/venue_unit_label_editor_dialog.dart';
 import 'court_owner_bookings_page.dart';
 
 /// Per-venue management page (Phase 21.7.11): setup progress checklist for
@@ -58,6 +60,10 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
 
   Map<String, dynamic>? _detail;
   List<Map<String, dynamic>> _sportCatalog = [];
+
+  /// sport_id → Thai venue-label suggestion from the catalog, used to
+  /// preview the sport-derived label in the editors (Phase 21.7.19).
+  Map<String, String> _venueUnitSuggestions = {};
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -113,6 +119,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
 
   bool get _usesPlatformTerms => _venueMap['uses_platform_terms'] == true;
 
+  /// Resolved venue-level label for single-venue copy (Phase 21.7.19) —
+  /// detail RPC value first, then the summary's, then the generic term.
+  String get _venueLabel =>
+      _venueMap['venueUnitLabel']?.toString() ??
+      _venue.venueUnitLabel ??
+      'สนาม';
+
   bool get _hoursComplete => _hours.map((h) => h.dayOfWeek).toSet().length == 7;
 
   bool get _hasActiveCourts => _courts.any((c) => c.isActive);
@@ -158,17 +171,17 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
 
   static const _missingLabels = {
     'owner_not_approved': 'บัญชีเจ้าของยังไม่อนุมัติ',
-    'name': 'ชื่อสนาม',
+    'name': 'ชื่อสถานที่',
     'province': 'จังหวัด',
     'district': 'อำเภอ/เขต',
     'address': 'ที่อยู่',
     'location': 'พิกัดละติจูด/ลองจิจูด',
     'timezone': 'เขตเวลา',
-    'sports': 'กีฬาของสนาม',
+    'sports': 'กีฬาของสถานที่',
     'hours': 'เวลาเปิด–ปิดครบ 7 วัน',
     'amenities': 'ยืนยันสิ่งอำนวยความสะดวก',
-    'terms': 'เลือกเงื่อนไขการใช้สนาม',
-    'courts': 'คอร์ทที่เปิดใช้งาน',
+    'terms': 'เลือกเงื่อนไขการใช้งาน',
+    'courts': 'รายการที่เปิดใช้งาน',
   };
 
   bool get _readyForReview => _setupMissing.isEmpty;
@@ -237,9 +250,16 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         _buddiesRepo.getApprovedSports(userId: userId),
       ]);
       if (!mounted) return false;
+      final detail = results[0] as Map<String, dynamic>;
+      final catalog = results[1] as List<Map<String, dynamic>>;
+      final suggestions = await widget.repo.listVenueUnitDefaults([
+        for (final s in catalog) s['id']?.toString() ?? '',
+      ]);
+      if (!mounted) return false;
       setState(() {
-        _detail = results[0] as Map<String, dynamic>;
-        _sportCatalog = results[1] as List<Map<String, dynamic>>;
+        _detail = detail;
+        _sportCatalog = catalog;
+        _venueUnitSuggestions = suggestions;
         _loading = false;
       });
       return true;
@@ -278,13 +298,33 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
               vs['sport_id']?.toString() ?? '':
                   vs['unit_label_override']?.toString() ?? '',
           },
+          venueUnitSuggestions: _venueUnitSuggestions,
+          referenceSportId: _venueMap['venue_unit_label_sport_id']?.toString(),
         );
         if (draft == null) return;
-        if (!_confirmSportRemoval(draft)) return;
-        await _persist(
-          () => widget.repo.setVenueSports(userId, _venue.id, draft),
-          'บันทึกกีฬาของสนามแล้ว',
-        );
+        final sports = (draft['sports'] as List).cast<Map<String, dynamic>>();
+        final newReference = draft['referenceSportId']?.toString();
+        if (!_confirmSportRemoval(sports)) return;
+        if (!await _confirmReferenceFallback(sports, newReference)) return;
+        await _persist(() async {
+          await widget.repo.setVenueSports(
+            userId,
+            _venue.id,
+            sports,
+            referenceSportId: newReference,
+          );
+          // A NULL p_reference_sport_id means auto-heal (keep-if-member),
+          // so an explicit "ไม่เลือก" needs a second write that clears the
+          // reference while preserving the current override verbatim.
+          if (newReference == null) {
+            await widget.repo.setVenueUnitLabel(
+              userId,
+              _venue.id,
+              override: _venueMap['venue_unit_label_override']?.toString(),
+              referenceSportId: null,
+            );
+          }
+        }, 'บันทึกกีฬาของ$_venueLabelแล้ว');
       case VenueSetupStepId.hours:
         final draft = await VenueHoursEditorDialog.show(
           context,
@@ -334,13 +374,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                   ListTile(
                     leading: const Icon(Icons.verified_user_outlined),
                     title: const Text('ใช้เงื่อนไขมาตรฐานของแพลตฟอร์ม'),
-                    subtitle: const Text('เหมาะสำหรับสนามทั่วไป'),
+                    subtitle: const Text('เหมาะสำหรับสถานที่ทั่วไป'),
                     onTap: () => Navigator.pop(c, 'platform'),
                   ),
                   ListTile(
                     leading: const Icon(Icons.edit_note_rounded),
-                    title: const Text('เขียนเงื่อนไขของสนามเอง'),
-                    subtitle: const Text('ระบุ cutoff และเงื่อนไขเฉพาะสนาม'),
+                    title: const Text('เขียนเงื่อนไขเอง'),
+                    subtitle: const Text('ระบุ cutoff และเงื่อนไขเฉพาะสถานที่'),
                     onTap: () => Navigator.pop(c, 'custom'),
                   ),
                 ],
@@ -417,8 +457,8 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'มี $blocked คอร์ทที่เปิดใช้งานผูกกับกีฬานี้ '
-                  '— ปิดการใช้งานหรือย้ายคอร์ทไปกีฬาอื่นก่อน',
+                  'มี $blocked รายการที่เปิดใช้งานผูกกับกีฬานี้ '
+                  '— ปิดการใช้งานหรือย้ายไปกีฬาอื่นก่อน',
                   style: TextStyle(
                     fontSize: 12.5,
                     color: Colors.white.withValues(alpha: 0.75),
@@ -439,6 +479,79 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       ),
     );
     return false;
+  }
+
+  /// Warns before saving when the draft drops the current label reference
+  /// sport without a replacement and the venue has no custom label — the
+  /// resolved name would silently fall back to the generic สนาม.
+  Future<bool> _confirmReferenceFallback(
+    List<Map<String, dynamic>> sports,
+    String? newReference,
+  ) async {
+    final oldRef = _venueMap['venue_unit_label_sport_id']?.toString();
+    if (oldRef == null || newReference != null) return true;
+    final stillMember = sports.any((s) => s['sport_id']?.toString() == oldRef);
+    if (stillMember) return true;
+    if ((_venueMap['venue_unit_label_override']?.toString() ?? '').isNotEmpty) {
+      return true;
+    }
+    if (!mounted) return false;
+    final confirmed = await GlassDialog.show<bool>(
+      context: context,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      contentPadding: EdgeInsets.zero,
+      builder: (dialogContext) => ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'ชื่อเรียกจะกลับเป็นคำกลาง',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'กีฬาที่ใช้อ้างอิงชื่อสถานที่ถูกเอาออกและยังไม่ได้เลือกกีฬาใหม่ '
+                '— ชื่อเรียกจะกลับไปใช้คำกลาง "สนาม" จนกว่าจะตั้งค่าใหม่',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: GlassActionButton(
+                      label: 'ยกเลิก',
+                      onTap: () => Navigator.of(dialogContext).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: GlassActionButton(
+                      label: 'บันทึกต่อ',
+                      isFilled: true,
+                      fillColor: AppColors.primaryDark,
+                      onTap: () => Navigator.of(dialogContext).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return confirmed == true;
   }
 
   Future<void> _editVenueProfile() async {
@@ -470,7 +583,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         lng: draft['lng'] as double?,
         timezone: draft['timezone'] as String?,
       ),
-      'บันทึกข้อมูลสนามแล้ว',
+      'บันทึกข้อมูล$_venueLabelแล้ว',
     );
   }
 
@@ -487,7 +600,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     final userId = _userId;
     if (userId == null) return;
     if (_venueSports.isEmpty) {
-      _toast('กรุณาตั้งค่ากีฬาของสนามก่อนเพิ่มคอร์ท');
+      _toast('กรุณาตั้งค่ากีฬาก่อนเพิ่มรายการที่จองได้');
       return;
     }
     var priceRules = const <VenueCourtPriceRule>[];
@@ -498,7 +611,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         _toast(
           e.toString().contains('PGRST202')
               ? _mapError(e)
-              : 'โหลดช่วงราคาของคอร์ทไม่สำเร็จ กรุณาลองใหม่',
+              : 'โหลดช่วงราคาไม่สำเร็จ กรุณาลองใหม่',
         );
         return;
       }
@@ -525,9 +638,9 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         courtType: draft['court_type'] as String?,
         indoor: draft['indoor'] as bool?,
         approvalMode: draft['approval_mode'] as String,
-        unitLabel: (draft['unit_label'] as String?)?.trim().isEmpty == true
-            ? null
-            : draft['unit_label'] as String?,
+        unitLabel: draft['unit_label'] as String?,
+        unitLabelMode: draft['unit_label_mode'] as String?,
+        unitLabelOverride: draft['unit_label'] as String?,
         isActive: draft['is_active'] as bool? ?? court?.isActive ?? true,
         priceRules: (draft['price_rules'] as List)
             .map(
@@ -537,18 +650,43 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             )
             .toList(),
         bookingReleaseMode: draft['booking_release_mode'] as String?,
-        bookingReleaseDayOfWeek:
-            draft['booking_release_day_of_week'] as int?,
+        bookingReleaseDayOfWeek: draft['booking_release_day_of_week'] as int?,
+        bookingReleaseDays: (draft['booking_release_days'] as List?)
+            ?.cast<int>(),
         bookingReleaseTime: draft['booking_release_time'] as String?,
-        bookingReleaseWindowDays:
-            draft['booking_release_window_days'] as int?,
+        bookingReleaseWindowDays: draft['booking_release_window_days'] as int?,
       ),
-      court == null ? 'เพิ่มคอร์ทแล้ว' : 'บันทึกคอร์ทแล้ว',
+      court == null ? 'เพิ่มรายการแล้ว' : 'บันทึกรายการแล้ว',
+    );
+  }
+
+  /// Venue-level unit label (Phase 21.7.19): override, reference sport or
+  /// generic fallback — written verbatim by set_sports_venue_unit_label.
+  Future<void> _editVenueLabel() async {
+    final userId = _userId;
+    if (userId == null || _saving) return;
+    final v = _venueMap;
+    final draft = await VenueUnitLabelEditorDialog.show(
+      context,
+      sports: _sportChoices,
+      suggestions: _venueUnitSuggestions,
+      currentOverride: v['venue_unit_label_override']?.toString(),
+      currentReferenceSportId: v['venue_unit_label_sport_id']?.toString(),
+    );
+    if (draft == null) return;
+    await _persist(
+      () => widget.repo.setVenueUnitLabel(
+        userId,
+        _venue.id,
+        override: draft.override,
+        referenceSportId: draft.referenceSportId,
+      ),
+      'บันทึกชื่อเรียกสถานที่แล้ว',
     );
   }
 
   /// Venue-level recurring booking release (Phase 21.7.18). Courts set to
-  /// "ตามสนาม" inherit this rule; clearing it makes advance booking
+  /// "ตามสถานที่" inherit this rule; clearing it makes advance booking
   /// unlimited again.
   Future<void> _editVenueRelease() async {
     final userId = _userId;
@@ -556,18 +694,20 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     final v = _venueMap;
     final draft = await VenueReleaseEditorDialog.show(
       context,
-      currentDayOfWeek:
-          (v['booking_release_day_of_week'] as num?)?.toInt(),
+      currentDaysOfWeek: (v['booking_release_days'] as List?)
+          ?.whereType<num>()
+          .map((day) => day.toInt())
+          .toList(),
+      currentDayOfWeek: (v['booking_release_day_of_week'] as num?)?.toInt(),
       currentTime: v['booking_release_time']?.toString(),
-      currentWindowDays:
-          (v['booking_release_window_days'] as num?)?.toInt(),
+      currentWindowDays: (v['booking_release_window_days'] as num?)?.toInt(),
     );
     if (draft == null) return;
     await _persist(
-      () => widget.repo.setVenueBookingRelease(
+      () => widget.repo.setVenueBookingReleaseDays(
         userId,
         _venue.id,
-        dayOfWeek: draft.cleared ? null : draft.dayOfWeek,
+        daysOfWeek: draft.cleared ? null : draft.daysOfWeek,
         releaseTime: draft.cleared ? null : draft.time,
         windowDays: draft.cleared ? null : draft.windowDays,
       ),
@@ -683,6 +823,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                             children: [
                               _buildStatusCard(),
                               _buildVenueInfoCard(),
+                              _buildVenueLabelCard(),
                               _buildReleaseCard(),
                               VenueSetupChecklistCard(
                                 steps: steps,
@@ -772,7 +913,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          'คุณเป็นผู้จัดการของสนามนี้',
+                          'คุณเป็นผู้จัดการของ$_venueLabelนี้',
                           style: TextStyle(
                             fontSize: 11.5,
                             color: Colors.grey.shade600,
@@ -856,17 +997,17 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         );
       case VenueStatus.pending:
         return Text(
-          'ทีมงานกำลังตรวจสอบข้อมูลสนามของคุณ',
+          'ทีมงานกำลังตรวจสอบข้อมูล$_venueLabelของคุณ',
           style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
         );
       case VenueStatus.suspended:
         return Text(
-          'สนามถูกระงับ — หากต้องการอุทธรณ์ กรุณาติดต่อทีมงาน Sheserved',
+          '$_venueLabelถูกระงับ — หากต้องการอุทธรณ์ กรุณาติดต่อทีมงาน Sheserved',
           style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
         );
       case VenueStatus.approved:
         return Text(
-          'สนามแสดงในรายการสาธารณะและเปิดรับการจองแล้ว',
+          '$_venueLabelแสดงในรายการสาธารณะและเปิดรับการจองแล้ว',
           style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
         );
       default:
@@ -892,10 +1033,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'ข้อมูลสนาม',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  'ข้อมูล$_venueLabel',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               TextButton.icon(
@@ -922,7 +1066,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             _infoLine(Icons.notes_rounded, v['description'].toString()),
           const SizedBox(height: 4),
           Text(
-            'รูปภาพสนาม: ไม่บังคับสำหรับการอนุมัติ',
+            'รูปภาพ$_venueLabel: ไม่บังคับสำหรับการอนุมัติ',
             style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
           ),
         ],
@@ -933,25 +1077,31 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
   /// 21.7.18 venue-level recurring release card. Shows the effective rule
   /// (or "unlimited") and opens [VenueReleaseEditorDialog] to change it.
   Widget _buildReleaseCard() {
-    const weekdayLabels = {
-      0: 'อาทิตย์',
-      1: 'จันทร์',
-      2: 'อังคาร',
-      3: 'พุธ',
-      4: 'พฤหัสบดี',
-      5: 'ศุกร์',
-      6: 'เสาร์',
-    };
     final v = _venueMap;
-    final day = (v['booking_release_day_of_week'] as num?)?.toInt();
+    final legacyDay = (v['booking_release_day_of_week'] as num?)?.toInt();
+    final parsedDays =
+        (v['booking_release_days'] as List?)
+            ?.whereType<num>()
+            .map((day) => day.toInt())
+            .toList() ??
+        const <int>[];
+    final days = parsedDays.isNotEmpty
+        ? parsedDays
+        : legacyDay == null
+        ? const <int>[]
+        : [legacyDay];
     final time = v['booking_release_time']?.toString();
     final window = (v['booking_release_window_days'] as num?)?.toInt();
-    final ruleSet = day != null && time != null && window != null;
+    final ruleSet = days.isNotEmpty && time != null && window != null;
+    final displayTime = time == null
+        ? ''
+        : time.substring(0, time.length >= 5 ? 5 : time.length);
     final summary = ruleSet
-        ? 'เปิดจองทุกวัน${weekdayLabels[day] ?? ''} เวลา ${time.substring(0, time.length >= 5 ? 5 : time.length)} · ล่วงหน้า $window วัน'
-        : 'ไม่จำกัด — จองล่วงหน้าได้ทุกวัน';
-    final overridden =
-        _courts.where((c) => c.bookingReleaseMode != 'inherit').length;
+        ? 'เปิดรอบ ${CourtBookingReleaseSchedule.describeDays(days)} เวลา $displayTime · แต่ละรอบล่วงหน้า $window วัน'
+        : 'ไม่จำกัดจำนวนวันจองล่วงหน้า';
+    final overridden = _courts
+        .where((c) => c.bookingReleaseMode != 'inherit')
+        .length;
     return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
@@ -980,11 +1130,62 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
           if (overridden > 0)
             _infoLine(
               Icons.tune_rounded,
-              '$overridden คอร์ทตั้งรอบเปิดจองเอง (ดูในหน้าแก้ไขคอร์ท)',
+              '$overridden รายการตั้งรอบเปิดจองเอง (ดูในหน้าแก้ไขรายการ)',
             ),
           const SizedBox(height: 4),
           Text(
             'สล็อตที่ยังไม่ถึงรอบเปิดจองจะแสดงแต่ผู้ใช้เลือกจองไม่ได้ — กฎมีผลทันทีกับการจองใหม่',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 21.7.19 venue-level unit label card. Shows the resolved label and its
+  /// source (custom / reference sport / generic) and opens
+  /// [VenueUnitLabelEditorDialog].
+  Widget _buildVenueLabelCard() {
+    final v = _venueMap;
+    final resolved = v['venueUnitLabel']?.toString();
+    final override = v['venue_unit_label_override']?.toString();
+    final referenceId = v['venue_unit_label_sport_id']?.toString();
+    final source = override != null
+        ? 'กำหนดเอง'
+        : referenceId != null
+        ? 'ตามกีฬา ${_sportChoices[referenceId] ?? ''}'
+        : 'คำกลาง';
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'เรียกสถานที่นี้ว่า',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _saving ? null : _editVenueLabel,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('แก้ไข'),
+              ),
+            ],
+          ),
+          _infoLine(
+            Icons.label_outline_rounded,
+            resolved != null ? '"$resolved" · $source' : 'ยังไม่ได้ระบุ',
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'คำนี้ใช้เรียกสถานที่ในหน้าจองและการแจ้งเตือน — แยกจากชื่อเรียกหน่วยที่จองได้ (เช่น คอร์ท, โต๊ะ) ซึ่งตั้งได้รายกีฬา/รายการ',
             style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
           ),
         ],
@@ -1030,7 +1231,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             children: [
               Expanded(
                 child: Text(
-                  'คอร์ท (${courts.length})',
+                  'รายการที่จองได้ (${courts.length})',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -1040,7 +1241,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
               FilledButton.tonalIcon(
                 onPressed: _saving || !canAdd ? null : () => _editCourt(),
                 icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('เพิ่มคอร์ท'),
+                label: const Text('เพิ่มรายการ'),
               ),
             ],
           ),
@@ -1048,7 +1249,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                'ตั้งค่ากีฬาของสนามก่อนจึงจะเพิ่มคอร์ทได้',
+                'ตั้งค่ากีฬาก่อนจึงจะเพิ่มรายการได้',
                 style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
               ),
             ),
@@ -1056,7 +1257,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
-                'ยังไม่มีคอร์ท',
+                'ยังไม่มีรายการที่จองได้',
                 style: TextStyle(color: Colors.grey.shade600),
               ),
             )
@@ -1084,7 +1285,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                     if (court.bookingReleaseMode == 'always_open')
                       'เปิดจองตลอด'
                     else if (court.bookingReleaseMode == 'custom')
-                      'รอบเปิดจองเฉพาะคอร์ท',
+                      'รอบเปิดจองเฉพาะรายการ',
                     if (!court.isActive) 'ปิดใช้งาน',
                   ].where((s) => s.isNotEmpty).join(' · '),
                   style: const TextStyle(fontSize: 12),
@@ -1104,7 +1305,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
   static String _mapError(Object e) {
     final raw = e.toString();
     if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
-      return 'ทีมงานยังไม่ได้ตั้งเงื่อนไขมาตรฐานสนาม กรุณาลองใหม่ภายหลัง';
+      return 'ทีมงานยังไม่ได้ตั้งเงื่อนไขมาตรฐานของสถานที่ กรุณาลองใหม่ภายหลัง';
     }
     if (raw.contains('PGRST202')) {
       return 'ระบบฐานข้อมูลยังไม่พร้อม กรุณาอัปเดต Supabase migrations แล้วลองใหม่';
@@ -1114,19 +1315,28 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       return 'กรุณาระบุเวลายกเลิกเป็นจำนวนนาทีที่ไม่ติดลบ';
     }
     if (raw.contains('NOT_VENUE_MANAGER')) {
-      return 'คุณไม่มีสิทธิ์จัดการสนามนี้';
+      return 'คุณไม่มีสิทธิ์จัดการสถานที่นี้';
     }
     if (raw.contains('SPORT_NOT_ON_VENUE')) {
-      return 'กีฬานี้ยังไม่ได้ตั้งค่าในสนาม';
+      return 'กีฬานี้ยังไม่ได้ตั้งค่าในสถานที่นี้';
     }
     if (raw.contains('SPORT_IN_USE')) {
-      return 'เอากีฬาออกไม่ได้ — ยังมีคอร์ทที่เปิดใช้งานผูกกับกีฬานี้';
+      return 'เอากีฬาออกไม่ได้ — ยังมีรายการที่เปิดใช้งานผูกกับกีฬานี้';
+    }
+    if (raw.contains('INVALID_UNIT_LABEL_REFERENCE')) {
+      return 'กีฬาอ้างอิงต้องเป็นหนึ่งในกีฬาของสถานที่นี้';
+    }
+    if (raw.contains('INVALID_UNIT_LABEL_MODE')) {
+      return 'รูปแบบชื่อเรียกไม่ถูกต้อง กรุณาลองใหม่';
+    }
+    if (raw.contains('INVALID_UNIT_LABEL')) {
+      return 'ชื่อเรียกต้องมีความยาว 1–40 ตัวอักษร';
     }
     if (raw.contains('INVALID_TERMS')) {
-      return 'กรุณากรอกเงื่อนไขการใช้สนาม';
+      return 'กรุณากรอกเงื่อนไขการใช้งาน';
     }
     if (raw.contains('INVALID_COURT')) {
-      return 'กรุณากรอกชื่อคอร์ท';
+      return 'กรุณากรอกชื่อรายการ';
     }
     if (raw.contains('OVERLAPPING_PRICE_RULES')) {
       return 'ช่วงเวลาราคาซ้อนกัน กรุณาแก้ช่วงเวลา';
@@ -1147,13 +1357,13 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
       return 'รูปแบบเวลาเปิด–ปิดไม่ถูกต้อง (ไม่รองรับข้ามเที่ยงคืน)';
     }
     if (raw.contains('VENUE_NOT_READY')) {
-      return 'ตั้งค่าสนามยังไม่ครบตามเงื่อนไขการตรวจสอบ';
+      return 'ตั้งค่าสถานที่ยังไม่ครบตามเงื่อนไขการตรวจสอบ';
     }
     if (raw.contains('INVALID_STATUS')) {
-      return 'สถานะสนามไม่อนุญาตให้ทำรายการนี้';
+      return 'สถานะสถานที่ไม่อนุญาตให้ทำรายการนี้';
     }
     if (raw.contains('OWNER_NOT_APPROVED')) {
-      return 'บัญชีเจ้าของสนามยังไม่ได้รับการอนุมัติ';
+      return 'บัญชีเจ้าของสถานที่ยังไม่ได้รับการอนุมัติ';
     }
     return 'ทำรายการไม่สำเร็จ กรุณาลองใหม่';
   }

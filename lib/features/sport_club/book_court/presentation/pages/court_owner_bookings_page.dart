@@ -299,7 +299,7 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
       return 'ช่วงเวลานี้ถูกจองแล้ว';
     }
     if (raw.contains('UNAUTHORIZED') || raw.contains('NOT_VENUE_MANAGER')) {
-      return 'คุณไม่มีสิทธิ์จัดการสนามนี้';
+      return 'คุณไม่มีสิทธิ์จัดการสถานที่นี้';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

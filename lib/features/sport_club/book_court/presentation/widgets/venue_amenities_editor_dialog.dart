@@ -74,7 +74,7 @@ class _VenueAmenitiesEditorDialogBodyState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'ถ้าสนามไม่มีสิ่งอำนวยความสะดวก กดบันทึกโดยไม่เลือก — ระบบจะบันทึกว่าคุณยืนยันแล้ว',
+                        'ถ้าสถานที่ไม่มีสิ่งอำนวยความสะดวก กดบันทึกโดยไม่เลือก — ระบบจะบันทึกว่าคุณยืนยันแล้ว',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.white.withValues(alpha: 0.65),

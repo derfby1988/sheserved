@@ -131,7 +131,7 @@ class CourtCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${venue.courtCount} สนาม/คอร์ท',
+                        '${venue.courtCount} รายการ',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade700,

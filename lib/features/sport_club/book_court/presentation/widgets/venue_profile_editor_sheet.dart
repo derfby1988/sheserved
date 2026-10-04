@@ -156,7 +156,7 @@ class _VenueProfileEditorSheetBodyState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'ข้อมูลสนาม',
+                'ข้อมูลสถานที่',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
@@ -170,7 +170,7 @@ class _VenueProfileEditorSheetBodyState
                 maxLength: 120,
                 decoration: const InputDecoration(
                   counterText: '',
-                  labelText: 'ชื่อสนาม/สถานที่ *',
+                  labelText: 'ชื่อสถานที่ *',
                   border: OutlineInputBorder(),
                 ),
                 onChanged: (_) => setState(() {}),

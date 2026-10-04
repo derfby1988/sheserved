@@ -5635,3 +5635,249 @@ Phase 16 แบ่งเป็นลำดับบังคับ 4 ระด�
 
 - Compile/build ผ่าน (`flutter build web --no-tree-shake-icons`) แต่ยังไม่มี browser smoke: upload รูปผ่าน face-blur endpoint, emergency map markers, incident report media
 - สถานะ verify ทั้งหมดอยู่ในหลักฐานท้าย W1 ของ web enablement plan
+
+## 19. Phase — Emergency Photo Reports: Privacy-Safe Slideshow and Multi-Photo Gallery
+
+**สถานะ:** แผนใหม่ — ยังไม่ implement
+
+**ขอบเขต:** เฉพาะการแจ้งเหตุฉุกเฉินด้วยภาพนิ่งของผู้แจ้ง (`type = emergency_photo`) ไม่เปลี่ยน flow ภาพไทยมุง (`thai_mhung_photo`), วิดีโอฉุกเฉินจริง, donation, mission/response, category, GPS หรือ interaction contracts
+
+**ข้อสรุปจากการตรวจ:** ทำได้โดยไม่สร้าง video record/incident ใหม่ แต่ต้องทำเป็น **ภาพนิ่งที่ประมวลผลแล้ว + slideshow rendition เสริม** ไม่ใช่แทนภาพต้นฉบับด้วยแถววิดีโอใหม่ การสร้าง slideshow ต้องไม่ทำให้เหตุการณ์หายไประหว่างประมวลผล และห้ามมี URL/bytes ของต้นฉบับใน API รายการทั่วไป, WebSocket, thumbnail, public CDN หรือ gallery; การอ่านต้นฉบับที่ผู้ใช้อนุมัติต้องผ่าน endpoint แยกที่ authenticate, authorize และ audit เท่านั้น
+
+> Face detector ไม่มีทางรับประกันว่า detect ทุกใบหน้าได้ 100%; ความสมบูรณ์ที่ทำได้จากระบบคือ fail-closed เมื่อ pipeline ล้มเหลว, ไม่เผยแพร่ต้นฉบับให้ public/ผู้ใช้ทั่วไป (เก็บเฉพาะ private store ตาม access/retention policy ที่เลือก), บันทึกสถานะอย่างตรงไปตรงมา และไม่อ้างว่า `blur_status = completed` เป็นหลักฐานว่าตรวจพบ/เบลอทุกใบหน้าแล้ว
+
+### 19.1 สภาพปัจจุบันและช่องว่างที่ยืนยันจากโค้ด
+
+- `/upload-photos` สร้าง `videos` row หนึ่งแถวและเก็บหลาย URL ใน `videos.photo_urls`; `bunny_url` และ placeholder `thumbnail_url` ใช้ภาพแรก ส่วน thumbnail job ปัจจุบันรับ `originalPaths` ก่อน blur (`websocket-server/routes/video.js:268-295, 324-365`); route ยังส่ง `photo_urls` ทั้งชุดกลับใน response ทันที (`routes/video.js:442-450`) ก่อน blur สำเร็จ; `TEMP_VIDEO_PATH` ถูก mount เป็น static ที่ `/temp/videos` (`websocket-server/server.js:288-310`) จึงห้ามถือว่า path นี้เป็น private quarantine
+- ปัจจุบัน record ถูก set `status = processing` ตอน insert แล้ว route เปลี่ยนเป็น `ready` ก่อน background processing เสร็จ (`routes/video.js:361-405, 442-449`); สถานะ video record จึงบอกไม่ได้ว่า photo derivatives/privacy blur พร้อมหรือไม่ ต้องมี batch media status แยก
+- การ insert ใน `thai_mhung_photos` และ background blur ใน route ใช้เฉพาะ `isThaiMhung && validatedIncidentId` (`routes/video.js:410, 453`). ดังนั้นภาพของผู้แจ้งเหตุปกติไม่ได้ถูก insert ในตารางที่ `GET /:id/gallery` query และใช้กับ Thai Mhung Ruler Gallery
+- `face-blur-service.js` คืนผลล้มเหลวพร้อม `outputPath` ต้นฉบับเมื่อ blur ไม่สำเร็จ; route ปัจจุบันยังเลือกใช้ path นั้นต่อและอัปเดต `blur_status = 'completed'` (`routes/video.js:467-505`). Video worker ก็มี fail-open ไปใช้ original video (`services/video-service.js:123-166`). ห้ามนำพฤติกรรม fallback เหล่านี้มาใช้กับ media ใหม่ที่อ้างว่าปกป้องใบหน้าแล้ว
+- `thumbnailQueue` ถูก enqueue ก่อน blur และได้รับไฟล์ต้นฉบับ; การต่อ gallery อย่างเดียวแต่ปล่อย thumbnail เดิมไว้จะยังเผยภาพที่ไม่ผ่าน processing
+- `getThaiMhungGalleryPhotos()` query ตาราง `thai_mhung_photos`; Supabase fallback ก็ query ตารางเดิม (`video_repository.dart:129-195`). ตารางนี้มี public insert/select policy และความหมายเฉพาะภาพไทยมุง (`20260320120000_create_thai_mhung_photos.sql`); การนำภาพผู้แจ้งมาปนจะเปลี่ยน semantics, event stream, quota และ access policy ของของเดิม
+- Upload repository คืน key `photoUrls` แต่ `_sendPhotos()` อ่าน `photo_urls` (`video_repository.dart:918-924`, `emergency_reporting_logic.dart:279-305`) ทำให้การเพิ่ม placeholder ใน client อาจข้ามแม้ server ส่ง URL มาแล้ว ต้องแทน loose `Map` ด้วย typed result หรือใช้ key เดียวกันและมี regression test
+- `Video.fromJson` map เฉพาะ `type == 'emergency'` เป็น emergency; `emergency_photo` ถูก map เป็น `normal` (`video_models.dart:6, 137-175`). ต้องรักษา subtype ให้ถูก ไม่ใช้ `normal` เป็นตัวแทนเงียบ ๆ
+- `photo_urls` ถูกจัดเป็น local-only ใน `sync-service.js:8-25`; การ sync วิดีโอเป็นการ sync row ที่ยังไม่ synced และไม่ได้ทำให้ update หลัง worker เสร็จถูก sync ซ้ำโดยอัตโนมัติ (`sync-service.js:56-90`). Supabase `videos` schema ปัจจุบันไม่มี `photo_urls`; cloud fallback ของภาพหลายรูปจึงต้องมี schema และ sync contract ของตัวเอง
+
+### 19.2 ทางเลือกการแสดงผล เรียงตามคำแนะนำ
+
+| ลำดับ | แนวทาง | ข้อดี | ข้อเสีย / ความเสี่ยง | ข้อเสนอ |
+|---|---|---|---|---|
+| 1 | **Hybrid: ภาพนิ่งที่ผ่าน privacy processing + slideshow HLS + gallery ของภาพรายใบ** | เหตุการณ์เดิมยังขึ้นได้ทันที; ใช้ player เดิมเมื่อ HLS พร้อม; เปิดดู/ซูมภาพแต่ละใบได้; คง event/video ID, category, mission, GPS, like/view เดิม; rollback กลับไปภาพนิ่งได้ | เพิ่ม worker, storage, schema/sync และ player state; media พร้อมช้ากว่า metadata; ต้องมีสถานะ partial/failure | **แนะนำ** เพราะตรงเป้าหมาย “นำภาพหลายภาพมาแสดงใน video” โดยไม่ทำลายภาพหลักหรือ gallery |
+| 2 | Gallery ภาพนิ่งอย่างเดียว | latency ต่ำ, ไม่ต้อง encode หรือโหลด HLS, จำนวนจุดเปลี่ยนน้อยที่สุด | ไม่ได้ playback ใน video player; ต้องออกแบบทางเข้า gallery ให้ผู้ช่วยเหลือเห็นชัด; ไม่ตอบโจทย์ slideshow/video โดยตรง | ทางเลือกสำรองหากภาระ processing/CDN สูงเกินประโยชน์ |
+| 3 | แทน `bunny_url` ด้วย HLS หรือสร้าง `videos` row ใหม่เป็นวิดีโอ | player ดูเหมือนมี media ชนิดเดียว; implementation แรกอาจดูง่าย | เปลี่ยนความหมาย field ที่ client เก่าพึ่งพา, เสี่ยงเกิด event ซ้ำ/นับ view-like ซ้ำ/mission และ category หลุด, ไม่มีภาพรายใบที่เชื่อถือได้, rollback ยาก | **ไม่แนะนำ**; ห้ามสร้าง incident/video identity ใหม่หรือเขียนทับ `bunny_url` ด้วย HLS |
+
+### 19.3 สรุปการตัดสินใจและเรื่องที่ยังต้องยืนยันก่อน production
+
+| เรื่อง | สถานะ/ค่าแนะนำ | ทางเลือกและข้อดี/ข้อเสีย | สถานะ / เรื่องค้าง |
+|---|---|---|---|
+| รูปแบบผลลัพธ์ | **ยืนยันแล้ว: Hybrid + Gallery** — 1 ภาพเป็นภาพนิ่ง, ตั้งแต่ 2 ภาพที่ผ่าน processing สร้าง HLS; ใช้ incident เดิม | Gallery-only ลด CPU/CDN แต่ไม่มี playback; HLS-only ลด UI แต่เสียภาพรายใบและความเข้ากันได้ | ยืนยันแล้ว; implementation ต้องคง ID เดิมและ additive contract |
+| ระยะเวลาเก็บต้นฉบับ/สิทธิ์ | **ยืนยันแล้ว:** Restricted retention; สำเร็จ 90 วันหลัง processing, failed 90 วันจาก upload; encrypted private storage; อ่านได้เฉพาะ uploader และผู้ใช้ที่มี platform `admin` role ผ่าน authenticated/audited access | ช่วย reprocess/audit และให้ผู้แจ้งตรวจภาพ; ข้อเสียคือเก็บใบหน้าดิบและเปิด access ให้ admin ทุกบัญชี เพิ่ม privacy/storage burden. Designated-admin-only ลดวง access แต่แคบกว่าแนวทางที่เลือก | ยืนยันแล้ว; expiry/audit ต้องใช้ policy แยกสำหรับ media ห้ามนำ `victimRetentionDays` ของ `incident_victims` มาใช้แทน |
+| รูปแบบ slideshow | **ยืนยันแล้ว: Use defaults** — ลำดับ upload, 2.5 วินาที/ภาพ, 720p fit/pad ไม่ crop, ไม่มีเสียง/transition และป้าย “วิดีโอสรุปจากภาพนิ่ง — ไม่มีภาพเคลื่อนไหว” | 1 วินาที/ภาพดูเร็วแต่ตรวจรายละเอียดไม่ทัน; 3–4 วินาทีอ่านง่ายกว่าแต่ยืดเวลา; crop เต็มจออาจตัดหลักฐานขอบภาพ | ยืนยันเป็นค่า v1; หากเปลี่ยนภายหลังให้ version pipeline และไม่เขียนทับ media เดิม |
+
+### 19.4 สถาปัตยกรรมที่แนะนำและ invariant
+
+1. **รักษา identity ของเหตุการณ์:** ใช้ `videos.id` เดิมและคง `type = emergency_photo`; ไม่สร้าง video row ซ้ำ, ไม่เปลี่ยน category/incident/GPS, ไม่สร้าง mission/interaction/view count ชุดใหม่ การประมวลผล media มีสถานะของตัวเองและห้ามใช้ `videos.status` ที่เกี่ยวกับ lifecycle อื่นแทนสถานะสร้าง slideshow
+2. **แยก metadata ของ batch และรายภาพ:** เพิ่ม local PostgreSQL + Supabase tables แบบ additive เช่น `emergency_photo_batches` (หนึ่งแถวต่อ video, `presentation_status`, `presentation_hls_url`, `cover_url`, จำนวนภาพพร้อม/ล้มเหลว และ timestamps) และ `emergency_photo_assets` (หนึ่งแถวต่อภาพ, `video_id`, ลำดับ `ordinal`, status, processed URL, timestamps). คอลัมน์ `source_object_key`/sync flags ถ้าจำเป็นต้องมี ให้เป็น local-only และไม่ส่งไป Supabase/API. Cloud rows เก็บแต่ processed URLs; RLS ให้ client อ่านเฉพาะ processed media ตามสิทธิของ incident และห้าม client INSERT/UPDATE asset state โดยตรง. ต้นฉบับเก็บใน encrypted private store โดย service account มี direct storage access แบบ least-privilege; access audit และ expiry แยกชัด. เพิ่ม endpoint เช่น `GET /api/videos/:id/original-photos/:photoId` ที่ stream แบบ `Cache-Control: no-store` เฉพาะ uploader หรือผู้ใช้ที่ server ตรวจแล้วว่ามี platform `admin` role; ไม่เชื่อ role จาก client, ไม่คืน public/long-lived URL และไม่ลง raw URLs ใน access logs
+3. **แยกสถานะอย่างชัดเจน:** batch ใช้ `pending | processing | ready | partial | failed`; รายภาพใช้ `pending | processing | ready | failed`. สถานะ ready หมายถึง output file ถูกสร้างและ publish สำเร็จ ไม่ได้แปลว่า face detector รับประกันพบทุกหน้า; `failed` ห้ามมี public URL ของต้นฉบับ
+4. **Private staging ก่อน public publish:** ตั้ง photoUpload storage ให้เขียนตรงเข้า private quarantine ที่ไม่ได้ mount ด้วย `express.static`; ห้ามวาง source ใต้ `TEMP_VIDEO_PATH` แม้ช่วงสั้น ๆ; หากมี transition path ให้ย้ายก่อนสร้าง/persist/ส่ง URL ใด ๆ; ใช้ encryption at rest, จำกัดสิทธิและ audit การอ่านตาม retention decision; source ที่เก็บต่อไม่อยู่ใน `TEMP_VIDEO_PATH` หรือ public CDN; ตรวจ content จริงและ decode ด้วย Sharp ไม่เชื่อ extension/MIME อย่างเดียว, จำกัด pixel dimensions/decompression risk, `.heic` ยังไม่รับจนกว่าจะมี decode/re-encode ที่รองรับจริง. คงขนาดเดิม 10 MB/ไฟล์, quota emergency สูงสุด 5 ภาพ/ครั้ง และบังคับ aggregate request limit ไม่เกินผลรวม quota × per-file limit (สูงสุดปัจจุบัน 50 MB)
+5. **Process ภาพทีละใบก่อนทำวิดีโอ:** ใช้ `sharp().rotate()` ตาม EXIF orientation, re-encode เพื่อลบ EXIF/GPS metadata, resize โดยรักษารายละเอียด/อัตราส่วน แล้วเบลอหน้าด้วย image pipeline. สร้าง output ชั่วคราว; ถ้า decode/blur หรือการเขียน output ล้มเหลว ห้าม fallback ไปใช้ original ใน gallery/thumbnail/slideshow หรือคืน URL ผ่าน API ปกติ; raw source เข้าถึงได้เฉพาะ endpoint แยกที่ authorize uploader/admin ตาม restricted-retention policy
+6. **Watermark และ thumbnail ใช้เฉพาะ output ที่ปลอดภัย:** ประทับ watermark ตาม config เพียงครั้งเดียวบน processed stills; `thumbnailQueue` ห้ามรับ source originals. สร้าง cover จากภาพ processed ลำดับแรก (หรือ animated thumbnail จาก processed images หลังทั้งหมดพร้อม) เท่านั้น. หาก watermark ถูกเปิดและการประทับล้มเหลว ให้ไม่ publish output ที่ขัดกับ policy
+7. **สร้าง slideshow เป็น derivative:** เมื่อมีภาพพร้อมอย่างน้อย 2 ใบ ใช้ FFmpeg ที่ติดตั้งอยู่สร้าง HLS แบบไม่มี audio จาก *processed stills* เรียงตาม `ordinal`; ใช้ scale+pad ไม่ crop; ไม่รัน video face-detector ซ้ำบนเฟรมสไลด์ เพราะเป็นงานซ้ำ/กิน CPU และอาจทำให้ blur กะพริบ. หนึ่งภาพหรือเหลือภาพพร้อมเพียงใบเดียวให้แสดง processed still ไม่ต้องสร้าง HLS; บางใบล้มเหลวให้แสดง partial พร้อมจำนวนที่ขาด และสร้าง HLS จากใบที่ผ่านตามลำดับเดิม
+8. **Queue และ durable recovery:** ใช้ queue แยกเฉพาะ emergency-photo processing; ห้ามใช้/แชร์ worker ของ `video-processing` (ปัจจุบัน concurrency 1) หรือ `thumbnail-generation` (งาน thumbnail และ concurrency 4) เพื่อไม่ให้ media jobs กีดกันงานวิดีโอหรือ thumbnail; ตั้ง concurrency เริ่มต้นต่ำและมี CPU/disk budget, retry/idempotency key ต่อ batch, timeout ที่ kill process, job/outbox ที่กู้คืนได้หลัง restart. DB commit สำเร็จแต่ queue enqueue ล้มเหลวต้องมี recovery ไม่ปล่อย batch ค้าง `pending` ตลอดไป
+9. **Publish HLS แบบ atomic:** อัปโหลด playlist และทุก segment ไปยัง durable storage/CDN ก่อนเปลี่ยน batch เป็น `ready`; HLS output directory ต้องมีเฉพาะ derivative ที่ผ่าน processing ไม่รวม source originals; ห้ามเขียน URL ที่ยังมี segment ไม่ครบ. ถ้าใช้ local fallback ต้องอยู่ใน persistent path และมี cleanup/retention ที่ไม่ลบไฟล์ซึ่งยังถูกอ้างอิง; อย่าพึ่ง `TEMP_VIDEO_PATH` ซึ่งเป็น static/temp โดยไม่มี lifecycle contract
+10. **ใช้ field ใหม่แทน overload:** `bunny_url` ของ `emergency_photo` คงความหมายเป็น processed first-image สำหรับ client เก่า; เพิ่ม `presentation_hls_url` ผ่าน batch metadata สำหรับ client ใหม่. `thumbnail_url`/`photo_urls` ที่คืนจาก API หลัง processing ต้องเป็น processed URL เท่านั้น; ระหว่าง pending ส่งสถานะ/placeholder ไม่ส่ง source URL
+11. **Gallery ของผู้แจ้งแยกจาก Thai Mhung:** เพิ่ม endpoint แบบ paginated เช่น `GET /api/videos/:id/photos`; อ่าน `emergency_photo_assets` เท่านั้นและคืน `ordinal`, id, status, processed URL. คง `/gallery`, `thai_mhung_photos`, `new-thaimhung-photo`, `photo-blur-complete` สำหรับไทยมุงตามเดิม; ห้าม insert reporter photos เข้า table/stream นั้น
+12. **Cloud sync ต้องรองรับ post-processing updates:** เพิ่ม migration ฝั่ง Supabase และ local schema ก่อน deploy; sync batch/asset rows แบบ idempotent โดย sync parent `videos` ก่อน FK children; ใช้ outbox หรือ `is_synced=false` หลังทุก state/output update และ mark synced เฉพาะเมื่อ Cloud upsert สำเร็จ. ส่งเฉพาะ processed URL/state ไม่ส่ง local source key; Local API และ Supabase fallback ต้องคืน schema/order/status เดียวกัน
+13. **Realtime/cache:** เพิ่ม event เฉพาะ emergency photo เช่น `emergency-photo-asset-updated` และ `emergency-photo-presentation-updated`; ไม่ยิง Thai Mhung events. Client deduplicate ด้วย asset id/version. Invalidate `video:meta`, emergency list และ photo-gallery cache หลัง DB commit/publish; event เป็น acceleration เท่านั้น API/polling ยังคงเป็น source สำหรับ recovery
+14. **Client swap อย่างปลอดภัย:** `Video` model parse `emergency_photo` เป็น subtype/incident kind ที่ชัดเจน และ parse presentation fields. Player ใช้ HLS เมื่อ batch ready; ระหว่างรอใช้ processed cover หรือ privacy placeholder; เมื่อ event เปลี่ยนเป็น ready สร้าง/dispose controller อย่างมี generation guard โดยไม่เปลี่ยน `_currentVideoId`, ไม่เพิ่ม view ซ้ำ และยังเปิด lightbox/gallery ภาพรายใบได้. Client เก่าคงเห็น processed still ผ่าน field เดิม
+15. **Typed upload contract:** ให้ `uploadEmergencyPhotos()` คืน typed result ที่มี `videoId`, `photos: [{id, ordinal, status, processedUrl?}]`, `presentationStatus`, `incidentId`; มี `processedUrl` เฉพาะภาพที่ publish แล้ว ไม่คืน parallel arrays ที่จำนวนอาจไม่ตรงกัน; แก้ความไม่ตรงกันระหว่าง `photoUrls` กับ `photo_urls` และทดสอบ response contract ทั้ง server/repository/UI
+
+### 19.5 ลำดับดำเนินงาน
+
+1. **Contract + schema:** ใช้ Hybrid + Gallery, slideshow v1, retention success 90 วันหลัง processing, failed 90 วันจาก upload, และสิทธิ uploader/platform `admin` ตามที่ยืนยัน; สร้าง expiry jobs/audit และ server-side role check ตาม policy นี้; กำหนด local/cloud DDL, indexes, constraints, RLS, event/API contracts, field/state names และ migration order ที่ไม่ชน migration ล่าสุดใน repository. ทดสอบ FK parent-video sync ก่อน child rows
+2. **Backend privacy pipeline:** สร้าง private quarantine, file-content/dimension validation, EXIF normalization, fail-closed image blur/watermark, per-image status, dedicated queue + durable retry/outbox, cover/slideshow generation. อย่าแก้ semantics ของ video ปกติหรือ Thai Mhung worker ใน commit/phase นี้
+3. **API + persistence/sync:** เพิ่ม paginated reporter-photo endpoint, batch metadata ใน video detail/list โดย additive fields, cloud sync และ cache invalidation/realtime; ยืนยันว่า URL ที่ serialize ออกมามีแต่ processed assets
+4. **Flutter model/player/gallery:** แก้ upload result เป็น typed contract; แสดง pending/partial/failed; player สลับภาพ→HLS ใน event เดิม; gallery แยก source พร้อม order/lightbox; คง fallback ของ client เก่าและ single-image behavior
+5. **Canary + rollout:** เปิด worker/feature ทีละกลุ่มเหตุการณ์; monitor processing latency/failure, queue depth, disk, CDN segment errors และภาพที่ยัง pending. ปิด feature เฉพาะ slideshow ได้โดยยังคงแสดงภาพนิ่งที่ผ่าน blur; ห้าม rollback ไปเสิร์ฟ source ดิบ
+
+### 19.6 Risk register และ mitigation
+
+| ความเสี่ยง | ระดับ | การป้องกันที่ต้องทำ |
+|---|---|---|
+| ภาพดิบรั่วระหว่าง blur หรือถูกอ่านนอกสิทธิ์ | วิกฤต | private encrypted retention, endpoint แยกจำกัด uploader + platform `admin` ทุกบัญชีตามที่เลือก พร้อม access audit/expiry; ยอมรับว่า admin audience กว้างกว่า designated-admin-only; ไม่มี raw URL ใน API รายการ/WebSocket/thumbnail/public CDN/gallery/Cloud, ตรวจทุกเส้นทางใน integration test |
+| Face detector พลาดใบหน้า | สูงและคงเหลือ | ไม่อ้าง 100%; ใช้ fixture/threshold review, badge/copy ชัด, fail-closed เมื่อ process error. หาก policy ต้องการความแน่นอนกว่าการตรวจอัตโนมัติ ต้องมี human review หรือห้ามเผยแพร่จนตรวจเสร็จ |
+| Worker ช้า/คิวกิน CPU กระทบ video ปกติ | สูง | queue แยก, concurrency/resource budget ต่ำ, job timeout, backpressure, metrics; ทดสอบ video-processing latency ขณะ photo queue มีงานเต็ม |
+| FFmpeg fail หรือ CDN มี playlist แต่ segment ไม่ครบ | สูง | publication state เป็น ready หลังตรวจ playlist+segment ครบ; ใช้ processed still เป็น fallback; retry แบบ idempotent |
+| ภาพ EXIF หมุนผิดหรือ GPS metadata รั่ว | สูง | normalize orientation ก่อน blur/encode, strip metadata, test ภาพ portrait/landscape ที่มี EXIF GPS |
+| Cloud fallback ไม่มีรูปหรือ stale status | สูง | schema migration + outbox ที่ sync ทั้ง insert และ worker updates; contract parity tests Local API/Supabase |
+| ภาพคนละ incident/source ปนกัน | สูง | FK ด้วย video id เดียว, order/asset IDs, table+events แยก Thai Mhung; pagination deterministic `ordinal, created_at, id` |
+| Client เก่าหรือ controller เก่ายังค้างภาพ | ปานกลาง | additive `presentation_hls_url`, คง `bunny_url` เป็น processed still, cache versioning, stale-controller/generation tests |
+| งานค้าง/ซ้ำเมื่อ HTTP retry หรือ server restart | ปานกลาง | idempotency key, durable outbox, unique batch/job, startup recovery, per-photo unique ordinal |
+| Upload 5 ภาพใหญ่ทำให้ disk/CPU เต็ม | ปานกลาง | 10 MB/file, max 5, aggregate cap 50 MB, pixel cap, queue backpressure, cleanup/temp quota monitoring |
+
+### 19.7 ต้นทุนระยะยาวและตัวเลือกลดต้นทุน
+
+**ไม่มีค่า API รายครั้ง** — pipeline ทั้งหมดใช้ component ที่ self-host อยู่แล้ว (sharp, CenterFace/deface, FFmpeg, BullMQ) จึงไม่มีบิลต่อภาพ/ต่อนาที; ห้ามเพิ่ม third-party vision/transcode API โดยไม่ขออนุมัติ เพราะจะเปลี่ยน cost model ทั้งหมด
+
+ต้นทุนที่เพิ่มจริง เรียงตามน้ำหนัก:
+
+1. **Storage เพิ่ม ~2–3 เท่าของเดิม** — ต้นฉบับดิบเก็บ 90 วัน (สูงสุด ~50 MB/เหตุ) + processed stills + HLS segments (~5–15 MB/เหตุ); ถ้าเก็บบน local disk จ่ายแค่พื้นที่ แต่ถ้าย้าย source/segment ไป object storage (Bunny/S3) จะกลายเป็นบิลรายเดือนตามปริมาณ
+2. **CDN egress ของ HLS** — สเกลตามยอดดู เหมือนวิดีโอปกติที่ระบบรับอยู่แล้ว
+3. **CPU/เวลา queue** — blur ต่อภาพ + encode 720p บนเครื่องเดิม; ไม่ใช่บิลเงินสดแต่เพิ่มโหลด อาจต้อง upgrade ถ้า volume สูง (exit gate บังคับ load test)
+4. **DB/Redis/audit log** — ตารางใหม่ + access audit + expiry job เล็กมาก
+5. **Supabase** — rows/egress เพิ่มจากตารางใหม่ ยังอยู่ scale เดียวกับ sync ปัจจุบัน
+
+ตัวเลือกลดต้นทุน (ปรับได้โดยไม่เปลี่ยน contract ถ้าตัดสินใจก่อน implement; ทุกข้อที่แตะ retention/access ต้องอนุมัติ policy ใหม่):
+
+- ลด retention 90 → 30 วัน: ตัด storage ต้นฉบับ ~3 เท่า — แก้ policy ที่ยืนยันแล้ว
+- เก็บต้นฉบับบน local encrypted disk แทน cloud storage: แทบไม่มีบิลเงินสด แต่ต้องเฝ้าดิสก์/backup เอง
+- สร้าง HLS เฉพาะ ≥3 ภาพแทน ≥2: ลดจำนวนเหตุที่ต้อง encode/host — เปลี่ยน threshold ได้โดยยังคง gallery ครบ
+- ลบต้นฉบับหลัง process สำเร็จทันที: ต้นทุนต่ำสุดแต่เสีย reprocess/audit — ขัด policy ที่ยืนยัน ต้องขออนุมัติใหม่
+
+Rollout ต้อง monitor storage growth และ CDN egress เทียบ baseline หลัง canary เพื่อยืนยันว่าต้นทุนจริงตรงประมาณการ และ expiry job purge ต้นฉบับตาม retention จริง (ไม่ใช่สะสมไม่รู้จบ)
+
+### 19.8 Test และ exit gate
+
+**Backend / media processing**
+- [ ] อัปโหลดภาพ 1 ใบได้ processed still และไม่มี slideshow; 2–5 ใบได้ asset rows เรียงตามลำดับ multipart เดิมและ HLS จากภาพที่พร้อม
+- [ ] ทดสอบ jpg/jpeg/png/webp, ผิดชนิดไฟล์, corrupt image, ปลอม MIME/extension, dimensions/pixel bomb, ภาพ portrait/landscape + EXIF orientation/GPS; `.heic` ถูกปฏิเสธอย่างชัดเจนจนมี decoder ที่รองรับ
+- [ ] ยืนยัน 10 MB ต่อไฟล์, quota 5, aggregate limit และ cleanup เมื่อ reject; ทดสอบ partial/0-success, blur timeout, watermark error, FFmpeg error, Bunny error, disk full
+- [ ] Inject blur failure แล้วไม่มี original URL/bytes ใน API รายการ, DB public fields, WebSocket, thumbnail, HLS, Supabase; failed asset ต้องไม่ถูกเขียนเป็น ready/completed และผู้ใช้ยังเห็น incident metadata; ทดสอบว่า uploader และผู้ใช้ที่ server ยืนยัน platform `admin` อ่านได้ผ่าน endpoint, role อื่นถูกปฏิเสธ; successful assets หมดอายุ 90 วันหลัง processing และ failed uploads 90 วันจาก upload ถูก purge/audited ตาม policy
+- [ ] ทดสอบ worker crash/restart, enqueue fail หลัง insert, retry ซ้ำ, idempotency และ cloud sync หลัง update; ไม่มี duplicate asset/slideshow หรือ batch pending ค้าง
+- [ ] ตรวจ HLS ด้วย player/ffprobe: audio track ไม่มี, duration ตาม config, aspect ratio ไม่ crop, segment ทุกตัวเปิดได้; playlist ห้าม ready ก่อน segment upload ครบ
+- [ ] ทดสอบ load ที่ขนาดสูงสุดพร้อม video transcode ปกติ; queue depth, memory, CPU, disk และ latency ไม่ทำให้ emergency video worker/API หมดทรัพยากร
+
+**Flutter / API / regression**
+- [ ] upload result typed contract: IDs/URLs/state นับตรงกัน (ปิด bug `photoUrls`/`photo_urls`)
+- [ ] pending → first processed photo → ready HLS, partial, failed/retry; ตรวจว่า UI ไม่ render source URL ระหว่าง state ใด ๆ
+- [ ] สลับ player เป็น HLS แล้ว like/view/GPS/category/mission/current incident ID ไม่เปลี่ยนและไม่มี view event ซ้ำ; stale controller ถูก dispose
+- [ ] ภาพรายใบเปิด lightbox/ซูมได้, order คงที่, pagination/dedup ถูกต้อง; event/polling ไม่ทำให้รูปไทยมุงหรือ incident อื่นปน
+- [ ] Local endpoint กับ Supabase fallback คืน photo IDs/order/status/URLs เหมือนกัน; ทดสอบเมื่อ local API/Cloud/Realtime อย่างใดอย่างหนึ่งล่ม
+- [ ] Existing video upload/playback, single-photo incident, `thai_mhung_photo`, `/gallery`, Thai Mhung realtime/quota, emergency category, mission lock และ trending list ยังผ่าน regression tests
+
+**Acceptance Criteria**
+- เหตุและ metadata (ประเภท, ตำแหน่ง, ผู้แจ้งตามสิทธิ์) แสดงได้ทันที แม้ slideshow ยัง processing; media ระหว่างรอเป็น placeholder/processed still เท่านั้น
+- 1 ภาพแสดงเป็นภาพนิ่ง; ตั้งแต่ 2 ภาพที่ process สำเร็จแสดง slideshow HLS พร้อมคง gallery รายภาพ; partial แจ้งจำนวนภาพที่ขาดชัดเจน
+- ไม่มี raw original ที่ยังไม่ผ่าน privacy processing ถูกส่ง/serve จาก path สาธารณะ; เมื่อ processing ล้มเหลวระบบไม่ fail-open
+- ยังคง video/event ID, category, mission, GPS, interaction และ Thai Mhung behavior เดิม; client เก่าอ่าน processed still ได้
+- Cloud sync/fallback ใช้ข้อมูลเดียวกับ Local API และผ่านการทดสอบ restart/retry
+
+### 19.9 Historical data, rollout และ rollback
+
+- **ข้อมูลเก่า:** ไม่ backfill หรือเขียนทับ `bunny_url`/`photo_urls` ของเหตุเก่าโดยอัตโนมัติ. ทำ inventory แบบ read-only/dry-run ก่อน; backfill เฉพาะเมื่อยืนยันว่า source file ยังอยู่, owner/data-retention policy อนุมัติ, และมี rollback mapping. จนกว่าจะ backfill ให้คง legacy display behavior แยกจาก gallery ของ record ใหม่; สถานะนี้ไม่แก้การเปิดเผย media ดิบใน historical records. หาก policy ต้องการแก้ย้อนหลัง ให้ทำ backfill phase แยก: inventory files/URLs, process ไปยัง private output, verify URL ใหม่และ access policy, เก็บ mapping สำหรับ rollback และห้ามลบ/เขียนทับของเดิมจน dry-run ผ่านและมีการอนุมัติชัดเจน
+- **Rollout:** migration additive และ deploy ก่อนเปิด sync/worker; backend ใช้ feature flag สำหรับ *การสร้าง slideshow* แต่ safety transform/การห้ามเผย raw ต้องไม่ถูกปิดตาม flag. เริ่ม canary, ตรวจผล blur ด้วย test fixtures และตรวจ CDN/local fallback; client ใหม่อ่าน HLS additive field ส่วน client เก่าเห็น processed still. วัด storage growth/CDN egress ตาม §19.7 และแจ้งเตือนถ้าดิสก์ quarantine หรือ billable storage เกิน budget ที่ตั้งไว้
+- **Rollback:** ปิด slideshow generation และคง batch เป็น static-photo mode; ไม่ลบตาราง/คอลัมน์หรือ public processed assets; `bunny_url` ยังคงเป็น processed first image; ต้นฉบับที่ถูกเก็บตาม restricted-retention policy ยังคง private, อ่านได้เฉพาะ uploader/platform admin ผ่าน endpoint audited และถูก purge เมื่อครบ 90 วันตามจุดเริ่มนับที่กำหนด. ห้าม rollback ด้วยการคืน raw URL. ตรวจผลต่อ queue/retry และ cache ก่อนกลับมาเปิดอีกครั้ง
+- **Out of scope:** เปลี่ยน video `deface` policy ทั้งระบบ, เพิ่ม HEIC support, รวม/ย้าย Thai Mhung table, เปลี่ยนการอนุญาตดูภาพดิบของผู้ช่วยเหลือ, bulk reprocess ภาพประวัติ — แยกเป็นงานและขออนุมัติตาม policy ก่อน
+
+## 20. Phase — Trending Panel Category Filter (Multi-Select)
+
+### 20.1 เป้าหมาย
+
+เพิ่มตัวกรองประเภทเหตุให้ **กล่องยอดนิยม** ในหน้าเหตุการณ์สด:
+
+- ไอคอนปุ่มตัวกรองอยู่ **ด้านขวาของป้าย "ยอดนิยม"**
+- กดไอคอนแล้วเปิด **bottom sheet** ให้เลือกประเภทเหตุได้ **หลายตัวพร้อมกัน** (เช่น เลือกเฉพาะน้ำท่วม หรือเลือกไฟไหม้ + ฝุ่นรวมกัน)
+- รายการประเภทดึงจาก **ตารางจริง** `donation_categories` เฉพาะ `is_emergency = true` เรียงตาม `display_order` ascending — ลำดับเดียวกับแถบหมวดหมู่ในหน้าอัปโหลด/แจ้งเหตุ และหน้า admin หมวดหมู่ตามภาพ (`#1 อุบัติเหตุ`, `#2 น้ำท่วม`)
+- ไม่เลือกอะไร = แสดงทั้งหมด (พฤติกรรมเดิมเป๊ะ)
+
+### 20.2 สภาพปัจจุบันและช่องว่างที่ยืนยันจากโค้ด
+
+- ป้าย "ยอดนิยม" เป็น badge เดี่ยวใน header ของ `TrendingPanelWidget` ยังไม่มี action ใด ๆ ข้าง ๆ — `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart:251-266`
+- รายการที่แสดงมาจาก `_filteredTrendingVideos()` ซึ่งกรองตามบทบาทอยู่แล้ว 3 ชั้น: Mission Lock ของผู้แจ้ง (`_isReporterLocked` + `_reporterActiveMissionVideoIds`), สิทธิ์จิตอาสา (`_eligibleTrendingVideoIds`), และโหมดภารกิจ (`lockToCurrentVideo`) — `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart:284-330`; ตัวกรองใหม่ต้องเป็นชั้นเสริม ไม่ทับกฎเดิม
+- API `/api/videos/emergency/list` รับแค่ `page`/`limit` ผ่าน `clampPagination`, cache key `video:emergency:list:v3:{page}:{limit}` และ SQL เป็น `WHERE v.type IN ('emergency','emergency_photo')` + `LIMIT/OFFSET` — `websocket-server/routes/video.js:548-584`
+- `GET /api/videos/` รองรับ `category_id` แบบค่าเดียวเท่านั้น (`routes/video.js:93-115`) จึงใช้กับ multi-select ไม่ได้
+- คอลัมน์ `videos.category_id` เป็น `UUID` มี FK ไป `donation_categories(id)` และมี index `idx_videos_category_id` แล้ว — `supabase/migrations/20261004150000_add_video_category_id.sql`
+- แหล่งความจริงของประเภท: `donation_categories.display_order` + `is_emergency` — `lib/features/donation/data/repositories/donation_repository.dart:62-68`; ฝั่ง server resolve ชื่อผ่าน `websocket-server/services/emergency-category-names.js`, ฝั่ง client ผ่าน `_loadEmergencyCategoryNames` (`lib/features/video/data/repositories/video_repository.dart:254-283`)
+- ลำดับในแถบรายงานใช้ลิสต์เดียวกัน (`incident_report_widget.dart:405-412`) — ใช้ `_emergencyCategories` ที่โหลดอยู่แล้วเป็นแหล่งเดียวของ bottom sheet
+- Client มี fallback ไป Supabase ที่กรองแค่ `type` + `order by created_at` + `range` — `video_repository.dart:326-338`; fallback นี้ต้องกรองหมวดหมู่ให้ตรงกับ local API
+- มีเหตุที่ `category_id = NULL` อยู่จริง (กฎจิตอาสาตัดออกที่ `emergency_navigation_logic.dart:229-230`) จึงต้องนิยาม behavior ของการ์ดเหล่านี้ตอนกรอง
+- Cache invalidation ปัจจุบันใช้ wildcard prefix `video:emergency:list:*` (ตอนอัปโหลดเหตุใหม่ — `routes/video.js:161-163`) key ใหม่ต้องยังขึ้นต้นด้วย prefix นี้
+
+### 20.3 การตัดสินใจที่ยืนยันแล้ว
+
+| เรื่อง | ค่าที่เลือก | หมายเหตุ |
+|---|---|---|
+| รูปแบบ UI | **Bottom sheet เลือกหลายตัว** เปิดจากไอคอนด้านขวาป้าย "ยอดนิยม" | มีปุ่ม "ล้างทั้งหมด"/"ยืนยัน" และแสดงจำนวนที่เลือกบนไอคอน |
+| semantics | **OR (union)** | เลือกหลายประเภท = เห็นรวมกัน; ไม่เลือกเลย = ทั้งหมด |
+| จุดกรอง | **Server-side เป็นหลัก + client re-filter เป็น safety net** | server แม่นทั้งชุดข้อมูลและ pagination; client กันกรณี fallback/field ไม่ครบ |
+| ชุดประเภท | **ทุกหมวด `is_emergency = true` ตาม `display_order`** | ไม่จำกัดเฉพาะที่มีเหตุ; ใช้ลิสต์ที่โหลดอยู่แล้ว ไม่ยิง query ใหม่ |
+| การจำค่า | **จำเฉพาะในเซสชัน** | สลับแท็บ/เปลี่ยนเหตุแล้วคงค่า; รีเซ็ตเมื่อปิดแอปหรือสร้าง state ใหม่; ไม่เขียนลง storage |
+| ขอบเขต | **เฉพาะกล่องยอดนิยม** | ไม่กระทบแผนที่, ลิสต์อื่น, เหตุการณ์ที่กำลังเล่น, ตัวเลขผู้ชม หรือการแจ้งเตือน |
+| Mission Lock | **กฎบทบาทมีลำดับเหนือกว่า** | ตัวกรองเป็น intersection กับเซตที่บทบาทอนุญาต ไม่ override |
+
+### 20.4 สถาปัตยกรรมและ invariant
+
+1. **ตำแหน่งไอคอนและ layout:** header ของกล่องต้องเปลี่ยนจาก badge เดี่ยวเป็น **Stack** (badge อยู่กลางตามเดิม + `Positioned` ไอคอนชิดขวา) เพื่อให้ badge ไม่เลื่อนตำแหน่งและความสูง header คงที่ — ห้ามเปลี่ยนความสูงของกล่อง เพราะ Rescue Control Panel อ้างตำแหน่งจาก `_trendingPanelBottom`/`_trendingPanelRight` ที่วัดจากกล่องนี้ (`lib/features/video/presentation/pages/emergency_live_page.dart:676-694`)
+2. **ไอคอนและสถานะ:** ใช้ `Icons.filter_list`/`tune`; เมื่อเลือกแล้วให้แสดง badge จำนวนที่เลือกหรือเปลี่ยนสีเน้น; ปุ่มต้องมี `tooltip`/semantics และ hit area ไม่เล็กกว่า 32px
+3. **Bottom sheet:** รายการมาจาก `_emergencyCategories` (source เดียวกับแถบรายงาน) เรียงตาม `display_order`; checkbox หลายตัว + ปุ่ม "ล้างทั้งหมด" + "ยืนยัน"; ต้อง scroll ได้เมื่อหมวดเยอะ; ใช้ widget ที่มีในโปรเจกต์ (glass/shared) ให้สอดคล้อง ไม่สร้างสไตล์ใหม่
+4. **Server contract:** `GET /api/videos/emergency/list?page&limit&category_ids=a,b,c`
+   - validate ว่าเป็น UUID ที่ถูกต้องและ **cap จำนวน** (เช่น ≤ 50) → ไม่ผ่านคืน 400
+   - ไม่ส่ง param = พฤติกรรมเดิมเป๊ะ (backward compatible กับ client เก่า)
+   - SQL เพิ่ม `AND v.category_id = ANY($n::uuid[])` (คอลัมน์เป็น UUID + มี index อยู่แล้ว); NULL ไม่ผ่านเงื่อนไขนี้โดยอัตโนมัติ
+5. **Cache key:** ต้องรวมตัวกรองและ normalize ลำดับ id (sort) ก่อนสร้าง key เช่น `video:emergency:list:v4:{page}:{limit}:{catKey}` โดย `catKey = 'all'` เมื่อไม่กรอง; **key ต้องยังขึ้นต้นด้วย `video:emergency:list:`** เพื่อให้ invalidation wildcard เดิม (`invalidateCachePattern('video:emergency:list:*')`) ครอบคลุม; TTL คงเดิม
+6. **Pagination กับการกรอง:** ตัวกรองต้องมีผลต่อชุดข้อมูลที่ดึงจาก server ไม่ใช่กรองหลัง paginate; client ต้องยังเรียกหน้าถัดไปได้เมื่อผลลัพธ์ว่างแต่ยังมีข้อมูล (ไม่หยุด auto-load ที่หน้าแรก) และต้องมีเพดานกันการไล่โหลดไม่จบ
+7. **Client re-filter (safety net):** เพิ่มชั้นกรอง OR ตาม `categoryId` ใน `_filteredTrendingVideos()` **หลัง** กฎบทบาทเดิม; ใช้เมื่อ local API ยังไม่รองรับ param หรือข้อมูลมาจาก fallback; ต้อง**คงการ์ดของเหตุการณ์ที่กำลังดูอยู่ไว้เสมอ** แม้จะไม่ตรงตัวกรอง (ห้ามให้ player ลอยโดยไม่มี card) เหมือนที่กฎเดิมทำกับ `_currentVideoId`
+8. **Fallback parity:** Supabase fallback (`video_repository.dart:326-338`) ต้องเพิ่ม `.inFilter('category_id', ids)` ให้ตรง local API และยังคง normalize `type` เดิม
+9. **การ์ดที่ `category_id = NULL`:** แสดงเมื่อไม่ได้เลือกตัวกรองใด ๆ แต่ **ไม่แสดง** เมื่อมีการเลือก (เพราะระบุประเภทไม่ได้) — server และ client ต้องให้ผลตรงกัน
+10. **ชุดประเภทที่เลือกได้:** ใช้ `_emergencyCategories` ที่โหลดอยู่แล้ว; ถ้ายังไม่โหลดให้ lazy load แล้ว refresh; หมวดที่ถูกลบหรือถูกตั้ง `is_emergency = false` ต้องหายจากลิสต์และ **id ที่เลือกไว้ต้องถูกตัดออกอัตโนมัติ** ไม่ค้างใน state
+11. **Realtime/การ์ดใหม่:** การ์ดที่เข้ามาใหม่ (socket/thumbnail update) ต้องผ่านตัวกรองปัจจุบันทันทีโดยไม่ต้อง reload; ไม่แตะ thumbnail/viewer override ที่มีอยู่
+12. **Mission Lock precedence:** ถ้า `lockToCurrentVideo` หรือ reporter lock ทำงานอยู่ กล่องยังแสดงเฉพาะการ์ดที่อนุญาตตามเดิม; ตัวกรองเป็น intersection — ถ้า intersection ว่าง ให้คงการ์ดปัจจุบันไว้และแสดงข้อความอธิบาย ไม่ปล่อยกล่องว่าง
+13. **Empty state:** ถ้ากรองแล้วไม่พบเหตุ ให้ข้อความ "ไม่พบเหตุในประเภทที่เลือก" + ปุ่มล้างตัวกรองในกล่องเลย (ไม่ให้ผู้ใช้ต้องเปิด sheet ใหม่)
+14. **ต้นทุน:** ไม่มี infra หรือ dependency ใหม่ — เพิ่มเฉพาะจำนวน Redis cache key ตาม combination ที่ถูกใช้จริงในแต่ละ session (จำกัดเพราะ state เป็น session-scoped) และ query ใช้ index เดิม; ไม่มีค่าใช้จ่ายรายเดือนเพิ่ม
+
+### 20.5 ลำดับดำเนินงาน
+
+1. **Server:** เพิ่ม `category_ids` param + validation/cap + SQL `ANY` + cache key v4 + unit test (ไม่ส่ง param = ผลเดิม, OR ถูกต้อง, NULL ถูกตัด, key ขึ้นต้น prefix เดิม)
+2. **Client repository:** ส่ง `categoryIds` ใน `_fetchEmergencyVideos` ทั้งเส้น local API และ Supabase fallback; คง contract/typed result เดิม
+3. **State:** เก็บ `Set<String> _selectedTrendingCategoryIds` ที่ระดับหน้า (session state) + ตัด id ที่ไม่รู้จัก + สั่ง refetch/`_computeMissionTrendingFilter` ใหม่เมื่อเปลี่ยนตัวกรอง
+4. **UI:** header Stack + ไอคอน + badge count; bottom sheet multi-select เรียงตาม `display_order`; empty state + ปุ่มล้าง
+5. **Composition:** ประกอบตัวกรองกับ `_filteredTrendingVideos()`, pagination/`onLoadMore`, Mission Lock และ realtime update
+6. **Tests + rollout:** ตาม §20.6–§20.7
+
+### 20.6 Risk register และ mitigation
+
+| ความเสี่ยง | ระดับ | การป้องกันที่ต้องทำ |
+|---|---|---|
+| Cache key ใหม่ทำให้ invalidation เดิมหลุด → เห็นรายการค้างหลังมีเหตุใหม่ | สูง | key ต้องขึ้นต้น `video:emergency:list:` เสมอ + test ว่า `invalidateCachePattern('video:emergency:list:*')` ล้าง key ที่มีตัวกรองด้วย |
+| กรองแล้วกล่องว่าง ทำให้ผู้ใช้คิดว่าเหตุหาย/ระบบพัง | สูง | empty state + ปุ่มล้างตัวกรอง + badge จำนวนที่เลือก; คงการ์ดเหตุการณ์ปัจจุบันเสมอ |
+| Header สูงเปลี่ยน → Rescue Control Panel ลอยผิดตำแหน่ง | ปานกลาง | ใช้ Stack ตรึงความสูง header + test วัด `_trendingPanelBottom` เทียบก่อน/หลัง |
+| Server กับ client กรองไม่ตรงกัน (NULL, id ที่ถูกลบ, fallback) | สูง | parity test Local API vs Supabase fallback + กฎ NULL ข้อเดียวใช้ทั้งสองฝั่ง |
+| ผู้ใช้ส่ง id ปลอม/จำนวนมาก → query หนักหรือ 500 | ปานกลาง | validate UUID + cap จำนวน + คืน 400 แทน 500 + rate limit เดิม |
+| ตัวกรองไป override Mission Lock → จิตอาสาเห็นการ์ดที่ไม่ควรเห็น | สูง | บังคับลำดับ: role filter → category filter (intersection เท่านั้น) + test เคสภารกิจค้าง |
+| หมวดถูกลบ/ปิด emergency ระหว่าง session → id ค้าง | ต่ำ | ล้าง id ที่ไม่อยู่ใน `_emergencyCategories` ล่าสุดทุกครั้งที่โหลด |
+| เลือกหลายประเภทแล้ว auto-load ไล่ไม่จบ | ต่ำ | จำกัดจำนวนรอบดึงต่อการเปลี่ยนตัวกรอง + หยุดเมื่อไม่มีข้อมูลเพิ่ม |
+| Layout/ชิปใน bottom sheet กับหมวดเยอะ | ต่ำ | scrollable sheet + จำกัดความสูง + test จอเล็ก |
+
+### 20.7 Test และ exit gate
+
+**Backend**
+- [ ] ไม่ส่ง `category_ids` → ผลลัพธ์และ cache key เท่าเดิมเป๊ะ (regression)
+- [ ] ส่ง 1 ประเภท, หลายประเภท (OR), และประเภทที่ไม่มีเหตุ → ผลถูกต้อง
+- [ ] เหตุ `category_id = NULL` ไม่ปรากฏเมื่อมีการกรอง แต่ปรากฏเมื่อไม่กรอง
+- [ ] `category_ids` ผิดรูปแบบ/เกิน cap → 400 ไม่ใช่ 500; SQL ใช้ index (`EXPLAIN` ยืนยัน)
+- [ ] อัปโหลดเหตุใหม่แล้ว `invalidateCachePattern('video:emergency:list:*')` ล้าง key ที่มีตัวกรองด้วย
+- [ ] Pagination กับตัวกรอง: หน้า 2/3 ต่อเนื่องไม่ซ้ำไม่ขาด; page แรกว่างแต่ hasMore → ยังดึงต่อได้
+
+**Flutter / UI**
+- [ ] ไอคอนอยู่ด้านขวาป้าย "ยอดนิยม", badge จำนวนถูกต้อง, เปิด/ปิด bottom sheet ได้
+- [ ] รายการใน sheet เรียงตาม `display_order` ตรงกับแถบหมวดหมู่ในหน้าแจ้งเหตุและหน้า admin
+- [ ] เลือกหลายตัวแล้วการ์ดกรองแบบ union; ล้างทั้งหมดกลับมาแสดงครบ
+- [ ] Empty state แสดงพร้อมปุ่มล้าง; ไม่มีสถานะที่ player แสดงเหตุแต่ไม่มีการ์ด
+- [ ] สลับแท็บ/เปลี่ยนเหตุการณ์แล้วค่าตัวกรองคงอยู่; ปิด-เปิดแอปแล้วรีเซ็ตเป็นทั้งหมด
+- [ ] ระหว่างภารกิจ (Mission Lock/reporter lock) ผลลัพธ์เป็น intersection และไม่เห็นการ์ดนอกสิทธิ์
+- [ ] หมวดที่ถูกลบ/ปิด emergency หายจาก sheet และ id ค้างถูกตัดออก
+- [ ] การ์ดใหม่จาก realtime เข้ามาผ่านตัวกรองปัจจุบันโดยไม่ต้อง reload
+- [ ] ความสูง/ตำแหน่งกล่องยอดนิยมไม่เปลี่ยน → Rescue Control Panel ยังอยู่ตำแหน่งเดิม
+- [ ] Local API กับ Supabase fallback ให้ผลกรองเหมือนกัน
+
+**Acceptance Criteria**
+- ผู้ใช้กดไอคอนขวาป้าย "ยอดนิยม" แล้วเลือกได้หลายประเภทพร้อมกัน และการ์ดแสดงเฉพาะประเภทที่เลือก
+- รายการประเภทมาจากตารางจริง เรียงตาม `display_order` ตรงกับแถบหมวดหมู่และหน้า admin
+- ไม่มี regression ต่อ Mission Lock, สิทธิ์จิตอาสา, จำนวนผู้ชม, thumbnail realtime, แผนที่ และ trending list เดิม
+- ไม่มี dependency/infra/cost เพิ่ม และไม่มีการเปลี่ยนแปลง schema หรือ migration
+
+### 20.8 Rollout และ rollback
+
+- **Rollout:** backend (param + cache key v4) ขึ้นก่อน แล้ว client ใหม่จึงเริ่มส่ง param; client เก่าไม่ส่ง param จึงยังทำงานเดิมได้ทันที; เปิดใช้ทีละกลุ่มผู้ใช้ได้ด้วย feature flag ฝั่ง client ถ้าต้องการ; หลัง deploy ให้เฝ้า cache hit rate และขนาด key space ของ `video:emergency:list:*`
+- **Rollback:** ปิดการส่ง param ฝั่ง client (หรือปิด flag) → กลับพฤติกรรมเดิมทันทีโดยไม่ต้องแก้ server; server ยังรับ param ต่อไปได้แบบไม่มีผล; ไม่มีการลบตาราง/คอลัมน์และไม่มี migration ที่ต้องย้อน
+- **Out of scope:** ตัวกรองในแผนที่/ลิสต์อื่น, ตัวกรองฝั่ง admin, การเปลี่ยน semantics ของ `GET /api/videos/` (ค่า `category_id` เดี่ยว), การจำค่าตัวกรองข้ามการเปิดแอป, การเพิ่มหมวดหมู่ใหม่หรือแก้ `display_order`

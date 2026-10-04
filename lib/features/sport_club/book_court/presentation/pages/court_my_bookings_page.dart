@@ -112,6 +112,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       court: court,
       venueName: b.venueName ?? '',
       timezone: b.timezone,
+      venueUnitLabel: b.venueUnitLabel,
       loadAvailability: widget.repo.getCourtAvailability,
       quotePrice: widget.repo.quoteCourtPrice,
       allowDisjoint: false,
@@ -293,7 +294,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'การจองสนามของฉัน',
+                      'การจองของฉัน',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -513,7 +514,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
             children: [
               Expanded(
                 child: Text(
-                  b.venueName ?? 'สนาม',
+                  b.venueName ?? b.venueUnitLabel ?? 'สถานที่',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
@@ -724,25 +725,25 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       return 'ช่วงเวลานี้ยังไม่เปิดจอง กรุณาลองใหม่ภายหลัง';
     }
     if (raw.contains('PLATFORM_TERMS_NOT_CONFIGURED')) {
-      return 'สนามยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อสนามหรือกลับมาลองใหม่ภายหลัง';
+      return 'สถานที่ยังไม่มีเงื่อนไขมาตรฐาน กรุณาติดต่อเจ้าของสถานที่หรือกลับมาลองใหม่ภายหลัง';
     }
     if (raw.contains('TERMS_VERSION_CHANGED')) {
-      return 'เงื่อนไขสนามเปลี่ยนแล้ว กรุณาอ่านและยอมรับเวอร์ชันใหม่';
+      return 'เงื่อนไขของสถานที่เปลี่ยนแล้ว กรุณาอ่านและยอมรับเวอร์ชันใหม่';
     }
     if (raw.contains('PRICE_CHANGED')) {
-      return 'ราคาสนามเปลี่ยนแล้ว กรุณาเลือกเวลาใหม่และตรวจสอบราคา';
+      return 'ราคาของสถานที่เปลี่ยนแล้ว กรุณาเลือกเวลาใหม่และตรวจสอบราคา';
     }
     if (raw.contains('PRICE_VERSION_REQUIRED')) {
-      return 'กรุณาอัปเดตแอปก่อนเปลี่ยนเวลาจองสนามนี้';
+      return 'กรุณาอัปเดตแอปก่อนเปลี่ยนเวลาจองนี้';
     }
     if (raw.contains('PRICE_NOT_CONFIGURED')) {
-      return 'สนามยังไม่ได้กำหนดราคาในช่วงเวลานี้';
+      return 'สถานที่ยังไม่ได้กำหนดราคาในช่วงเวลานี้';
     }
     if (raw.contains('SLOT_TAKEN') || raw.contains('OVERLAP')) {
       return 'ช่วงเวลานี้ถูกจองแล้ว กรุณาเลือกเวลาอื่น';
     }
     if (raw.contains('CUTOFF_PASSED')) {
-      return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง';
+      return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อเจ้าของสถานที่โดยตรง';
     }
     if (raw.contains('BOOKING_NOT_COMPLETED') ||
         raw.contains('REVIEW_NOT_ALLOWED')) {
@@ -751,7 +752,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     if (raw.contains('BOOKING_NOT_FOUND')) return 'ไม่พบการจองนี้แล้ว';
     if (raw.contains('ALREADY_REVIEWED')) return 'รีวิวการจองนี้ไปแล้ว';
     if (raw.contains('SELF_REVIEW_NOT_ALLOWED')) {
-      return 'ไม่สามารถรีวิวสนามของตนเองได้';
+      return 'ไม่สามารถรีวิวสถานที่ของตนเองได้';
     }
     if (raw.contains('TOO_MANY_TAGS')) {
       return 'เลือกแท็กรวมได้ไม่เกิน 5 รายการ';

@@ -445,7 +445,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
               initialValue: _courtId,
               isDense: true,
               decoration: const InputDecoration(
-                labelText: 'สนาม',
+                labelText: 'สถานที่',
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: 10,
@@ -455,7 +455,7 @@ class _CourtReviewsPageState extends State<CourtReviewsPage> {
               items: [
                 const DropdownMenuItem(
                   value: null,
-                  child: Text('ทุกสนาม'),
+                  child: Text('ทุกสถานที่'),
                 ),
                 for (final court in _courts)
                   DropdownMenuItem(

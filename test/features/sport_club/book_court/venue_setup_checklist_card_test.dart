@@ -39,7 +39,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('ขั้นตอนการเปิดสนาม'), findsOneWidget);
+    expect(find.text('ขั้นตอนการเปิดสถานที่'), findsOneWidget);
     expect(find.text('2/8'), findsOneWidget);
     expect(find.byType(InkWell), findsNWidgets(8));
   });
@@ -55,7 +55,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('ตั้งค่ากีฬาของสนาม'));
+    await tester.tap(find.text('ตั้งค่ากีฬาของสถานที่'));
     expect(ran, VenueSetupStepId.sports);
   });
 
@@ -72,9 +72,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('เจ้าของสนามได้รับอนุมัติ'));
-    await tester.tap(find.text('สร้างสนาม'));
-    await tester.tap(find.text('ทีมงานอนุมัติสนาม → เปิดรับการจอง'));
+    await tester.tap(find.text('เจ้าของสถานที่ได้รับอนุมัติ'));
+    await tester.tap(find.text('สร้างสถานที่'));
+    await tester.tap(find.text('ทีมงานอนุมัติสถานที่ → เปิดรับการจอง'));
     expect(ran, isNull);
   });
 
@@ -89,7 +89,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสนาม'));
+    await tester.tap(find.text('ใช้เงื่อนไขมาตรฐานหรือเผยแพร่เงื่อนไขของสถานที่'));
     expect(ran, VenueSetupStepId.terms);
   });
 
@@ -143,7 +143,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('ตั้งค่ากีฬาของสนาม'));
+    await tester.tap(find.text('ตั้งค่ากีฬาของสถานที่'));
     await tester.pump();
     expect(ran, isNull);
   });

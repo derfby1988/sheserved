@@ -5,7 +5,6 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/websocket_service.dart';
-import 'package:sheserved/shared/widgets/glass/glass_text_prompt_dialog.dart';
 import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 import 'package:sheserved/shared/widgets/tlz_app_top_bar.dart';
 import 'package:sheserved/shared/widgets/tlz_drawer.dart';
@@ -15,6 +14,7 @@ import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../widgets/court_owner_register_sheet.dart';
 import '../widgets/court_owner_venue_card.dart';
+import '../widgets/venue_create_dialog.dart';
 import 'court_owner_bookings_page.dart';
 import 'court_owner_venue_manage_page.dart';
 
@@ -144,28 +144,21 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
   Future<void> _addVenue() async {
     final userId = _userId;
     if (userId == null) return;
-    final name = await _askVenueName();
-    if (name == null) return;
+    // 21.7.19 — create captures only generic/custom label modes; the
+    // sport-derived mode unlocks after sports are added on the manage page.
+    final draft = await VenueCreateDialog.show(context);
+    if (draft == null) return;
     try {
-      await _ownerService.upsertVenue(userId: userId, name: name);
-      _toast('สร้างสนามแล้ว — ตั้งค่าให้ครบแล้วกดส่งตรวจสอบ');
+      await _ownerService.upsertVenue(
+        userId: userId,
+        name: draft.name,
+        venueUnitLabelOverride: draft.venueUnitLabelOverride,
+      );
+      _toast('สร้างสถานที่แล้ว — ตั้งค่าให้ครบแล้วกดส่งตรวจสอบ');
       await _load();
     } catch (e) {
       _toast(_mapError(e));
     }
-  }
-
-  Future<String?> _askVenueName() {
-    return GlassTextPromptDialog.show(
-      context,
-      title: 'สร้างสนามใหม่',
-      hint: 'ชื่อสนาม/สถานที่',
-      label: 'ชื่อสนาม/สถานที่',
-      confirmLabel: 'สร้าง',
-      accentColor: AppColors.primaryDark,
-      maxLength: 120,
-      maxLines: 1,
-    );
   }
 
   void _openManage(VenueSummary venue) {
@@ -224,7 +217,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'จัดการสนามของฉัน',
+                      'จัดการสถานที่ของฉัน',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -280,7 +273,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          'สนามที่จัดการ (${_venues.length})',
+                                          'สถานที่ที่จัดการ (${_venues.length})',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
                                             fontSize: 15,
@@ -293,7 +286,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                                         NeumorphicPillButton(
                                           onPressed: _addVenue,
                                           icon: Icons.add_rounded,
-                                          text: 'เพิ่มสนาม',
+                                          text: 'เพิ่มสถานที่',
                                           height: 34,
                                           fontSize: 13,
                                           iconSize: 16,
@@ -332,7 +325,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
                                         ),
                                         const SizedBox(height: 10),
                                         const Text(
-                                          'ยังไม่มีสนาม — สร้างสนามแรกของคุณ',
+                                          'ยังไม่มีสถานที่ — สร้างสถานที่แรกของคุณ',
                                           style: TextStyle(
                                             fontSize: 13,
                                             color:
@@ -386,13 +379,13 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
         VenueOwnerStatus.approved => _statusTile(
           icon: Icons.verified_rounded,
           color: Colors.green.shade700,
-          title: 'คุณเป็นเจ้าของสนามที่อนุมัติแล้ว',
+          title: 'คุณเป็นเจ้าของสถานที่ที่อนุมัติแล้ว',
           subtitle: approvedSubtitle,
         ),
         VenueOwnerStatus.pending => _statusTile(
           icon: Icons.hourglass_top_rounded,
           color: Colors.orange.shade800,
-          title: 'คำขอเป็นเจ้าของสนามกำลังรอตรวจสอบ',
+          title: 'คำขอเป็นเจ้าของสถานที่กำลังรอตรวจสอบ',
           subtitle: submittedLine,
         ),
         VenueOwnerStatus.rejected || VenueOwnerStatus.suspended => Column(
@@ -403,7 +396,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
               color: Colors.red,
               title: status == VenueOwnerStatus.rejected
                   ? 'คำขอไม่ผ่านการตรวจสอบ'
-                  : 'บัญชีเจ้าของสนามถูกระงับ',
+                  : 'บัญชีเจ้าของสถานที่ถูกระงับ',
               subtitle: submittedLine,
             ),
             if (_ownerProfile?.rejectionReason?.isNotEmpty == true)
@@ -449,12 +442,12 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
             _statusTile(
               icon: Icons.stadium_outlined,
               color: NeumorphicTheme.primaryBlue,
-              title: 'มีสนามกีฬา? ลงทะเบียนเป็นเจ้าของสนามเพื่อเปิดรับการจอง',
+              title: 'มีสถานที่เล่นกีฬา? ลงทะเบียนเป็นเจ้าของสถานที่เพื่อเปิดรับการจอง',
             ),
             const SizedBox(height: 12),
             NeumorphicVerifyButton(
               onPressed: _applyAsOwner,
-              text: 'ลงทะเบียนเจ้าของสนาม',
+              text: 'ลงทะเบียนเจ้าของสถานที่',
               height: 46,
               fitTextToWidth: true,
             ),
@@ -517,7 +510,7 @@ class _CourtOwnerDashboardState extends State<CourtOwnerDashboard> {
     final raw = e.toString();
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
     if (raw.contains('OWNER_NOT_APPROVED')) {
-      return 'บัญชีเจ้าของสนามยังไม่ได้รับการอนุมัติ';
+      return 'บัญชีเจ้าของสถานที่ยังไม่ได้รับการอนุมัติ';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

@@ -55,7 +55,7 @@ class VenueSetupChecklistCard extends StatelessWidget {
               children: [
                 const Expanded(
                   child: Text(
-                    'ขั้นตอนการเปิดสนาม',
+                    'ขั้นตอนการเปิดสถานที่',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                 ),

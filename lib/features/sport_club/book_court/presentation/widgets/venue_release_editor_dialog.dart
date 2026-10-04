@@ -3,26 +3,31 @@ import 'package:sheserved/core/constants/app_colors.dart';
 import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
+import '../../domain/court_booking_release_schedule.dart';
+
 /// Owner editor for the venue-level recurring booking release
-/// (Phase 21.7.18). Returns `cleared: true` to remove the rule (advance
-/// booking becomes unlimited again); otherwise the weekly release triple.
-/// The caller runs `set_sports_venue_booking_release` and reloads before
-/// reporting success.
+/// (Phase 21.7.18). Returns `cleared: true` to remove the rule; otherwise
+/// selected weekdays share one venue-local release time.
 class VenueReleaseEditorDialog {
   static Future<
-      ({bool cleared, int dayOfWeek, String time, int windowDays})?> show(
+    ({bool cleared, List<int> daysOfWeek, String time, int windowDays})?
+  >
+  show(
     BuildContext context, {
+    List<int>? currentDaysOfWeek,
     int? currentDayOfWeek,
     String? currentTime,
     int? currentWindowDays,
   }) {
     return GlassDialog.show<
-        ({bool cleared, int dayOfWeek, String time, int windowDays})>(
+      ({bool cleared, List<int> daysOfWeek, String time, int windowDays})
+    >(
       context: context,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       panelAccentColor: AppColors.primary,
       contentPadding: EdgeInsets.zero,
       builder: (dialogContext) => _VenueReleaseEditorDialogBody(
+        currentDaysOfWeek: currentDaysOfWeek,
         currentDayOfWeek: currentDayOfWeek,
         currentTime: currentTime,
         currentWindowDays: currentWindowDays,
@@ -32,11 +37,13 @@ class VenueReleaseEditorDialog {
 }
 
 class _VenueReleaseEditorDialogBody extends StatefulWidget {
+  final List<int>? currentDaysOfWeek;
   final int? currentDayOfWeek;
   final String? currentTime;
   final int? currentWindowDays;
 
   const _VenueReleaseEditorDialogBody({
+    this.currentDaysOfWeek,
     this.currentDayOfWeek,
     this.currentTime,
     this.currentWindowDays,
@@ -49,25 +56,28 @@ class _VenueReleaseEditorDialogBody extends StatefulWidget {
 
 class _VenueReleaseEditorDialogBodyState
     extends State<_VenueReleaseEditorDialogBody> {
-  static const _weekdayLabels = {
-    0: 'อาทิตย์',
-    1: 'จันทร์',
-    2: 'อังคาร',
-    3: 'พุธ',
-    4: 'พฤหัสบดี',
-    5: 'ศุกร์',
-    6: 'เสาร์',
-  };
-
-  static const _windowPresets = [7, 14, 30, 60, 90];
-
-  late bool _enabled = widget.currentDayOfWeek != null;
-  late int _day = widget.currentDayOfWeek ?? 1;
+  late bool _enabled =
+      (widget.currentDaysOfWeek?.isNotEmpty ?? false) ||
+      widget.currentDayOfWeek != null;
+  late final Set<int> _selectedDays = _initialDays().toSet();
   late TimeOfDay _time = _parse(widget.currentTime);
   late final _window = TextEditingController(
     text: (widget.currentWindowDays ?? 7).toString(),
   );
   final ScrollController _scrollController = ScrollController();
+
+  List<int> _initialDays() {
+    final currentDays = widget.currentDaysOfWeek;
+    if (currentDays != null &&
+        CourtBookingReleaseSchedule.minimumWindowDays(currentDays) != null) {
+      return CourtBookingReleaseSchedule.sortedDays(currentDays);
+    }
+    final legacyDay = widget.currentDayOfWeek;
+    if (legacyDay != null && legacyDay >= 0 && legacyDay <= 6) {
+      return [legacyDay];
+    }
+    return [1];
+  }
 
   static TimeOfDay _parse(String? hhmm) {
     final parts = (hhmm ?? '09:00').split(':');
@@ -84,34 +94,63 @@ class _VenueReleaseEditorDialogBodyState
     super.dispose();
   }
 
-  /// Server requires a window of at least 7 days so every future slot is
-  /// covered by at least one release round; there is no product ceiling.
+  int? get _minimumWindowDays =>
+      CourtBookingReleaseSchedule.minimumWindowDays(_selectedDays);
+
+  List<int> get _windowPresets {
+    final minimum = _minimumWindowDays;
+    return {?minimum, 7, 14, 30, 60, 90}.toList()..sort();
+  }
+
   int? get _windowValue {
     final parsed = int.tryParse(_window.text.trim());
-    if (parsed == null || parsed < 7) return null;
+    final minimum = _minimumWindowDays;
+    if (parsed == null ||
+        minimum == null ||
+        parsed < minimum ||
+        parsed > CourtBookingReleaseSchedule.maxWindowDays) {
+      return null;
+    }
     return parsed;
   }
 
-  bool get _valid => !_enabled || _windowValue != null;
+  String? get _windowError {
+    if (_window.text.trim().isEmpty) return null;
+    if (_selectedDays.isEmpty) return 'เลือกอย่างน้อยหนึ่งวัน';
+    final parsed = int.tryParse(_window.text.trim());
+    if (parsed == null) return 'กรุณากรอกจำนวนวันเป็นตัวเลข';
+    if (parsed > CourtBookingReleaseSchedule.maxWindowDays) {
+      return 'ไม่เกิน ${CourtBookingReleaseSchedule.maxWindowDays} วัน';
+    }
+    final minimum = _minimumWindowDays;
+    if (minimum == null) return 'เลือกวันเปิดรอบให้ถูกต้อง';
+    return parsed < minimum ? 'อย่างน้อย $minimum วัน' : null;
+  }
+
+  bool get _valid =>
+      !_enabled || (_selectedDays.isNotEmpty && _windowValue != null);
 
   String _formatTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   void _submit() {
     if (!_valid) return;
+    final days = CourtBookingReleaseSchedule.sortedDays(_selectedDays);
     if (!_enabled) {
-      Navigator.pop(
-        context,
-        (cleared: true, dayOfWeek: _day, time: _formatTime(_time),
-            windowDays: _windowValue ?? 7),
-      );
+      Navigator.pop(context, (
+        cleared: true,
+        daysOfWeek: days,
+        time: _formatTime(_time),
+        windowDays: _windowValue ?? 7,
+      ));
       return;
     }
-    Navigator.pop(
-      context,
-      (cleared: false, dayOfWeek: _day, time: _formatTime(_time),
-          windowDays: _windowValue!),
-    );
+    Navigator.pop(context, (
+      cleared: false,
+      daysOfWeek: days,
+      time: _formatTime(_time),
+      windowDays: _windowValue!,
+    ));
   }
 
   @override
@@ -143,7 +182,7 @@ class _VenueReleaseEditorDialogBodyState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'ใช้กับทุกคอร์ทที่ตั้ง "ตามสนาม" — สล็อตที่ยังไม่ถึงรอบจะแสดงแต่จองไม่ได้',
+                        'ใช้กับทุกรายการที่ตั้ง "ตามสถานที่" · เวลาอิงเขตเวลาของสถานที่',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.white.withValues(alpha: 0.65),
@@ -180,8 +219,8 @@ class _VenueReleaseEditorDialogBodyState
                           title: const Text('จำกัดการจองล่วงหน้า'),
                           subtitle: Text(
                             _enabled
-                                ? 'เปิดรับจองตามรอบรายสัปดาห์'
-                                : 'ไม่จำกัด — จองล่วงหน้าได้ทุกวัน',
+                                ? 'เปิดรอบตามวันที่เลือกและเวลาเดียวกัน'
+                                : 'ไม่จำกัดจำนวนวันล่วงหน้า — ไม่ต้องรอรอบเปิดจอง',
                             style: const TextStyle(fontSize: 12),
                           ),
                           value: _enabled,
@@ -189,59 +228,85 @@ class _VenueReleaseEditorDialogBodyState
                         ),
                         if (_enabled) ...[
                           const SizedBox(height: 8),
-                          Row(
+                          const Text(
+                            'วันที่เปิดรอบ',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'เลือกได้หลายวัน โดยใช้เวลาเดียวกัน',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
-                              Expanded(
-                                flex: 3,
-                                child: DropdownButtonFormField<int>(
-                                  key: const ValueKey(
-                                    'venue-release-day',
+                              FilterChip(
+                                key: const ValueKey('venue-release-all-days'),
+                                label: const Text('ทุกวัน'),
+                                selected: _selectedDays.length == 7,
+                                onSelected: (_) => setState(
+                                  () => _selectedDays.addAll(
+                                    CourtBookingReleaseSchedule
+                                        .weekdayLabels
+                                        .keys,
                                   ),
-                                  isExpanded: true,
-                                  initialValue: _day,
-                                  decoration: const InputDecoration(
-                                    labelText: 'เปิดจองทุกวัน',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: [
-                                    for (final entry
-                                        in _weekdayLabels.entries)
-                                      DropdownMenuItem(
-                                        value: entry.key,
-                                        child: Text(entry.value),
-                                      ),
-                                  ],
-                                  onChanged: (v) {
-                                    if (v != null) {
-                                      setState(() => _day = v);
-                                    }
-                                  },
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 2,
-                                child: OutlinedButton(
-                                  key: const ValueKey(
-                                    'venue-release-time',
+                              for (final entry
+                                  in CourtBookingReleaseSchedule
+                                      .weekdayLabels
+                                      .entries)
+                                FilterChip(
+                                  key: ValueKey(
+                                    'venue-release-day-${entry.key}',
                                   ),
-                                  onPressed: () async {
-                                    final picked = await showTimePicker(
-                                      context: context,
-                                      initialTime: _time,
-                                    );
-                                    if (picked != null && mounted) {
-                                      setState(() => _time = picked);
+                                  label: Text(entry.value),
+                                  selected: _selectedDays.contains(entry.key),
+                                  onSelected: (selected) => setState(() {
+                                    if (selected) {
+                                      _selectedDays.add(entry.key);
+                                    } else {
+                                      _selectedDays.remove(entry.key);
                                     }
-                                  },
-                                  child: Text('เวลา ${_formatTime(_time)}'),
+                                  }),
                                 ),
-                              ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'รอบ: ${CourtBookingReleaseSchedule.describeDays(_selectedDays)} เวลา ${_formatTime(_time)}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              key: const ValueKey('venue-release-time'),
+                              onPressed: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: _time,
+                                );
+                                if (picked != null && mounted) {
+                                  setState(() => _time = picked);
+                                }
+                              },
+                              child: Text(
+                                'เวลาเดียวกันทุกวันที่เลือก · ${_formatTime(_time)}',
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'จองล่วงหน้าได้ (วัน)',
+                            'แต่ละรอบเปิดสล็อตล่วงหน้า (วัน)',
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
@@ -255,9 +320,8 @@ class _VenueReleaseEditorDialogBodyState
                                 ChoiceChip(
                                   label: Text('$days'),
                                   selected: _windowValue == days,
-                                  onSelected: (_) => setState(
-                                    () => _window.text = '$days',
-                                  ),
+                                  onSelected: (_) =>
+                                      setState(() => _window.text = '$days'),
                                 ),
                             ],
                           ),
@@ -267,14 +331,11 @@ class _VenueReleaseEditorDialogBodyState
                             controller: _window,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
-                              labelText: 'กำหนดเอง (วัน)',
-                              helperText:
-                                  'อย่างน้อย 7 วัน — ทุกสล็อตมีรอบเปิดครอบอยู่เสมอ',
-                              errorText:
-                                  _window.text.trim().isNotEmpty &&
-                                          _windowValue == null
-                                      ? 'อย่างน้อย 7 วัน'
-                                      : null,
+                              labelText: 'จำนวนวันล่วงหน้า',
+                              helperText: _minimumWindowDays == null
+                                  ? 'เลือกอย่างน้อยหนึ่งวัน'
+                                  : 'ขั้นต่ำ $_minimumWindowDays วัน · เช่น 7 = เปิดสล็อตใน 7 วันถัดไป',
+                              errorText: _windowError,
                               border: const OutlineInputBorder(),
                             ),
                             onChanged: (_) => setState(() {}),

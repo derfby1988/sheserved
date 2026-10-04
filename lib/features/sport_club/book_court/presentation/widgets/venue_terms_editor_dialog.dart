@@ -88,7 +88,7 @@ class _VenueTermsEditorDialogBodyState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'เงื่อนไขการใช้สนาม',
+                        'เงื่อนไขการใช้งาน',
                         style: TextStyle(
                           fontSize: 15.5,
                           fontWeight: FontWeight.w700,
@@ -134,7 +134,7 @@ class _VenueTermsEditorDialogBodyState
                           minLines: 5,
                           maxLines: 10,
                           decoration: const InputDecoration(
-                            labelText: 'เงื่อนไขการใช้สนาม',
+                            labelText: 'เงื่อนไขการใช้งาน',
                             alignLabelWithHint: true,
                             border: OutlineInputBorder(),
                           ),

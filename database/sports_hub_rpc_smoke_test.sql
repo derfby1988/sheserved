@@ -89,6 +89,16 @@ END $$;
 \ir ../supabase/migrations/20261004100000_sports_hub_booking_release.sql
 \ir ../supabase/migrations/20261004110000_sports_hub_booking_housekeeping.sql
 
+-- 21.7.19: sports present at apply time receive curated/generic catalog
+-- rows; sports inserted later rely on the AFTER INSERT trigger instead.
+INSERT INTO public.sports (id, name_en, status) VALUES
+  ('eeeeeeee-0000-0000-0000-0000000000f0','Yoga','approved'),
+  ('eeeeeeee-0000-0000-0000-0000000000f1','Underwater Basket Weaving','approved'),
+  ('eeeeeeee-0000-0000-0000-0000000000f2','Proposed Sport X','pending');
+\ir ../supabase/migrations/20261005100000_sports_hub_unit_labels.sql
+\ir ../supabase/migrations/20261006100000_sports_hub_booking_release_days.sql
+\ir ../supabase/migrations/20261007100000_sports_hub_booking_release_weekday_overrides.sql
+
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -911,7 +921,7 @@ BEGIN
     v_owner, v_venue, v_rel_dow2, '00:00'::time, 7);
   PERFORM pg_temp.expect_raise('rule change applies to new bookings',
     format($$SELECT public.create_sports_venue_booking(%L, %L,
-      pg_temp.bkk_ts(6, '12:00'), pg_temp.bkk_ts(6, '13:00'),
+      pg_temp.bkk_ts(1, '12:00'), pg_temp.bkk_ts(1, '13:00'),
       %s, 'release-new-rule')$$, v_cust, v_rel_court, v_terms),
     'BOOKING_NOT_OPEN_YET');
   PERFORM pg_temp.expect(public.decide_sports_venue_booking(
@@ -1521,3 +1531,628 @@ BEGIN
   DELETE FROM public.sport_detail_open_events WHERE user_id IN (v_u1, v_u2);
   RAISE NOTICE 'sport usage ranking smoke test complete';
 END $usage$;
+
+-- =====================================================================
+-- 21.7.19 — two-level unit labels (venue & resource)
+-- =====================================================================
+DO $labels$
+DECLARE
+  v_admin uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  v_owner uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  v_cust  uuid := 'cccccccc-0000-0000-0000-000000000003';
+  v_yoga  uuid := 'eeeeeeee-0000-0000-0000-0000000000f0';
+  v_unknown uuid := 'eeeeeeee-0000-0000-0000-0000000000f1';
+  v_pending_sport uuid := 'eeeeeeee-0000-0000-0000-0000000000f2';
+  v_badminton uuid := 'eeeeeeee-0000-0000-0000-000000000005';
+  v_new_sport uuid := 'eeeeeeee-0000-0000-0000-0000000000f3';
+  v_venue uuid; v_venue2 uuid; v_court uuid; v_booking uuid;
+  v_detail jsonb; v_rows jsonb; v_terms int;
+BEGIN
+  -- Catalog coverage: every sports row (any status) has a 'th' default,
+  -- curated rows win over the generic 'สนาม' fallback.
+  PERFORM pg_temp.expect(NOT EXISTS(
+    SELECT 1 FROM public.sports s
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.sports_venue_unit_defaults d
+      WHERE d.sport_id = s.id AND d.locale = 'th')),
+    'every sports row has a th venue-label default');
+  PERFORM pg_temp.expect((SELECT singular
+    FROM public.sports_venue_unit_defaults
+    WHERE sport_id = v_yoga AND locale = 'th') = 'สตูดิโอโยคะ',
+    'curated venue label applied for Yoga');
+  PERFORM pg_temp.expect((SELECT singular
+    FROM public.sports_venue_unit_defaults
+    WHERE sport_id = v_unknown AND locale = 'th') = 'สนาม',
+    'uncurated sport falls back to generic สนาม');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_unit_defaults
+    WHERE sport_id = v_pending_sport AND locale = 'th'),
+    'pending sport still has a fallback row');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'sports_venue_unit_defaults'
+      AND policyname = 'sports_venue_unit_defaults_select_approved'),
+    'catalog select restricted to approved sports via policy');
+
+  -- Future sports get generic defaults through the AFTER INSERT trigger.
+  INSERT INTO public.sports (id, name_en, status)
+    VALUES (v_new_sport, 'Brand New Sport', 'approved');
+  PERFORM pg_temp.expect(EXISTS(
+    SELECT 1 FROM public.sports_venue_unit_defaults
+    WHERE sport_id = v_new_sport AND locale = 'th' AND singular = 'สนาม'),
+    'trigger seeds generic defaults for sports created after migration');
+
+  -- Admin-only catalog maintenance.
+  PERFORM pg_temp.expect_raise('non-admin cannot edit venue catalog',
+    format($s$SELECT public.upsert_sports_venue_unit_default(
+      %L, %L, 'th', 'x', 'x')$s$, v_cust, v_yoga), 'NOT_ADMIN');
+  PERFORM public.upsert_sports_venue_unit_default(
+    v_admin, v_unknown, 'th', 'สนามทดลอง', NULL);
+  PERFORM pg_temp.expect((SELECT singular
+    FROM public.sports_venue_unit_defaults
+    WHERE sport_id = v_unknown AND locale = 'th') = 'สนามทดลอง',
+    'admin mapping RPC updates catalog rows');
+
+  -- Venue label: create cannot carry a reference (no sports yet).
+  v_venue := public.upsert_sports_venue(
+    v_owner, NULL, 'Label Studio', NULL, 'Bangkok', 'Chatuchak',
+    'addr', 13.8, 100.5, 'Asia/Bangkok');
+  PERFORM pg_temp.expect_raise('create cannot set label reference',
+    format($s$SELECT public.upsert_sports_venue(
+      %L, NULL, 'X', NULL, NULL, NULL, NULL, 1, 1,
+      'Asia/Bangkok', NULL, %L)$s$, v_owner, v_yoga),
+    'INVALID_UNIT_LABEL_REFERENCE');
+
+  -- Single sport is auto-picked as the venue-label reference.
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
+    jsonb_build_array(jsonb_build_object('sport_id', v_yoga)));
+  PERFORM pg_temp.expect((SELECT venue_unit_label_sport_id
+    FROM public.sports_venues WHERE id = v_venue) = v_yoga,
+    'single sport auto-picked as label reference');
+  PERFORM pg_temp.expect(public.sports_venue_unit_label(v_venue)
+    = 'สตูดิโอโยคะ', 'venue label resolves from reference sport catalog');
+
+  -- Explicit setter: custom override wins; clearing returns to sport-derived.
+  PERFORM public.set_sports_venue_unit_label(
+    v_owner, v_venue, 'ยิมสตู', v_yoga);
+  PERFORM pg_temp.expect(public.sports_venue_unit_label(v_venue) = 'ยิมสตู',
+    'custom venue override wins over catalog');
+  PERFORM public.set_sports_venue_unit_label(
+    v_owner, v_venue, NULL, v_yoga);
+  PERFORM pg_temp.expect(public.sports_venue_unit_label(v_venue)
+    = 'สตูดิโอโยคะ', 'clearing override returns to sport-derived label');
+  PERFORM pg_temp.expect_raise('reference must be a venue sport',
+    format($s$SELECT public.set_sports_venue_unit_label(
+      %L, %L, NULL, %L)$s$, v_owner, v_venue, v_badminton),
+    'INVALID_UNIT_LABEL_REFERENCE');
+  PERFORM pg_temp.expect_raise('non-manager cannot set venue label',
+    format($s$SELECT public.set_sports_venue_unit_label(
+      %L, %L, 'x', NULL)$s$, v_cust, v_venue), 'NOT_VENUE_MANAGER');
+  PERFORM pg_temp.expect_raise('overlong venue label rejected',
+    format($s$SELECT public.set_sports_venue_unit_label(
+      %L, %L, %L, NULL)$s$, v_owner, v_venue, repeat('x', 41)),
+    'INVALID_UNIT_LABEL');
+
+  -- Resource label: live resolution cascades venue+sport defaults.
+  v_court := public.upsert_sports_venue_court(
+    v_owner, NULL, v_venue, v_yoga, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+    'instant', NULL, true, NULL);
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'สนาม', 'court without override uses generic resource label');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
+    jsonb_build_array(jsonb_build_object(
+      'sport_id', v_yoga, 'unit_label_override', 'เสื่อ')));
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'เสื่อ', 'venue+sport resource override cascades to inheriting court');
+
+  -- Three-state override contract via upsert_sports_venue_court.
+  v_court := public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_yoga, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+    'instant', NULL, true, NULL,
+    NULL, NULL, NULL, NULL, 'custom', 'โซน A');
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'โซน A', 'custom mode sets a per-court resource override');
+  v_court := public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_yoga, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+    'instant', NULL, true, NULL,
+    NULL, NULL, NULL, NULL, 'inherit', NULL);
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'เสื่อ', 'inherit mode returns to the venue+sport default');
+  PERFORM pg_temp.expect_raise('custom mode requires label text',
+    format($s$SELECT public.upsert_sports_venue_court(
+      %L, %L, %L, %L, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+      'instant', NULL, true, NULL,
+      NULL, NULL, NULL, NULL, 'custom', NULL)$s$,
+      v_owner, v_court, v_venue, v_yoga), 'INVALID_UNIT_LABEL');
+  PERFORM pg_temp.expect_raise('unknown unit label mode rejected',
+    format($s$SELECT public.upsert_sports_venue_court(
+      %L, %L, %L, %L, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+      'instant', NULL, true, NULL,
+      NULL, NULL, NULL, NULL, 'bogus', NULL)$s$,
+      v_owner, v_court, v_venue, v_yoga), 'INVALID_UNIT_LABEL_MODE');
+
+  -- Legacy callers (no mode params) keep the old semantics: non-empty
+  -- p_unit_label becomes the stored label, empty means inherit.
+  v_court := public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_yoga, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+    'instant', 'เลน B', true, NULL);
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'เลน B', 'legacy p_unit_label text maps to a per-court override');
+  v_court := public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_yoga, 'Zone 1', 1, 100, 'hour', NULL, NULL,
+    'instant', NULL, true, NULL);
+  PERFORM pg_temp.expect(public.sports_venue_court_unit_label(v_court)
+    = 'เสื่อ', 'legacy empty p_unit_label inherits again');
+  PERFORM pg_temp.expect_raise('update cannot set a non-member reference',
+    format($s$SELECT public.upsert_sports_venue(
+      %L, %L, 'X', NULL, NULL, NULL, NULL, 1, 1,
+      'Asia/Bangkok', NULL, %L)$s$, v_owner, v_venue, v_badminton),
+    'INVALID_UNIT_LABEL_REFERENCE');
+
+  -- Full venue setup so public views and bookings can be exercised
+  -- (the court must exist before submit or VENUE_NOT_READY is raised).
+  PERFORM public.set_sports_venue_operating_hours(v_owner, v_venue, (
+    SELECT jsonb_agg(jsonb_build_object(
+      'day', d, 'open', '08:00', 'close', '22:00', 'closed', false))
+    FROM generate_series(0, 6) d));
+  PERFORM public.set_sports_venue_amenities(v_owner, v_venue, '{}');
+  v_terms := public.publish_sports_venue_terms(
+    v_owner, v_venue, 'Label terms', 60);
+  PERFORM public.submit_sports_venue_for_review(v_owner, v_venue);
+  PERFORM public.review_sports_venue(v_admin, v_venue, 'approved');
+  PERFORM pg_temp.expect((SELECT venue_unit_label
+    FROM public.sports_venues_public WHERE id = v_venue) = 'สตูดิโอโยคะ',
+    'public venue view exposes resolved venue label');
+  PERFORM pg_temp.expect((SELECT unit_label
+    FROM public.sports_venue_courts_public WHERE id = v_court) = 'เสื่อ',
+    'public court view returns live-resolved resource label');
+
+  -- A stored column that drifts must never leak through the public view.
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
+    jsonb_build_array(jsonb_build_object(
+      'sport_id', v_yoga, 'unit_label_override', 'เสื่อใหม่')));
+  PERFORM pg_temp.expect((SELECT unit_label
+    FROM public.sports_venue_courts_public WHERE id = v_court) = 'เสื่อใหม่',
+    'public view resolves live, not the stale stored column');
+  PERFORM pg_temp.expect((SELECT unit_label
+    FROM public.sports_venue_courts WHERE id = v_court) = 'เสื่อ',
+    'compat column stays stale until the next court write');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue,
+    jsonb_build_array(jsonb_build_object(
+      'sport_id', v_yoga, 'unit_label_override', 'เสื่อ')));
+
+  -- Reference lifecycle on a second venue: explicit reference, keep when
+  -- still a member, heal to the single member when it is removed.
+  v_venue2 := public.upsert_sports_venue(
+    v_owner, NULL, 'Multi Sport Hub', NULL, 'Bangkok', 'Chatuchak',
+    'addr', 13.8, 100.5, 'Asia/Bangkok');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue2,
+    jsonb_build_array(
+      jsonb_build_object('sport_id', v_yoga),
+      jsonb_build_object('sport_id', v_badminton)),
+    v_yoga);
+  PERFORM pg_temp.expect(public.sports_venue_unit_label(v_venue2)
+    = 'สตูดิโอโยคะ', 'explicit reference sport drives venue label');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue2,
+    jsonb_build_array(
+      jsonb_build_object('sport_id', v_yoga),
+      jsonb_build_object('sport_id', v_badminton)));
+  PERFORM pg_temp.expect((SELECT venue_unit_label_sport_id
+    FROM public.sports_venues WHERE id = v_venue2) = v_yoga,
+    'omitted reference kept while it is still a member');
+  PERFORM pg_temp.expect_raise('non-member reference rejected',
+    format($s$SELECT public.set_sports_venue_sports(
+      %L, %L, jsonb_build_array(
+        jsonb_build_object('sport_id', %L)), %L)$s$,
+      v_owner, v_venue2, v_badminton, v_yoga),
+    'INVALID_UNIT_LABEL_REFERENCE');
+  PERFORM pg_temp.expect((SELECT count(*)::int
+    FROM public.sports_venue_sports WHERE venue_id = v_venue2) = 2,
+    'rejected reference leaves the sport set unchanged');
+  PERFORM public.set_sports_venue_sports(v_owner, v_venue2,
+    jsonb_build_array(jsonb_build_object('sport_id', v_badminton)));
+  PERFORM pg_temp.expect((SELECT venue_unit_label_sport_id
+    FROM public.sports_venues WHERE id = v_venue2) = v_badminton,
+    'removed reference heals to the single remaining member');
+  PERFORM pg_temp.expect(public.sports_venue_unit_label(v_venue2) = 'สนาม',
+    'healed reference resolves through its own catalog row');
+
+  -- Booking snapshots capture both levels and stay immutable afterwards.
+  PERFORM public.set_sports_venue_unit_label(
+    v_owner, v_venue, 'ยิมสตู', v_yoga);
+  v_booking := public.create_sports_venue_booking(
+    v_cust, v_court, pg_temp.bkk_ts(30, '10:00'),
+    pg_temp.bkk_ts(30, '11:00'), v_terms, 'label-booking-1');
+  PERFORM pg_temp.expect((SELECT venue_unit_label_snapshot
+    FROM public.sports_venue_bookings WHERE id = v_booking) = 'ยิมสตู',
+    'booking snapshots the venue label');
+  PERFORM pg_temp.expect((SELECT unit_label_snapshot
+    FROM public.sports_venue_bookings WHERE id = v_booking) = 'เสื่อ',
+    'booking snapshots the resource label');
+  PERFORM pg_temp.expect((SELECT title FROM public.app_notifications
+    WHERE payload->>'bookingId' = v_booking::text
+      AND recipient_id = v_cust
+    ORDER BY created_at DESC LIMIT 1) = 'การจองยิมสตูยืนยันแล้ว',
+    'new notification titles use the venue label');
+  PERFORM public.set_sports_venue_unit_label(
+    v_owner, v_venue, 'ยิมใหม่', v_yoga);
+  PERFORM pg_temp.expect((SELECT venue_unit_label_snapshot
+    FROM public.sports_venue_bookings WHERE id = v_booking) = 'ยิมสตู',
+    'snapshots are immutable when the venue label changes');
+
+  -- Booking lists expose both levels; legacy rows keep a NULL venue label.
+  v_rows := public.list_my_sports_venue_bookings(v_cust);
+  PERFORM pg_temp.expect((SELECT r->>'venueUnitLabel'
+    FROM jsonb_array_elements(v_rows) r
+    WHERE (r->>'id')::uuid = v_booking) = 'ยิมสตู',
+    'booking list exposes the venue snapshot');
+  UPDATE public.sports_venue_bookings
+  SET venue_unit_label_snapshot = NULL WHERE id = v_booking;
+  v_rows := public.list_my_sports_venue_bookings(v_cust);
+  PERFORM pg_temp.expect((SELECT r->>'venueUnitLabel'
+    FROM jsonb_array_elements(v_rows) r
+    WHERE (r->>'id')::uuid = v_booking) IS NULL,
+    'legacy bookings keep a NULL venue snapshot for neutral copy');
+  UPDATE public.sports_venue_bookings
+  SET venue_unit_label_snapshot = 'ยิมสตู' WHERE id = v_booking;
+  v_rows := public.list_sports_venue_bookings_for_manager(v_owner, v_venue);
+  PERFORM pg_temp.expect((SELECT r->>'venueUnitLabel'
+    FROM jsonb_array_elements(v_rows) r
+    WHERE (r->>'id')::uuid = v_booking) = 'ยิมสตู',
+    'manager booking list exposes the venue snapshot');
+
+  -- Owner/admin detail surfaces carry the resolved labels.
+  v_detail := public.get_my_sports_venue_detail(v_owner, v_venue);
+  PERFORM pg_temp.expect(v_detail->'venue'->>'venueUnitLabel' = 'ยิมใหม่',
+    'owner detail exposes resolved venue label');
+  PERFORM pg_temp.expect(v_detail->'venue'->>'venue_unit_label_override'
+    = 'ยิมใหม่', 'owner detail exposes the raw venue override');
+  PERFORM pg_temp.expect((SELECT c->>'unit_label'
+    FROM jsonb_array_elements(v_detail->'courts') c
+    WHERE (c->>'id')::uuid = v_court) = 'เสื่อ',
+    'owner detail exposes live-resolved resource label');
+  v_detail := public.get_sports_venue_admin_review_detail(v_admin, v_venue);
+  PERFORM pg_temp.expect(v_detail->'venue'->>'venueUnitLabel' = 'ยิมใหม่',
+    'admin review detail exposes resolved venue label');
+  PERFORM pg_temp.expect((SELECT venue_unit_label
+    FROM public.list_my_sports_venues(v_owner)
+    WHERE id = v_venue) = 'ยิมใหม่',
+    'owner venue list exposes resolved venue label');
+  PERFORM pg_temp.expect((SELECT venue_unit_label
+    FROM public.sports_venues_public WHERE id = v_venue) = 'ยิมใหม่',
+    'public view tracks the current venue label');
+
+  RAISE NOTICE 'unit labels smoke test complete';
+END $labels$;
+
+DO $release_days$
+DECLARE
+  v_owner UUID := gen_random_uuid();
+  v_profile UUID := gen_random_uuid();
+  v_venue UUID := gen_random_uuid();
+  v_sport UUID;
+  v_court UUID;
+  v_availability JSONB;
+BEGIN
+  SELECT id INTO v_sport
+  FROM public.sports
+  WHERE status = 'approved'
+  ORDER BY id
+  LIMIT 1;
+  IF v_sport IS NULL THEN
+    INSERT INTO public.sports (name_en, status)
+    VALUES ('Release Days Smoke', 'approved')
+    RETURNING id INTO v_sport;
+  END IF;
+
+  INSERT INTO public.users (id, first_name, last_name, role)
+  VALUES (v_owner, 'Release', 'Days', 'owner');
+  INSERT INTO public.sports_venue_owner_profiles (
+    id, user_id, business_name, contact_name, contact_phone, status
+  ) VALUES (
+    v_profile, v_owner, 'Release Days Smoke', 'Release Days', '0000000000',
+    'approved');
+  INSERT INTO public.sports_venues (
+    id, owner_profile_id, name, timezone, status
+  ) VALUES (
+    v_venue, v_profile, 'Release Days Smoke', 'Asia/Bangkok', 'approved');
+  INSERT INTO public.sports_venue_sports (venue_id, sport_id)
+  VALUES (v_venue, v_sport);
+
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_min_window(
+      ARRAY[0,1,2,3,4,5,6]::SMALLINT[]) = 1,
+    'daily release allows a one-day window');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_min_window(
+      ARRAY[1]::SMALLINT[]) = 7,
+    'one weekly release requires a seven-day window');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_min_window(
+      ARRAY[1,3]::SMALLINT[]) = 5,
+    'multi-day minimum covers the longest weekly gap');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_opens_at_for_days(
+      'Asia/Bangkok', ARRAY[0,1,2,3,4,5,6]::SMALLINT[],
+      '09:00', 1,
+      '2026-10-20 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')
+      = '2026-10-20 09:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    'daily release opens every day at the shared local time');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_opens_at_for_days(
+      'Asia/Bangkok', ARRAY[1,3]::SMALLINT[], '09:00', 5,
+      '2026-10-23 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')
+      = '2026-10-19 09:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    'multi-day releases select the earliest covering weekday');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_opens_at_for_days(
+      'America/New_York', ARRAY[0,2,4]::SMALLINT[], '02:30', 3,
+      '2026-03-09 10:00'::TIMESTAMP AT TIME ZONE 'America/New_York')
+      = '2026-03-08 02:30'::TIMESTAMP AT TIME ZONE 'America/New_York',
+    'multi-day release resolves a local DST gap');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_opens_at_for_days(
+      'America/New_York', ARRAY[0,1,2,3,4,5,6]::SMALLINT[],
+      '01:30', 1, '2026-11-01 01:45:00-04'::TIMESTAMPTZ)
+      = '2026-10-31 01:30'::TIMESTAMP AT TIME ZONE 'America/New_York',
+    'daily release resolves a local DST overlap before the slot');
+
+  PERFORM public.set_sports_venue_booking_release_days(
+    v_owner, v_venue, '[0,1,2,3,4,5,6]'::JSONB, '09:00', 1);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venues WHERE id = v_venue)
+      = ARRAY[0,1,2,3,4,5,6]::SMALLINT[]
+    AND (SELECT booking_release_day_of_week
+      FROM public.sports_venues WHERE id = v_venue) = 0
+    AND (SELECT booking_release_window_days
+      FROM public.sports_venues WHERE id = v_venue) = 1,
+    'venue setter stores all selected days and legacy first-day alias');
+  PERFORM pg_temp.expect_raise(
+    'selected-day window below its maximum gap is rejected',
+    format($s$SELECT public.set_sports_venue_booking_release_days(
+      %L, %L, '[1,3]'::JSONB, '09:00', 4)$s$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+  PERFORM pg_temp.expect_raise(
+    'duplicate release weekdays are rejected',
+    format($s$SELECT public.set_sports_venue_booking_release_days(
+      %L, %L, '[1,1]'::JSONB, '09:00', 7)$s$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+  PERFORM pg_temp.expect_raise(
+    'table constraint rejects duplicate stored weekdays',
+    format($s$UPDATE public.sports_venues
+      SET booking_release_days = ARRAY[1,1]::SMALLINT[] WHERE id = %L$s$,
+      v_venue),
+    'sports_venues_booking_release_chk');
+  PERFORM pg_temp.expect_raise(
+    'release weekday outside 0-6 is rejected',
+    format($s$SELECT public.set_sports_venue_booking_release_days(
+      %L, %L, '[7]'::JSONB, '09:00', 7)$s$, v_owner, v_venue),
+    'INVALID_RELEASE_RULE');
+  PERFORM public.set_sports_venue_booking_release_days(
+    v_owner, v_venue, '[3,1]'::JSONB, '09:00', 5);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venues WHERE id = v_venue)
+      = ARRAY[1,3]::SMALLINT[],
+    'venue setter persists a selected multi-day schedule');
+  PERFORM public.set_sports_venue_booking_release(
+    v_owner, v_venue, 2, '09:00', 7);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venues WHERE id = v_venue)
+      = ARRAY[2]::SMALLINT[],
+    'legacy venue setter still writes a single-day schedule');
+
+  v_court := public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => NULL,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Daily release resource',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'custom',
+    p_booking_release_time => '09:00',
+    p_booking_release_window_days => 1,
+    p_booking_release_days => '[0,1,2,3,4,5,6]'::JSONB);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venue_courts WHERE id = v_court)
+      = ARRAY[0,1,2,3,4,5,6]::SMALLINT[]
+    AND (SELECT booking_release_window_days
+      FROM public.sports_venue_courts WHERE id = v_court) = 1,
+    'court override supports every day with a one-day window');
+  PERFORM pg_temp.expect_raise(
+    'court rejects a window below the selected-day gap',
+    format($s$SELECT public.upsert_sports_venue_court_with_release_days(
+      p_user_id => %L, p_court_id => %L, p_venue_id => %L,
+      p_sport_id => %L, p_name => 'Invalid multi-day rule',
+      p_booking_release_mode => 'custom', p_booking_release_time => '09:00',
+      p_booking_release_window_days => 4,
+      p_booking_release_days => '[1,3]'::JSONB)$s$,
+      v_owner, v_court, v_venue, v_sport),
+    'INVALID_RELEASE_RULE');
+  PERFORM public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => v_court,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Multi-day release resource',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'custom',
+    p_booking_release_time => '09:00',
+    p_booking_release_window_days => 5,
+    p_booking_release_days => '[3,1]'::JSONB);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venue_courts WHERE id = v_court)
+      = ARRAY[1,3]::SMALLINT[]
+    AND (SELECT booking_release_window_days
+      FROM public.sports_venue_courts WHERE id = v_court) = 5,
+    'court override supports selected weekdays and canonical order');
+  PERFORM public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => v_court,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Daily release resource',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'custom',
+    p_booking_release_time => '09:00',
+    p_booking_release_window_days => 1,
+    p_booking_release_days => '[0,1,2,3,4,5,6]'::JSONB);
+
+  v_availability := public.get_court_availability(
+    v_court, now(), now() + INTERVAL '3 days');
+  PERFORM pg_temp.expect(
+    v_availability->'release'->'daysOfWeek' = '[0,1,2,3,4,5,6]'::JSONB,
+    'availability echoes selected release weekdays');
+  PERFORM pg_temp.expect(
+    jsonb_array_length(v_availability->'notOpen') > 0
+    AND NOT EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(v_availability->'notOpen') AS e(value)
+      WHERE (e.value->>'opensAt')::TIMESTAMPTZ <>
+        public.sports_venue_booking_release_opens_at_for_days(
+          'Asia/Bangkok', ARRAY[0,1,2,3,4,5,6]::SMALLINT[],
+          '09:00', 1, (e.value->>'slotStart')::TIMESTAMPTZ)),
+    'availability opensAt uses the shared multi-day helper');
+  PERFORM pg_temp.expect_raise(
+    'daily court rule gates unreleased future slots',
+    format($s$SELECT public.assert_sports_venue_booking_release(
+      %L, now() + INTERVAL '20 days', now() + INTERVAL '21 days')$s$,
+      v_court),
+    'BOOKING_NOT_OPEN_YET');
+
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_sport, 'Legacy single-day resource',
+    1, 100, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'custom', 2, '09:00', 7, 'inherit', NULL);
+  PERFORM pg_temp.expect((SELECT booking_release_days
+      FROM public.sports_venue_courts WHERE id = v_court)
+      = ARRAY[2]::SMALLINT[],
+    'legacy court upsert replaces multi-day schedule with one weekday');
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_sport, 'Always-open resource',
+    1, 100, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'always_open', NULL, NULL, NULL, 'inherit', NULL);
+  PERFORM pg_temp.expect((SELECT booking_release_mode
+      FROM public.sports_venue_courts WHERE id = v_court) = 'always_open'
+    AND (SELECT booking_release_days IS NULL
+      FROM public.sports_venue_courts WHERE id = v_court),
+    'legacy court upsert clears selected days for always_open');
+  PERFORM public.upsert_sports_venue_court(
+    v_owner, v_court, v_venue, v_sport, 'Inherited resource',
+    1, 100, 'hour', 'synthetic', true, 'instant', NULL, true, NULL,
+    'inherit', NULL, NULL, NULL, 'inherit', NULL);
+  PERFORM pg_temp.expect((SELECT booking_release_mode
+      FROM public.sports_venue_courts WHERE id = v_court) = 'inherit'
+    AND (SELECT booking_release_days IS NULL
+      FROM public.sports_venue_courts WHERE id = v_court),
+    'legacy court upsert clears selected days for inherit');
+
+  PERFORM public.set_sports_venue_booking_release_days(
+    v_owner, v_venue, '[1,2,3,4,5]'::JSONB, '09:00', 7);
+  PERFORM public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => v_court,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Weekday venue schedule with Saturday override',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'custom',
+    p_booking_release_time => '10:00',
+    p_booking_release_window_days => 7,
+    p_booking_release_days => '[6]'::JSONB);
+  PERFORM pg_temp.expect(to_char(
+      public.sports_venue_booking_release_opens_at_for_slot(
+        'Asia/Bangkok', 'custom', ARRAY[6]::SMALLINT[], '10:00', 7,
+        ARRAY[1,2,3,4,5]::SMALLINT[], '09:00', 7,
+        '2026-10-05 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
+      ) AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') = '09:00',
+    'normal weekdays use the venue release time');
+  PERFORM pg_temp.expect(to_char(
+      public.sports_venue_booking_release_opens_at_for_slot(
+        'Asia/Bangkok', 'custom', ARRAY[6]::SMALLINT[], '10:00', 7,
+        ARRAY[1,2,3,4,5]::SMALLINT[], '09:00', 7,
+        '2026-10-10 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
+      ) AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') = '10:00',
+    'court custom weekday uses the court release time');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_opens_at_for_slot(
+      'Asia/Bangkok', 'custom', ARRAY[6]::SMALLINT[], '10:00', 7,
+      ARRAY[1,2,3,4,5]::SMALLINT[], '09:00', 7,
+      '2026-10-11 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok'
+    ) IS NULL,
+    'weekday without a venue or court rule has no release gate');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_next_at(
+      'Asia/Bangkok', '2026-10-04 18:00'::TIMESTAMP
+        AT TIME ZONE 'Asia/Bangkok',
+      'custom', ARRAY[6]::SMALLINT[], '10:00',
+      ARRAY[1,2,3,4,5]::SMALLINT[], '09:00')
+      = '2026-10-05 09:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    'next release selects the nearest venue weekday and time');
+  PERFORM pg_temp.expect(
+    public.sports_venue_booking_release_next_at(
+      'Asia/Bangkok', '2026-10-10 11:00'::TIMESTAMP
+        AT TIME ZONE 'Asia/Bangkok',
+      'custom', ARRAY[6]::SMALLINT[], '10:00',
+      ARRAY[1,2,3,4,5]::SMALLINT[], '09:00')
+      = '2026-10-12 09:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    'next release skips a passed court override and selects the venue rule');
+
+  v_availability := public.get_court_availability(
+    v_court,
+    '2030-01-07 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    '2030-01-08 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
+  PERFORM pg_temp.expect(
+    left(v_availability->'release'->>'selectedDayReleaseTime', 5) = '09:00',
+    'availability returns venue time for a normal booking weekday');
+  v_availability := public.get_court_availability(
+    v_court,
+    '2030-01-05 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    '2030-01-06 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
+  PERFORM pg_temp.expect(
+    left(v_availability->'release'->>'selectedDayReleaseTime', 5) = '10:00',
+    'availability returns court time for its custom booking weekday');
+  v_availability := public.get_court_availability(
+    v_court,
+    '2030-01-06 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    '2030-01-07 00:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
+  PERFORM pg_temp.expect(
+    v_availability->'release'->>'selectedDayReleaseTime' IS NULL
+    AND v_availability->>'nextReleaseAt' IS NOT NULL,
+    'availability includes next release when the selected weekday has no rule');
+  PERFORM pg_temp.expect_raise(
+    'booking gate uses venue rule for a normal weekday',
+    format($s$SELECT public.assert_sports_venue_booking_release(
+      %L, '2030-01-07 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+      '2030-01-07 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')$s$,
+      v_court),
+    'BOOKING_NOT_OPEN_YET');
+  PERFORM pg_temp.expect_raise(
+    'booking gate uses court rule on its custom weekday',
+    format($s$SELECT public.assert_sports_venue_booking_release(
+      %L, '2030-01-05 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+      '2030-01-05 12:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok')$s$,
+      v_court),
+    'BOOKING_NOT_OPEN_YET');
+  PERFORM public.assert_sports_venue_booking_release(
+    v_court,
+    '2030-01-06 10:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok',
+    '2030-01-06 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
+  PERFORM pg_temp.expect(true,
+    'booking gate does not apply to weekdays with no selected rule');
+END $release_days$;

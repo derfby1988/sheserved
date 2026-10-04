@@ -75,7 +75,7 @@ class CourtReviewRatingCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'เจ้าของสนาม',
+                      'เจ้าของสถานที่',
                       style: TextStyle(
                         fontSize: 11.5,
                         color: Colors.grey.shade600,
@@ -84,7 +84,7 @@ class CourtReviewRatingCard extends StatelessWidget {
                     Text(
                       ownerName?.isNotEmpty == true
                           ? ownerName!
-                          : 'เจ้าของสนาม',
+                          : 'เจ้าของสถานที่',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

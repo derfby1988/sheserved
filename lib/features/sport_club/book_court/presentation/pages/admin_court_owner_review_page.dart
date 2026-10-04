@@ -23,7 +23,7 @@ class AdminCourtOwnerReviewPage extends StatelessWidget {
       backgroundColor: NeumorphicTheme.baseColor,
       appBar: AppBar(
         title: const Text(
-          'ตรวจสอบเจ้าของสนาม',
+          'ตรวจสอบเจ้าของสถานที่',
           style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
         ),
         backgroundColor: NeumorphicTheme.baseColor,
@@ -63,17 +63,17 @@ class _AdminCourtOwnerReviewPanelState
 
   static const _missingLabels = {
     'owner_not_approved': 'บัญชีเจ้าของยังไม่อนุมัติ',
-    'name': 'ชื่อสนาม',
+    'name': 'ชื่อสถานที่',
     'province': 'จังหวัด',
     'district': 'อำเภอ/เขต',
     'address': 'ที่อยู่',
     'location': 'พิกัดละติจูด/ลองจิจูด',
     'timezone': 'เขตเวลา',
-    'sports': 'กีฬาของสนาม',
+    'sports': 'กีฬาของสถานที่',
     'hours': 'เวลาเปิด–ปิดครบ 7 วัน',
     'amenities': 'ยืนยันสิ่งอำนวยความสะดวก',
-    'terms': 'เลือกเงื่อนไขการใช้สนาม',
-    'courts': 'คอร์ทที่เปิดใช้งาน',
+    'terms': 'เลือกเงื่อนไขการใช้งาน',
+    'courts': 'รายการที่เปิดใช้งาน',
   };
 
   @override
@@ -119,7 +119,7 @@ class _AdminCourtOwnerReviewPanelState
         approve ? 'approved' : 'rejected',
         reason: reason,
       );
-      _toast(approve ? 'อนุมัติเจ้าของสนามแล้ว' : 'ปฏิเสธคำขอแล้ว');
+      _toast(approve ? 'อนุมัติเจ้าของสถานที่แล้ว' : 'ปฏิเสธคำขอแล้ว');
       await _load();
     } catch (e) {
       _toast(_mapError(e));
@@ -138,7 +138,7 @@ class _AdminCourtOwnerReviewPanelState
         approve ? 'approved' : 'rejected',
         reason: reason,
       );
-      _toast(approve ? 'อนุมัติสนามแล้ว' : 'ปฏิเสธสนามแล้ว');
+      _toast(approve ? 'อนุมัติสถานที่แล้ว' : 'ปฏิเสธสถานที่แล้ว');
       await _load();
     } catch (e) {
       _toast(_mapError(e));
@@ -186,14 +186,14 @@ class _AdminCourtOwnerReviewPanelState
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 12),
               children: [
-                _sectionHeader('คำขอเป็นเจ้าของสนาม (${_applications.length})'),
+                _sectionHeader('คำขอเป็นเจ้าของสถานที่ (${_applications.length})'),
                 if (_applications.isEmpty)
                   _empty('ไม่มีคำขอรอตรวจสอบ')
                 else
                   for (final app in _applications) _buildAppCard(app),
-                _sectionHeader('สนามรออนุมัติ (${_venues.length})'),
+                _sectionHeader('สถานที่รออนุมัติ (${_venues.length})'),
                 if (_venues.isEmpty)
-                  _empty('ไม่มีสนามรออนุมัติ')
+                  _empty('ไม่มีสถานที่รออนุมัติ')
                 else
                   for (final venue in _venues) _buildVenueCard(venue),
               ],
@@ -373,7 +373,7 @@ class _AdminCourtOwnerReviewPanelState
           ),
         const SizedBox(height: 4),
         Text(
-          'กีฬา $sportsCount · คอร์ท $activeCourts/$courtCount เปิดใช้งาน · '
+          'กีฬา $sportsCount · รายการ $activeCourts/$courtCount เปิดใช้งาน · '
           'เวลา $hoursCount/7 วัน · '
           'สิ่งอำนวยความสะดวก${amenitiesConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'} · '
           'เงื่อนไข${termsVersion != null
@@ -433,13 +433,13 @@ class _AdminCourtOwnerReviewPanelState
       return 'เฉพาะผู้ดูแลระบบเท่านั้น';
     }
     if (raw.contains('VENUE_NOT_READY')) {
-      return 'สนามยังตั้งค่าไม่ครบ — ตรวจรายการความพร้อมก่อนอนุมัติ';
+      return 'สถานที่ยังตั้งค่าไม่ครบ — ตรวจรายการความพร้อมก่อนอนุมัติ';
     }
     if (raw.contains('REASON_REQUIRED')) {
       return 'กรุณาระบุเหตุผล';
     }
     if (raw.contains('INVALID_STATUS')) {
-      return 'สถานะสนามไม่อนุญาตให้ทำรายการนี้';
+      return 'สถานะสถานที่ไม่อนุญาตให้ทำรายการนี้';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

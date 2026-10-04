@@ -498,6 +498,9 @@ class BookCourtRepository {
     double? lat,
     double? lng,
     String? timezone,
+    // 21.7.19: NULL/omitted means keep on update — the venue label is
+    // managed explicitly through setVenueUnitLabel.
+    String? venueUnitLabelOverride,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
@@ -513,20 +516,66 @@ class BookCourtRepository {
         'p_lat': lat,
         'p_lng': lng,
         'p_timezone': timezone,
+        'p_venue_unit_label_override': venueUnitLabelOverride,
       },
     );
     return res.toString();
   }
 
+  /// Explicit two-level venue label setter (Phase 21.7.19). A null
+  /// [override] means the venue follows the reference sport's catalog
+  /// suggestion; a null [referenceSportId] leaves the generic 'สนาม'
+  /// fallback. A non-null reference must be one of the venue's sports.
+  Future<void> setVenueUnitLabel(
+    String userId,
+    String venueId, {
+    String? override,
+    String? referenceSportId,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_unit_label',
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_venue_unit_label_override': override,
+        'p_reference_sport_id': referenceSportId,
+      },
+    );
+  }
+
+  /// Thai venue-label catalog suggestions per sport (approved sports only,
+  /// per table RLS) — used to preview the sport-derived venue label.
+  Future<Map<String, String>> listVenueUnitDefaults(
+    List<String> sportIds,
+  ) async {
+    if (sportIds.isEmpty) return const {};
+    final res = await _client
+        .from('sports_venue_unit_defaults')
+        .select('sport_id, singular')
+        .eq('locale', 'th')
+        .inFilter('sport_id', sportIds);
+    return {
+      for (final row in (res as List))
+        row['sport_id'].toString(): row['singular'].toString(),
+    };
+  }
+
   Future<void> setVenueSports(
     String userId,
     String venueId,
-    List<Map<String, dynamic>> sports,
-  ) async {
+    List<Map<String, dynamic>> sports, {
+    String? referenceSportId,
+  }) async {
     _assertCurrentUser(userId);
     await _client.rpc(
       'set_sports_venue_sports',
-      params: {'p_user_id': userId, 'p_venue_id': venueId, 'p_sports': sports},
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_sports': sports,
+        'p_reference_sport_id': referenceSportId,
+      },
     );
   }
 
@@ -547,16 +596,22 @@ class BookCourtRepository {
     List<VenueCourtPriceRule>? priceRules,
     // 21.7.18: release params use NULL-means-keep — omit them entirely
     // (bookingReleaseMode == null) to preserve the court's override.
-    // 'inherit'/'always_open' clear the custom triple server-side;
-    // 'custom' requires the full dayOfWeek/releaseTime/windowDays triple.
+    // 'inherit'/'always_open' clear the custom schedule server-side;
+    // 'custom' uses bookingReleaseDays with one shared time/window.
     String? bookingReleaseMode,
     int? bookingReleaseDayOfWeek,
+    List<int>? bookingReleaseDays,
     String? bookingReleaseTime,
     int? bookingReleaseWindowDays,
+    // 21.7.19 resource label contract: null mode keeps the legacy
+    // p_unit_label semantics; 'inherit' clears the per-court override;
+    // 'custom' stores unitLabelOverride (falling back to unitLabel).
+    String? unitLabelMode,
+    String? unitLabelOverride,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
-      'upsert_sports_venue_court',
+      'upsert_sports_venue_court_with_release_days',
       params: {
         'p_user_id': userId,
         'p_court_id': courtId,
@@ -583,8 +638,15 @@ class BookCourtRepository {
             : {
                 'p_booking_release_mode': bookingReleaseMode,
                 'p_booking_release_day_of_week': bookingReleaseDayOfWeek,
+                'p_booking_release_days': bookingReleaseDays,
                 'p_booking_release_time': bookingReleaseTime,
                 'p_booking_release_window_days': bookingReleaseWindowDays,
+              }),
+        ...?(unitLabelMode == null
+            ? null
+            : {
+                'p_unit_label_mode': unitLabelMode,
+                'p_unit_label_override': unitLabelOverride,
               }),
       },
     );
@@ -607,6 +669,28 @@ class BookCourtRepository {
         'p_user_id': userId,
         'p_venue_id': venueId,
         'p_day_of_week': dayOfWeek,
+        'p_time': releaseTime,
+        'p_window_days': windowDays,
+      },
+    );
+  }
+
+  /// Sets selected weekly release days at one venue-local time. Passing null
+  /// for all fields removes the advance-booking release limit.
+  Future<void> setVenueBookingReleaseDays(
+    String userId,
+    String venueId, {
+    List<int>? daysOfWeek,
+    String? releaseTime,
+    int? windowDays,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_booking_release_days',
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_days_of_week': daysOfWeek,
         'p_time': releaseTime,
         'p_window_days': windowDays,
       },

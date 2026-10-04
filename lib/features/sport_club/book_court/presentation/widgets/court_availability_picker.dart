@@ -98,13 +98,19 @@ class CourtAvailabilityPicker extends StatelessWidget {
   List<({DateTime start, DateTime end})> get visibleSlots {
     if (!freeOnly) return hourlySlots(date, timezone: timezone);
     final nowRef = now ?? VenueLocalTime.now(timezone);
-    return hourlySlots(date, timezone: timezone)
-        .where((slot) {
-          if (slot.start.isBefore(nowRef)) return false;
-          final state = _slotState(slot.start, slot.end);
-          return state == _SlotState.free || state == _SlotState.notOpen;
-        })
-        .toList();
+    return hourlySlots(date, timezone: timezone).where((slot) {
+      if (slot.start.isBefore(nowRef)) return false;
+      final state = _slotState(slot.start, slot.end);
+      return state == _SlotState.free || state == _SlotState.notOpen;
+    }).toList();
+  }
+
+  bool get allSlotsClosed {
+    final slots = hourlySlots(date, timezone: timezone);
+    return slots.isNotEmpty &&
+        slots.every(
+          (slot) => _slotState(slot.start, slot.end) == _SlotState.closed,
+        );
   }
 
   @override
@@ -116,7 +122,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
           ? CrossAxisAlignment.center
           : CrossAxisAlignment.start,
       children: [
-/*         const Text(
+        /*         const Text(
           'ตารางเวลา',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ), */
@@ -291,14 +297,6 @@ class _SlotChip extends StatelessWidget {
                     color: selected ? Colors.white : foreground,
                   ),
                 ),
-                if (state == _SlotState.notOpen && opensAtLabel != null)
-                  Text(
-                    opensAtLabel!,
-                    style: TextStyle(
-                      fontSize: 8.5,
-                      color: Colors.blueGrey.shade700,
-                    ),
-                  ),
               ],
             ),
           ),

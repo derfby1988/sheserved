@@ -117,7 +117,7 @@ class CourtOwnerBookingManager extends StatelessWidget {
     final reason = await GlassTextPromptDialog.show(
       context,
       title: 'ระบุเหตุผล',
-      hint: 'เช่น สนามซ่อมบำรุง / ตารางเต็ม',
+      hint: 'เช่น ปิดซ่อมบำรุง / ตารางเต็ม',
     );
     if (reason != null) await action(reason);
   }

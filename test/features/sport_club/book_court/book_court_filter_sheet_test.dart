@@ -196,7 +196,7 @@ void main() {
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ตัวกรองสนาม'), findsNothing);
+    expect(find.text('ตัวกรองสถานที่'), findsNothing);
     expect(result, isNull);
   });
 
@@ -225,7 +225,7 @@ void main() {
 
     await tester.tap(find.text('เปิดตัวกรอง'));
     await tester.pumpAndSettle();
-    expect(find.text('ตัวกรองสนาม'), findsOneWidget);
+    expect(find.text('ตัวกรองสถานที่'), findsOneWidget);
     final applyButton = tester.widget<NeumorphicVerifyButton>(
       find.byType(NeumorphicVerifyButton),
     );

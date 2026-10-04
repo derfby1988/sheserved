@@ -283,7 +283,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
   @override
   Widget build(BuildContext context) {
     return NeumorphicSheetShell(
-      title: 'ตัวกรองสนาม',
+      title: 'ตัวกรองสถานที่',
       icon: Icons.stadium_rounded,
       onClearAll: () {
         setState(() {
@@ -334,7 +334,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
             controller: _queryController,
             textInputAction: TextInputAction.search,
             decoration: const InputDecoration(
-              labelText: 'ค้นหาสนาม',
+              labelText: 'ค้นหาสถานที่',
               prefixIcon: Icon(Icons.search_rounded),
               filled: true,
               fillColor: Colors.transparent,
@@ -556,7 +556,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
               ? 'เลือกวันที่ เวลาเริ่ม และระยะเวลาเพื่อกรองราคาของช่วงที่เลือก'
               : _hasPriceInput && !_priceSlotFitsDay
               ? 'เวลาและระยะเวลาต้องสิ้นสุดภายในวันเดียวกัน'
-              : 'ราคาเทียบกับยอดรวม ณ วันและเวลาที่เลือก ตามเวลาท้องถิ่นของแต่ละสนาม',
+              : 'ราคาเทียบกับยอดรวม ณ วันและเวลาที่เลือก ตามเวลาท้องถิ่นของแต่ละสถานที่',
           style: TextStyle(
             fontSize: 12,
             color:
@@ -588,7 +588,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
         const SizedBox(height: 18),
 
         // Court type + flags
-        const Text('ประเภทสนาม', style: NeumorphicTheme.sectionLabel),
+        const Text('ประเภทสถานที่', style: NeumorphicTheme.sectionLabel),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -605,7 +605,7 @@ class _BookCourtFilterSheetBodyState extends State<_BookCourtFilterSheetBody> {
         ),
         const SizedBox(height: 8),
         NeumorphicSwitchTile(
-          title: 'เฉพาะสนามในร่ม',
+          title: 'เฉพาะสถานที่ในร่ม',
           value: _indoorOnly,
           onChanged: (v) => setState(() => _indoorOnly = v),
         ),

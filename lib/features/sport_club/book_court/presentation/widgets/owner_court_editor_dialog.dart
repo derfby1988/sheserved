@@ -4,10 +4,11 @@ import 'package:sheserved/shared/widgets/glass/glass_dialog.dart';
 import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 import '../../data/book_court_models.dart';
+import '../../domain/court_booking_release_schedule.dart';
 
 /// Owner editor for a single court: name, unit label, type, price, approval
 /// mode, indoor flag. Returns a draft map the caller passes to
-/// `upsert_sports_venue_court`.
+/// `upsert_sports_venue_court_with_release_days`.
 class OwnerCourtEditorDialog {
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
@@ -59,8 +60,13 @@ class _OwnerCourtEditorDialogBody extends StatefulWidget {
 class _OwnerCourtEditorDialogBodyState
     extends State<_OwnerCourtEditorDialogBody> {
   late final _name = TextEditingController(text: widget.court?.name ?? '');
+  // 21.7.19 — the field edits the raw per-court override, not the resolved
+  // label: inherit keeps the venue-sport/sport-default resolution live.
+  late String _labelMode = widget.court?.unitLabelOverride != null
+      ? 'custom'
+      : 'inherit';
   late final _unitLabel = TextEditingController(
-    text: widget.court?.unitLabel ?? '',
+    text: widget.court?.unitLabelOverride ?? '',
   );
   late final _price = TextEditingController(
     text: widget.court?.priceAmount?.toStringAsFixed(2) ?? '',
@@ -96,9 +102,12 @@ class _OwnerCourtEditorDialogBodyState
   late String? _courtType = widget.court?.courtType;
 
   // 21.7.18 recurring release override. 'inherit' follows the venue rule,
-  // 'always_open' books without limit, 'custom' needs the full triple.
+  // 'always_open' books without limit, 'custom' uses selected weekdays.
   late String _releaseMode = widget.court?.bookingReleaseMode ?? 'inherit';
-  late int _releaseDay = widget.court?.bookingReleaseDayOfWeek ?? 1;
+  late final Set<int> _releaseDays = () {
+    final days = widget.court?.effectiveBookingReleaseDays ?? const <int>[];
+    return days.isNotEmpty ? days.toSet() : {1};
+  }();
   late TimeOfDay _releaseTime = _parseReleaseTime(
     widget.court?.bookingReleaseTime,
   );
@@ -114,12 +123,37 @@ class _OwnerCourtEditorDialogBodyState
     );
   }
 
-  /// Custom window in days — server requires >= 7; there is no product
-  /// ceiling beyond SMALLINT.
+  int? get _releaseMinimumWindowDays =>
+      CourtBookingReleaseSchedule.minimumWindowDays(_releaseDays);
+
   int? get _releaseWindowValue {
     final parsed = int.tryParse(_releaseWindow.text.trim());
-    if (parsed == null || parsed < 7) return null;
+    final minimum = _releaseMinimumWindowDays;
+    if (parsed == null ||
+        minimum == null ||
+        parsed < minimum ||
+        parsed > CourtBookingReleaseSchedule.maxWindowDays) {
+      return null;
+    }
     return parsed;
+  }
+
+  List<int> get _releaseDaysValue => _releaseDays.toList()..sort();
+
+  int? get _releaseDayValue =>
+      _releaseDaysValue.isEmpty ? null : _releaseDaysValue.first;
+
+  String? get _releaseWindowError {
+    if (_releaseWindow.text.trim().isEmpty) return null;
+    if (_releaseDays.isEmpty) return 'เลือกอย่างน้อยหนึ่งวัน';
+    final parsed = int.tryParse(_releaseWindow.text.trim());
+    if (parsed == null) return 'กรุณากรอกจำนวนวันเป็นตัวเลข';
+    if (parsed > CourtBookingReleaseSchedule.maxWindowDays) {
+      return 'ไม่เกิน ${CourtBookingReleaseSchedule.maxWindowDays} วัน';
+    }
+    final minimum = _releaseMinimumWindowDays;
+    if (minimum == null) return 'เลือกวันเปิดรอบให้ถูกต้อง';
+    return parsed < minimum ? 'อย่างน้อย $minimum วัน' : null;
   }
 
   @override
@@ -203,7 +237,9 @@ class _OwnerCourtEditorDialogBodyState
       _priceValue != -1 &&
       _priceRulesError == null &&
       _sportId != null &&
-      (_releaseMode != 'custom' || _releaseWindowValue != null);
+      (_labelMode != 'custom' || _unitLabel.text.trim().isNotEmpty) &&
+      (_releaseMode != 'custom' ||
+          (_releaseDays.isNotEmpty && _releaseWindowValue != null));
 
   int _minutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
@@ -344,7 +380,7 @@ class _OwnerCourtEditorDialogBodyState
               children: [
                 Expanded(
                   child: Text(
-                    editing ? 'แก้ไขสนาม' : 'เพิ่มสนาม',
+                    editing ? 'แก้ไขรายการ' : 'เพิ่มรายการ',
                     style: const TextStyle(
                       fontSize: 15.5,
                       fontWeight: FontWeight.w700,
@@ -403,7 +439,7 @@ class _OwnerCourtEditorDialogBodyState
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
-                                'กีฬาเดิมถูกเอาออกจากสนามแล้ว — กรุณาเลือกกีฬาใหม่',
+                                'กีฬาเดิมถูกเอาออกจากสถานที่แล้ว — กรุณาเลือกกีฬาใหม่',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.red.shade700,
@@ -415,22 +451,59 @@ class _OwnerCourtEditorDialogBodyState
                         TextField(
                           controller: _name,
                           decoration: const InputDecoration(
-                            labelText: 'ชื่อสนาม/คอร์ท *',
-                            hintText: 'เช่น คอร์ท 1, สนาม A',
+                            labelText: 'ชื่อรายการ *',
+                            hintText: 'เช่น คอร์ท 1, โต๊ะ A, เลน 3',
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (_) => setState(() {}),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: _unitLabel,
-                          decoration: const InputDecoration(
-                            labelText: 'ชื่อเรียกหน่วย',
-                            helperText:
-                                'เว้นว่างเพื่อใช้ค่าเริ่มต้นตามกีฬา (เช่น คอร์ท, สนาม, โต๊ะ)',
-                            border: OutlineInputBorder(),
-                          ),
+                        const Text(
+                          'ชื่อเรียกหน่วยที่จองได้',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
+                        const SizedBox(height: 4),
+                        SegmentedButton<String>(
+                          key: const ValueKey('court-unit-label-mode'),
+                          segments: const [
+                            ButtonSegment(
+                              value: 'inherit',
+                              label: Text('ตามกีฬา/สถานที่'),
+                            ),
+                            ButtonSegment(
+                              value: 'custom',
+                              label: Text('กำหนดเอง'),
+                            ),
+                          ],
+                          selected: {_labelMode},
+                          onSelectionChanged: (sel) =>
+                              setState(() => _labelMode = sel.first),
+                        ),
+                        if (_labelMode == 'inherit')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              widget.court?.unitLabel != null
+                                  ? 'ตอนนี้แสดงว่า "${widget.court!.unitLabel}" — เปลี่ยนตามกีฬา/การตั้งค่าสถานที่อัตโนมัติ'
+                                  : 'ใช้ค่าจากกีฬาและการตั้งค่าของสถานที่โดยอัตโนมัติ',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: TextField(
+                              controller: _unitLabel,
+                              maxLength: 20,
+                              decoration: const InputDecoration(
+                                counterText: '',
+                                labelText: 'ชื่อเรียกเฉพาะรายการนี้ *',
+                                hintText: 'เช่น คอร์ท, โต๊ะ, เลน',
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -584,16 +657,16 @@ class _OwnerCourtEditorDialogBodyState
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('สนามในร่ม'),
+                          title: const Text('ในร่ม'),
                           value: _indoor,
                           onChanged: (v) => setState(() => _indoor = v),
                         ),
                         if (editing)
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: const Text('เปิดใช้งานคอร์ท'),
+                            title: const Text('เปิดใช้งานรายการ'),
                             subtitle: const Text(
-                              'คอร์ทที่ปิดจะไม่รับการจองใหม่',
+                              'รายการที่ปิดจะไม่รับการจองใหม่',
                             ),
                             value: _isActive,
                             onChanged: (v) => setState(() => _isActive = v),
@@ -633,10 +706,11 @@ class _OwnerCourtEditorDialogBodyState
                         ),
                         const SizedBox(height: 6),
                         SegmentedButton<String>(
+                          key: const ValueKey('court-release-mode'),
                           segments: const [
                             ButtonSegment(
                               value: 'inherit',
-                              label: Text('ตามสนาม'),
+                              label: Text('ตามสถานที่'),
                             ),
                             ButtonSegment(
                               value: 'always_open',
@@ -655,7 +729,7 @@ class _OwnerCourtEditorDialogBodyState
                           const Padding(
                             padding: EdgeInsets.only(top: 6),
                             child: Text(
-                              'ใช้รอบเปิดจองของสนาม — ถ้าสนามไม่ได้ตั้งไว้ จองล่วงหน้าได้ไม่จำกัด',
+                              'ใช้รอบเปิดจองของสถานที่ — ถ้าสถานที่ไม่ได้ตั้งไว้ จองล่วงหน้าได้ไม่จำกัด',
                               style: TextStyle(fontSize: 12),
                             ),
                           ),
@@ -663,70 +737,88 @@ class _OwnerCourtEditorDialogBodyState
                           const Padding(
                             padding: EdgeInsets.only(top: 6),
                             child: Text(
-                              'คอร์ทนี้รับจองล่วงหน้าได้ไม่จำกัด ไม่ว่าสนามจะตั้งรอบไว้หรือไม่',
+                              'รายการนี้รับจองล่วงหน้าได้ไม่จำกัด ไม่ว่าสถานที่จะตั้งรอบไว้หรือไม่',
                               style: TextStyle(fontSize: 12),
                             ),
                           ),
                         if (_releaseMode == 'custom') ...[
                           const SizedBox(height: 8),
-                          Row(
+                          const Text(
+                            'วันที่เปิดรอบ',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'เลือกได้หลายวัน โดยใช้เวลาเดียวกัน ส่วนวันอื่นใช้รอบของสถานที่',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  isExpanded: true,
-                                  initialValue: _releaseDay,
-                                  decoration: const InputDecoration(
-                                    labelText: 'เปิดจองทุกวัน',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: [
-                                    for (final entry
-                                        in _weekdayLabels.entries)
-                                      DropdownMenuItem(
-                                        value: entry.key,
-                                        child: Text(entry.value),
-                                      ),
-                                  ],
-                                  onChanged: (v) {
-                                    if (v != null) {
-                                      setState(() => _releaseDay = v);
-                                    }
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () async {
-                                    final picked = await showTimePicker(
-                                      context: context,
-                                      initialTime: _releaseTime,
-                                    );
-                                    if (picked != null && mounted) {
-                                      setState(
-                                        () => _releaseTime = picked,
-                                      );
-                                    }
-                                  },
-                                  child: Text(
-                                    'เวลา ${_formatTime(_releaseTime)}',
+                              FilterChip(
+                                key: const ValueKey('court-release-all-days'),
+                                label: const Text('ทุกวัน'),
+                                selected: _releaseDays.length == 7,
+                                onSelected: (_) => setState(
+                                  () => _releaseDays.addAll(
+                                    CourtBookingReleaseSchedule
+                                        .weekdayLabels
+                                        .keys,
                                   ),
                                 ),
                               ),
+                              for (final entry in _weekdayLabels.entries)
+                                FilterChip(
+                                  key: ValueKey(
+                                    'court-release-day-${entry.key}',
+                                  ),
+                                  label: Text(entry.value),
+                                  selected: _releaseDays.contains(entry.key),
+                                  onSelected: (selected) => setState(() {
+                                    if (selected) {
+                                      _releaseDays.add(entry.key);
+                                    } else {
+                                      _releaseDays.remove(entry.key);
+                                    }
+                                  }),
+                                ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'รอบ: ${CourtBookingReleaseSchedule.describeDays(_releaseDays)} เวลา ${_formatTime(_releaseTime)}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: _releaseTime,
+                                );
+                                if (picked != null && mounted) {
+                                  setState(() => _releaseTime = picked);
+                                }
+                              },
+                              child: Text(
+                                'เวลาเดียวกันทุกวันที่เลือก · ${_formatTime(_releaseTime)}',
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _releaseWindow,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
-                              labelText: 'จองล่วงหน้าได้ (วัน)',
-                              helperText: 'อย่างน้อย 7 วัน',
-                              errorText:
-                                  _releaseWindow.text.trim().isNotEmpty &&
-                                      _releaseWindowValue == null
-                                  ? 'อย่างน้อย 7 วัน'
-                                  : null,
+                              labelText: 'แต่ละรอบเปิดสล็อตล่วงหน้า (วัน)',
+                              helperText: _releaseMinimumWindowDays == null
+                                  ? 'เลือกอย่างน้อยหนึ่งวัน'
+                                  : 'ขั้นต่ำ $_releaseMinimumWindowDays วัน · เช่น 7 = เปิดสล็อตใน 7 วันถัดไป',
+                              errorText: _releaseWindowError,
                               border: const OutlineInputBorder(),
                             ),
                             onChanged: (_) => setState(() {}),
@@ -751,13 +843,18 @@ class _OwnerCourtEditorDialogBodyState
                 Expanded(
                   flex: 2,
                   child: GlassActionButton(
-                    label: editing ? 'บันทึก' : 'เพิ่มสนาม',
+                    label: editing ? 'บันทึก' : 'เพิ่มรายการ',
                     isFilled: true,
                     fillColor: AppColors.primaryDark,
                     onTap: _valid
                         ? () => Navigator.pop(context, {
                             'name': _name.text.trim(),
-                            'unit_label': _unitLabel.text.trim(),
+                            // 21.7.19 — 'inherit' sends NULL to clear the
+                            // per-court override; 'custom' sends the text.
+                            'unit_label_mode': _labelMode,
+                            'unit_label': _labelMode == 'custom'
+                                ? _unitLabel.text.trim()
+                                : null,
                             'sport_id': _sportId,
                             'price_amount': _priceValue == -1
                                 ? null
@@ -769,11 +866,16 @@ class _OwnerCourtEditorDialogBodyState
                             'is_active': _isActive,
                             'approval_mode': _approvalMode,
                             'price_rules': _priceRulesJson,
-                            // Always explicit so 'ตามสนาม' clears an old
+                            // Always explicit so 'ตามสถานที่' clears an old
                             // override server-side (NULL = keep unseen).
                             'booking_release_mode': _releaseMode,
                             'booking_release_day_of_week':
-                                _releaseMode == 'custom' ? _releaseDay : null,
+                                _releaseMode == 'custom'
+                                ? _releaseDayValue
+                                : null,
+                            'booking_release_days': _releaseMode == 'custom'
+                                ? _releaseDaysValue
+                                : null,
                             'booking_release_time': _releaseMode == 'custom'
                                 ? _formatTime(_releaseTime)
                                 : null,

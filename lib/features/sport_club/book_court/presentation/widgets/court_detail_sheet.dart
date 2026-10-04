@@ -157,11 +157,11 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
   void _scheduleOpensAtRefresh(VenueCourt court, CourtAvailability a) {
     _opensAtTimer?.cancel();
     _opensAtTimer = null;
-    if (a.notOpen.isEmpty) return;
-    var next = a.notOpen.first.opensAt;
+    DateTime? next = a.nextReleaseAt;
     for (final entry in a.notOpen) {
-      if (entry.opensAt.isBefore(next)) next = entry.opensAt;
+      if (next == null || entry.opensAt.isBefore(next)) next = entry.opensAt;
     }
+    if (next == null) return;
     var delay = next.difference(DateTime.now());
     if (delay.isNegative) delay = Duration.zero;
     _opensAtTimer = Timer(delay + const Duration(seconds: 1), () {
@@ -390,8 +390,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
         );
       } else {
         setState(
-          () =>
-              _availabilityNotice = 'เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น',
+          () => _availabilityNotice = 'เวลานี้ไม่ว่างแล้ว กรุณาเลือกเวลาอื่น',
         );
       }
       await _loadAvailability(court, preserveNotice: true);
@@ -536,7 +535,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
               children: [
                 Expanded(
                   child: Text(
-                    booking.venueName ?? 'สนาม',
+                    booking.venueName ?? booking.venueUnitLabel ?? 'สถานที่',
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -650,7 +649,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
   static String _mapBookingError(Object e) {
     final raw = e.toString();
     if (raw.contains('CUTOFF_PASSED')) {
-      return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อสนามโดยตรง';
+      return 'เลยเวลายกเลิกฟรีแล้ว กรุณาติดต่อเจ้าของสถานที่โดยตรง';
     }
     if (raw.contains('BOOKING_NOT_FOUND')) return 'ไม่พบการจองนี้แล้ว';
     if (raw.contains('UNAUTHORIZED')) return 'กรุณาเข้าสู่ระบบใหม่';
@@ -816,7 +815,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                             children: [
                               _sectionHeader(
                                 icon: Icons.sports_tennis_rounded,
-                                title: 'สนาม/คอร์ท',
+                                title: 'รายการที่จองได้',
                                 badge: _courts.isEmpty
                                     ? null
                                     : '${_courts.length}',
@@ -844,7 +843,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
-                                        'ยังไม่มีสนามที่เปิดจอง',
+                                        'ยังไม่มีรายการที่เปิดจอง',
                                         style: const TextStyle(
                                           fontSize: 13,
                                           color: NeumorphicTheme.textSecondary,
@@ -1161,8 +1160,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
           Expanded(
             child: Text(
               canBook
-                  ? 'ปัดการ์ดสนามไปทางซ้ายเพื่อดูตารางว่างหรือจอง'
-                  : 'ปัดการ์ดสนามไปทางซ้ายเพื่อดูตารางว่าง',
+                  ? 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่างหรือจอง'
+                  : 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่าง',
               style: const TextStyle(
                 fontSize: 11.5,
                 color: AppColors.primaryDark,
@@ -1175,10 +1174,48 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
     );
   }
 
+  String? _bookingReleaseTime(CourtAvailability? availability) {
+    final rawTime = availability?.release?.selectedDayReleaseTime;
+    if (rawTime == null) return null;
+    final releaseTime = rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime;
+    return 'เวลาเปิดรับจอง: $releaseTime';
+  }
+
+  String? _nextReleaseMessage(CourtAvailability availability) {
+    final nextReleaseAt = availability.nextReleaseAt;
+    if (nextReleaseAt == null) return null;
+    final wall = VenueLocalTime.wallTimeOfInstant(
+      nextReleaseAt,
+      widget.venue.timezone,
+    );
+    final date = _formatDate(DateTime(wall.year, wall.month, wall.day));
+    final time =
+        '${wall.hour.toString().padLeft(2, '0')}:'
+        '${wall.minute.toString().padLeft(2, '0')}';
+    return 'เปิดจองครั้งถัดไปในวันที่ $date เริ่มเวลา $time น.';
+  }
+
   /// The grid that opens underneath the court row it belongs to. It sits in a
   /// sunken field so it reads as an extension of the row that was tapped.
   Widget _buildAvailabilityPanel(VenueCourt court) {
     final availability = _availability;
+    CourtAvailabilityPicker? picker;
+    String? releaseSummary;
+    if (availability != null) {
+      final availabilityPicker = CourtAvailabilityPicker(
+        availability: availability,
+        date: _availabilityDate,
+        timezone: widget.venue.timezone,
+        now: availability.serverNow,
+        onSlotTap: widget.onBookCourt == null || _checkingSlot
+            ? null
+            : (start, end) => _verifySlotAndBook(court, start, end),
+      );
+      picker = availabilityPicker;
+      releaseSummary = availabilityPicker.allSlotsClosed
+          ? _nextReleaseMessage(availability)
+          : _bookingReleaseTime(availability);
+    }
     return NeumorphicInsetBox(
       height: null,
       borderRadius: 14,
@@ -1214,13 +1251,14 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
               ),
             ],
           ),
-          Text(
-            'เวลาท้องถิ่นของสนาม (${widget.venue.timezone})',
-            style: const TextStyle(
-              fontSize: 11,
-              color: NeumorphicTheme.textSecondary,
+          if (releaseSummary != null)
+            Text(
+              releaseSummary,
+              style: const TextStyle(
+                fontSize: 11,
+                color: NeumorphicTheme.textSecondary,
+              ),
             ),
-          ),
           if (_availabilityNotice != null) ...[
             const SizedBox(height: 6),
             _availabilityNoticeRow(_availabilityNotice!),
@@ -1244,16 +1282,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
             _availabilityLoadingBlock()
           else if (_availabilityError != null)
             _availabilityErrorRow(court)
-          else if (availability != null)
-            CourtAvailabilityPicker(
-              availability: availability,
-              date: _availabilityDate,
-              timezone: widget.venue.timezone,
-              now: availability.serverNow,
-              onSlotTap: widget.onBookCourt == null || _checkingSlot
-                  ? null
-                  : (start, end) => _verifySlotAndBook(court, start, end),
-            ),
+          else
+            ?picker,
         ],
       ),
     );

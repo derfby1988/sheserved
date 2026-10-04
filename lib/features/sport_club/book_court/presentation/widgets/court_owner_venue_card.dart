@@ -69,7 +69,10 @@ class CourtOwnerVenueCard extends StatelessWidget {
           Row(
             children: [
               Text(
-                '${venue.courtCount} สนาม',
+                [
+                  '${venue.courtCount} รายการ',
+                  ?venue.venueUnitLabel,
+                ].join(' · '),
                 style: const TextStyle(
                   fontSize: 12,
                   color: NeumorphicTheme.textSecondary,
