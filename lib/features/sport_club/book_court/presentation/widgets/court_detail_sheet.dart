@@ -1290,16 +1290,11 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              const Icon(
-                Icons.event_available_rounded,
-                size: 18,
-                color: AppColors.primaryDark,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
+              const Flexible(
                 child: Text(
-                  'ตารางว่าง',
+                  'ตารางของ',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1309,18 +1304,26 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.calendar_month_rounded,
+                size: 18,
+                color: AppColors.primaryDark,
+              ),
+              const SizedBox(width: 6),
               NeumorphicPillButton(
                 key: const ValueKey('court_availability_date'),
                 onPressed: _pickAvailabilityDate,
-                icon: Icons.calendar_month_rounded,
                 text: _availabilityDateLabel(_availabilityDate),
                 height: 34,
-                fontSize: 12,
-                iconSize: 15,
+                fontSize: 12.5,
                 depth: 3,
                 blur: 6,
-                maxWidth: 150,
-                color: AppColors.primaryDark,
+                maxWidth: 140,
+                // ป้ายที่ยาวที่สุด (ส. 2 ม.ค. 70) ไม่เกินค่านี้ ปุ่มจึงกว้างคงที่
+                minWidth: 64,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                color: const Color(0xFFE91E63),
               ),
             ],
           ),

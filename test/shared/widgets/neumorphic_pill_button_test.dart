@@ -16,6 +16,8 @@ Future<void> _pumpInUnboundedRow(
   String text, {
   double? maxWidth,
   IconData? icon,
+  double minWidth = 0,
+  EdgeInsetsGeometry padding = EdgeInsets.zero,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -27,6 +29,8 @@ Future<void> _pumpInUnboundedRow(
               text: text,
               icon: icon,
               maxWidth: maxWidth,
+              minWidth: minWidth,
+              padding: padding,
               onPressed: () {},
             ),
           ],
@@ -92,6 +96,54 @@ void main() {
     tester,
   ) async {
     await _pumpInUnboundedRow(tester, _longLabel, maxWidth: 200);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getSize(find.byType(NeumorphicPillButton)).width,
+      lessThanOrEqualTo(200),
+    );
+  });
+
+  testWidgets('horizontal padding widens the capsule and keeps the height', (
+    tester,
+  ) async {
+    final natural = await _naturalRect(tester, 'ยกเลิก');
+    await _pumpInUnboundedRow(tester, 'ยกเลิก');
+    final bare = tester.getSize(find.byType(NeumorphicPillButton));
+    await _pumpInUnboundedRow(
+      tester,
+      'ยกเลิก',
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+    );
+    final padded = tester.getSize(find.byType(NeumorphicPillButton));
+
+    expect(padded.width, bare.width + 28);
+    expect(padded.height, bare.height);
+    expect(tester.getRect(find.text('ยกเลิก')).size, natural.size);
+  });
+
+  testWidgets('minWidth gives a short label the width of a longer one', (
+    tester,
+  ) async {
+    const short = 'ยกเลิก';
+    const long = 'ยืนยันการจองสนาม';
+    await _pumpInUnboundedRow(tester, long);
+    final longWidth = tester.getSize(find.byType(NeumorphicPillButton)).width;
+    await _pumpInUnboundedRow(tester, short, minWidth: longWidth);
+
+    expect(longWidth, greaterThan(0));
+    expect(tester.getSize(find.byType(NeumorphicPillButton)).width, longWidth);
+    expect(tester.getSize(find.byType(NeumorphicPillButton)).height, 48);
+    expect(
+      tester.getCenter(find.text(short)).dx,
+      tester.getCenter(find.byType(NeumorphicPillButton)).dx,
+    );
+  });
+
+  testWidgets('minWidth wider than maxWidth falls back to the cap', (
+    tester,
+  ) async {
+    await _pumpInUnboundedRow(tester, _longLabel, maxWidth: 200, minWidth: 400);
 
     expect(tester.takeException(), isNull);
     expect(

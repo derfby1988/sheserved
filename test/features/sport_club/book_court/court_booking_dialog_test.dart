@@ -137,7 +137,7 @@ void main() {
     await tester.tap(find.text('เปิดฟอร์มจอง'));
     await tester.pumpAndSettle();
     expect(
-      find.text(ThaiDateUtils.formatShortDateBE2Digit(date)),
+      find.text(ThaiDateUtils.formatWeekdayShortDateBE2Digit(date)),
       findsOneWidget,
     );
     for (final hour in ['18:00', '19:00', '21:00']) {

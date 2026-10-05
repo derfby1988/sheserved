@@ -823,26 +823,26 @@ void main() {
     );
     await _openSheet(tester);
 
-    expect(find.text('ตารางว่าง'), findsNothing);
+    expect(find.text('ตารางของ'), findsNothing);
     expect(find.byType(NeumorphicInsetBox), findsOneWidget);
 
     await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
     await tester.pumpAndSettle();
 
     expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
-    expect(find.text('ตารางว่าง'), findsOneWidget);
+    expect(find.text('ตารางของ'), findsOneWidget);
     expect(find.text('เวลาเปิดรับจอง: 09:00'), findsNothing);
     expect(find.text('เปิดจองล่วงหน้าได้ไม่จำกัดวัน'), findsNothing);
     expect(find.textContaining('เวลาท้องถิ่นของ'), findsNothing);
     expect(
-      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      tester.getTopLeft(find.text('ตารางของ')).dy,
       greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
     );
 
     await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ตารางว่าง'), findsNothing);
+    expect(find.text('ตารางของ'), findsNothing);
     expect(find.byType(NeumorphicInsetBox), findsOneWidget);
   });
 
@@ -862,6 +862,8 @@ void main() {
     expect(find.text('วันนี้'), findsOneWidget);
     final dateButton = find.byKey(const ValueKey('court_availability_date'));
     expect(tester.widget<NeumorphicPillButton>(dateButton).text, 'วันนี้');
+    expect(tester.getSize(dateButton).height, 34);
+    expect(tester.getSize(dateButton).width, greaterThanOrEqualTo(92));
     await _selectAvailabilityDate(tester, tomorrow, fromDate: today);
     expect(tester.widget<NeumorphicPillButton>(dateButton).text, 'พรุ่งนี้');
     await _selectAvailabilityDate(tester, wednesday, fromDate: tomorrow);
@@ -1089,7 +1091,7 @@ void main() {
     expect(repo.availabilityCourtIds, ['court-1']);
     expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
     expect(
-      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      tester.getTopLeft(find.text('ตารางของ')).dy,
       greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
     );
 
@@ -1099,11 +1101,11 @@ void main() {
     expect(repo.availabilityCourtIds, ['court-1', 'court-2']);
     expect(find.byType(CourtAvailabilityPicker), findsOneWidget);
     expect(
-      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      tester.getTopLeft(find.text('ตารางของ')).dy,
       greaterThan(tester.getBottomLeft(find.text('คอร์ท คอร์ทในร่ม')).dy),
     );
     expect(
-      tester.getTopLeft(find.text('ตารางว่าง')).dy,
+      tester.getTopLeft(find.text('ตารางของ')).dy,
       greaterThan(tester.getBottomLeft(find.text('คอร์ท หลังจวนเก่าภูว้า')).dy),
     );
   });

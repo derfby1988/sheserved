@@ -16,6 +16,11 @@ class ThaiDateUtils {
     return '${date.day} ${getThaiShortMonth(date.month)} $beYear';
   }
 
+  /// เช่น "จันทร์ 5 ต.ค. 69"
+  static String formatWeekdayShortDateBE2Digit(DateTime date) {
+    return '${getThaiWeekday(date.weekday)} ${formatShortDateBE2Digit(date)}';
+  }
+
   static String formatFullDateBE(DateTime date) {
     return '${date.day} ${getThaiFullMonth(date.month)} พ.ศ. ${date.year + 543}';
   }
@@ -34,6 +39,20 @@ class ThaiDateUtils {
       'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
     ];
     return (month >= 1 && month <= 12) ? months[month - 1] : '';
+  }
+
+  /// ชื่อวันในสัปดาห์แบบเต็ม — รับ `date.weekday` (จันทร์=1 .. อาทิตย์=7)
+  static String getThaiWeekday(int weekday) {
+    const days = [
+      'อาทิตย์',
+      'จันทร์',
+      'อังคาร',
+      'พุธ',
+      'พฤหัสบดี',
+      'ศุกร์',
+      'เสาร์',
+    ];
+    return days[weekday % 7];
   }
 
   static int daysInMonth(int year, int month) =>

@@ -583,6 +583,10 @@ class NeumorphicSwitchTile extends StatelessWidget {
 /// **กันข้อความล้น:** ป้ายในปุ่มย่อขนาดอัตโนมัติ (FittedBox) และความกว้างของ
 /// แคปซูลถูกจำกัดไว้ไม่เกิน [maxWidth] (ค่าเริ่มต้น = ความกว้างจอลบระยะขอบ 16
 /// ทั้งสองข้าง) ปุ่มจึงไม่ดันล้นจอแม้ถูกวางใน `Row` ที่ไม่จำกัดความกว้าง
+///
+/// **ปรับความกว้าง:** [minWidth] คือความกว้างขั้นต่ำของเนื้อหาในแคปซูล (ป้ายสั้น
+/// และยาวจะได้แคปซูลกว้างเท่ากัน ข้อความจัดกึ่งกลาง) และ [padding] เพิ่มระยะขอบ
+/// ภายใน — ทั้งคู่เป็นแนวนอนล้วน ความสูงคงที่ตาม [height] เสมอ
 class NeumorphicPillButton extends StatelessWidget {
   const NeumorphicPillButton({
     super.key,
@@ -596,6 +600,8 @@ class NeumorphicPillButton extends StatelessWidget {
     this.depth = 5,
     this.blur = 10,
     this.maxWidth,
+    this.minWidth = 0,
+    this.padding = EdgeInsets.zero,
     this.color,
   });
 
@@ -618,9 +624,19 @@ class NeumorphicPillButton extends StatelessWidget {
   final double depth;
   final double blur;
 
-  /// เพดานความกว้างของแคปซูล — ค่าเริ่มต้นคือความกว้างหน้าจอลบ 32
-  /// ส่งค่าที่แคบกว่าได้เมื่อปุ่มอยู่ในพื้นที่จำกัด (เช่น ครึ่งความกว้าง)
+  /// เพดานความกว้างของเนื้อหาในแคปซูล (ไม่รวม [padding]) — ค่าเริ่มต้นคือ
+  /// ความกว้างหน้าจอลบ 32 ส่งค่าที่แคบกว่าได้เมื่อปุ่มอยู่ในพื้นที่จำกัด
+  /// (เช่น ครึ่งความกว้าง)
   final double? maxWidth;
+
+  /// ความกว้างขั้นต่ำของเนื้อหาในแคปซูล — ใช้เมื่อต้องการให้ปุ่มกว้างเท่ากัน
+  /// ทุกป้าย (เช่น ปุ่มวันที่ที่ป้ายยาวไม่เท่ากัน) ข้อความจะถูกจัดกึ่งกลาง
+  /// ต้องไม่เกิน [maxWidth] ที่ใช้จริง
+  final double minWidth;
+
+  /// ระยะขอบภายในแคปซูล — ควรเป็นแนวนอนเท่านั้น เพราะปุ่มถูกล็อกความสูงไว้ที่
+  /// [height] อยู่แล้ว (ระยะแนวตั้งจะไปเบียดพื้นที่ข้อความจนตัวอักษรย่อ)
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
@@ -629,6 +645,7 @@ class NeumorphicPillButton extends StatelessWidget {
     final labelColor =
         color ?? (active ? accent : NeumorphicTheme.textSecondary);
     final cap = maxWidth ?? MediaQuery.sizeOf(context).width - 32;
+    final floor = minWidth <= cap ? minWidth : cap;
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -638,6 +655,7 @@ class NeumorphicPillButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(height / 2),
           child: NeumorphicContainer(
             height: height,
+            padding: padding,
             borderRadius: height / 2,
             depth: depth,
             blur: blur,
@@ -650,9 +668,10 @@ class NeumorphicPillButton extends StatelessWidget {
                 : NeumorphicTheme.baseColor,
             child: Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: cap),
+                constraints: BoxConstraints(minWidth: floor, maxWidth: cap),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     if (icon != null) ...[
                       Icon(icon, size: iconSize, color: labelColor),

@@ -664,7 +664,8 @@ class _CourtBookingDialogBodyState extends State<_CourtBookingDialogBody>
                             size: 18,
                           ),
                           label: Text(
-                            ThaiDateUtils.formatShortDateBE2Digit(_date),
+                            ThaiDateUtils.formatWeekdayShortDateBE2Digit(_date),
+                            style: const TextStyle(color: Color(0xFFE91E63)),
                           ),
                         ),
                       ),
