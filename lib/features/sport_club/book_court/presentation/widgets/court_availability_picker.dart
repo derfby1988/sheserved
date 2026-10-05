@@ -1,13 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/book_court_models.dart';
 import '../../domain/venue_local_time.dart';
 
-/// Read-only availability view for one court on a given venue-local date.
+/// Availability view for one court on a given venue-local date.
 ///
-/// Discovery phase contract: this widget displays booked/blocked ranges and
-/// operating hours only; it never creates or holds bookings. Booking is
-/// started separately via [CourtBookingDialog].
+/// This widget displays booked/blocked ranges and operating hours; owner
+/// management mode can select slots for a separate one-time availability RPC.
+/// It never creates or holds bookings, which start via [CourtBookingDialog].
 class CourtAvailabilityPicker extends StatelessWidget {
   final CourtAvailability availability;
   final DateTime date;
@@ -15,7 +17,10 @@ class CourtAvailabilityPicker extends StatelessWidget {
   final DateTime? now;
   final bool freeOnly;
   final Set<DateTime> selectedStarts;
+  final bool availabilityManagementMode;
+  final Set<DateTime> selectedBlockedStarts;
   final void Function(DateTime start, DateTime end)? onSlotTap;
+  final void Function(DateTime start, DateTime end)? onSuspendedSlotTap;
 
   /// Centers the header, slot grid and legend horizontally when true.
   final bool centered;
@@ -28,7 +33,10 @@ class CourtAvailabilityPicker extends StatelessWidget {
     this.now,
     this.freeOnly = false,
     this.selectedStarts = const {},
+    this.availabilityManagementMode = false,
+    this.selectedBlockedStarts = const {},
     this.onSlotTap,
+    this.onSuspendedSlotTap,
     this.centered = false,
   });
 
@@ -93,10 +101,34 @@ class CourtAvailabilityPicker extends StatelessWidget {
           )
           .toList();
 
-  /// freeOnly view: free slots plus not-yet-released slots (shown
-  /// disabled with their opensAt so the user can see them coming).
+  /// Owner-only candidates for creating a one-time suspension, including
+  /// future slots whose recurring booking release has not arrived yet.
+  List<({DateTime start, DateTime end})> get managerSuspendableSlots =>
+      hourlySlots(date, timezone: timezone).where((slot) {
+        if (slot.start.isBefore(now ?? VenueLocalTime.now(timezone))) {
+          return false;
+        }
+        final state = _slotState(slot.start, slot.end);
+        return state == _SlotState.free || state == _SlotState.notOpen;
+      }).toList();
+
+  /// Owner-only candidates for removing a one-time suspension.
+  List<({DateTime start, DateTime end})> get managerSuspendedSlots =>
+      hourlySlots(date, timezone: timezone).where((slot) {
+        if (slot.start.isBefore(now ?? VenueLocalTime.now(timezone))) {
+          return false;
+        }
+        return _slotState(slot.start, slot.end) == _SlotState.blocked;
+      }).toList();
+
+  /// freeOnly view shows genuinely free slots and not-yet-released slots.
+  /// Owner management additionally exposes active blocked slots for undo.
   List<({DateTime start, DateTime end})> get visibleSlots {
     if (!freeOnly) return hourlySlots(date, timezone: timezone);
+    if (availabilityManagementMode) {
+      return [...managerSuspendableSlots, ...managerSuspendedSlots]
+        ..sort((a, b) => a.start.compareTo(b.start));
+    }
     final nowRef = now ?? VenueLocalTime.now(timezone);
     return hourlySlots(date, timezone: timezone).where((slot) {
       if (slot.start.isBefore(nowRef)) return false;
@@ -138,56 +170,13 @@ class CourtAvailabilityPicker extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             alignment: wrapAlignment,
-            children: [
-              for (final slot in slots)
-                _SlotChip(
-                  slot: slot,
-                  state: _slotState(slot.start, slot.end),
-                  opensAtLabel: _opensAtLabel(slot.start),
-                  selected: selectedStarts.contains(slot.start),
-                  onTap: onSlotTap == null
-                      ? null
-                      : () => onSlotTap!(slot.start, slot.end),
-                ),
-            ],
+            children: [for (final slot in slots) _buildSlotChip(slot)],
           ),
         ),
         if (!freeOnly) ...[
           const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              alignment: wrapAlignment,
-              children: [
-                _legend(Colors.green.shade100, 'ว่าง'),
-                _legend(Colors.red.shade100, 'ถูกจอง'),
-                _legend(Colors.grey.shade300, 'ปิด'),
-                _legend(Colors.orange.shade100, 'ไม่พร้อม'),
-                _legend(Colors.blueGrey.shade100, 'ยังไม่เปิดจอง'),
-              ],
-            ),
-          ),
+          _StatusLegend(alignment: wrapAlignment),
         ],
-      ],
-    );
-  }
-
-  Widget _legend(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
@@ -199,12 +188,37 @@ class CourtAvailabilityPicker extends StatelessWidget {
     return 'เปิดจอง ${VenueLocalTime.formatInstantWall(opensAt, timezone)}';
   }
 
+  Widget _buildSlotChip(({DateTime start, DateTime end}) slot) {
+    final state = _slotState(slot.start, slot.end);
+    final onTap = state == _SlotState.blocked
+        ? onSuspendedSlotTap ?? onSlotTap
+        : onSlotTap;
+    return _SlotChip(
+      slot: slot,
+      state: state,
+      opensAtLabel: _opensAtLabel(slot.start),
+      selected:
+          selectedStarts.contains(slot.start) ||
+          selectedBlockedStarts.contains(slot.start),
+      selectedAsBlocked: selectedBlockedStarts.contains(slot.start),
+      managementSelection: availabilityManagementMode,
+      canSelect:
+          state == _SlotState.free ||
+          state == _SlotState.blocked && onSuspendedSlotTap != null ||
+          availabilityManagementMode &&
+              (state == _SlotState.notOpen || state == _SlotState.blocked),
+      onTap: onTap == null ? null : () => onTap(slot.start, slot.end),
+    );
+  }
+
   _SlotState _slotState(DateTime start, DateTime end) {
     if (!_withinHours(start, end)) return _SlotState.closed;
     if (_overlaps(start, end, availability.booked)) return _SlotState.booked;
-    if (_overlaps(start, end, availability.blocked) ||
-        !end.isAfter(now ?? VenueLocalTime.now(timezone))) {
-      return _SlotState.unavailable;
+    if (!end.isAfter(now ?? VenueLocalTime.now(timezone))) {
+      return _SlotState.elapsed;
+    }
+    if (_overlaps(start, end, availability.blocked)) {
+      return _SlotState.blocked;
     }
     // 21.7.18: recurring release gate — the server lists which candidate
     // slots are still sealed and when they open (venue-local instant).
@@ -217,13 +231,183 @@ class CourtAvailabilityPicker extends StatelessWidget {
   }
 }
 
-enum _SlotState { free, booked, closed, unavailable, notOpen }
+enum _SlotState { free, booked, closed, elapsed, blocked, notOpen }
+
+/// The colour legend under the grid. Long-pressing an entry shows a
+/// transient explanation of that slot state, then fades it out again.
+class _StatusLegend extends StatefulWidget {
+  final WrapAlignment alignment;
+
+  const _StatusLegend({required this.alignment});
+
+  @override
+  State<_StatusLegend> createState() => _StatusLegendState();
+}
+
+class _StatusLegendState extends State<_StatusLegend> {
+  /// How long an explanation stays on screen before it disappears.
+  static const _visibleFor = Duration(seconds: 5);
+
+  /// Order follows the grid's own state priority: free, booked, closed,
+  /// elapsed or suspended, then not yet released.
+  List<({Color color, String label, String explanation})> get _entries => [
+    (
+      color: Colors.green.shade100,
+      label: 'ว่าง',
+      explanation:
+          'ว่าง — อยู่ในเวลาทำการ ไม่มีผู้จอง และถึงรอบเปิดรับจองแล้ว แตะช่องเวลาเพื่อเริ่มจอง',
+    ),
+    (
+      color: Colors.red.shade100,
+      label: 'ถูกจอง',
+      explanation: 'ถูกจอง — มีผู้จองยืนยันแล้วในช่วงเวลานี้ จองซ้อนไม่ได้',
+    ),
+    (
+      color: Colors.grey.shade300,
+      label: 'ปิด',
+      explanation:
+          'ปิด — อยู่นอกเวลาทำการของวันที่เลือก (วันปิด หรือก่อน/หลังเวลาเปิด-ปิด)',
+    ),
+    (
+      color: Colors.orange.shade100,
+      label: 'ระงับชั่วคราว',
+      explanation:
+          'ระงับชั่วคราว — เจ้าของหรือผู้จัดการระงับช่วงนี้ไว้ ผู้มีสิทธิแตะสล็อตสีส้มเพื่อจัดการ',
+    ),
+    (
+      color: Colors.grey.shade200,
+      label: 'ผ่านแล้ว',
+      explanation: 'ผ่านแล้ว — เวลานี้สิ้นสุดแล้ว จึงจองหรือจัดการไม่ได้',
+    ),
+    (
+      color: Colors.blueGrey.shade100,
+      label: 'ยังไม่เปิดจอง',
+      explanation:
+          'ยังไม่เปิดจอง — อยู่ในเวลาทำการแต่ยังไม่ถึงรอบเปิดรับจอง แตะค้างที่ช่องเวลาเพื่อดูวันและเวลาที่จะเปิด',
+    ),
+  ];
+
+  String? _explanation;
+  Timer? _hideTimer;
+
+  void _explain(String explanation) {
+    _hideTimer?.cancel();
+    setState(() => _explanation = explanation);
+    _hideTimer = Timer(_visibleFor, _hide);
+  }
+
+  void _hide() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    if (mounted) setState(() => _explanation = null);
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final explanation = _explanation;
+    return Column(
+      crossAxisAlignment: widget.alignment == WrapAlignment.center
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            alignment: widget.alignment,
+            children: [for (final entry in _entries) _legendItem(entry)],
+          ),
+        ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: explanation == null
+              ? const SizedBox.shrink()
+              : Padding(
+                  key: ValueKey(explanation),
+                  padding: const EdgeInsets.only(top: 6),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _hide,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blueGrey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 16,
+                            color: Colors.blueGrey.shade700,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              explanation,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.blueGrey.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _legendItem(({Color color, String label, String explanation}) entry) {
+    return Semantics(
+      button: true,
+      label: '${entry.label} — แตะค้างเพื่อดูคำอธิบายสถานะ',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _explain(entry.explanation),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: entry.color,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(entry.label, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _SlotChip extends StatelessWidget {
   final ({DateTime start, DateTime end}) slot;
   final _SlotState state;
   final String? opensAtLabel;
   final bool selected;
+  final bool selectedAsBlocked;
+  final bool managementSelection;
+  final bool canSelect;
   final VoidCallback? onTap;
 
   const _SlotChip({
@@ -231,12 +415,14 @@ class _SlotChip extends StatelessWidget {
     required this.state,
     this.opensAtLabel,
     this.selected = false,
+    this.selectedAsBlocked = false,
+    this.managementSelection = false,
+    this.canSelect = false,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final free = state == _SlotState.free;
     final (background, border, foreground, message) = switch (state) {
       _SlotState.free => (
         Colors.green.shade100,
@@ -256,11 +442,19 @@ class _SlotChip extends StatelessWidget {
         Colors.grey.shade800,
         'ปิด',
       ),
-      _SlotState.unavailable => (
+      _SlotState.elapsed => (
+        Colors.grey.shade200,
+        Colors.grey.shade400,
+        Colors.grey.shade700,
+        'เวลานี้ผ่านไปแล้ว',
+      ),
+      _SlotState.blocked => (
         Colors.orange.shade100,
         Colors.orange.shade400,
         Colors.orange.shade900,
-        'ไม่พร้อมให้จอง',
+        onTap != null && canSelect && !managementSelection
+            ? 'ระงับชั่วคราว — แตะเพื่อจัดการ'
+            : 'ระงับชั่วคราว',
       ),
       _SlotState.notOpen => (
         Colors.blueGrey.shade100,
@@ -274,17 +468,35 @@ class _SlotChip extends StatelessWidget {
       message: message,
       child: Semantics(
         selected: selected,
-        button: onTap != null,
-        label: state == _SlotState.notOpen ? message : null,
+        button: onTap != null && canSelect,
+        label:
+            state == _SlotState.notOpen ||
+                state == _SlotState.blocked && canSelect
+            ? message
+            : null,
         child: InkWell(
-          onTap: free ? onTap : null,
+          onTap: canSelect ? onTap : null,
           borderRadius: BorderRadius.circular(8),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: selected ? Colors.green.shade700 : background,
+              color: selected
+                  ? selectedAsBlocked
+                        ? Colors.green.shade700
+                        : managementSelection
+                        ? Colors.deepOrange.shade700
+                        : Colors.green.shade700
+                  : background,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: border),
+              border: Border.all(
+                color: selected
+                    ? selectedAsBlocked
+                          ? Colors.green.shade800
+                          : managementSelection
+                          ? Colors.deepOrange.shade800
+                          : border
+                    : border,
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

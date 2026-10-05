@@ -34,6 +34,7 @@ import '../../models/video_models.dart';
 import '../../data/repositories/video_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/live_view_widget.dart';
+import 'trending_category_filter_policy.dart';
 import 'widgets/thai_mhung_ruler_gallery_widget.dart';
 import 'widgets/glassmorphism_video_controls.dart';
 import 'widgets/incident_report_widget.dart';
@@ -187,6 +188,17 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   bool _hasMoreTrending = true;
   bool _isLoadingMoreTrending = false;
   bool _isLoadingTrending = true;
+  // ✅ Phase 20: ตัวกรองประเภทเหตุของกล่องยอดนิยม — เลือกได้หลายหมวด (OR)
+  // session-only ไม่ persist; ถูกพัก (suspend) ระหว่าง mission/reporter lock
+  final Set<String> _selectedTrendingCategoryIds = {};
+  // token บอก panel ให้เลื่อนกลับบนสุดเมื่อ filter ที่ commit เปลี่ยน
+  int _trendingFilterResetToken = 0;
+  // generation กัน response เก่าปนเมื่อเปลี่ยน filter/refresh ระหว่างโหลด
+  int _trendingFetchGeneration = 0;
+  // ติดตามสถานะ suspend ล่าสุดเพื่อ reload เมื่อเข้า/ออก mission lock
+  bool? _lastMissionFilterSuspended;
+  // signal ให้ sheet ที่เปิดอยู่ปิดตัวเองเมื่อเข้าสู่ suspension
+  final ValueNotifier<bool> _missionSuspendSignal = ValueNotifier(false);
   // ✅ Phase 16: gate การแสดงการ์ดจนกว่า mission filter คำนวณเสร็จ —
   // กันการ์ดที่ผู้ใช้ไม่มีสิทธิ์เห็น (volunteer/reporter lock) แวบขึ้น
   // ก่อนถูกกรองออกเมื่อลิสต์มาจาก cache ในเฟรมแรก
@@ -307,6 +319,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _locationSub?.cancel();
     _myLocationStreamSub?.cancel();
     _emergencySub?.cancel();
+    _missionSuspendSignal.dispose();
     _emergencyHealthSessionSub?.unsubscribe();
     _emergencyHealthTokenSub?.unsubscribe();
     _compassSub?.cancel();
@@ -1090,9 +1103,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           },
           // ✅ Mission Lock: เมื่อมีภารกิจค้าง กล่องยอดนิยมแสดงเฉพาะ
           // การ์ดภารกิจตนเอง + การ์ดที่ได้รับแจ้งเตือน/มีสิทธิเข้าร่วมเป็นจิตอาสา
-          trendingVideos: _filteredTrendingVideos(),
+          // ✅ Phase 20: ต่อด้วย category filter (ยกเว้นช่วง suspension)
+          trendingVideos: _trendingVideosForPanel(),
           onLoadMoreTrending: _loadMoreTrendingVideos,
           isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
+          trendingFilterCategories: _emergencyCategories,
+          selectedTrendingCategoryIds: _selectedTrendingCategoryIds,
+          canShowTrendingCategoryFilter: _canShowTrendingCategoryFilter,
+          onApplyTrendingCategoryFilter: _applyTrendingCategoryFilter,
+          trendingFilterResetToken: _trendingFilterResetToken,
+          missionSuspendSignal: _missionSuspendSignal,
           highlightVideoId: _highlightVideoId,
           canViewUnblurred: _canViewUnblurred,
           yieldWayCount: '$_yieldWayCount คน',

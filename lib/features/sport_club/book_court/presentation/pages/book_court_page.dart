@@ -328,17 +328,31 @@ class _BookCourtPageState extends State<BookCourtPage> {
       entityId: venue.id,
       sportIds: venue.sportIds,
     );
+    final userId = _userId;
+    bool? canManageAvailability;
+    if (userId != null) {
+      try {
+        canManageAvailability = (await _repo.listMyManagedVenueIds(
+          userId,
+        )).contains(venue.id);
+      } catch (_) {
+        canManageAvailability = false;
+      }
+    }
+    if (!mounted) return;
     await CourtDetailSheet.show(
       context,
       venue: venue,
       repo: _repo,
       sharedSportId: _hub?.shared.sportId,
-      userId: _userId,
+      userId: userId,
+      canManageAvailability: canManageAvailability == true,
       onBookCourt: (court, {initialDate, initialSlotStart}) => _startBooking(
         venue,
         court,
         initialDate: initialDate,
         initialSlotStart: initialSlotStart,
+        verifiedCanManageAvailability: canManageAvailability,
       ),
       onWriteReview: _userId == null
           ? null
@@ -355,11 +369,23 @@ class _BookCourtPageState extends State<BookCourtPage> {
     VenueCourt court, {
     DateTime? initialDate,
     DateTime? initialSlotStart,
+    bool? verifiedCanManageAvailability,
   }) async {
     final userId = _userId;
     if (userId == null) {
       await _requireLogin();
       if (_userId == null) return;
+    }
+    if (!mounted) return;
+    final actorUserId = _userId;
+    if (actorUserId == null) return;
+    var canManageAvailability = verifiedCanManageAvailability ?? false;
+    if (verifiedCanManageAvailability == null) {
+      try {
+        canManageAvailability = (await _repo.listMyManagedVenueIds(
+          actorUserId,
+        )).contains(venue.id);
+      } catch (_) {}
     }
     if (!mounted) return;
 
@@ -373,6 +399,14 @@ class _BookCourtPageState extends State<BookCourtPage> {
       quotePrice: _repo.quoteCourtPrice,
       initialDate: initialDate ?? _filter.date,
       initialSlotStart: initialSlotStart,
+      canManageAvailability: canManageAvailability,
+      manageAvailability: (courtId, suspend, selectedRanges) =>
+          _repo.manageCourtAvailability(
+            userId: actorUserId,
+            courtId: courtId,
+            suspend: suspend,
+            ranges: selectedRanges,
+          ),
     );
     if (ranges == null || ranges.isEmpty || !mounted) return;
 

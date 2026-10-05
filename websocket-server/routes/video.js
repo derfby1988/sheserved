@@ -37,6 +37,7 @@ const {
 const MAX_GPS_TRACKS = 5000; // R3: จำกัด GPS tracks ต่อ request
 const MAX_PAGINATION_LIMIT = 100; // R2: เพดาน limit
 const MAX_PAGINATION_PAGE = 1000; // R2: เพดาน page
+const MAX_CATEGORY_FILTER_IDS = 100; // Phase 20: เพดานหมวดต่อคำขอของตัวกรองยอดนิยม
 
 // R1: cleanup ไฟล์ที่ค้างเมื่อ reject หรือ error
 function cleanupUploadedFile(file) {
@@ -550,15 +551,45 @@ module.exports = (pool, supabase = null) => {
         // ห้าม proxy/browser cache; Redis internal cache ยังทำงานตามปกติ
         res.set('Cache-Control', 'no-store');
         const { page, limit, offset } = clampPagination(req);
-        const cacheKey = `video:emergency:list:v3:${page}:${limit}`;
 
-        console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit})`);
+        // ✅ Phase 20: multi-select category filter (OR semantics)
+        // - ไม่ส่ง param = พฤติกรรมเดิม (ใช้ unfiltered cache เหมือนเดิม)
+        // - ส่งแต่ค่าว่าง (category_ids=) ถือว่า malformed → 400
+        // - validate UUID ทุกค่า, dedupe, cap จำนวน → 400 เมื่อผิดพลาด (ไม่ใช่ 500)
+        let categoryIds = null;
+        const rawCategoryIds = req.query.category_ids;
+        if (rawCategoryIds !== undefined) {
+            const tokens = String(rawCategoryIds)
+                .split(',')
+                .map((token) => token.trim())
+                .filter((token) => token.length > 0);
+            if (tokens.length === 0) {
+                return res.status(400).json({ error: 'category_ids must not be empty' });
+            }
+            const uniqueIds = [...new Set(tokens)];
+            if (uniqueIds.length > MAX_CATEGORY_FILTER_IDS) {
+                return res.status(400).json({
+                    error: `category_ids exceeds maximum of ${MAX_CATEGORY_FILTER_IDS}`,
+                });
+            }
+            for (const id of uniqueIds) {
+                try {
+                    assertUuid(id, 'category_ids');
+                } catch {
+                    return res.status(400).json({
+                        error: 'category_ids must be a comma-separated list of UUIDs',
+                    });
+                }
+            }
+            categoryIds = uniqueIds.sort();
+        }
+
+        console.log(`[API] Fetching emergency videos list (page: ${page}, limit: ${limit}, categories: ${categoryIds?.length ?? 0})`);
         try {
-            const data = await cacheAside(cacheKey, async () => {
-                // ✅ Optimization for Massive Scale:
-                // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
-                // 2. Added LIMIT and OFFSET for infinite scrolling
-                const result = await pool.query(`
+            // ✅ Optimization for Massive Scale:
+            // 1. Used cached_view_count/cached_like_count instead of LEFT JOIN COUNT(*) over millions of records
+            // 2. Added LIMIT and OFFSET for infinite scrolling
+            const baseSelect = `
                     SELECT v.id, v.user_id, v.title, v.description, v.type, v.category_id, v.status, v.thumbnail_url, v.bunny_url, v.photo_urls, v.created_at,
                         COALESCE(u.first_name || ' ' || u.last_name, u.username, 'ผู้ใช้งาน') AS user_name,
                         u.profile_image_url AS user_avatar,
@@ -576,12 +607,33 @@ module.exports = (pool, supabase = null) => {
                         FROM video_gps_tracks
                         ORDER BY video_id, timestamp_offset ASC
                     ) gt ON gt.video_id = v.id
-                    WHERE v.type IN ('emergency', 'emergency_photo')
+                    WHERE v.type IN ('emergency', 'emergency_photo')`;
+
+            let data;
+            if (categoryIds && categoryIds.length > 0) {
+                // ✅ Phase 20: filtered requests ไม่ผ่าน Redis cache-aside —
+                // กัน cache key พุ่งตามจำนวน combination และ stale ข้าม filter
+                // tie-break ด้วย id เพื่อให้ pagination นิ่งกว่าเดิม
+                const result = await pool.query(`${baseSelect}
+                    AND v.category_id = ANY($3::uuid[])
+                    ORDER BY v.created_at DESC, v.id DESC
+                    LIMIT $1 OFFSET $2
+                `, [limit, offset, categoryIds]);
+                data = result.rows;
+                // ✅ marker ให้ client ยืนยันว่า backend ใช้ filter จริง —
+                // Local API รุ่นเก่าที่ ignore param จะไม่มี header นี้ → client
+                // ต้องทิ้ง response แล้ว fallback ไป Supabase
+                res.set('X-Emergency-Category-Filter', 'applied');
+            } else {
+                const cacheKey = `video:emergency:list:v3:${page}:${limit}`;
+                data = await cacheAside(cacheKey, async () => {
+                    const result = await pool.query(`${baseSelect}
                     ORDER BY v.created_at DESC
                     LIMIT $1 OFFSET $2
                 `, [limit, offset]);
-                return result.rows;
-            }, TTL.DEFAULT);
+                    return result.rows;
+                }, TTL.DEFAULT);
+            }
 
             let videos = data;
             try {

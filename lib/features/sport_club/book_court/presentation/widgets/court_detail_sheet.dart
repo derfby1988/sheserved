@@ -23,6 +23,8 @@ typedef CourtBookingCallback =
       DateTime? initialSlotStart,
     });
 
+enum _VenueHoursStatus { open, openingSoon, closed }
+
 /// Venue detail bottom sheet: info, courts, operating hours, availability
 /// and reviews. Booking entry points are delegated to [onBookCourt] so the
 /// sheet itself never creates bookings — cancelling one of the user's own
@@ -38,6 +40,8 @@ class CourtDetailSheet extends StatefulWidget {
   final String? sharedSportId;
   final ScrollController? scrollController;
   final String? userId;
+  final DateTime? now;
+  final bool canManageAvailability;
   final CourtBookingCallback? onBookCourt;
   final Future<void> Function()? onWriteReview;
   final Future<void> Function()? onOpenMyBookings;
@@ -49,6 +53,8 @@ class CourtDetailSheet extends StatefulWidget {
     this.sharedSportId,
     this.scrollController,
     this.userId,
+    this.now,
+    this.canManageAvailability = false,
     this.onBookCourt,
     this.onWriteReview,
     this.onOpenMyBookings,
@@ -60,6 +66,8 @@ class CourtDetailSheet extends StatefulWidget {
     required BookCourtRepository repo,
     String? sharedSportId,
     String? userId,
+    DateTime? now,
+    bool canManageAvailability = false,
     CourtBookingCallback? onBookCourt,
     Future<void> Function()? onWriteReview,
     Future<void> Function()? onOpenMyBookings,
@@ -87,6 +95,8 @@ class CourtDetailSheet extends StatefulWidget {
           sharedSportId: sharedSportId,
           scrollController: scrollController,
           userId: userId,
+          now: now,
+          canManageAvailability: canManageAvailability,
           onBookCourt: onBookCourt,
           onWriteReview: onWriteReview,
           onOpenMyBookings: onOpenMyBookings,
@@ -126,11 +136,24 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
     changeSlot: widget.repo.changePendingBookingSlot,
   );
 
+  /// Resource-level label shared by every listed court (คอร์ท/โต๊ะ/เลน) —
+  /// falls back to the generic 'รายการ' when labels differ or are missing.
+  String get _sharedResourceUnitLabel {
+    final labels = _courts.map((c) => c.resourceUnitLabel).toSet();
+    final label = labels.length == 1 ? labels.single : null;
+    return (label == null || label.isEmpty) ? 'รายการ' : label;
+  }
+
+  DateTime get _venueNow =>
+      widget.now ?? VenueLocalTime.now(widget.venue.timezone);
+
+  DateTime get _venueToday => DateUtils.dateOnly(_venueNow);
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _availabilityDate = VenueLocalTime.today(widget.venue.timezone);
+    _availabilityDate = _venueToday;
     _load();
   }
 
@@ -419,7 +442,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
 
   Future<void> _pickAvailabilityDate() async {
     final courtId = _expandedCourtId;
-    final today = VenueLocalTime.today(widget.venue.timezone);
+    final today = _venueToday;
     final picked = await GlassDatePicker.show(
       context,
       initialDate: _availabilityDate.isBefore(today)
@@ -815,7 +838,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                             children: [
                               _sectionHeader(
                                 icon: Icons.sports_tennis_rounded,
-                                title: 'รายการที่จองได้',
+                                title:
+                                    'เลือก$_sharedResourceUnitLabelเพื่อระบุเวลาจอง',
                                 badge: _courts.isEmpty
                                     ? null
                                     : '${_courts.length}',
@@ -1021,7 +1045,8 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
         ..sort((a, b) => (a.dayOfWeek + 6) % 7 - ((b.dayOfWeek + 6) % 7));
 
   Widget _collapsedHoursRow() {
-    final todayDow = VenueLocalTime.now(widget.venue.timezone).weekday % 7;
+    final now = _venueNow;
+    final todayDow = now.weekday % 7;
     final today = _hours.where((h) => h.dayOfWeek == todayDow).firstOrNull;
     if (today == null) {
       return const Text(
@@ -1029,7 +1054,7 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
         style: TextStyle(fontSize: 12.5, color: NeumorphicTheme.textSecondary),
       );
     }
-    return _hoursRow(today);
+    return _hoursRow(today, now: now);
   }
 
   Widget _hoursToggle() {
@@ -1074,24 +1099,29 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
     return hour * 60 + minute;
   }
 
-  /// Live open/closed state — only meaningful on today's row, the one line
+  /// Live schedule status — only meaningful on today's row, the one line
   /// that stays visible when the week is collapsed.
-  bool? _isOpenNow(VenueOperatingHours h) {
-    if (h.isClosed) return null;
-    final now = VenueLocalTime.now(widget.venue.timezone);
-    if (h.dayOfWeek != now.weekday % 7) return null;
+  _VenueHoursStatus? _hoursStatus(VenueOperatingHours h, DateTime now) {
+    if (h.isClosed || h.dayOfWeek != now.weekday % 7) return null;
     final open = _clockMinutes(h.openTime);
     final close = _clockMinutes(h.closeTime);
     if (open == null || close == null) return null;
     final minute = now.hour * 60 + now.minute;
-    return close > open
+    final isOpen = close > open
         ? minute >= open && minute < close
         : minute >= open || minute < close;
+    if (isOpen) return _VenueHoursStatus.open;
+    final openingSoon = close > open
+        ? minute < open
+        : minute >= close && minute < open;
+    return openingSoon
+        ? _VenueHoursStatus.openingSoon
+        : _VenueHoursStatus.closed;
   }
 
-  Widget _hoursRow(VenueOperatingHours h) {
+  Widget _hoursRow(VenueOperatingHours h, {DateTime? now}) {
     final closed = h.isClosed;
-    final openNow = closed ? null : _isOpenNow(h);
+    final status = closed ? null : _hoursStatus(h, now ?? _venueNow);
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -1122,15 +1152,21 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                         : NeumorphicTheme.textPrimary,
                   ),
                 ),
-                if (openNow != null)
+                if (status != null)
                   Text(
-                    openNow ? 'เปิดอยู่' : 'ปิดแล้ว',
+                    switch (status) {
+                      _VenueHoursStatus.open => 'เปิดอยู่',
+                      _VenueHoursStatus.openingSoon => 'ใกล้เปิด',
+                      _VenueHoursStatus.closed => 'ปิดแล้ว',
+                    },
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: openNow
-                          ? Colors.green.shade600
-                          : Colors.red.shade400,
+                      color: switch (status) {
+                        _VenueHoursStatus.open => Colors.green.shade600,
+                        _VenueHoursStatus.openingSoon => Colors.amber.shade800,
+                        _VenueHoursStatus.closed => Colors.red.shade400,
+                      },
                     ),
                   ),
               ],
@@ -1160,7 +1196,9 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
           Expanded(
             child: Text(
               canBook
-                  ? 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่างหรือจอง'
+                  ? widget.canManageAvailability
+                        ? 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่างหรือจัดการเวลา'
+                        : 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่างหรือจอง'
                   : 'ปัดการ์ด${widget.venue.venueUnitLabel ?? 'สนาม'}ไปทางซ้ายเพื่อดูตารางว่าง',
               style: const TextStyle(
                 fontSize: 11.5,
@@ -1222,9 +1260,20 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
         date: _availabilityDate,
         timezone: widget.venue.timezone,
         now: availability.serverNow,
+        centered: true,
         onSlotTap: widget.onBookCourt == null || _checkingSlot
             ? null
             : (start, end) => _verifySlotAndBook(court, start, end),
+        onSuspendedSlotTap:
+            !widget.canManageAvailability ||
+                widget.onBookCourt == null ||
+                _checkingSlot
+            ? null
+            : (start, _) => _bookCourt(
+                court,
+                initialDate: _availabilityDate,
+                initialSlotStart: start,
+              ),
       );
       picker = availabilityPicker;
       releaseSummary = _bookingReleaseLine(
@@ -1260,10 +1309,18 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                   ),
                 ),
               ),
-              TextButton.icon(
+              NeumorphicPillButton(
+                key: const ValueKey('court_availability_date'),
                 onPressed: _pickAvailabilityDate,
-                icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                label: Text(_formatDate(_availabilityDate)),
+                icon: Icons.calendar_month_rounded,
+                text: _availabilityDateLabel(_availabilityDate),
+                height: 34,
+                fontSize: 12,
+                iconSize: 15,
+                depth: 3,
+                blur: 6,
+                maxWidth: 150,
+                color: AppColors.primaryDark,
               ),
             ],
           ),
@@ -1328,8 +1385,16 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
           onPressed: (_) => _bookCourt(court),
           backgroundColor: AppColors.primaryDark,
           foregroundColor: Colors.white,
-          icon: isInstant ? Icons.flash_on_rounded : Icons.send_rounded,
-          label: isInstant ? 'จองเลย' : 'ขอจอง',
+          icon: widget.canManageAvailability
+              ? Icons.event_busy_rounded
+              : isInstant
+              ? Icons.flash_on_rounded
+              : Icons.send_rounded,
+          label: widget.canManageAvailability
+              ? 'จัดการเวลา'
+              : isInstant
+              ? 'จองเลย'
+              : 'ขอจอง',
         ),
     ];
 
@@ -1379,10 +1444,10 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                   ),
                 ),
                 const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (displayedPriceLabel != null)
+                    if (displayedPriceLabel != null) ...[
                       Text(
                         court.hasTimePricing ||
                                 court.startingPriceAmount != null
@@ -1393,12 +1458,16 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
                           color: AppColors.primaryDark,
                         ),
                       ),
-                    Icon(
-                      expanded
+                      const SizedBox(width: 2),
+                    ],
+                    NeumorphicIconButton(
+                      icon: expanded
                           ? Icons.keyboard_arrow_up_rounded
                           : Icons.keyboard_arrow_down_rounded,
-                      size: 20,
-                      color: NeumorphicTheme.textSecondary,
+                      onPressed: () => _toggleCourtAvailability(court),
+                      size: 28,
+                      iconSize: 18,
+                      color: AppColors.primaryDark,
                     ),
                   ],
                 ),
@@ -1565,8 +1634,32 @@ class _CourtDetailSheetState extends State<CourtDetailSheet>
     ),
   );
 
+  String _availabilityDateLabel(DateTime date) {
+    final today = _venueToday;
+    if (DateUtils.isSameDay(date, today)) return 'วันนี้';
+    if (DateUtils.isSameDay(date, VenueLocalTime.addCalendarDays(today, 1))) {
+      return 'พรุ่งนี้';
+    }
+    final label =
+        '${_shortWeekdayLabel(date.weekday % 7)} ${date.day} '
+        '${ThaiDateUtils.getThaiShortMonth(date.month)}';
+    if (date.year == today.year) return label;
+    return '$label ${(date.year + 543) % 100}';
+  }
+
   static String _formatDate(DateTime date) =>
       ThaiDateUtils.formatShortDateBE2Digit(date);
+
+  static String _shortWeekdayLabel(int dow) => switch (dow) {
+    0 => 'อา.',
+    1 => 'จ.',
+    2 => 'อ.',
+    3 => 'พ.',
+    4 => 'พฤ.',
+    5 => 'ศ.',
+    6 => 'ส.',
+    _ => '',
+  };
 
   static String _dayLabel(int dow) => switch (dow) {
     0 => 'อาทิตย์',

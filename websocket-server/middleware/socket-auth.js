@@ -23,10 +23,56 @@
  */
 
 const { verifyAccessToken } = require('../lib/jwt');
+const logger = require('../utils/logger');
 const {
   strictSocketAuthEnabled,
   isStrictSocketEvent,
 } = require('../config/rollout-flags');
+
+function tokenFailureCode(error) {
+  const message = error.message || '';
+  if (/expired/i.test(message)) return 'token_expired';
+  if (/not active/i.test(message)) return 'token_not_active';
+  if (/malformed/i.test(message)) return 'malformed_token';
+  if (/unknown key id/i.test(message)) return 'unknown_kid';
+  if (/unsupported algorithm/i.test(message)) return 'unsupported_algorithm';
+  if (/expected token type/i.test(message)) return 'wrong_token_type';
+  return 'invalid_signature';
+}
+
+function tokenMetadata(token) {
+  const value = String(token);
+  const metadata = { tokenLength: value.length };
+  try {
+    const parts = value.split('.');
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    metadata.kid = header.kid || null;
+    metadata.algorithm = header.alg || null;
+    metadata.tokenType = payload.typ || null;
+    metadata.iat = Number.isFinite(payload.iat) ? payload.iat : null;
+    metadata.exp = Number.isFinite(payload.exp) ? payload.exp : null;
+  } catch (_) {}
+  return metadata;
+}
+
+function socketAuthError(message, code) {
+  const error = new Error(message);
+  error.data = { code };
+  return error;
+}
+
+function recordAuthRejection(code) {
+  try {
+    const { redis } = require('../middleware/redis-client');
+    const hour = new Date().toISOString().slice(0, 13);
+    const key = `socket:auth:rejections:${code}:${hour}`;
+    redis.incr(key).then((count) => {
+      if (Number(count) === 1) return redis.expire(key, 172800);
+      return null;
+    }).catch(() => {});
+  } catch (_) {}
+}
 
 /**
  * Verify a Backend-JWT-authenticated identity against Supabase:
@@ -90,8 +136,15 @@ function socketAuthMiddleware({ getPool, supabaseForSync }) {
         try {
           payload = verifyAccessToken(`${handshakeToken}`);
         } catch (err) {
-          console.warn(`[SocketAuth] token rejected: ${err.message}`);
-          return next(new Error('Authentication failed: invalid or expired token'));
+          const code = tokenFailureCode(err);
+          logger.warn(
+            { ...tokenMetadata(handshakeToken), reason: err.message, code },
+            '[SocketAuth] token rejected'
+          );
+          recordAuthRejection(code);
+          return next(
+            socketAuthError('Authentication failed: invalid or expired token', code)
+          );
         }
 
         const verified = await verifyJwtSubject({
@@ -99,7 +152,21 @@ function socketAuthMiddleware({ getPool, supabaseForSync }) {
           sessionId: payload.sid || null,
         });
         if (!verified.ok) {
-          return next(new Error(`Authentication failed: ${verified.error}`));
+          const code = verified.error === 'Session revoked'
+            ? 'session_revoked'
+            : verified.error === 'User is inactive'
+              ? 'user_inactive'
+              : verified.error === 'User not found'
+                ? 'user_not_found'
+                : 'auth_backend_unavailable';
+          logger.warn(
+            { ...tokenMetadata(handshakeToken), reason: verified.error, code },
+            '[SocketAuth] identity rejected'
+          );
+          recordAuthRejection(code);
+          return next(
+            socketAuthError(`Authentication failed: ${verified.error}`, code)
+          );
         }
 
         socket.user = {
@@ -144,7 +211,10 @@ function socketAuthMiddleware({ getPool, supabaseForSync }) {
         if (strictSocketAuthEnabled()) {
           console.warn('[SocketAuth] legacy handshake rejected (STRICT_SOCKET_AUTH)');
           return next(
-            new Error('Authentication failed: verified login required')
+            socketAuthError(
+              'Authentication failed: verified login required',
+              'verified_login_required'
+            )
           );
         }
 
@@ -173,10 +243,14 @@ function socketAuthMiddleware({ getPool, supabaseForSync }) {
         }
 
         if (!userRow) {
-          return next(new Error('Authentication failed: User not found'));
+          return next(
+            socketAuthError('Authentication failed: User not found', 'user_not_found')
+          );
         }
         if (!userRow.is_active) {
-          return next(new Error('Authentication failed: User is inactive'));
+          return next(
+            socketAuthError('Authentication failed: User is inactive', 'user_inactive')
+          );
         }
         socket.user = {
           id: userRow.id,
@@ -197,8 +271,14 @@ function socketAuthMiddleware({ getPool, supabaseForSync }) {
       socket.identitySource = 'anonymous';
       next();
     } catch (err) {
-      console.error('[SocketAuth] Connection auth error:', err.message);
-      next(new Error('Internal server error during authentication'));
+      logger.error({ reason: err.message }, '[SocketAuth] connection auth error');
+      recordAuthRejection('auth_backend_unavailable');
+      next(
+        socketAuthError(
+          'Internal server error during authentication',
+          'auth_backend_unavailable'
+        )
+      );
     }
   };
 }

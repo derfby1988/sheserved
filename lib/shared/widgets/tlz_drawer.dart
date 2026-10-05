@@ -542,7 +542,7 @@ class _TlzDrawerState extends State<TlzDrawer>
                                     ),
                                     _buildMenuItem(
                                       context,
-                                      title: 'หาเพื่อนออกกำลังกาย',
+                                      title: 'คลับกีฬา',
                                       icon: Icons.group,
                                       onTap: () => _navigateTo(
                                         context,

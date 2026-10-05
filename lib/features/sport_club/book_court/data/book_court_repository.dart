@@ -317,6 +317,31 @@ class BookCourtRepository {
     return CourtAvailability.fromJson(Map<String, dynamic>.from(res));
   }
 
+  Future<void> manageCourtAvailability({
+    required String userId,
+    required String courtId,
+    required bool suspend,
+    required List<({DateTime start, DateTime end})> ranges,
+  }) async {
+    _assertCurrentUser(userId);
+    if (ranges.isEmpty) throw ArgumentError.value(ranges, 'ranges');
+    await _client.rpc(
+      'manage_sports_venue_availability',
+      params: {
+        'p_user_id': userId,
+        'p_court_id': courtId,
+        'p_action': suspend ? 'suspend' : 'unsuspend',
+        'p_ranges': [
+          for (final range in ranges)
+            {
+              'starts_at': range.start.toUtc().toIso8601String(),
+              'ends_at': range.end.toUtc().toIso8601String(),
+            },
+        ],
+      },
+    );
+  }
+
   Future<List<VenueReview>> listVenueReviews(
     String venueId, {
     int limit = 50,

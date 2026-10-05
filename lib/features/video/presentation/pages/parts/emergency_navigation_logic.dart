@@ -165,6 +165,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           _initCompass();
           _startResponderTracking();
         }
+        // ✅ Phase 20: ภารกิจค้าง → พักตัวกรองและดึงลิสต์แบบไม่กรอง
+        _syncTrendingFilterSuspension();
       }
       if (isCurrentMission) return false;
       // ✅ ผู้ใช้เลือกเปิดเหตุการณ์ใดเหตุการณ์หนึ่งมาเอง → ปล่อยให้ดูได้
@@ -274,6 +276,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     } catch (e) {
       debugPrint('[MissionFilter] reporter active missions check failed: $e');
     }
+    // ✅ Phase 20: reporter lock / volunteer state อาจเปลี่ยน → sync
+    // การพักตัวกรองประเภทเหตุของกล่องยอดนิยม
+    _syncTrendingFilterSuspension();
   }
 
   /// กล่องยอดนิยม:
@@ -322,12 +327,119 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     return filtered;
   }
 
-  void _loadInitialData() async {
+  /// ✅ Phase 20: mission suspension — ช่วงที่ตัวกรองประเภทเหตุถูกพักทั้งหมด
+  /// (ซ่อนไอคอน, ไม่ส่ง category_ids, ไม่กรองฝั่ง client) เพื่อไม่ให้
+  /// การ์ดภารกิจที่อยู่นอกประเภทที่เลือกหายไปจากกล่อง
+  bool get _missionFilterSuspended =>
+      _currentResponseId != null ||
+      _pendingMissionVideoId != null ||
+      (_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty);
+
+  /// ไอคอนตัวกรองแสดงเมื่อ: ไม่ suspend + ผ่าน initial load + มีหมวดฉุกเฉิน
+  /// (last-known-good snapshot — รีเฟรชหมวดล้มเหลวจึงยังใช้ไอคอนได้)
+  bool get _canShowTrendingCategoryFilter =>
+      !_missionFilterSuspended &&
+      _missionFilterReady &&
+      !_isLoadingTrending &&
+      _emergencyCategories.isNotEmpty;
+
+  /// category ids ที่ใช้กับ request จริง — ช่วง suspension = unfiltered เสมอ
+  Set<String> _effectiveTrendingCategoryIds() {
+    if (_missionFilterSuspended) return const {};
+    return _selectedTrendingCategoryIds;
+  }
+
+  /// ลิสต์การ์ดที่ส่งเข้ากล่องยอดนิยม = role filter เดิม + OR filter ตามหมวด
+  /// (ยกเว้นช่วง suspension ที่คืน role filter อย่างเดียว)
+  List<Video> _trendingVideosForPanel() {
+    final videos = _filteredTrendingVideos();
+    if (_missionFilterSuspended || _selectedTrendingCategoryIds.isEmpty) {
+      return videos;
+    }
+    return videos
+        .where(
+          (v) =>
+              v.categoryId != null &&
+              _selectedTrendingCategoryIds.contains(v.categoryId),
+        )
+        .toList();
+  }
+
+  /// ติดตามการเข้า/ออก suspension:
+  /// - เข้า: ต้องดึงลิสต์แบบไม่กรองเพื่อคืนการ์ดภารกิจที่ตัวกรองอาจตัดทิ้ง
+  /// - ออก: ดึงลิสต์ด้วยหมวดที่เลือกไว้เดิม
+  void _syncTrendingFilterSuspension() {
+    final suspended = _missionFilterSuspended;
+    // null ถือว่าเท่ากับ false (ค่าเริ่มต้น) — กันยิง fetch ซ้ำตอน initial load
+    final previous = _lastMissionFilterSuspended ?? false;
+    _lastMissionFilterSuspended = suspended;
+    _missionSuspendSignal.value = suspended;
+    if (previous == suspended) return;
+    _loadTrendingVideos(forceRefresh: true);
+  }
+
+  void _autoSwitchForTrendingCategoryFilter({
+    required String? currentVideoIdAtApply,
+    required Set<String> selectedCategoryIds,
+  }) {
+    final targetVideoId = trendingCategoryFilterAutoSwitchTarget(
+      currentVideoId: _currentVideoId,
+      currentVideoIdAtApply: currentVideoIdAtApply,
+      currentCategoryId: _currentVideo?.categoryId,
+      selectedCategoryIds: selectedCategoryIds,
+      visibleVideos: _trendingVideosForPanel(),
+      missionFilterSuspended: _missionFilterSuspended,
+    );
+    if (targetVideoId != null) {
+      _switchVideo(targetVideoId, refreshTrending: false);
+    }
+  }
+
+  /// Phase 20: Apply ตัวกรองแบบ transaction — fetch หน้า 1 ด้วยชุดหมวดใหม่
+  /// สำเร็จแล้วเท่านั้นจึง commit ลง _selectedTrendingCategoryIds;
+  /// ล้มเหลว/ยกเลิก → คง selection และลิสต์เดิมไว้
+  Future<bool> _applyTrendingCategoryFilter(Set<String> draft) async {
+    if (_missionFilterSuspended) return false;
+    final validIds = _emergencyCategories.map((c) => c.id).toSet();
+    final next = draft.where(validIds.contains).toSet();
+    // เลือกหมวดใหม่ต้องมี category list พร้อม — แต่ล้างตัวกรอง (next ว่าง)
+    // ทำได้เสมอเพื่อให้ผู้ใช้กลับไปลิสต์เต็มได้
+    if (next.isNotEmpty && _emergencyCategories.isEmpty) return false;
+    final currentVideoIdAtApply = _currentVideoId;
+    if (setEquals(next, _selectedTrendingCategoryIds)) {
+      _autoSwitchForTrendingCategoryFilter(
+        currentVideoIdAtApply: currentVideoIdAtApply,
+        selectedCategoryIds: next,
+      );
+      return true;
+    }
+    final ok = await _loadTrendingVideos(
+      forceRefresh: true,
+      categoryIdsOverride: next,
+      silent: true,
+    );
+    if (!ok || !mounted || _missionFilterSuspended) return false;
+    setState(() {
+      _selectedTrendingCategoryIds
+        ..clear()
+        ..addAll(next);
+      _trendingFilterResetToken++;
+    });
+    _autoSwitchForTrendingCategoryFilter(
+      currentVideoIdAtApply: currentVideoIdAtApply,
+      selectedCategoryIds: next,
+    );
+    return true;
+  }
+
+  void _loadInitialData({bool refreshTrending = true}) async {
     final int generation = ++_initDataGeneration;
     _fetchProfessionName();
     // ✅ Phase 16: ยิง trending + reporter-mission check ขนานตั้งแต่ต้น
     // (filter ต้องรอ categories + list พร้อม แต่ fetch ไม่จำเป็นต้องรอ)
-    final trendingFuture = _loadTrendingVideos(generation: generation);
+    final trendingFuture = refreshTrending
+        ? _loadTrendingVideos(generation: generation)
+        : Future<bool>.value(true);
     final reporterMissionsFuture = _loadReporterActiveMissionVideoIds();
     await _loadEmergencyCategories();
     if (!mounted || generation != _initDataGeneration) return;
@@ -752,49 +864,114 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     return resolveEmergencyVideoCategoryNames(videos, categoryNames);
   }
 
-  Future<void> _loadTrendingVideos({
+  /// โหลดลิสต์ยอดนิยมหน้าแรก — คืน true เมื่อ commit ลิสต์ลง state สำเร็จ
+  /// ✅ Phase 20:
+  /// - [categoryIdsOverride] ใช้โดย apply-transaction เพื่อ fetch ด้วยชุด
+  ///   หมวดที่ผู้ใช้เพิ่งเลือกก่อน commit (ค่าเริ่มต้น = effective ids)
+  /// - [silent] ไม่โชว์ snackbar — ให้ sheet แสดง error ของตัวเองแทน
+  /// - generation guard ทิ้ง response ที่กลับมาช้ากว่า request ใหม่
+  Future<bool> _loadTrendingVideos({
     bool forceRefresh = false,
     int? generation,
+    Set<String>? categoryIdsOverride,
+    bool silent = false,
   }) async {
+    final fetchGeneration = ++_trendingFetchGeneration;
+    // Phase 20: snapshot ชุดหมวดของ request นี้ — ห้ามใช้ live reference
+    // เพราะ committed selection อาจเปลี่ยนระหว่างรอ response
+    final categoryIds = Set<String>.of(
+      categoryIdsOverride ?? _effectiveTrendingCategoryIds(),
+    );
     try {
       _trendingPage = 1;
       _hasMoreTrending = true;
       final videos = await ServiceLocator.instance.videoRepository
           .getEmergencyVideos(
-            page: _trendingPage,
+            page: 1,
             limit: 20,
             forceRefresh: forceRefresh,
+            categoryIds: categoryIds.toList(),
           );
-      if (!mounted) return;
+      if (!mounted) return false;
       // Phase 16: ทิ้งผลลัพธ์จาก init run ที่ stale (เช่น _switchVideo แล้ว)
-      if (generation != null && generation != _initDataGeneration) return;
+      if (generation != null && generation != _initDataGeneration) {
+        return false;
+      }
+      // Phase 20: ทิ้ง response ที่เก่ากว่า request ล่าสุด (เปลี่ยน filter/
+      // refresh/load-more ไปแล้ว) กันข้อมูลคนละ filter ปนกัน
+      if (fetchGeneration != _trendingFetchGeneration) return false;
+      // Phase 20: fail-closed — response ที่มีการ์ดนอกหมวดที่เลือกให้ทิ้ง
+      if (categoryIds.isNotEmpty &&
+          videos.any(
+            (v) => v.categoryId == null || !categoryIds.contains(v.categoryId),
+          )) {
+        return false;
+      }
       setState(() {
         _trendingVideos = _resolveEmergencyVideoNames(videos);
         _isLoadingTrending = false;
         if (videos.length < 20) _hasMoreTrending = false;
       });
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      if (generation != null && generation != _initDataGeneration) return;
+      if (!mounted) return false;
+      if (generation != null && generation != _initDataGeneration) {
+        return false;
+      }
+      if (fetchGeneration != _trendingFetchGeneration) return false;
       setState(() => _isLoadingTrending = false);
-      ErrorHandler.showErrorSnackBar(
-        context,
-        e,
-        onRetry: () => _loadTrendingVideos(),
-      );
+      if (!silent) {
+        ErrorHandler.showErrorSnackBar(
+          context,
+          e,
+          onRetry: () => _loadTrendingVideos(),
+        );
+      }
+      return false;
     }
   }
 
   Future<void> _loadMoreTrendingVideos() async {
     if (!_hasMoreTrending || _isLoadingMoreTrending) return;
     if (mounted) setState(() => _isLoadingMoreTrending = true);
+    final fetchGeneration = ++_trendingFetchGeneration;
+    // ✅ Phase 20: ล็อกชุดหมวด ณ ตอนเริ่ม request — ถ้า filter/suspension
+    // เปลี่ยนระหว่างรอ ให้ทิ้ง response นี้ (request ใหม่จะเป็นคนโหลด)
+    final categoryIds = Set<String>.of(_effectiveTrendingCategoryIds());
+    final nextPage = _trendingPage + 1;
     try {
-      _trendingPage++;
       final videos = await ServiceLocator.instance.videoRepository
-          .getEmergencyVideos(page: _trendingPage, limit: 20);
+          .getEmergencyVideos(
+            page: nextPage,
+            limit: 20,
+            categoryIds: categoryIds.toList(),
+          );
+      if (!mounted) return;
+      if (fetchGeneration != _trendingFetchGeneration) {
+        // Phase 20: request ใหม่มาแทนแล้ว → ต้องคืน flag ไม่งั้น scroll retry ตาย
+        setState(() => _isLoadingMoreTrending = false);
+        return;
+      }
+      // Phase 20: fail-closed เช่นเดียวกับหน้าแรก — ทิ้งทั้ง response แล้ว
+      // ปล่อยให้ scroll trigger ลองใหม่ที่หน้าเดิม
+      if (categoryIds.isNotEmpty &&
+          videos.any(
+            (v) => v.categoryId == null || !categoryIds.contains(v.categoryId),
+          )) {
+        if (mounted) setState(() => _isLoadingMoreTrending = false);
+        return;
+      }
       if (mounted) {
         setState(() {
-          _trendingVideos.addAll(_resolveEmergencyVideoNames(videos));
+          // ✅ Phase 20: เลื่อนหน้าเฉพาะเมื่อสำเร็จ + dedupe ตาม video id
+          // (เหตุใหม่ insert ระหว่างเลื่อนหน้าอาจทำให้ offset ซ้ำ)
+          _trendingPage = nextPage;
+          final existingIds = _trendingVideos.map((v) => v.id).toSet();
+          _trendingVideos.addAll(
+            _resolveEmergencyVideoNames(
+              videos,
+            ).where((v) => !existingIds.contains(v.id)),
+          );
           _isLoadingMoreTrending = false;
           if (videos.length < 20) _hasMoreTrending = false;
         });
@@ -1017,6 +1194,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     final realId = mine.first['id']?.toString();
     if (realId != null && realId.isNotEmpty && realId != _currentResponseId) {
       setState(() => _currentResponseId = realId);
+      // ✅ Phase 20: adopt ภารกิจจริง → พักตัวกรองและดึงลิสต์ไม่กรอง
+      _syncTrendingFilterSuspension();
     }
     return true;
   }
@@ -1275,6 +1454,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           _checkPrivacyPermissions();
           _initCompass();
         });
+        // ✅ Phase 20: เข้าสู่ Mission Lock → พักตัวกรองและดึงลิสต์ไม่กรอง
+        _syncTrendingFilterSuspension();
       }
 
       final socket = WebSocketService().socket;
@@ -1342,7 +1523,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
-  void _switchVideo(String newVideoId) {
+  void _switchVideo(String newVideoId, {bool refreshTrending = true}) {
     if (_currentVideoId != null)
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     _interactionSub?.cancel();
@@ -1375,7 +1556,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       _capturedPhotos.clear(); // ✅ เคลียร์รูปภาพไทยมุงที่ถ่ายค้างไว้
     });
     _setupWebSocketStreams();
-    _loadInitialData();
+    _loadInitialData(refreshTrending: refreshTrending);
     _loadDonationRequests(); // ✅ โหลดคำร้องใหม่สำหรับวิดีโอใหม่
   }
 
@@ -1387,7 +1568,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (_currentVideoId == null || _isOverlayVisible) return;
     // ✅ Mission Lock: ใช้ลิสต์ที่กรองแล้ว (ภารกิจตนเอง + การ์ดที่มีสิทธิ)
     // กันการปัดเปลี่ยนไปเหตุการณ์นอกขอบเขตผ่าน fullscreen
-    final List<Video> fullscreenVideos = _filteredTrendingVideos();
+    final List<Video> fullscreenVideos = _trendingVideosForPanel();
     if (fullscreenVideos.isEmpty) return;
 
     // หา index ของการ์ดปัจจุบันในรายการ trending

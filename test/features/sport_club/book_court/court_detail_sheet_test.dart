@@ -95,9 +95,13 @@ class _FakeBookCourtRepository extends BookCourtRepository {
 
 CourtAvailability _openAvailability({
   List<({DateTime startsAt, DateTime endsAt})> booked = const [],
+  List<({DateTime startsAt, DateTime endsAt})> blocked = const [],
+  DateTime? serverNow,
 }) => CourtAvailability(
   courtId: 'court-1',
+  serverNow: serverNow,
   booked: booked,
+  blocked: blocked,
   hours: [
     for (var day = 0; day < 7; day++)
       VenueOperatingHours(
@@ -125,9 +129,7 @@ Future<void> _selectAvailabilityDate(
   DateTime? fromDate,
 }) async {
   final currentDate = fromDate ?? VenueLocalTime.today(_venue.timezone);
-  await tester.tap(
-    find.text(ThaiDateUtils.formatShortDateBE2Digit(currentDate)),
-  );
+  await tester.tap(find.byKey(const ValueKey('court_availability_date')));
   await tester.pumpAndSettle();
   if (currentDate.year != date.year || currentDate.month != date.month) {
     await tester.tap(find.bySemanticsLabel('เดือนถัดไป'));
@@ -190,6 +192,8 @@ VenueBooking _booking({
 Widget _harness(
   _FakeBookCourtRepository repo, {
   CourtBookingCallback? onBookCourt,
+  DateTime? now,
+  bool canManageAvailability = false,
   Future<void> Function()? onOpenMyBookings,
   String? userId = 'user-1',
 }) {
@@ -203,6 +207,8 @@ Widget _harness(
               venue: _venue,
               repo: repo,
               userId: userId,
+              now: now,
+              canManageAvailability: canManageAvailability,
               onBookCourt: onBookCourt,
               onWriteReview: () async {},
               onOpenMyBookings: onOpenMyBookings,
@@ -271,6 +277,42 @@ void main() {
     expect(find.text('0$tomorrowDow.00 - 1$tomorrowDow.00 น.'), findsNothing);
   });
 
+  testWidgets("today's hours say near opening before opening time", (
+    tester,
+  ) async {
+    final date = DateTime(2040, 1, 1);
+    final now = VenueLocalTime.atWallTime(date, _venue.timezone, 11, 53);
+    repo.hours = [
+      VenueOperatingHours(
+        dayOfWeek: now.weekday % 7,
+        openTime: '14:00',
+        closeTime: '22:00',
+      ),
+    ];
+    await tester.pumpWidget(_harness(repo, now: now));
+    await _openSheet(tester);
+
+    expect(find.text('ใกล้เปิด'), findsOneWidget);
+    expect(find.text('ปิดแล้ว'), findsNothing);
+  });
+
+  testWidgets("today's hours stay closed after closing time", (tester) async {
+    final date = DateTime(2040, 1, 1);
+    final now = VenueLocalTime.atWallTime(date, _venue.timezone, 23);
+    repo.hours = [
+      VenueOperatingHours(
+        dayOfWeek: now.weekday % 7,
+        openTime: '14:00',
+        closeTime: '22:00',
+      ),
+    ];
+    await tester.pumpWidget(_harness(repo, now: now));
+    await _openSheet(tester);
+
+    expect(find.text('ปิดแล้ว'), findsOneWidget);
+    expect(find.text('ใกล้เปิด'), findsNothing);
+  });
+
   testWidgets("only today's hours line carries a live open badge", (
     tester,
   ) async {
@@ -318,6 +360,58 @@ void main() {
 
     expect(find.text('ดูตารางว่าง'), findsOneWidget);
     expect(find.text('จองเลย'), findsOneWidget);
+  });
+
+  testWidgets('verified venue managers get a manage-time action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        canManageAvailability: true,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {},
+      ),
+    );
+    await _openSheet(tester);
+
+    expect(
+      find.text('ปัดการ์ดสนามไปทางซ้ายเพื่อดูตารางว่างหรือจัดการเวลา'),
+      findsOneWidget,
+    );
+    await _swipeCourt(tester, 'court-1');
+
+    expect(find.text('จัดการเวลา'), findsOneWidget);
+    expect(find.text('จองเลย'), findsNothing);
+  });
+
+  testWidgets('the courts section invites picking the shared resource unit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('เลือกคอร์ทเพื่อระบุเวลาจอง'), findsOneWidget);
+    expect(find.text('รายการที่จองได้'), findsNothing);
+  });
+
+  testWidgets('mixed resource labels fall back to the generic รายการ wording', (
+    tester,
+  ) async {
+    repo.courts = [
+      _instantCourt,
+      const VenueCourt(
+        id: 'court-9',
+        venueId: 'venue-1',
+        sportId: 'sport-1',
+        name: 'โต๊ะพูล 1',
+        unitLabel: 'โต๊ะ',
+      ),
+    ];
+    await tester.pumpWidget(_harness(repo));
+    await _openSheet(tester);
+
+    expect(find.text('เลือกรายการเพื่อระบุเวลาจอง'), findsOneWidget);
+    expect(find.text('เลือกคอร์ทเพื่อระบุเวลาจอง'), findsNothing);
   });
 
   testWidgets('the revealed booking action books that court', (tester) async {
@@ -445,6 +539,77 @@ void main() {
       repo.availabilityTo!.toUtc(),
       VenueLocalTime.atWallTime(nextDate, _venue.timezone, 0).toUtc(),
     );
+  });
+
+  testWidgets('owners can open management by tapping a suspended slot', (
+    tester,
+  ) async {
+    final date = VenueLocalTime.today(_venue.timezone);
+    final slot = CourtAvailabilityPicker.hourlySlots(
+      date,
+      timezone: _venue.timezone,
+    ).singleWhere((candidate) => candidate.start.hour == 18);
+    repo.availability = _openAvailability(
+      blocked: [(startsAt: slot.start, endsAt: slot.end)],
+      serverNow: VenueLocalTime.atWallTime(date, _venue.timezone, 6),
+    );
+    final bookingRequests =
+        <({String courtId, DateTime? date, DateTime? start})>[];
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        canManageAvailability: true,
+        onBookCourt: (court, {initialDate, initialSlotStart}) async {
+          bookingRequests.add((
+            courtId: court.id,
+            date: initialDate,
+            start: initialSlotStart,
+          ));
+        },
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ระงับชั่วคราว'), findsOneWidget);
+    expect(find.text('ไม่พร้อม'), findsNothing);
+    await tester.tap(find.text('18:00'));
+    await tester.pumpAndSettle();
+
+    expect(bookingRequests, hasLength(1));
+    expect(bookingRequests.single.courtId, 'court-1');
+    expect(bookingRequests.single.date, date);
+    expect(bookingRequests.single.start!.isAtSameMomentAs(slot.start), isTrue);
+  });
+
+  testWidgets('regular users cannot tap a suspended slot', (tester) async {
+    final date = VenueLocalTime.today(_venue.timezone);
+    final slot = CourtAvailabilityPicker.hourlySlots(
+      date,
+      timezone: _venue.timezone,
+    ).singleWhere((candidate) => candidate.start.hour == 18);
+    repo.availability = _openAvailability(
+      blocked: [(startsAt: slot.start, endsAt: slot.end)],
+      serverNow: VenueLocalTime.atWallTime(date, _venue.timezone, 6),
+    );
+    var bookingCalls = 0;
+    await tester.pumpWidget(
+      _harness(
+        repo,
+        onBookCourt: (_, {initialDate, initialSlotStart}) async {
+          bookingCalls++;
+        },
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('18:00'));
+    await tester.pumpAndSettle();
+
+    expect(bookingCalls, 0);
   });
 
   testWidgets(
@@ -679,6 +844,47 @@ void main() {
 
     expect(find.text('ตารางว่าง'), findsNothing);
     expect(find.byType(NeumorphicInsetBox), findsOneWidget);
+  });
+
+  testWidgets('availability date selector uses relative and weekday labels', (
+    tester,
+  ) async {
+    final today = DateTime(2026, 10, 5);
+    final tomorrow = VenueLocalTime.addCalendarDays(today, 1);
+    final wednesday = VenueLocalTime.addCalendarDays(today, 2);
+    final now = VenueLocalTime.atWallTime(today, _venue.timezone, 11, 53);
+    repo.availability = _openAvailability();
+    await tester.pumpWidget(_harness(repo, now: now));
+    await _openSheet(tester);
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('วันนี้'), findsOneWidget);
+    final dateButton = find.byKey(const ValueKey('court_availability_date'));
+    expect(tester.widget<NeumorphicPillButton>(dateButton).text, 'วันนี้');
+    await _selectAvailabilityDate(tester, tomorrow, fromDate: today);
+    expect(tester.widget<NeumorphicPillButton>(dateButton).text, 'พรุ่งนี้');
+    await _selectAvailabilityDate(tester, wednesday, fromDate: tomorrow);
+    expect(find.text('พ. 7 ต.ค.'), findsOneWidget);
+    expect(find.text('พ. 7 ต.ค. 69'), findsNothing);
+  });
+
+  testWidgets('availability date in another Buddhist year keeps short year', (
+    tester,
+  ) async {
+    final today = DateTime(2026, 12, 31);
+    final nextYearDate = DateTime(2027, 1, 2);
+    final now = VenueLocalTime.atWallTime(today, _venue.timezone, 11, 53);
+    repo.availability = _openAvailability();
+    await tester.pumpWidget(_harness(repo, now: now));
+    await _openSheet(tester);
+    await tester.tap(find.text('คอร์ท หลังจวนเก่าภูว้า'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('วันนี้'), findsOneWidget);
+    await _selectAvailabilityDate(tester, nextYearDate, fromDate: today);
+
+    expect(find.text('ส. 2 ม.ค. 70'), findsOneWidget);
   });
 
   testWidgets(

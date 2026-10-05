@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../core/network/authenticated_http_client.dart';
 import 'auth_service.dart';
+import 'socket_auth_recovery_policy.dart';
+import 'socket_auth_socket_factory.dart';
 import 'socket_reconnect_policy.dart';
 
 /// WebSocket Service for Real-time Communication
@@ -31,10 +33,16 @@ class WebSocketService {
   // must rebuild the socket instead of relying on its internal reconnect.
   String? _userId;
   String? _authToken;
+  String? _socketAuthToken;
+  String? _socketUserId;
+  String? _authRecoveryToken;
+  String? _pendingAuthFailureCode;
   StreamSubscription<String?>? _tokenSub;
   bool _authUserLifecycleWatching = false;
   bool _connectionRequested = false;
   bool _handlingAuthFailure = false;
+  bool _authRecoveryBlocked = false;
+  int _preemptiveRefreshCount = 0;
   int _authRecoveryAttempts = 0;
   int _authRetryCount = 0;
   static const int _maxAuthRecoveries = 3;
@@ -236,9 +244,22 @@ class WebSocketService {
 
   /// Reset connection attempts (call this when user manually tries to connect)
   void resetConnectionAttempts() {
+    resetTransportConnectionAttempts();
+    resetAuthRecovery();
+  }
+
+  void resetTransportConnectionAttempts() {
     _connectionAttempts = 0;
     _connectionErrorLogCount = 0;
     _lastConnectionErrorLogAt = null;
+  }
+
+  void resetAuthRecovery() {
+    _authRecoveryAttempts = 0;
+    _authRecoveryToken = null;
+    _authRecoveryBlocked = false;
+    _pendingAuthFailureCode = null;
+    _cancelAuthRetry(resetCount: true);
   }
 
   void _logConnectionError(String message, {bool showServerTip = false}) {
@@ -273,11 +294,12 @@ class WebSocketService {
 
   /// Connect to WebSocket Server
   Future<void> connect({String? userId, String? authToken}) async {
-    if (!_isEnabled) {
-      debugPrint('WebSocket is disabled');
-      return;
+    if (!_isEnabled || _authRecoveryBlocked) return;
+    final client = AuthenticatedHttpClient.instance;
+    if (AppConfig.useBackendAuth && client.accessToken != null) {
+      authToken = client.accessToken;
     }
-    authToken ??= AuthenticatedHttpClient.instance.accessToken;
+    authToken ??= client.accessToken;
     if (AppConfig.useBackendAuth &&
         userId != null &&
         (authToken == null || authToken.trim().isEmpty)) {
@@ -288,35 +310,93 @@ class WebSocketService {
       disconnect();
       return;
     }
+    if (_authRetryTimer != null) {
+      if (authToken == _authToken) return;
+      _cancelAuthRetry(resetCount: true);
+    }
     _connectionRequested = true;
-    _cancelTransportRetry();
-    _authRetryTimer?.cancel();
-    _authRetryTimer = null;
-
-    // socket.io bakes `auth` into the options at construction, so an existing
-    // socket must never be reused once the identity/token we hold differs —
-    // otherwise a refreshed token would never reach the handshake and the
-    // connection would keep failing with the stale one.
-    if (_socket != null && (authToken != _authToken || userId != _userId)) {
-      _disposeSocket();
-    }
-
-    if (_isConnected) {
-      debugPrint('WebSocket already connected');
-      return;
-    }
-
-    if (_socket != null) {
-      _socket!.connect();
-      return;
-    }
-
-    // W3.5: remember the credentials this socket was created with so a
-    // token rotation can rebuild the connection with the fresh token.
     _userId = userId;
-    _authToken = authToken;
     _watchTokenLifecycle();
     _watchAuthUserLifecycle();
+
+    final action = SocketAuthRecoveryPolicy.connectionAction(
+      backendAuthRequired: AppConfig.useBackendAuth && userId != null,
+      accessToken: authToken,
+      hasSocket: _socket != null,
+      socketAuthToken: _socketAuthToken,
+      socketUserId: _socketUserId,
+      requestedUserId: userId,
+    );
+    if (action == SocketConnectionAction.stopWithError) {
+      _errorController.add('Verified login required for realtime updates');
+      disconnect();
+      return;
+    }
+    if (_socket != null &&
+        _socket!.connected &&
+        _socketAuthToken == authToken &&
+        _socketUserId == userId) {
+      return;
+    }
+    if (action == SocketConnectionAction.refreshThenRebuild) {
+      if (!SocketAuthRecoveryPolicy.canAttemptRecovery(
+        _authRecoveryAttempts,
+        maximum: _maxAuthRecoveries,
+      )) {
+        _blockAuthRecovery(
+          'Realtime authentication recovery paused; log in again or retry manually',
+        );
+        return;
+      }
+      _authRecoveryAttempts++;
+      final tokenBeforeRefresh = authToken;
+      _preemptiveRefreshCount++;
+      TokenRefreshResult refreshResult;
+      try {
+        refreshResult = await client.refreshTokens();
+      } finally {
+        _preemptiveRefreshCount--;
+      }
+      if (refreshResult == TokenRefreshResult.rejected) {
+        _errorController.add('Session expired — please log in again');
+        if (AuthService.instance.currentUser != null) {
+          await AuthService.instance.logout();
+        }
+        return;
+      }
+      if (refreshResult == TokenRefreshResult.missingRefreshToken) {
+        _blockAuthRecovery('Realtime updates require logging in again');
+        return;
+      }
+      if (!_connectionRequested || !_isEnabled || _userId != userId) return;
+      if (refreshResult == TokenRefreshResult.unavailable) {
+        _scheduleAuthRetry(reconnect: true);
+        return;
+      }
+      authToken = client.accessToken;
+      if (authToken == null || authToken == tokenBeforeRefresh) {
+        _blockAuthRecovery(
+          'Realtime authentication recovery paused; the access token did not change',
+        );
+        return;
+      }
+      _authRecoveryToken = authToken;
+      _authToken = authToken;
+      _cancelAuthRetry(resetCount: true);
+    }
+
+    if (action == SocketConnectionAction.rebuild ||
+        (_socket != null &&
+            (_socketAuthToken != authToken || _socketUserId != userId))) {
+      _disposeSocket();
+    }
+    _cancelTransportRetry();
+    _authToken = authToken;
+
+    if (_socket != null) {
+      if (!_socket!.connected) _socket!.connect();
+      return;
+    }
 
     if (_connectionAttempts >= _maxConnectionAttempts) {
       debugPrint(
@@ -332,19 +412,14 @@ class WebSocketService {
     _connectionAttempts++;
 
     try {
-      _socket = IO.io(
-        _serverUrl,
-        IO.OptionBuilder()
-            .setTransports(['websocket'])
-            .enableAutoConnect() // Changed to true for background resilience
-            .enableReconnection()
-            .setReconnectionDelay(1000)
-            .setReconnectionDelayMax(5000)
-            .setReconnectionAttempts(_socketReconnectionAttempts)
-            .setRandomizationFactor(0.5)
-            .setAuth({'userId': userId, 'token': authToken})
-            .build(),
+      _socket = SocketAuthSocketFactory.create(
+        serverUrl: _serverUrl,
+        userId: userId,
+        token: authToken,
+        reconnectionAttempts: _socketReconnectionAttempts,
       );
+      _socketAuthToken = authToken;
+      _socketUserId = userId;
 
       final socket = _socket!;
 
@@ -357,6 +432,9 @@ class WebSocketService {
         _cancelTransportRetry(resetCount: true);
         _lastNotConnectedLogAt = null;
         _authRecoveryAttempts = 0;
+        _authRecoveryToken = null;
+        _authRecoveryBlocked = false;
+        _pendingAuthFailureCode = null;
         _authRetryCount = 0;
         _authRetryTimer?.cancel();
         _authRetryTimer = null;
@@ -413,7 +491,11 @@ class WebSocketService {
         _errorController.add('Connection error: $error');
 
         if (_isSocketAuthError(error)) {
-          unawaited(_handleSocketAuthFailure(source: socket));
+          final reasonCode = _socketAuthErrorCode(error);
+          _pendingAuthFailureCode = reasonCode;
+          unawaited(
+            _handleSocketAuthFailure(source: socket, reasonCode: reasonCode),
+          );
         }
       });
 
@@ -571,7 +653,11 @@ class WebSocketService {
         }
         _errorController.add('Error: $error');
         if (_isSocketAuthError(error)) {
-          unawaited(_handleSocketAuthFailure(source: socket));
+          final reasonCode = _socketAuthErrorCode(error);
+          _pendingAuthFailureCode = reasonCode;
+          unawaited(
+            _handleSocketAuthFailure(source: socket, reasonCode: reasonCode),
+          );
         } else if (!socket.connected && !_isConnected) {
           _scheduleTransportRetry(reason: 'Socket.IO handshake was rejected');
         }
@@ -913,6 +999,10 @@ class WebSocketService {
     _tokenSub ??= AuthenticatedHttpClient.instance.tokenChanges.listen((token) {
       if (token == null) {
         _authToken = null;
+        _authRecoveryToken = null;
+        _authRecoveryBlocked = false;
+        _authRecoveryAttempts = 0;
+        _cancelAuthRetry(resetCount: true);
         disconnect();
         return;
       }
@@ -920,8 +1010,16 @@ class WebSocketService {
 
       final userId = _userId;
       _authToken = token;
+      if (_authRecoveryBlocked && token != _authRecoveryToken) {
+        _authRecoveryBlocked = false;
+      }
       _cancelAuthRetry(resetCount: true);
       _cancelTransportRetry(resetCount: true);
+      if (_handlingAuthFailure) {
+        _authRecoveryToken = token;
+        return;
+      }
+      if (_preemptiveRefreshCount > 0 || _authRecoveryBlocked) return;
       if (_connectionRequested && _isEnabled && userId != null) {
         _disposeSocket();
         unawaited(connect(userId: userId, authToken: token));
@@ -944,6 +1042,10 @@ class WebSocketService {
     _cancelAuthRetry(resetCount: true);
     _cancelTransportRetry(resetCount: true);
     _disposeSocket();
+    _authRecoveryAttempts = 0;
+    _authRecoveryToken = null;
+    _authRecoveryBlocked = false;
+    _pendingAuthFailureCode = null;
     _userId = userId;
     _authToken = AuthenticatedHttpClient.instance.accessToken;
 
@@ -1018,49 +1120,144 @@ class WebSocketService {
     });
   }
 
-  void _scheduleAuthRetry() {
+  void _scheduleAuthRetry({bool reconnect = false, String? reasonCode}) {
     if (_authRetryTimer != null ||
         !_connectionRequested ||
         !_isEnabled ||
         _userId == null ||
-        _authToken == null) {
+        _authToken == null ||
+        _authRecoveryBlocked) {
+      return;
+    }
+    if (!SocketAuthRecoveryPolicy.canAttemptRecovery(
+      _authRecoveryAttempts,
+      maximum: _maxAuthRecoveries,
+    )) {
+      _blockAuthRecovery(
+        'Realtime authentication recovery paused; log in again or retry manually',
+      );
       return;
     }
 
-    const delaysInSeconds = [5, 15, 30];
-    final delayIndex = _authRetryCount < delaysInSeconds.length
-        ? _authRetryCount
-        : delaysInSeconds.length - 1;
+    final delay = SocketReconnectPolicy.delayForAttempt(_authRetryCount);
     _authRetryCount++;
-    _authRetryTimer = Timer(Duration(seconds: delaysInSeconds[delayIndex]), () {
+    _authRetryTimer = Timer(delay, () {
       _authRetryTimer = null;
-      if (!_connectionRequested || !_isEnabled) return;
-      unawaited(_handleSocketAuthFailure());
+      if (!_connectionRequested || !_isEnabled || _authRecoveryBlocked) return;
+      if (reconnect) {
+        unawaited(
+          connect(
+            userId: _userId,
+            authToken:
+                AuthenticatedHttpClient.instance.accessToken ?? _authToken,
+          ),
+        );
+      } else {
+        unawaited(_handleSocketAuthFailure(reasonCode: reasonCode));
+      }
     });
   }
 
   bool _isSocketAuthError(dynamic error) =>
-      error.toString().contains('Authentication failed');
+      error.toString().contains('Authentication failed') ||
+      _socketAuthErrorCode(error) != null;
 
-  Future<void> _handleSocketAuthFailure({IO.Socket? source}) async {
-    if ((source != null && !identical(_socket, source)) ||
+  String? _socketAuthErrorCode(dynamic error) {
+    dynamic data;
+    if (error is Map) data = error['data'];
+    if (data == null) {
+      try {
+        data = (error as dynamic).data;
+      } catch (_) {}
+    }
+    if (data is Map && data['code'] is String) {
+      return data['code'] as String;
+    }
+    final text = error.toString();
+    const codes = [
+      'token_expired',
+      'token_not_active',
+      'malformed_token',
+      'unknown_kid',
+      'unsupported_algorithm',
+      'wrong_token_type',
+      'invalid_signature',
+      'session_revoked',
+      'user_inactive',
+      'user_not_found',
+      'verified_login_required',
+      'auth_backend_unavailable',
+    ];
+    for (final code in codes) {
+      if (text.contains(code)) return code;
+    }
+    return null;
+  }
+
+  void _blockAuthRecovery(String message) {
+    _authRecoveryBlocked = true;
+    _pendingAuthFailureCode = null;
+    _cancelAuthRetry();
+    _cancelTransportRetry();
+    _disposeSocket();
+    _errorController.add(message);
+  }
+
+  Future<void> _handleSocketAuthFailure({
+    IO.Socket? source,
+    String? reasonCode,
+  }) async {
+    if (_authRecoveryBlocked ||
+        (source != null && !identical(_socket, source)) ||
         _handlingAuthFailure) {
       return;
     }
     _handlingAuthFailure = true;
-    final failedToken = _authToken;
+    final failedToken = _socketAuthToken ?? _authToken;
     final failedUserId = _userId;
+    final code = reasonCode ?? _pendingAuthFailureCode;
+    _pendingAuthFailureCode = code;
     try {
+      final action = SocketAuthRecoveryPolicy.authFailureAction(
+        code: code,
+        refreshedTokenRejected:
+            failedToken != null && failedToken == _authRecoveryToken,
+      );
+      if (action == SocketAuthFailureAction.stopWithError) {
+        _blockAuthRecovery(
+          'Realtime rejected a refreshed access token; retry paused until login or manual retry',
+        );
+        return;
+      }
+      if (action == SocketAuthFailureAction.logout) {
+        _connectionRequested = false;
+        _cancelAuthRetry(resetCount: true);
+        _cancelTransportRetry(resetCount: true);
+        _disposeSocket();
+        if (AuthService.instance.currentUser != null) {
+          await AuthService.instance.logout();
+        }
+        _errorController.add('Session expired — please log in again');
+        return;
+      }
+      if (!SocketAuthRecoveryPolicy.canAttemptRecovery(
+        _authRecoveryAttempts,
+        maximum: _maxAuthRecoveries,
+      )) {
+        _blockAuthRecovery(
+          'Realtime authentication recovery paused; log in again or retry manually',
+        );
+        return;
+      }
+      _authRecoveryAttempts++;
+      if (action == SocketAuthFailureAction.retryWithoutRefresh) {
+        _disposeSocket();
+        _scheduleAuthRetry(reconnect: true, reasonCode: code);
+        return;
+      }
       if (failedToken == null) {
         disconnect();
         _errorController.add('Realtime updates require a valid login');
-        return;
-      }
-      if (_authRecoveryAttempts >= _maxAuthRecoveries) {
-        disconnect();
-        _errorController.add(
-          'Realtime updates unavailable — please log in again',
-        );
         return;
       }
 
@@ -1071,14 +1268,9 @@ class WebSocketService {
       final result = await client.refreshTokens();
       debugPrint('WebSocket: token refresh result=${result.name}');
       final token = client.accessToken;
-      if (result == TokenRefreshResult.refreshed &&
-          token != null &&
-          token != failedToken &&
-          failedUserId == _userId) {
-        _authRecoveryAttempts++;
-      }
-      if (failedToken != _authToken ||
-          failedUserId != _userId ||
+      if (failedUserId != _userId ||
+          !_connectionRequested ||
+          !_isEnabled ||
           (source != null && !identical(_socket, source))) {
         return;
       }
@@ -1086,43 +1278,44 @@ class WebSocketService {
       switch (result) {
         case TokenRefreshResult.refreshed:
           if (token == null || token == failedToken) {
-            _disposeSocket();
-            _errorController.add(
-              'Realtime updates temporarily unavailable; retrying',
+            _blockAuthRecovery(
+              'Realtime authentication recovery paused; the access token did not change',
             );
-            _scheduleAuthRetry();
             return;
           }
+          _authRecoveryToken = token;
+          _authToken = token;
+          _pendingAuthFailureCode = null;
+          _cancelAuthRetry(resetCount: true);
+          _cancelTransportRetry(resetCount: true);
+          _disposeSocket();
+          unawaited(connect(userId: failedUserId, authToken: token));
           return;
         case TokenRefreshResult.rejected:
+          _connectionRequested = false;
           _disposeSocket();
           if (AuthService.instance.currentUser != null) {
-            try {
-              await AuthService.instance.logout();
-            } catch (_) {}
+            await AuthService.instance.logout();
           }
           _errorController.add('Session expired — please log in again');
           return;
         case TokenRefreshResult.unavailable:
           _disposeSocket();
           _errorController.add(
-            'Realtime authentication temporarily unavailable; retrying',
+            'Realtime authentication temporarily unavailable; retry scheduled',
           );
-          _scheduleAuthRetry();
+          _scheduleAuthRetry(reasonCode: code);
           return;
         case TokenRefreshResult.missingRefreshToken:
-          _disposeSocket();
-          _errorController.add(
-            'Realtime updates unavailable — please log in again',
-          );
+          _blockAuthRecovery('Realtime updates require logging in again');
           return;
       }
-    } catch (error) {
+    } catch (_) {
       _disposeSocket();
       _errorController.add(
-        'Realtime authentication temporarily unavailable; retrying',
+        'Realtime authentication temporarily unavailable; retry scheduled',
       );
-      _scheduleAuthRetry();
+      _scheduleAuthRetry(reasonCode: code);
     } finally {
       _handlingAuthFailure = false;
     }
@@ -1148,6 +1341,8 @@ class WebSocketService {
     final socket = _socket;
     final wasConnected = _isConnected;
     _socket = null;
+    _socketAuthToken = null;
+    _socketUserId = null;
     _isConnected = false;
     _connectionAttempts = 0;
     if (socket != null) {
@@ -1162,7 +1357,6 @@ class WebSocketService {
     _connectionRequested = false;
     _cancelAuthRetry(resetCount: true);
     _cancelTransportRetry(resetCount: true);
-    _authRecoveryAttempts = 0;
     _userId = null;
     _authToken = null;
     _disposeSocket();

@@ -99,6 +99,7 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261006100000_sports_hub_booking_release_days.sql
 \ir ../supabase/migrations/20261007100000_sports_hub_booking_release_weekday_overrides.sql
 \ir ../supabase/migrations/20261008100000_sports_hub_booking_release_venue_fallback_all_days.sql
+\ir ../supabase/migrations/20261009100000_sports_hub_owner_availability_management.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -1831,10 +1832,16 @@ END $labels$;
 DO $release_days$
 DECLARE
   v_owner UUID := gen_random_uuid();
+  v_manager UUID := gen_random_uuid();
+  v_customer UUID := gen_random_uuid();
   v_profile UUID := gen_random_uuid();
   v_venue UUID := gen_random_uuid();
   v_sport UUID;
   v_court UUID;
+  v_terms INT;
+  v_booking UUID;
+  v_booking_start TIMESTAMPTZ;
+  v_block_start TIMESTAMPTZ;
   v_availability JSONB;
 BEGIN
   SELECT id INTO v_sport
@@ -1849,7 +1856,10 @@ BEGIN
   END IF;
 
   INSERT INTO public.users (id, first_name, last_name, role)
-  VALUES (v_owner, 'Release', 'Days', 'owner');
+  VALUES
+    (v_owner, 'Release', 'Days', 'owner'),
+    (v_manager, 'Release', 'Manager', 'user'),
+    (v_customer, 'Release', 'Customer', 'user');
   INSERT INTO public.sports_venue_owner_profiles (
     id, user_id, business_name, contact_name, contact_phone, status
   ) VALUES (
@@ -1861,6 +1871,13 @@ BEGIN
     v_venue, v_profile, 'Release Days Smoke', 'Asia/Bangkok', 'approved');
   INSERT INTO public.sports_venue_sports (venue_id, sport_id)
   VALUES (v_venue, v_sport);
+  INSERT INTO public.sports_venue_owner_members (
+    venue_id, user_id, role, invited_by, is_active
+  ) VALUES (v_venue, v_manager, 'manager', v_owner, true);
+  PERFORM public.set_sports_venue_operating_hours(v_owner, v_venue, (
+    SELECT jsonb_agg(jsonb_build_object(
+      'day', d, 'open', '06:00', 'close', '23:00', 'closed', false))
+    FROM generate_series(0, 6) d));
 
   PERFORM pg_temp.expect(
     public.sports_venue_booking_release_min_window(
@@ -2201,4 +2218,115 @@ BEGIN
     '2030-01-06 11:00'::TIMESTAMP AT TIME ZONE 'Asia/Bangkok');
   PERFORM pg_temp.expect(true,
     'booking gate does not apply without any venue or court rule');
+
+  -- 21.7.20 owner one-time availability suspension.
+  PERFORM public.upsert_sports_venue_court_with_release_days(
+    p_user_id => v_owner,
+    p_court_id => v_court,
+    p_venue_id => v_venue,
+    p_sport_id => v_sport,
+    p_name => 'Availability manager resource',
+    p_price_amount => 100,
+    p_pricing_unit => 'hour',
+    p_court_type => 'synthetic',
+    p_indoor => true,
+    p_booking_approval_mode => 'instant',
+    p_booking_release_mode => 'always_open');
+  v_terms := public.publish_sports_venue_terms(
+    v_owner, v_venue, 'Availability management smoke terms', 60);
+  v_booking_start := pg_temp.bkk_ts(10, '14:00');
+  v_booking := public.create_sports_venue_booking(
+    v_customer, v_court, v_booking_start,
+    v_booking_start + interval '1 hour', v_terms,
+    'availability-manager-booking');
+
+  PERFORM pg_temp.expect_raise(
+    'non-manager cannot suspend court availability',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'suspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      v_customer, v_court, pg_temp.bkk_ts(10, '16:00'),
+      pg_temp.bkk_ts(10, '17:00')),
+    'NOT_VENUE_MANAGER');
+  PERFORM pg_temp.expect_raise(
+    'admin override is not treated as venue ownership for availability',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'suspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      'aaaaaaaa-0000-0000-0000-000000000001'::UUID, v_court,
+      pg_temp.bkk_ts(10, '16:00'), pg_temp.bkk_ts(10, '17:00')),
+    'NOT_VENUE_MANAGER');
+
+  PERFORM pg_temp.expect_raise(
+    'availability cannot suspend a confirmed booking',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'suspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      v_owner, v_court, v_booking_start,
+      v_booking_start + interval '1 hour'),
+    'AVAILABILITY_RANGE_HAS_BOOKING');
+  PERFORM pg_temp.expect_raise(
+    'availability cannot suspend outside operating hours',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'suspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      v_owner, v_court, pg_temp.bkk_ts(10, '02:00'),
+      pg_temp.bkk_ts(10, '03:00')),
+    'AVAILABILITY_OUTSIDE_OPERATING_HOURS');
+
+  v_block_start := pg_temp.bkk_ts(10, '16:00');
+  PERFORM public.manage_sports_venue_availability(
+    v_owner, v_court, 'suspend', jsonb_build_array(
+      jsonb_build_object(
+        'starts_at', v_block_start,
+        'ends_at', v_block_start + interval '2 hours'),
+      jsonb_build_object(
+        'starts_at', pg_temp.bkk_ts(10, '19:00'),
+        'ends_at', pg_temp.bkk_ts(10, '20:00'))));
+  PERFORM pg_temp.expect((SELECT count(*) = 2
+    FROM public.sports_venue_availability
+    WHERE court_id = v_court AND kind = 'blocked'),
+    'one owner action suspends multiple disjoint ranges');
+  v_availability := public.get_court_availability(
+    v_court, pg_temp.bkk_ts(10, '00:00'), pg_temp.bkk_ts(11, '00:00'));
+  PERFORM pg_temp.expect(jsonb_array_length(v_availability->'blocked') = 2,
+    'availability RPC exposes the owner suspension ranges');
+
+  PERFORM pg_temp.expect_raise(
+    'unsuspend rejects a range containing a previously free slot',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'unsuspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      v_owner, v_court, v_block_start,
+      v_block_start + interval '3 hours'),
+    'AVAILABILITY_NOT_SUSPENDED');
+  PERFORM pg_temp.expect((SELECT count(*) = 2
+    FROM public.sports_venue_availability
+    WHERE court_id = v_court AND kind = 'blocked'),
+    'rejected mixed unsuspend leaves every suspension unchanged');
+  PERFORM pg_temp.expect_raise(
+    'only a venue manager may cancel a suspension',
+    format($s$SELECT public.manage_sports_venue_availability(
+      %L, %L, 'unsuspend', jsonb_build_array(jsonb_build_object(
+        'starts_at', %L, 'ends_at', %L)))$s$,
+      v_customer, v_court, v_block_start,
+      v_block_start + interval '1 hour'),
+    'NOT_VENUE_MANAGER');
+
+  PERFORM public.manage_sports_venue_availability(
+    v_manager, v_court, 'unsuspend', jsonb_build_array(
+      jsonb_build_object(
+        'starts_at', v_block_start,
+        'ends_at', v_block_start + interval '1 hour')));
+  PERFORM pg_temp.expect(EXISTS (
+    SELECT 1 FROM public.sports_venue_availability
+    WHERE court_id = v_court AND kind = 'blocked'
+      AND starts_at = v_block_start + interval '1 hour'
+      AND ends_at = v_block_start + interval '2 hours'
+  ) AND EXISTS (
+    SELECT 1 FROM public.sports_venue_availability
+    WHERE court_id = v_court AND kind = 'blocked'
+      AND starts_at = pg_temp.bkk_ts(10, '19:00')
+      AND ends_at = pg_temp.bkk_ts(10, '20:00')
+  ), 'manager cancels only the selected suspended slot');
 END $release_days$;

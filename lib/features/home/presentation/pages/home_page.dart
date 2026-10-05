@@ -16,6 +16,7 @@ import '../../../consultation/data/repositories/consultation_repository.dart';
 import '../../../auth/data/repositories/user_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../services/websocket_service.dart';
+import '../../../../services/socket_auth_recovery_policy.dart';
 import 'package:sheserved/features/video/presentation/pages/emergency_live_page.dart';
 import 'package:sheserved/features/pharmacy/presentation/pages/pharmacy_products_page.dart';
 import 'package:sheserved/services/location_tracking_service.dart';
@@ -118,6 +119,7 @@ class _HomePageState extends ConsumerState<HomePage>
   StreamSubscription? _emergencySub;
   StreamSubscription? _professionQuotaSub;
   StreamSubscription? _rescueCancelledSub;
+  StreamSubscription<String>? _realtimeAuthErrorSub;
   final List<Map<String, dynamic>> _professionalAlerts = [];
   final Set<String> _professionallyTakenVideoIds = {};
   int _activeAlertsLoadGeneration = 0;
@@ -197,6 +199,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _loadHomeData();
     _refreshTopBarNotificationCounts();
     _listenForFitnessBookingStatus();
+    _listenForRealtimeAuthErrors();
     _connectWebSocket();
     _listenForEmergencyAlerts(); // WebSocket listener
     _listenForProfessionQuotaFilled();
@@ -241,6 +244,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _emergencySub?.cancel();
     _professionQuotaSub?.cancel();
     _rescueCancelledSub?.cancel();
+    _realtimeAuthErrorSub?.cancel();
     _donationStatusSub?.cancel();
     _fitnessBookingSub?.cancel();
     _yieldWaySub?.cancel();
@@ -384,6 +388,24 @@ class _HomePageState extends ConsumerState<HomePage>
       _refreshTopBarNotificationCounts();
       _loadHomeData(); // Full refresh including alerts
     }
+  }
+
+  void _listenForRealtimeAuthErrors() {
+    _realtimeAuthErrorSub?.cancel();
+    _realtimeAuthErrorSub = WebSocketService().errorStream.listen((error) {
+      if (!mounted) return;
+      final message = SocketAuthRecoveryPolicy.userFacingAuthMessage(error);
+      if (message == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      });
+    });
   }
 
   void _connectWebSocket() {

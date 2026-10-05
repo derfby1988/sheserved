@@ -23,7 +23,7 @@ class AppConfig {
   // =====================================================
 
   /// ค่าเริ่มต้น IP หรือ Local Hostname ของเครื่องหลักที่รัน Backend Server/Caddy
-  static const String mainMachineIp = '192.168.0.102:8080';
+  static const String mainMachineIp = '192.168.1.167:8080';
 
   /// Base URL ของ backend/Caddy ใช้ร่วมกันทั้ง API และ WebSocket
   static const String backendApiUrl = String.fromEnvironment(

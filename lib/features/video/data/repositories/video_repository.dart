@@ -203,11 +203,24 @@ class VideoRepository {
     int page = 1,
     int limit = 20,
     bool forceRefresh = false,
+    List<String>? categoryIds,
   }) async {
+    // ✅ Phase 20: filtered requests ต้อง bypass shared in-memory cache เสมอ —
+    // cache นี้เป็นลิสต์ unfiltered ที่ consumer ทุกตัวแชร์กัน ห้ามปนกับ
+    // ลิสต์ที่กรองหมวด (กันการ์ดนอกประเภทหลุดเข้า/ผลกรอง stale ข้าม session)
+    final hasCategoryFilter =
+        categoryIds != null && categoryIds.isNotEmpty;
     // Cache เฉพาะหน้าแรกที่ทุก consumer ใช้ร่วมกัน (page=1, limit=20)
     // page อื่น/limit อื่น → ยิง network ตรงตามเดิม
-    if (!trendingCacheEnabled || page != 1 || limit != 20) {
-      return (await _fetchEmergencyVideos(page: page, limit: limit)).videos;
+    if (!trendingCacheEnabled ||
+        hasCategoryFilter ||
+        page != 1 ||
+        limit != 20) {
+      return (await _fetchEmergencyVideos(
+        page: page,
+        limit: limit,
+        categoryIds: categoryIds,
+      )).videos;
     }
 
     if (forceRefresh) {
@@ -294,29 +307,54 @@ class VideoRepository {
 
   /// Fetch emergency list จาก network — คืน source ของข้อมูลเพื่อให้
   /// caller ตัดสินใจว่าเขียนลง shared cache ได้หรือไม่ (fallback มี field ไม่ครบ)
+  ///
+  /// ✅ Phase 20: [categoryIds] = ตัวกรองหลายหมวด (OR) ตาม Phase 20 —
+  /// Local API ต้องตอบ marker `X-Emergency-Category-Filter: applied` และทุก
+  /// row ต้องอยู่ในหมวดที่เลือก มิฉะนั้น (เช่น API รุ่นเก่า ignore param)
+  /// ให้ทิ้ง response แล้ว fallback ไป Supabase ที่กรองจริงก่อน range
   Future<({List<Video> videos, String source})> _fetchEmergencyVideos({
     required int page,
     required int limit,
+    List<String>? categoryIds,
   }) async {
+    final idSet =
+        categoryIds == null ? const <String>{} : categoryIds.toSet();
+    final hasCategoryFilter = idSet.isNotEmpty;
+
     // Attempt Local API first
     try {
       final response = await http
           .get(
             Uri.parse(
-              '${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit',
+              '${AppConfig.localApiUrl}/api/videos/emergency/list?page=$page&limit=$limit'
+              '${hasCategoryFilter ? '&category_ids=${idSet.join(',')}' : ''}',
             ),
           )
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
-        return (
-          videos: data
-              .map(
-                (json) =>
-                    Video.fromJson(Map<String, dynamic>.from(json as Map)),
-              )
-              .toList(),
-          source: 'local',
+        final videos = data
+            .map(
+              (json) =>
+                  Video.fromJson(Map<String, dynamic>.from(json as Map)),
+            )
+            .toList();
+        if (!hasCategoryFilter) {
+          return (videos: videos, source: 'local');
+        }
+        // ✅ Phase 20: fail-closed — backend ต้องยืนยันผ่าน marker ว่าใช้
+        // filter จริง และทุก row ต้องตรงหมวดที่เลือก
+        final applied =
+            response.headers['x-emergency-category-filter'] == 'applied';
+        final allMatch = videos.every(
+          (v) => v.categoryId != null && idSet.contains(v.categoryId),
+        );
+        if (applied && allMatch) {
+          return (videos: videos, source: 'local');
+        }
+        debugPrint(
+          'VideoRepository: local emergency list ignored category filter '
+          '(applied=$applied, allMatch=$allMatch) — falling back to Supabase',
         );
       }
     } catch (e) {
@@ -326,16 +364,32 @@ class VideoRepository {
     // Supabase fallback — normalize type filter ให้ตรง Local API
     // (emergency + emergency_photo ตาม query ใน routes/video.js /emergency/list)
     final offset = (page - 1) * limit;
-    final response = await _client
+    var query = _client
         .from('videos')
         .select()
-        .inFilter('type', const ['emergency', 'emergency_photo'])
-        .order('created_at', ascending: false)
-        .range(offset, offset + limit - 1);
-    return (
-      videos: await _parseEmergencyVideos(response as List<dynamic>),
-      source: 'supabase',
-    );
+        .inFilter('type', const ['emergency', 'emergency_photo']);
+    // ✅ Phase 20: กรองก่อน order/range เพื่อให้ pagination ถูกต้อง
+    // (กรองทีหลังจะทำให้บางหน้าว่างทั้งที่ยังมีข้อมูลหมวดที่เลือกอยู่)
+    if (hasCategoryFilter) {
+      query = query.inFilter('category_id', idSet.toList());
+    }
+    var ordered = query.order('created_at', ascending: false);
+    if (hasCategoryFilter) {
+      // tie-break ตรงกับ backend (created_at DESC, id DESC)
+      ordered = ordered.order('id', ascending: false);
+    }
+    final response = await ordered.range(offset, offset + limit - 1);
+    final videos = await _parseEmergencyVideos(response as List<dynamic>);
+    if (hasCategoryFilter &&
+        videos.any(
+          (v) => v.categoryId == null || !idSet.contains(v.categoryId),
+        )) {
+      // fail-closed: อย่าแสดงการ์ดนอกประเภท — ให้ apply ล้มเหลวและคงค่าเดิม
+      throw StateError(
+        'Emergency list response contains rows outside the selected categories',
+      );
+    }
+    return (videos: videos, source: 'supabase');
   }
 
   /// ดึงภาพไทยมุงที่เกี่ยวข้องกับหมวดหมู่เหตุการณ์

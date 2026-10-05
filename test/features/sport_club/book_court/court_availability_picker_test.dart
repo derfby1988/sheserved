@@ -122,6 +122,91 @@ void main() {
     expect(tapped, at(19));
   });
 
+  testWidgets('elapsed slots are shown separately from suspensions', (
+    tester,
+  ) async {
+    const timezone = 'Asia/Bangkok';
+    final date = DateTime(2040, 1, 1);
+    DateTime at(int hour) => VenueLocalTime.atWallTime(date, timezone, hour);
+    final availability = CourtAvailability(
+      courtId: 'court-1',
+      serverNow: at(15),
+      hours: [
+        VenueOperatingHours(
+          dayOfWeek: at(0).weekday % 7,
+          openTime: '14:00',
+          closeTime: '18:00',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CourtAvailabilityPicker(
+            availability: availability,
+            date: date,
+            timezone: timezone,
+            now: at(15),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('เวลานี้ผ่านไปแล้ว'), findsOneWidget);
+    expect(find.text('ผ่านแล้ว'), findsOneWidget);
+    expect(find.text('ระงับชั่วคราว'), findsOneWidget);
+  });
+
+  testWidgets(
+    'owner management mode exposes blocked and unreleased future slots',
+    (tester) async {
+      const timezone = 'Asia/Bangkok';
+      final date = DateTime(2040, 1, 1);
+      DateTime at(int hour) => VenueLocalTime.atWallTime(date, timezone, hour);
+      final availability = CourtAvailability(
+        courtId: 'court-1',
+        blocked: [(startsAt: at(14), endsAt: at(15))],
+        notOpen: [(slotStart: at(16), opensAt: at(18))],
+        hours: [
+          VenueOperatingHours(
+            dayOfWeek: at(0).weekday % 7,
+            openTime: '14:00',
+            closeTime: '22:00',
+          ),
+        ],
+      );
+      final tapped = <DateTime>[];
+      final picker = CourtAvailabilityPicker(
+        availability: availability,
+        date: date,
+        timezone: timezone,
+        now: at(13),
+        freeOnly: true,
+        availabilityManagementMode: true,
+        onSlotTap: (start, end) => tapped.add(start),
+      );
+
+      expect(picker.managerSuspendedSlots.map((slot) => slot.start), [at(14)]);
+      expect(
+        picker.managerSuspendableSlots.map((slot) => slot.start),
+        containsAll([at(16), at(17)]),
+      );
+      expect(
+        picker.visibleSlots.map((slot) => slot.start),
+        containsAll([at(14), at(16), at(17)]),
+      );
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: picker)));
+      await tester.tap(find.text('14:00'));
+      await tester.tap(find.text('16:00'));
+
+      expect(tapped, [at(14), at(16)]);
+      expect(find.text('ถูกจอง'), findsNothing);
+      expect(find.text('ปิด'), findsNothing);
+    },
+  );
+
   testWidgets('free-only with missing hours shows empty state', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -357,6 +442,137 @@ void main() {
       expect(find.byTooltip('ว่าง'), findsNWidgets(7));
       await tester.tap(find.text('15:00'));
       expect(tapped, at(15));
+    });
+  });
+
+  group('status legend long-press', () {
+    const timezone = 'Asia/Bangkok';
+    final date = DateTime(2040, 1, 1);
+
+    Future<void> pumpLegend(WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: CourtAvailability(
+                courtId: 'court-1',
+                hours: [
+                  VenueOperatingHours(
+                    dayOfWeek:
+                        VenueLocalTime.atWallTime(date, timezone, 0).weekday %
+                        7,
+                    openTime: '14:00',
+                    closeTime: '22:00',
+                  ),
+                ],
+              ),
+              date: date,
+              timezone: timezone,
+              now: DateTime.utc(2030),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('long-pressing a legend entry explains it, then hides again', (
+      tester,
+    ) async {
+      await pumpLegend(tester);
+
+      expect(find.textContaining('ยังไม่เปิดจอง — '), findsNothing);
+
+      await tester.longPress(find.text('ยังไม่เปิดจอง'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('ยังไม่เปิดจอง — '), findsOneWidget);
+      // The legend entry itself stays on screen while the note shows.
+      expect(find.text('ยังไม่เปิดจอง'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('ยังไม่เปิดจอง — '), findsNothing);
+    });
+
+    testWidgets('a later long-press replaces the note and restarts its timer', (
+      tester,
+    ) async {
+      await pumpLegend(tester);
+
+      await tester.longPress(find.text('ปิด'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('ปิด — '), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.longPress(find.text('ระงับชั่วคราว'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('ระงับชั่วคราว — '), findsOneWidget);
+      expect(find.textContaining('ปิด — '), findsNothing);
+
+      // Restarted, so it outlives the first note's original deadline.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('ระงับชั่วคราว — '), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('ระงับชั่วคราว — '), findsNothing);
+    });
+
+    testWidgets('tapping the note dismisses it early', (tester) async {
+      await pumpLegend(tester);
+
+      await tester.longPress(find.text('ถูกจอง'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('ถูกจอง — '), findsOneWidget);
+
+      await tester.tap(find.textContaining('ถูกจอง — '));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('ถูกจอง — '), findsNothing);
+    });
+
+    testWidgets('every legend status carries its own explanation', (
+      tester,
+    ) async {
+      await pumpLegend(tester);
+
+      for (final label in [
+        'ว่าง',
+        'ถูกจอง',
+        'ปิด',
+        'ระงับชั่วคราว',
+        'ผ่านแล้ว',
+        'ยังไม่เปิดจอง',
+      ]) {
+        await tester.longPress(find.text(label));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('$label — '), findsOneWidget);
+        await tester.pump(const Duration(seconds: 6));
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('free-only view keeps the legend and its notes off', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: const CourtAvailability(courtId: 'court-1'),
+              date: date,
+              timezone: timezone,
+              freeOnly: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('ว่าง'), findsNothing);
+      expect(find.textContaining('ว่าง — '), findsNothing);
     });
   });
 }

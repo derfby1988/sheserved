@@ -126,6 +126,8 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   credentials: true,
+  // Phase 20: ให้ Flutter Web อ่าน marker ได้ว่า /emergency/list ใช้ตัวกรองจริง
+  exposedHeaders: ['X-Emergency-Category-Filter'],
 };
 
 const io = new Server(server, {

@@ -391,6 +391,7 @@ flutter run \
 | อาการ | สาเหตุ |
 |-------|--------|
 | ทุก request ตอบ `426` | `MIN_APP_VERSION_ENFORCE=true` แต่ client ไม่ส่ง `x-app-version` — dev ตั้ง `MIN_APP_VERSION_ENFORCE=false` (advertise-only) |
+| WebSocket `Authentication failed: invalid or expired token` ซ้ำหลัง `token refresh result=refreshed` | `socket_io_client` อาจ reuse `auth` snapshot แรก แม้สร้างใหม่ด้วย token ใหม่; ใช้ `enableForceNew`, เก็บ token ที่ผูกกับ socket, จำกัด recovery และตรวจ reason code ตาม `docs/guides/websocket_realtime_auth_recovery_guide.md` — ห้ามปิด JWT verification หรือ fallback ไป legacy identity |
 | Social login 401 "Invalid provider token" | `serverClientId` (dart-define) ไม่ตรง `GOOGLE_CLIENT_ID` ใน `.env` — ต้องเป็น **Web client** ตัวเดียวกัน ไม่ใช่ Android/iOS client |
 | ไม่ได้ `idToken` จาก Google เลย | `serverClientId` ว่าง → ลืม `--dart-define=GOOGLE_SERVER_CLIENT_ID` |
 | Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) |
@@ -5802,7 +5803,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 | จุดกรอง | **Server-side + Supabase fallback + client-side guard** | ทั้ง Local API และ Supabase กรองก่อน pagination; client ตรวจ/กรองซ้ำเพื่อป้องกันการ์ดผิดประเภทหลุด |
 | ชุดประเภท | **ทุกหมวด `is_emergency = true` ตาม `display_order`** | ไม่จำกัดเฉพาะที่มีเหตุ; ใช้ลิสต์ที่โหลดอยู่แล้ว ไม่ยิง query ใหม่ |
 | การจำค่า | **จำเฉพาะในเซสชัน** | สลับแท็บ/เปลี่ยนเหตุแล้วคงค่า; รีเซ็ตเมื่อปิดแอปหรือสร้าง state ใหม่; ไม่เขียนลง storage |
-| ขอบเขต | **เฉพาะกล่องยอดนิยม** | ไม่กระทบแผนที่, ลิสต์อื่น, เหตุการณ์ที่กำลังเล่น, ตัวเลขผู้ชม หรือการแจ้งเตือน |
+| ขอบเขต | **ตัวกรองหลักอยู่ที่กล่องยอดนิยม; auto-switch เฉพาะเมื่อ Apply สำเร็จ** | refresh/realtime ไม่เปลี่ยน player. เมื่อ Apply แล้ว current category ไม่ตรงและมีผลลัพธ์ที่ผ่าน role filter ให้สลับไปการ์ดแรก; ถ้าผลว่าง/โหลดล้มเหลว/current ตรงหมวด/mission active หรือ current เปลี่ยนระหว่าง request ให้คง player. ใช้ `_switchVideo()` ตามปกติ โดยไม่มี synthetic interaction/view event |
 | Mission Lock | **พัก category filter ทั้งหมด** | role filter เดิมคงเดิม; เมื่อ mission lock ทำงาน ไม่ส่ง `category_ids` และไม่กรองเซต role ด้วย category; เก็บค่าที่เลือกไว้เพื่อกลับมาใช้เมื่อปลดล็อก |
 | ไอคอนในโหมดล็อก | **ซ่อนไอคอน** | จิตอาสาระหว่างภารกิจ, มีภารกิจค้างอีกเหตุ (`_pendingMissionVideoId`), และ reporter lock — ป้องกันการซ่อนการ์ดภารกิจ |
 | ค่าตัวกรองเมื่อเข้าโหมดล็อก | **เก็บไว้แล้วกลับมาใช้** | ห้ามล้าง state; พ้นโหมดล็อกแล้วตัวกรองเดิมกลับมาทำงานเอง |
@@ -5818,14 +5819,14 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 4. **Server contract:** `GET /api/videos/emergency/list?page&limit&category_ids=a,b,c`; client สร้าง query ด้วย `Uri`/URL encoder, server parse เป็น UUID list, trim/dedupe/canonicalize และ sort ก่อนใช้; empty param ที่ส่งมาอย่างชัดเจนหรือ UUID ผิดรูปแบบคืน 400, cap จำนวนต้องไม่น้อยกว่า emergency categories ที่เปิดใช้จริง (ตรวจ count ก่อน rollout; ห้าม truncate เงียบ ๆ). เพิ่ม `AND v.category_id = ANY($n::uuid[])` ก่อน `ORDER BY/LIMIT/OFFSET`; เมื่อมี filter ใช้ order `created_at DESC, id DESC` เพื่อให้ filtered offset pages deterministic; unfiltered query/order/cache คงเดิมทุกประการ. bind parameter เท่านั้น ไม่ interpolate SQL. เมื่อกรองแล้วตอบ marker header `X-Emergency-Category-Filter: applied`; expose header ผ่าน CORS สำหรับ Flutter Web; client ที่ไม่ได้รับ marker จาก local API ให้ทิ้งผล local ที่อาจไม่กรองแล้วใช้ Supabase fallback. ไม่ส่ง param = response body/semantics เดิมเป๊ะ.
 5. **Cache:** คง Redis key/cache-aside v3 และ client in-memory cache เฉพาะ request ไม่กรองไว้เหมือนเดิม. Request ที่มี `category_ids` **bypass Redis cache-aside และ shared in-memory page-1 cache** — ไม่สร้าง key ต่อ combination, ไม่มี key-space explosion/stale cross-filter data, และ wildcard invalidation เดิมยังใช้กับ unfiltered cache. Filtered query ใช้ index `idx_videos_category_id`; ยืนยันด้วย `EXPLAIN (ANALYZE, BUFFERS)`/latency ก่อน rollout; ถ้าต้องเพิ่ม index ให้แยกทบทวน migration แทนการเพิ่มโดยไม่วัด
 6. **Pagination / request race:** filter มีผลบน server/Supabase ก่อน pagination. ทุกการเปลี่ยน effective filter (selected IDs หรือ lock suspend/resume) สร้าง request generation ใหม่, reset page=1/hasMore/loading-more และ scroll list กลับบน; ผล response ของ generation/key เก่าทิ้งทั้ง first-page และ load-more. คำนวณ next page จาก raw server page length, commit page number เฉพาะเมื่อ request สำเร็จ; error ให้มี retry affordance ใน footer/โหลดหน้าถัดไปซ้ำหน้าเดิม; append แบบ dedupe ด้วย `video.id`. เมื่อ realtime refresh ให้โหลดหน้า 1 ใหม่ด้วย effective filter ปัจจุบันและแทนชุดเก่า — ไม่ทำ client scan ข้ามหน้าแบบไม่จำกัด. ใช้ offset contract เดิมเพื่อกระทบต่ำ; `id` tie-break + client dedupe + refresh ซ่อม drift หลังมี insert. ระบุเป็นข้อจำกัด inherited ว่า offset ไม่ให้ snapshot consistency ระหว่างการ insert พร้อม paging; ถ้าต้องการ guarantee no-gap/no-duplicate ระหว่าง live inserts ให้ทำ cursor-pagination เป็น phase แยก
-7. **Client category guard:** ประกอบผล role filter เดิมกับ OR filter ตาม `categoryId` ใน selector แยก (`_trendingVideosForPanel`); ใช้ filter เฉพาะเมื่อไม่อยู่ใน mission-suspended mode. ตรวจ Local API/Supabase response ซ้ำก่อน render; **ห้าม pin การ์ดปัจจุบัน/การ์ดอื่นที่ไม่ตรง selected IDs** เพราะขัดกับ "แสดงเฉพาะ" — player เดิมเล่นต่อได้โดยไม่เปลี่ยน currentVideoId/interaction/view count แม้การ์ดจะถูกกรองออก. Client guard ไม่ใช้แทน server-side pagination หรือไล่โหลดทุกหน้าเอง
+7. **Client category guard + playback on Apply:** ประกอบผล role filter เดิมกับ OR filter ตาม `categoryId` ใน selector แยก (`_trendingVideosForPanel`); ใช้ filter เฉพาะเมื่อไม่อยู่ใน mission-suspended mode. ตรวจ Local API/Supabase response ซ้ำก่อน render; **ห้าม pin การ์ดปัจจุบัน/การ์ดอื่นที่ไม่ตรง selected IDs**. หลัง Apply สำเร็จด้วย filter ที่ไม่ว่าง หาก category ของ player ปัจจุบันไม่อยู่ใน selected IDs และ panel มีการ์ดที่ผ่าน role/category filter ให้ใช้ `_switchVideo()` ไปการ์ดแรกที่แสดงจริง; อย่าสลับจาก realtime/background refresh, filter ที่ล้างแล้ว, ผลลัพธ์ว่าง, failure, mission suspension หรือเมื่อ currentVideoId เปลี่ยนระหว่าง request. ถ้า current category ตรงกับ filter ให้คง player แม้การ์ดไม่อยู่หน้าแรก; ถ้าไม่มี target ให้คง player ไม่หยุด/จอดำ. การสลับใช้ lifecycle/room cleanup เดิมและไม่สร้าง synthetic like/view event; skip การ fetch trending ซ้ำ. Client guard ไม่ใช้แทน server-side pagination หรือไล่โหลดทุกหน้าเอง
 8. **Fallback parity/compatibility:** Supabase fallback (`video_repository.dart`) เมื่อกรองเพิ่ม `.inFilter('category_id', ids)` ก่อน `.order/.range` และใช้ `created_at DESC, id DESC`; เมื่อไม่กรองคง `.order('created_at')` เดิม; คง `type` และ client guard. Local API filtered response ต้องมี marker header และทุก row ต้องตรง selected IDs; หาก server เก่า/response 200 ไม่มี marker หรือมี row ผิดประเภท ให้ discard local page และใช้ Supabase filtered query แทน. Supabase response ที่ผิด contract ให้ fail closed (ไม่ commit filter) ไม่แสดงการ์ดนอกประเภท. Backend-first rollout; client เก่าไม่ส่ง param จึงไม่เปลี่ยน behavior
 9. **การ์ดที่ `category_id = NULL`:** เมื่อไม่เลือก category IDs (ไม่ส่ง param) แสดงตาม behavior เดิมรวม NULL; เมื่อเลือกอย่างน้อยหนึ่งประเภท card ที่ NULL/unknown ไม่แสดง. เลือกครบทุกหมวดที่รู้จักก็ยังคงไม่รวม NULL — server, Supabase และ client guard ใช้กฎเดียวกัน
 10. **Category source/lifecycle:** ใช้ `_emergencyCategories` จาก `DonationRepository.getEmergencyCategories()` (ตารางจริง, `is_emergency=true`, `display_order ASC`) โดยตรง; sheet ห้ามเรียงใหม่หรือยิง query แยก. ใช้ fields เดิม `_emergencyCategories`/`_isLoadingCategories` ไม่เพิ่ม status enum โดยไม่จำเป็น: initial load ยังว่าง/empty success/failure → ซ่อนไอคอน; load fail หลังมี list อยู่แล้วให้คง last-known-good. เมื่อมี fetch สำเร็จครั้งถัดไป หมวดที่ถูกลบ/ไม่ emergency จะถูก prune จาก selected IDs; refresh ล้มเหลวห้ามล้าง IDs/list เดิม
-11. **Realtime/การ์ดใหม่:** เหตุใหม่จาก Socket.IO สั่ง refetch หน้า 1 ด้วย effective category IDs ปัจจุบัน (หรือไม่ส่ง IDs ระหว่าง mission suspension); thumbnail/viewer override ปรับเฉพาะการ์ดที่อยู่ใน list และไม่เพิ่ม card นอก filter เอง; selected filter ไม่แตะ map, player หรือ counters
+11. **Realtime/การ์ดใหม่:** เหตุใหม่จาก Socket.IO สั่ง refetch หน้า 1 ด้วย effective category IDs ปัจจุบัน (หรือไม่ส่ง IDs ระหว่าง mission suspension); thumbnail/viewer override ปรับเฉพาะการ์ดที่อยู่ใน list และไม่เพิ่ม card นอก filter เอง; realtime refresh ไม่ auto-switch player — เฉพาะ explicit Apply ใช้ playback policy ข้อ 7; player/map/counters เปลี่ยนตามปกติเมื่อมีการ switch incident
 12. **Mission filter suspension:** suspension เปิดเมื่อ `_currentResponseId != null` OR `_pendingMissionVideoId != null` OR reporter lock (`_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty` ตาม branch ใน `_filteredTrendingVideos`). ขณะ suspend ซ่อนไอคอน, ไม่ส่ง category IDs ไป API, ไม่กรอง `_filteredTrendingVideos()` ด้วย category; fetch unfiltered page เพื่อให้ mission/role cards ไม่หาย. เก็บ user selection ไว้และ refetch ด้วย IDs เมื่อพ้น suspension; reporter/volunteer eligibility rules เดิมไม่เปลี่ยน
-13. **Empty state/playing incident:** ถ้ากรองแล้วไม่พบเหตุ แสดง compact message "ไม่พบเหตุในประเภทที่เลือก" + ปุ่มล้าง filter ในพื้นที่ empty state เดิม. ถ้า current player ไม่ตรง filter ให้ซ่อนเฉพาะ card; ห้ามเปลี่ยน/หยุด player, currentVideoId หรือสร้าง interaction ใหม่. Empty state ยังเข้าถึงปุ่มล้างได้แม้ category list จะไม่พร้อม
-14. **Filter state/request transaction:** `_selectedTrendingCategoryIds` เป็น committed session state ใน `EmergencyLivePage`; sheet ใช้ draft แยก. Compare sets ไม่สน order; no-op เมื่อไม่เปลี่ยน. Apply ต้องโหลด page 1 ด้วย snapshot/generation ก่อน commit. Capture canonical filter key + mission-suspend state ในทุก request; response เก่าทิ้ง. เข้าสู่/ออกจาก mission suspension เปลี่ยน effective query และ reset pagination แต่ไม่แก้ committed selection
+13. **Empty state/playing incident:** ถ้ากรองแล้วไม่พบเหตุ แสดง compact message "ไม่พบเหตุในประเภทที่เลือก" + ปุ่มล้าง filter ในพื้นที่ empty state เดิม และคง player เดิมไว้เพื่อไม่ให้จอดำ. เมื่อมี target ให้ใช้ playback policy ข้อ 7; หาก current category ตรง filter ให้ player คงเดิมแม้ card ไม่อยู่หน้าแรก. Empty state ยังเข้าถึงปุ่มล้างได้แม้ category list จะไม่พร้อม
+14. **Filter state/request transaction:** `_selectedTrendingCategoryIds` เป็น committed session state ใน `EmergencyLivePage`; sheet ใช้ draft แยก. Compare sets ไม่สน order. เมื่อ selection เปลี่ยน Apply ต้องโหลด page 1 ด้วย snapshot/generation ก่อน commit; หาก selection เท่าเดิม ไม่ยิง fetch ซ้ำแต่ยังประเมิน playback policy ข้อ 7. Capture canonical filter key + mission-suspend state ในทุก request; response เก่าทิ้ง. Playback Apply เก็บ `currentVideoId` ตอนเริ่มและห้าม auto-switch หาก ID เปลี่ยนระหว่างรอ. เข้าสู่/ออกจาก mission suspension เปลี่ยน effective query และ reset pagination แต่ไม่แก้ committed selection
 15. **ต้นทุน/cache:** ไม่มี dependency, schema หรือ subscription ใหม่; filtered requests bypass Redis/cache-aside และ shared in-memory cache เดิม จึงไม่มี cache key per combination แต่เกิด DB reads เพิ่มตามการใช้งาน. ใช้ `idx_videos_category_id`, วัด query latency/DB CPU/rows examined; ห้ามรับรองว่าไม่มีค่าใช้จ่าย/โหลดเพิ่มก่อนวัด
 
 ### 20.5 โหมดการแสดงไอคอนตัวกรอง (show / hide / enable)
@@ -5847,7 +5848,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 | Tab 1 | `_selectedTab == 1` → `SizedBox.shrink()` | ไม่มีกล่อง | ไม่มีไอคอน (ไม่ต้องทำอะไร) |
 | Tab 2 / โหมดรายงานไทยมุง | `_selectedTab == 2` หรือ `_isThaiMhungReporting == true` → `IncidentReportWidget` | ไม่มีกล่อง | ไม่มีไอคอน |
 | Fullscreen player | ไม่มี `TrendingPanelWidget` | ไม่มีกล่อง | ไม่มีไอคอน |
-| เหตุการณ์ที่กำลังดูถูกกรองออก | `_currentVideo.categoryId` ไม่อยู่ใน selected IDs ในโหมดปกติ | player เดิมเล่นต่อและ interaction ไม่เปลี่ยน; การ์ดไม่อยู่ใน panel จนกว่าจะล้าง/เลือก category ให้ตรง | **ไม่ยกเว้นการ์ดจาก filter** เพื่อรักษาความหมาย "แสดงเฉพาะ" |
+| เหตุการณ์ที่กำลังดูถูกกรองออก | `_currentVideo.categoryId` ไม่อยู่ใน selected IDs ในโหมดปกติ | หลัง Apply สำเร็จ ถ้ามีการ์ดแรกที่ผ่าน role/category filter และไม่มี mission ให้สลับด้วย `_switchVideo()`; ถ้าไม่มีผลลัพธ์/failure/current เปลี่ยนระหว่าง request ให้คง player เดิม; card ที่ไม่ตรงไม่ถูก pin | **ไม่ยกเว้นการ์ดจาก filter**; auto-switch เฉพาะ explicit Apply |
 | WebSocket ขาด | `_isConnected == false` (ไม่ได้แปลว่า HTTP/Supabase ล่ม) | กล่องใช้ข้อมูลล่าสุด/refresh ตาม endpoint | แสดงได้ถ้าหมวดพร้อมและไม่ locked; ถ้า Apply โหลดทั้ง Local API/Supabase ไม่สำเร็จ ให้คง selection/list ที่ commit ก่อนหน้าและแสดง retry |
 
 **กฎรวมของโหมด (ต้องคงไว้ทุกข้อ)**
@@ -5868,7 +5869,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 2. **Repository:** ส่ง canonical `categoryIds` ให้ Local API และ Supabase fallback; ถ้า local response ไม่มี applied marker ให้ discard แล้ว query Supabase ด้วย filter. Filtered calls bypass `_trendingCacheData`/`_trendingInFlight` ที่มีไว้แชร์ unfiltered page 1; unfiltered consumers ไม่เปลี่ยน.
 3. **State + pagination:** page-owned committed `Set<String>` (session) + sheet draft; transactional Apply; effective filter ว่างเมื่อ `missionFilterSuspended`; generation/key guard first-page/load-more; reset page/scroll/loading state เมื่อ filter/mode เปลี่ยน; advance page เฉพาะ success, retry page เดิมเมื่อ fail, dedupe IDs; recompute role eligibility หลัง list เปลี่ยน.
 4. **UI:** compact fixed-height Row (label + icon ด้านขวา); modal multi-select ใช้ category list order เดิม; Apply/Cancel/Clear, loading/error/retry, empty state. Keep filter state/page-owned; ส่ง `_emergencyCategories`, committed IDs, `canShowCategoryFilter` และ callback ผ่าน `LiveViewWidget` ไป `TrendingPanelWidget` — ไม่ย้าย session state เข้า widget ที่ถูก dispose ตาม tab.
-5. **Composition/realtime:** separate selector สำหรับ role rules + strict category guard; ไม่ pin current card นอกประเภท; lock enter → unfiltered fetch, lock exit → reload selected filter; realtime refresh ใช้ effective filter ปัจจุบัน.
+5. **Composition/realtime/playback:** separate selector สำหรับ role rules + strict category guard; ไม่ pin current card นอกประเภท; หลัง explicit Apply ที่สำเร็จ ให้ auto-switch current player ไปการ์ดแรกที่ผ่าน role/category filter ตามข้อ 7 เมื่อเข้าเงื่อนไข; lock enter → unfiltered fetch, lock exit → reload selected filter; realtime refresh ใช้ effective filter ปัจจุบันและไม่ auto-switch.
 6. **Tests + rollout:** ตาม §20.8–§20.9
 
 ### 20.7 Risk register และ mitigation
@@ -5876,7 +5877,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 | ความเสี่ยง | ระดับ | การป้องกันที่ต้องทำ |
 |---|---|---|
 | Filtered cache ปะปนข้าม combination หรือเพิ่ม Redis cardinality | สูง | filtered requests bypass Redis/client shared caches; unfiltered v3 cache คงเดิม; tests ยืนยัน no filtered result เขียนทับหรืออ่านจาก cache unfiltered |
-| กรองแล้วกล่องว่าง หรือ current card หายจาก panel | สูง | compact empty state + ปุ่มล้าง; ระบุว่าตัวกรองมีผลเฉพาะ panel และ player ปัจจุบันยังเล่นต่อ; ไม่ pin card ที่ไม่ตรง filter |
+| Apply filter แล้ว player ยังเป็นเหตุที่ไม่ตรงหมวด หรือ auto-switch กระทบ mission/เหตุใหม่ | สูง | auto-switch เฉพาะ successful explicit Apply + current category ไม่ตรง + มีการ์ดที่ผ่าน role/category filter + ไม่มี mission suspension; capture currentVideoId แล้ว skip หากเปลี่ยนระหว่าง request; failure/empty result คง player; reuse `_switchVideo()` แต่ไม่ fetch trending ซ้ำ; realtime ไม่ auto-switch |
 | เพิ่มไอคอนทำให้ header/แผงแคบเปลี่ยนตำแหน่งหรือ overflow | สูง | compact Row โดยไม่ overlay ทับ label; เก็บ header slot height; golden/layout test 320/375/390 dp และวัด panel/Rescue Control Panel rect |
 | Server กับ client กรองไม่ตรงกัน (NULL, deleted ID, fallback) | สูง | parity test Local API vs Supabase; marker header บอกว่า server apply filter; client guard ใช้กฎเดียวกัน |
 | Local API รุ่นเก่า ignore query param แต่ตอบ 200 | สูง | filtered Local response ต้องมี applied-marker; ไม่มี marker ให้ discard body แล้วใช้ Supabase fallback ที่ filter ก่อน range; CORS expose header + compatibility test |
@@ -5907,7 +5908,8 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - [ ] ไอคอนอยู่ด้านขวาของ label; visual golden/layout ที่ 320/375/390 dp ยืนยันว่า label ไม่ทับปุ่ม, header/panel rect ไม่เพิ่มความสูง และ Rescue Control Panel ไม่เลื่อน
 - [ ] Sheet ใช้ `_emergencyCategories` source/order เดียวกับแถบแจ้งเหตุ; multi-select OR, draft/Apply/Cancel/Clear ทำงาน; cancel/barrier ไม่ commit
 - [ ] Apply สำเร็จแล้ว filter cards ตรง selected IDs; ปุ่มล้างคืน list ทั้งหมด; active tint แสดงสถานะโดยไม่เพิ่ม badge/ความกว้าง
-- [ ] Empty state มี clear action; currentVideo ที่ไม่ตรง filter หายจาก panel แต่ player/ID/view/like/GPS/category/mission ไม่เปลี่ยน
+- [ ] Apply เมื่อ current category ไม่ตรง + filtered panel มีการ์ด + ไม่มี mission → switch ไปการ์ดแรกที่มองเห็น; current ตรงหมวด/clear/failure/empty/suspension/current ID เปลี่ยนระหว่าง request → ไม่ switch; fullscreen ใช้ list ที่กรองแล้ว; ไม่มี synthetic view/like หรือ Trending fetch ซ้ำ
+- [ ] Empty state มี clear action; ถ้าไม่มีการ์ดที่ตรง/ผ่าน role filter ให้คง player เดิม ไม่หยุด playback/จอดำ และล้าง filter ได้
 - [ ] Apply ล้มเหลวทั้ง Local API และ Supabase → committed selection/list เดิมคงอยู่, sheet แสดง error/retry; success จึง commit
 - [ ] Filter change ขณะ first page/load-more/realtime กำลัง in-flight → stale response ไม่เขียน state; page reset, scroll top, retry ไม่ข้ามหน้า, append dedupe ด้วย ID
 - [ ] สลับแท็บ/เหตุการณ์ใน route เดิมคง committed selection; dispose/reopen route หรือ app เริ่มเป็นทั้งหมด
@@ -5931,7 +5933,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - ผู้ใช้กดไอคอนขวาป้าย "ยอดนิยม" แล้วเลือกได้หลายประเภทพร้อมกัน และการ์ดแสดงเฉพาะประเภทที่เลือก
 - รายการประเภทมาจากตารางจริง เรียงตาม `display_order` ตรงกับแถบหมวดหมู่และหน้า admin
 - ไม่มี regression ต่อ Mission Lock/สิทธิ์จิตอาสา, viewer/interactions, thumbnail realtime, แผนที่ และ existing no-filter trending behavior
-- ไอคอนปรากฏเฉพาะ category-ready + unlocked; ระหว่าง mission ซ่อน/พัก filter แล้วคืนค่าเดิมหลังปลดล็อก; matching cards เข้มงวดและ player ไม่เปลี่ยน (ตาม §20.5)
+- ไอคอนปรากฏเฉพาะ category-ready + unlocked; ระหว่าง mission ซ่อน/พัก filter แล้วคืนค่าเดิมหลังปลดล็อก; matching cards เข้มงวดและ playback เปลี่ยนเฉพาะตามกฎ Apply ใน §20.4 ข้อ 7
 - ไม่มี dependency, paid service, new infra หรือ schema migration; filtered reads มี DB load เพิ่มจากการ bypass cache และต้องผ่าน latency/CPU budget ก่อน rollout
 
 ### 20.9 Rollout และ rollback
@@ -5939,3 +5941,39 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - **Rollout:** deploy backend support/validation/applied marker + CORS header exposure ก่อน; verify filtered response and Supabase fallback. จากนั้น deploy client ที่ feature flag ปิดเป็นค่าเริ่มต้น/เปิด canary; client เก่าที่ไม่ส่ง param ใช้ unfiltered v3 cache เดิม. เฝ้า filtered query latency, DB CPU/rows, fallback rate, filter errors และ geometry metrics; filtered request ไม่สร้าง Redis cache keys
 - **Rollback:** ปิด client feature flag แล้วกลับ `category_ids` ว่าง/ไม่ส่ง param และใช้ UI เดิม; backend คง backward-compatible. ไม่ต้อง rollback schema/migration (ไม่มีเพิ่ม); ถ้า query load เกิน budget ให้ปิด feature และทบทวน index/query ก่อนเปิดใหม่
 - **Out of scope:** ตัวกรองในแผนที่/ลิสต์อื่น, ตัวกรองฝั่ง admin, การเปลี่ยน semantics ของ `GET /api/videos/` (ค่า `category_id` เดี่ยว), การจำค่าตัวกรองข้ามการเปิดแอป, การเพิ่มหมวดหมู่ใหม่หรือแก้ `display_order`
+
+## 21. Phase — WebSocket Realtime Auth Recovery (Implemented — รอ Device Verification)
+
+### 21.1 สถานะ
+
+แก้ไขตาม `docs/guides/websocket_realtime_auth_recovery_guide.md` เสร็จแล้วทั้ง client และ server:
+
+- **Root cause (ยืนยัน):** `socket_io_client` 2.0.3+1 แคช socket/Manager ระดับ global — `IO.io(url, opts)` คืน Socket object เดิมพร้อม `auth` เดิมเสมอ ⇒ access token ใหม่จาก refresh ไม่มีทางถึง handshake; พิสูจน์ด้วย server timeline (refresh rotate 4 ครั้ง แต่ทุก handshake ส่ง token `iat` เดิม) และ library experiment
+- **Client:** `SocketAuthSocketFactory` ใช้ `enableForceNew()` + ผูก `_socketAuthToken`/`_socketUserId`, pre-emptive refresh เมื่อ `exp` เหลือ ≤60s (อ่าน JWT แบบ unverified เพื่อ timing เท่านั้น), bounded auth recovery ≤3 ครั้งที่ไม่ถูก reset โดย `disconnect()`, terminal latch เมื่อ token ที่เพิ่ง mint ยังถูกปฏิเสธ, แยก `resetTransportConnectionAttempts()` (emergency page auto-call) ออกจาก `resetConnectionAttempts()` (manual)
+- **Server:** `error.data.code` (`token_expired`, `malformed_token`, `unknown_kid`, `invalid_signature`, `session_revoked`, …) โดยคงข้อความเดิม `Authentication failed: invalid or expired token`; structured log ไม่เก็บ raw token/`sub`/`sid`; Redis counter `socket:auth:rejections:{code}:{hour}` (TTL 48h, fail-open)
+- **UI:** `HomePage` แสดง SnackBar เฉพาะ terminal auth errors ผ่าน `SocketAuthRecoveryPolicy.userFacingAuthMessage()`; transient retry ไม่แจ้งซ้ำ
+- **Test ผ่าน:** Flutter 7/7 (`socket_auth_recovery_policy_test.dart` + `socket_reconnect_policy_test.dart`), Node `npm test` 13/13, Socket.IO protocol smoke ได้ `data.code=token_expired` จริงผ่าน Caddy
+
+### 21.2 ยังค้างยืนยัน — Device Expiry Cycle
+
+log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 UTC, หลัง deploy fix) แสดงทุก handshake `source=jwt` สำเร็จ ไม่มี `token rejected`/refresh storm — **แต่ครอบคลุมเพียง ~80 วินาที ยังไม่ข้าม `ACCESS_TTL=900`**
+
+ขั้นตอนยืนยันที่เหลือ:
+
+1. รัน `flutter run` (build ที่มี ForceNew fix) ให้แอปอยู่ foreground ข้าม access-token expiry (~15 นาทีหลัง login) — iOS ตัด debug connection ถ้าแอปอยู่ background นาน
+2. ต้องเห็น pattern นี้ **ครั้งเดียวต่อ expiry**: `[SocketAuth] token rejected code=token_expired` → `token refresh result=refreshed` → `User connected <sid ใหม่> source=jwt` ด้วย `iat`/`exp` ใหม่ (ไม่ใช่ค่าเดิมซ้ำ)
+3. ตรวจ `public.sessions` ว่า rotation = 1 ครั้งต่อ expiry; ไม่มี notification gateway 429 จาก auth retry
+4. เฝ้าจำนวน socket ต่อ user — log ล่าสุดเห็น 2 sid/user ห่าง ~15–22s ซึ่งตรงกับ ping-timeout reconnect หลัง nodemon restart (คาดการณ์, ยังไม่พิสูจน์); ถ้า sid สะสมโดยไม่มี disconnect ค่อยสงสัย leak จาก `forceNew`
+
+### 21.3 ประเด็นแยกที่พบจาก log เดียวกัน (ไม่เกี่ยวกับ auth fix — งานอนาคต)
+
+| อาการ | สาเหตุ | แนวทางที่ควรพิจารณา |
+|---|---|---|
+| `[RateLimiter] Blocked: 192.168.1.165 — 61/60 req ใน 60s` ขณะ browse ปกติ | ปริมาณ HTTP/นาที ไม่ใช่ auth retry — `ThaiMhungRulerGalleryWidget` poll gallery ทุก **5 วิ** ขณะเปิดเหตุการณ์ (~12 req/min จุดเดียว) + chat active/archived + interactions/meta/gps ต่อการสลับการ์ด + location + sync | widget subscribe WS photo events อยู่แล้ว — polling เป็น fallback; พิจารณาลด frequency, poll เฉพาะเมื่อยังไม่เคยได้ WS event, หรือขับผ่าน socket push; **ห้ามแก้ด้วยการขยับ rate limit โดยไม่ลด client polling ก่อน** |
+| `duplicate key violates unique constraint` ที่ `registration_field_configs_profession_id_field_id_key` และ `users_username_key` ทุก startup sync | sync upsert local→cloud ไม่ handle conflict (pre-existing) | เพิ่ม `ON CONFLICT`/upsert path ใน SyncWorker — แยก issue จากงานนี้ |
+
+### 21.4 ข้อห้าม (สืบทอดจากคู่มือ)
+
+- ห้ามปิด JWT verification หรือ fallback ไป legacy identity (`auth.userId`/`x-user-id` ไม่ใช่ trusted actor)
+- ห้าม log raw token; socket auth เป็นชั้น transport เท่านั้น — ไม่เปลี่ยน event semantics, mission rules, หรือ Phase 20 filter behavior
+- `disableMultiplex()` ไม่ช่วย (ทดลองแล้ว) — root fix คือ `enableForceNew()` เท่านั้น

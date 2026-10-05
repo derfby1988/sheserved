@@ -4,7 +4,7 @@ import 'package:sheserved/features/video/models/video_models.dart';
 
 const _expectedBackendApiUrl = String.fromEnvironment(
   'BACKEND_API_URL',
-  defaultValue: 'http://192.168.0.102:8080',
+  defaultValue: 'http://192.168.1.167:8080',
 );
 
 void main() {

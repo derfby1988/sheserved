@@ -5,7 +5,7 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
     final ws = WebSocketService();
     final userId = ServiceLocator.instance.currentUser?.id;
     if (userId != null && !ws.isConnected) {
-      ws.resetConnectionAttempts();
+      ws.resetTransportConnectionAttempts();
       await ws.connect(
         userId: userId,
         authToken: AuthenticatedHttpClient.instance.accessToken,
