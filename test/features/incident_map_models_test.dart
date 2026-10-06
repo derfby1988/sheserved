@@ -1,0 +1,199 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/features/video/models/incident_map_models.dart';
+
+void main() {
+  group('IncidentAgeBucketPolicy — ขอบเขตช่วงสีต่อเนื่อง (§22.1)', () {
+    final now = DateTime.utc(2026, 10, 6, 12, 0, 0);
+    DateTime ago(Duration d) => now.subtract(d);
+
+    test('แดง: 0–24 ชม. (รวมขอบ 24 ชม.)', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(ago(Duration.zero), now),
+        IncidentAgeBucket.red,
+      );
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(hours: 24)),
+          now,
+        ),
+        IncidentAgeBucket.red,
+      );
+    });
+
+    test('ส้ม: >24 ชม.–7 วัน', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(hours: 24, milliseconds: 1)),
+          now,
+        ),
+        IncidentAgeBucket.orange,
+      );
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 7)),
+          now,
+        ),
+        IncidentAgeBucket.orange,
+      );
+    });
+
+    test('ทอง: >7–35 วัน', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 7, milliseconds: 1)),
+          now,
+        ),
+        IncidentAgeBucket.gold,
+      );
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 35)),
+          now,
+        ),
+        IncidentAgeBucket.gold,
+      );
+    });
+
+    test('เทา: >35–365 วัน', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 35, milliseconds: 1)),
+          now,
+        ),
+        IncidentAgeBucket.gray,
+      );
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 365)),
+          now,
+        ),
+        IncidentAgeBucket.gray,
+      );
+    });
+
+    test('ดำ: >365 วัน', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 365, milliseconds: 1)),
+          now,
+        ),
+        IncidentAgeBucket.black,
+      );
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          ago(const Duration(days: 400)),
+          now,
+        ),
+        IncidentAgeBucket.black,
+      );
+    });
+
+    test('อนาคต/ค่าว่าง ไม่ถูกจัดช่วง (ห้ามขึ้นสีแดง — §22.1 note)', () {
+      expect(
+        IncidentAgeBucketPolicy.bucketForCreatedAt(
+          now.add(const Duration(minutes: 1)),
+          now,
+        ),
+        isNull,
+      );
+      expect(IncidentAgeBucketPolicy.bucketForCreatedAt(null, now), isNull);
+      expect(
+        IncidentAgeBucketPolicy.bucketForAge(const Duration(milliseconds: -1)),
+        isNull,
+      );
+    });
+  });
+
+  group('IncidentMapResponse.fromJson — contract fixtures', () {
+    test('point item: bucket/photos/createdAt parse ครบ', () {
+      final response = IncidentMapResponse.fromJson({
+        'mode': 'points',
+        'zoom': 14,
+        'truncated': false,
+        'legend': {'red': 1, 'orange': 0, 'gold': 0, 'gray': 0, 'black': 0},
+        'excluded': {'noUsableCoordinate': 2, 'invalidTime': 1},
+        'items': [
+          {
+            'kind': 'point',
+            'id': 'v1',
+            'categoryId': 'c1',
+            'createdAt': '2026-10-06T11:00:00.000Z',
+            'bucket': 'red',
+            'lat': 13.7,
+            'lng': 100.5,
+            'photos': [
+              {
+                'id': 'p1',
+                'url': 'http://x/p1.jpg',
+                'createdAt': '2026-10-06T11:00:00.000Z',
+              },
+            ],
+          },
+        ],
+        'nextCursor': 'abc',
+      });
+
+      expect(response.mode, IncidentMapMode.points);
+      expect(response.legend.total, 1);
+      expect(response.excluded.total, 3);
+      expect(response.nextCursor, 'abc');
+      final point = response.items.single as IncidentMapPointItem;
+      expect(point.id, 'v1');
+      expect(point.bucket, IncidentAgeBucket.red);
+      expect(point.photos.single.url, 'http://x/p1.jpg');
+    });
+
+    test('cluster item: byBucket parse ตามชื่อ bucket', () {
+      final response = IncidentMapResponse.fromJson({
+        'mode': 'clusters',
+        'zoom': 5,
+        'legend': {'red': 0, 'orange': 1, 'gold': 2, 'gray': 3, 'black': 0},
+        'excluded': {'noUsableCoordinate': 0, 'invalidTime': 0},
+        'items': [
+          {
+            'kind': 'cluster',
+            'lat': 15.0,
+            'lng': 101.0,
+            'count': 6,
+            'byBucket': {'orange': 1, 'gold': 2, 'gray': 3},
+          },
+        ],
+      });
+
+      final cluster = response.items.single as IncidentMapClusterItem;
+      expect(cluster.count, 6);
+      expect(cluster.byBucket[IncidentAgeBucket.orange], 1);
+      expect(cluster.byBucket[IncidentAgeBucket.gold], 2);
+      expect(cluster.byBucket[IncidentAgeBucket.gray], 3);
+    });
+
+    test('ข้อมูลเสียหาย (lat/lng หาย, bucket ไม่รู้จัก) ถูกข้าม ไม่ crash', () {
+      final response = IncidentMapResponse.fromJson({
+        'mode': 'points',
+        'zoom': 14,
+        'legend': {},
+        'excluded': {},
+        'items': [
+          {'kind': 'point', 'id': 'v1', 'bucket': 'red'}, // no lat/lng
+          {
+            'kind': 'point',
+            'id': 'v2',
+            'lat': 1,
+            'lng': 2,
+            'bucket': 'magenta',
+          },
+          {'kind': 'unknown'},
+        ],
+      });
+      expect(response.items, isEmpty);
+    });
+  });
+
+  group('IncidentMapBounds', () {
+    test('thailand bounds ครอบคลุมประเทศและ serialize ตรง format', () {
+      expect(IncidentMapBounds.thailand.contains(13.7, 100.5), isTrue);
+      expect(IncidentMapBounds.thailand.contains(5.0, 100.0), isFalse);
+      expect(IncidentMapBounds.thailand.toQueryParam(), '5.5,97.5,20.5,105.5');
+    });
+  });
+}

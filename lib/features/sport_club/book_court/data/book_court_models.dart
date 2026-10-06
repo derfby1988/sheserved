@@ -13,11 +13,13 @@ enum BookingApprovalMode { instant, ownerApproval }
 
 enum VenueBookingStatus {
   pending,
+  awaitingEvidence,
   confirmed,
   completed,
   cancelled,
   rejected,
   expired,
+  forfeited,
 }
 
 VenueStatus venueStatusFrom(String? raw) => switch (raw) {
@@ -42,13 +44,61 @@ BookingApprovalMode bookingApprovalModeFrom(String? raw) =>
     : BookingApprovalMode.instant;
 
 VenueBookingStatus venueBookingStatusFrom(String? raw) => switch (raw) {
+  'awaiting_evidence' => VenueBookingStatus.awaitingEvidence,
   'confirmed' => VenueBookingStatus.confirmed,
   'completed' => VenueBookingStatus.completed,
   'cancelled' => VenueBookingStatus.cancelled,
   'rejected' => VenueBookingStatus.rejected,
   'expired' => VenueBookingStatus.expired,
+  'forfeited' => VenueBookingStatus.forfeited,
   _ => VenueBookingStatus.pending,
 };
+
+/// Booking-group lifecycle (Phase 21.7.21). `pending` is the owner-approval
+/// pre-hold stage; `awaitingEvidence` means the slots are held while the
+/// booker submits/checks evidence.
+enum BookingGroupStatus {
+  pending,
+  awaitingEvidence,
+  confirmed,
+  partiallyCancelled,
+  forfeited,
+  rejected,
+  expired,
+  cancelled,
+  completed,
+}
+
+BookingGroupStatus bookingGroupStatusFrom(String? raw) => switch (raw) {
+  'awaiting_evidence' => BookingGroupStatus.awaitingEvidence,
+  'confirmed' => BookingGroupStatus.confirmed,
+  'partially_cancelled' => BookingGroupStatus.partiallyCancelled,
+  'forfeited' => BookingGroupStatus.forfeited,
+  'rejected' => BookingGroupStatus.rejected,
+  'expired' => BookingGroupStatus.expired,
+  'cancelled' => BookingGroupStatus.cancelled,
+  'completed' => BookingGroupStatus.completed,
+  _ => BookingGroupStatus.pending,
+};
+
+enum GroupEvidenceVerification {
+  pending,
+  verifying,
+  verified,
+  failed,
+  approved,
+  rejected,
+}
+
+GroupEvidenceVerification groupEvidenceVerificationFrom(String? raw) =>
+    switch (raw) {
+      'verifying' => GroupEvidenceVerification.verifying,
+      'verified' => GroupEvidenceVerification.verified,
+      'failed' => GroupEvidenceVerification.failed,
+      'approved' => GroupEvidenceVerification.approved,
+      'rejected' => GroupEvidenceVerification.rejected,
+      _ => GroupEvidenceVerification.pending,
+    };
 
 class VenueOwnerProfile {
   final String id;
@@ -258,6 +308,12 @@ class VenueCourt {
   final String? bookingReleaseTime; // 'HH:MM' venue-local
   final int? bookingReleaseWindowDays;
 
+  /// Evidence-policy override (Phase 21.7.21): 'inherit' follows the venue
+  /// policy, 'off' disables evidence for this court, 'custom' uses the
+  /// court's own [evidencePolicy].
+  final String evidenceMode;
+  final VenueEvidencePolicy? evidencePolicy;
+
   /// Selected release weekdays, falling back to the legacy singleton field.
   List<int> get effectiveBookingReleaseDays {
     if (bookingReleaseDays.isNotEmpty) return bookingReleaseDays;
@@ -286,6 +342,8 @@ class VenueCourt {
     this.bookingReleaseDays = const [],
     this.bookingReleaseTime,
     this.bookingReleaseWindowDays,
+    this.evidenceMode = 'inherit',
+    this.evidencePolicy,
   });
 
   factory VenueCourt.fromJson(Map<String, dynamic> j) {
@@ -324,6 +382,21 @@ class VenueCourt {
       bookingReleaseTime: j['booking_release_time']?.toString(),
       bookingReleaseWindowDays: (j['booking_release_window_days'] as num?)
           ?.toInt(),
+      evidenceMode: j['evidence_mode']?.toString() ?? 'inherit',
+      evidencePolicy: j['evidence_requirements'] == null
+          ? null
+          : VenueEvidencePolicy.fromJson({
+              'requirements': j['evidence_requirements'],
+              'deadline_mode': j['evidence_deadline_mode'],
+              'minutes': j['evidence_minutes'],
+              'deadline_time': j['evidence_deadline_time']?.toString(),
+              'owner_approval_deadline_enabled':
+                  j['owner_approval_evidence_deadline_enabled'],
+              'min_grace_minutes': j['evidence_min_grace_minutes'],
+              'owner_decision_minutes': j['owner_decision_minutes'],
+              'max_holds_per_user': j['evidence_max_holds_per_user'],
+              'payment_destination': j['payment_destination'],
+            }),
     );
   }
 }
@@ -505,6 +578,11 @@ class VenueBooking {
   final String? bookerName;
   final DateTime? createdAt;
 
+  /// Group this booking belongs to (Phase 21.7.21). Null on legacy
+  /// per-slot bookings; grouped children must be managed through the group
+  /// RPCs, never the legacy single-booking ones.
+  final String? bookingGroupId;
+
   /// When the owner approved/rejected — drives "ถูกปฏิเสธล่าสุดก่อน" ordering
   /// on the booker's my-bookings page. Null for undecided or legacy rows.
   final DateTime? decidedAt;
@@ -534,10 +612,13 @@ class VenueBooking {
     this.cancellationReason,
     this.bookerName,
     this.createdAt,
+    this.bookingGroupId,
     this.decidedAt,
   });
 
   bool get isPending => status == VenueBookingStatus.pending;
+  bool get isAwaitingEvidence =>
+      status == VenueBookingStatus.awaitingEvidence;
   bool get isConfirmed => status == VenueBookingStatus.confirmed;
   bool get isCompleted => status == VenueBookingStatus.completed;
 
@@ -604,6 +685,8 @@ class VenueBooking {
     rejectionReason: j['rejectionReason']?.toString(),
     cancellationReason: j['cancellationReason']?.toString(),
     bookerName: j['bookerName']?.toString(),
+    bookingGroupId:
+        j['bookingGroupId']?.toString() ?? j['booking_group_id']?.toString(),
     createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
     decidedAt: DateTime.tryParse(
       j['decidedAt']?.toString() ?? j['decided_at']?.toString() ?? '',
@@ -953,6 +1036,11 @@ class CourtAvailability {
   final String courtId;
   final List<({DateTime startsAt, DateTime endsAt})> booked;
   final List<({DateTime startsAt, DateTime endsAt})> blocked;
+
+  /// Evidence-gated groups holding these slots while awaiting evidence
+  /// (`awaiting_evidence` children). Not bookable but distinct from a
+  /// confirmed booking — the hold releases when the deadline lapses.
+  final List<({DateTime startsAt, DateTime endsAt})> held;
   final List<VenueOperatingHours> hours;
 
   /// Server clock at response time — slot state decisions use this
@@ -973,6 +1061,7 @@ class CourtAvailability {
     required this.courtId,
     this.booked = const [],
     this.blocked = const [],
+    this.held = const [],
     this.hours = const [],
     this.serverNow,
     this.nextReleaseAt,
@@ -1011,6 +1100,7 @@ class CourtAvailability {
       courtId: j['courtId']?.toString() ?? '',
       booked: ranges(j['booked']),
       blocked: ranges(j['blocked']),
+      held: ranges(j['held']),
       hours:
           (j['hours'] as List?)
               ?.map(
@@ -1048,4 +1138,682 @@ class CourtAvailability {
           : null,
     );
   }
+}
+
+// ============================================================
+// Phase 21.7.21 — Evidence-gated booking groups
+// ============================================================
+
+/// One checklist item from an evidence policy. `kind` is 'document' or
+/// 'payment_slip'; `stage` is 'booking' | 'preapproval' | 'payment';
+/// `reviewMode` is 'auto' | 'owner_review' | 'auto_verify'.
+class EvidenceRequirement {
+  final String key;
+  final String label;
+  final String kind;
+  final String stage;
+  final String reviewMode;
+  final bool required;
+  final String? note;
+
+  const EvidenceRequirement({
+    required this.key,
+    required this.label,
+    required this.kind,
+    required this.stage,
+    required this.reviewMode,
+    required this.required,
+    this.note,
+  });
+
+  bool get isPaymentSlip => kind == 'payment_slip';
+  bool get isDocument => kind == 'document';
+
+  factory EvidenceRequirement.fromJson(Map<String, dynamic> j) =>
+      EvidenceRequirement(
+        key: j['key']?.toString() ?? '',
+        label: j['label']?.toString() ?? '',
+        kind: j['kind']?.toString() ?? 'document',
+        stage: j['stage']?.toString() ?? 'booking',
+        reviewMode: j['review_mode']?.toString() ?? 'owner_review',
+        required: j['required'] == true,
+        note: j['note']?.toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'key': key,
+    'label': label,
+    'kind': kind,
+    'stage': stage,
+    'review_mode': reviewMode,
+    'required': required,
+    if (note != null && note!.isNotEmpty) 'note': note,
+  };
+}
+
+/// Sanitized evidence-policy surface returned by
+/// `get_sports_venue_court_evidence_surface` — what the booking dialog can
+/// show before the group exists. The payment destination is deliberately
+/// absent; it is only disclosed inside an owned awaiting_evidence group.
+class CourtEvidenceSurface {
+  final String source; // 'venue' | 'court'
+  final List<EvidenceRequirement> requirements;
+  final String deadlineMode; // per_booking | after_release | release_day_time
+  final int? minutes;
+  final String? deadlineTime; // 'HH:MM:SS' venue-local
+  final int minGraceMinutes;
+  final int ownerDecisionMinutes;
+  final bool ownerApprovalDeadlineEnabled;
+  final int maxHoldsPerUser;
+  final bool requiresPaymentSlip;
+
+  const CourtEvidenceSurface({
+    required this.source,
+    required this.requirements,
+    required this.deadlineMode,
+    this.minutes,
+    this.deadlineTime,
+    this.minGraceMinutes = 0,
+    this.ownerDecisionMinutes = 1440,
+    this.ownerApprovalDeadlineEnabled = false,
+    this.maxHoldsPerUser = 5,
+    this.requiresPaymentSlip = false,
+  });
+
+  factory CourtEvidenceSurface.fromJson(Map<String, dynamic> j) =>
+      CourtEvidenceSurface(
+        source: j['source']?.toString() ?? 'venue',
+        requirements:
+            (j['requirements'] as List?)
+                ?.map(
+                  (e) => EvidenceRequirement.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        deadlineMode: j['deadlineMode']?.toString() ?? 'per_booking',
+        minutes: (j['minutes'] as num?)?.toInt(),
+        deadlineTime: j['deadlineTime']?.toString(),
+        minGraceMinutes: (j['minGraceMinutes'] as num?)?.toInt() ?? 0,
+        ownerDecisionMinutes:
+            (j['ownerDecisionMinutes'] as num?)?.toInt() ?? 1440,
+        ownerApprovalDeadlineEnabled:
+            j['ownerApprovalDeadlineEnabled'] == true,
+        maxHoldsPerUser: (j['maxHoldsPerUser'] as num?)?.toInt() ?? 5,
+        requiresPaymentSlip: j['requiresPaymentSlip'] == true,
+      );
+}
+
+/// The editable evidence-policy payload mirrored by the venue/court config
+/// RPCs. Serialises to the exact JSONB contract the server validates.
+class VenueEvidencePolicy {
+  final List<EvidenceRequirement> requirements;
+  final String deadlineMode;
+  final int? minutes;
+  final String? deadlineTime; // 'HH:MM'
+  final bool ownerApprovalDeadlineEnabled;
+  final int minGraceMinutes;
+  final int ownerDecisionMinutes;
+  final int maxHoldsPerUser;
+  final String? paymentDestination;
+
+  const VenueEvidencePolicy({
+    required this.requirements,
+    required this.deadlineMode,
+    this.minutes,
+    this.deadlineTime,
+    required this.ownerApprovalDeadlineEnabled,
+    required this.minGraceMinutes,
+    required this.ownerDecisionMinutes,
+    required this.maxHoldsPerUser,
+    this.paymentDestination,
+  });
+
+  factory VenueEvidencePolicy.fromJson(Map<String, dynamic> j) =>
+      VenueEvidencePolicy(
+        requirements:
+            (j['requirements'] as List?)
+                ?.map(
+                  (e) => EvidenceRequirement.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        deadlineMode: j['deadline_mode']?.toString() ??
+            j['deadlineMode']?.toString() ??
+            'per_booking',
+        minutes: (j['minutes'] as num?)?.toInt(),
+        deadlineTime:
+            j['deadline_time']?.toString() ?? j['deadlineTime']?.toString(),
+        ownerApprovalDeadlineEnabled:
+            j['owner_approval_deadline_enabled'] == true ||
+            j['ownerApprovalDeadlineEnabled'] == true,
+        minGraceMinutes:
+            (j['min_grace_minutes'] as num?)?.toInt() ??
+            (j['minGraceMinutes'] as num?)?.toInt() ??
+            0,
+        ownerDecisionMinutes:
+            (j['owner_decision_minutes'] as num?)?.toInt() ??
+            (j['ownerDecisionMinutes'] as num?)?.toInt() ??
+            1440,
+        maxHoldsPerUser:
+            (j['max_holds_per_user'] as num?)?.toInt() ??
+            (j['maxHoldsPerUser'] as num?)?.toInt() ??
+            5,
+        paymentDestination:
+            j['payment_destination']?.toString() ??
+            j['paymentDestination']?.toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'requirements': requirements.map((r) => r.toJson()).toList(),
+    'deadline_mode': deadlineMode,
+    if (minutes != null) 'minutes': minutes,
+    if (deadlineTime != null) 'deadline_time': deadlineTime,
+    'owner_approval_deadline_enabled': ownerApprovalDeadlineEnabled,
+    'min_grace_minutes': minGraceMinutes,
+    'owner_decision_minutes': ownerDecisionMinutes,
+    'max_holds_per_user': maxHoldsPerUser,
+    if (paymentDestination != null && paymentDestination!.isNotEmpty)
+      'payment_destination': paymentDestination,
+  };
+}
+
+/// One held/booked child inside a group card.
+class BookingGroupChild {
+  final String id;
+  final String courtId;
+  final String courtName;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final VenueBookingStatus status;
+  final double? priceTotal;
+  final String? unitLabel;
+
+  const BookingGroupChild({
+    required this.id,
+    required this.courtId,
+    required this.courtName,
+    required this.startsAt,
+    required this.endsAt,
+    required this.status,
+    this.priceTotal,
+    this.unitLabel,
+  });
+
+  factory BookingGroupChild.fromJson(Map<String, dynamic> j) =>
+      BookingGroupChild(
+        id: j['id']?.toString() ?? '',
+        courtId: j['courtId']?.toString() ?? '',
+        courtName: j['courtName']?.toString() ?? '',
+        startsAt:
+            DateTime.tryParse(j['startsAt']?.toString() ?? '') ??
+            DateTime.now(),
+        endsAt:
+            DateTime.tryParse(j['endsAt']?.toString() ?? '') ??
+            DateTime.now(),
+        status: venueBookingStatusFrom(j['status']?.toString()),
+        priceTotal: (j['priceTotal'] as num?)?.toDouble(),
+        unitLabel: j['unitLabel']?.toString(),
+      );
+}
+
+/// Current revision of one submitted evidence item (booker view).
+class GroupEvidenceItem {
+  final String id;
+  final String requirementKey;
+  final String kind;
+  final GroupEvidenceVerification verificationStatus;
+  final int revision;
+  final String? storagePath;
+  final String? mime;
+  final String? providerOutcome;
+  final bool duplicateFingerprint;
+
+  const GroupEvidenceItem({
+    required this.id,
+    required this.requirementKey,
+    required this.kind,
+    required this.verificationStatus,
+    this.revision = 1,
+    this.storagePath,
+    this.mime,
+    this.providerOutcome,
+    this.duplicateFingerprint = false,
+  });
+
+  bool get needsAction =>
+      verificationStatus == GroupEvidenceVerification.rejected;
+
+  factory GroupEvidenceItem.fromJson(Map<String, dynamic> j) =>
+      GroupEvidenceItem(
+        id: j['id']?.toString() ?? '',
+        requirementKey: j['requirementKey']?.toString() ?? '',
+        kind: j['kind']?.toString() ?? 'document',
+        verificationStatus: groupEvidenceVerificationFrom(
+          j['verificationStatus']?.toString(),
+        ),
+        revision: (j['revision'] as num?)?.toInt() ?? 1,
+        storagePath: j['storagePath']?.toString(),
+        mime: j['mime']?.toString(),
+        providerOutcome: j['providerOutcome']?.toString(),
+        duplicateFingerprint: j['duplicateFingerprint'] == true,
+      );
+}
+
+/// Booker-reported payment claim on a group.
+class GroupPaymentClaim {
+  final String id;
+  final String? groupId;
+  final double? reportedAmount;
+  final String? transferReference;
+  final String? evidencePath;
+  final String status; // submitted | received | not_received
+  final String? decisionNote;
+  final DateTime? createdAt;
+
+  const GroupPaymentClaim({
+    required this.id,
+    this.groupId,
+    this.reportedAmount,
+    this.transferReference,
+    this.evidencePath,
+    required this.status,
+    this.decisionNote,
+    this.createdAt,
+  });
+
+  factory GroupPaymentClaim.fromJson(Map<String, dynamic> j) =>
+      GroupPaymentClaim(
+        id: j['id']?.toString() ?? '',
+        groupId: j['groupId']?.toString(),
+        reportedAmount: (j['reportedAmount'] as num?)?.toDouble(),
+        transferReference: j['transferReference']?.toString(),
+        evidencePath: j['evidencePath']?.toString(),
+        status: j['status']?.toString() ?? 'submitted',
+        decisionNote: j['decisionNote']?.toString(),
+        createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+      );
+}
+
+/// Manual-refund case (V1: the owner transfers externally and records it).
+class GroupRefundCase {
+  final String id;
+  final String? groupId;
+  final String? bookingId;
+  final double? allocatedAmount;
+  final double? refundAmount;
+  final String? reason;
+  final String status; // open|approved|processing|completed|not_refundable|failed
+  final String? externalRef;
+  final DateTime? createdAt;
+
+  const GroupRefundCase({
+    required this.id,
+    this.groupId,
+    this.bookingId,
+    this.allocatedAmount,
+    this.refundAmount,
+    this.reason,
+    required this.status,
+    this.externalRef,
+    this.createdAt,
+  });
+
+  factory GroupRefundCase.fromJson(Map<String, dynamic> j) => GroupRefundCase(
+    id: j['id']?.toString() ?? '',
+    groupId: j['groupId']?.toString(),
+    bookingId: j['bookingId']?.toString(),
+    allocatedAmount: (j['allocatedAmount'] as num?)?.toDouble(),
+    refundAmount: (j['refundAmount'] as num?)?.toDouble(),
+    reason: j['reason']?.toString(),
+    status: j['status']?.toString() ?? 'open',
+    externalRef: j['externalRef']?.toString(),
+    createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+  );
+}
+
+/// One booking group as listed for the booker.
+class VenueBookingGroup {
+  final String id;
+  final String venueId;
+  final String venueName;
+  final String timezone;
+  final BookingGroupStatus status;
+  final String stage; // preapproval | booking | payment
+  final BookingApprovalMode approvalMode;
+  final double? totalAmount;
+  final String currency;
+  final DateTime? evidenceDueAt;
+  final DateTime? ownerDecisionDueAt;
+  final String? paymentDestination;
+  final String paymentReceivedStatus; // unknown|received|not_received
+  final double? paymentReceivedAmount;
+  final double totalRefundedAmount;
+  final double refundReservedAmount;
+  final String? rejectionReason;
+  final String? cancellationReason;
+  final DateTime? decidedAt;
+  final DateTime? cancelledAt;
+  final List<EvidenceRequirement> requirements;
+  final List<GroupEvidenceItem> evidence;
+  final List<GroupPaymentClaim> claims;
+  final List<GroupRefundCase> refundCases;
+  final List<BookingGroupChild> bookings;
+  final DateTime? createdAt;
+
+  const VenueBookingGroup({
+    required this.id,
+    required this.venueId,
+    required this.venueName,
+    required this.timezone,
+    required this.status,
+    required this.stage,
+    required this.approvalMode,
+    this.totalAmount,
+    this.currency = 'THB',
+    this.evidenceDueAt,
+    this.ownerDecisionDueAt,
+    this.paymentDestination,
+    this.paymentReceivedStatus = 'unknown',
+    this.paymentReceivedAmount,
+    this.totalRefundedAmount = 0,
+    this.refundReservedAmount = 0,
+    this.rejectionReason,
+    this.cancellationReason,
+    this.decidedAt,
+    this.cancelledAt,
+    this.requirements = const [],
+    this.evidence = const [],
+    this.claims = const [],
+    this.refundCases = const [],
+    this.bookings = const [],
+    this.createdAt,
+  });
+
+  bool get isPending => status == BookingGroupStatus.pending;
+  bool get isAwaitingEvidence =>
+      status == BookingGroupStatus.awaitingEvidence;
+  bool get isConfirmed => status == BookingGroupStatus.confirmed;
+  bool get isOpen => isPending || isAwaitingEvidence;
+
+  /// Evidence items the booker can currently act on (rejected re-uploads or
+  /// never-submitted requirements still open at this stage).
+  bool requirementOpen(EvidenceRequirement req) {
+    final item = evidence
+        .where((e) => e.requirementKey == req.key)
+        .cast<GroupEvidenceItem?>()
+        .firstOrNull;
+    if (item == null) {
+      if (req.isPaymentSlip) return isAwaitingEvidence;
+      if (req.stage == 'preapproval') return isPending;
+      return isOpen;
+    }
+    return item.verificationStatus == GroupEvidenceVerification.rejected &&
+        isOpen;
+  }
+
+  GroupEvidenceItem? evidenceFor(String requirementKey) {
+    for (final e in evidence) {
+      if (e.requirementKey == requirementKey) return e;
+    }
+    return null;
+  }
+
+  factory VenueBookingGroup.fromJson(Map<String, dynamic> j) =>
+      VenueBookingGroup(
+        id: j['id']?.toString() ?? '',
+        venueId: j['venueId']?.toString() ?? '',
+        venueName: j['venueName']?.toString() ?? '',
+        timezone: j['timezone']?.toString() ?? 'Asia/Bangkok',
+        status: bookingGroupStatusFrom(j['status']?.toString()),
+        stage: j['stage']?.toString() ?? 'booking',
+        approvalMode: bookingApprovalModeFrom(j['approvalMode']?.toString()),
+        totalAmount: (j['totalAmount'] as num?)?.toDouble(),
+        currency: j['currency']?.toString() ?? 'THB',
+        evidenceDueAt: DateTime.tryParse(
+          j['evidenceDueAt']?.toString() ?? '',
+        ),
+        ownerDecisionDueAt: DateTime.tryParse(
+          j['ownerDecisionDueAt']?.toString() ?? '',
+        ),
+        paymentDestination: j['paymentDestination']?.toString(),
+        paymentReceivedStatus:
+            j['paymentReceivedStatus']?.toString() ?? 'unknown',
+        paymentReceivedAmount:
+            (j['paymentReceivedAmount'] as num?)?.toDouble(),
+        totalRefundedAmount:
+            (j['totalRefundedAmount'] as num?)?.toDouble() ?? 0,
+        refundReservedAmount:
+            (j['refundReservedAmount'] as num?)?.toDouble() ?? 0,
+        rejectionReason: j['rejectionReason']?.toString(),
+        cancellationReason: j['cancellationReason']?.toString(),
+        decidedAt: DateTime.tryParse(j['decidedAt']?.toString() ?? ''),
+        cancelledAt: DateTime.tryParse(j['cancelledAt']?.toString() ?? ''),
+        requirements:
+            (j['requirements'] as List?)
+                ?.map(
+                  (e) => EvidenceRequirement.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        evidence:
+            (j['evidence'] as List?)
+                ?.map(
+                  (e) => GroupEvidenceItem.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        claims:
+            (j['claims'] as List?)
+                ?.map(
+                  (e) => GroupPaymentClaim.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        refundCases:
+            (j['refundCases'] as List?)
+                ?.map(
+                  (e) => GroupRefundCase.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        bookings:
+            (j['bookings'] as List?)
+                ?.map(
+                  (e) => BookingGroupChild.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+      );
+}
+
+/// A group row inside the owner evidence queue — adds booker identity and
+/// richer evidence fields compared to the booker view.
+class OwnerQueueGroup extends VenueBookingGroup {
+  final String? bookerName;
+  final String? bookerUserId;
+
+  const OwnerQueueGroup({
+    required super.id,
+    required super.venueId,
+    required super.venueName,
+    required super.timezone,
+    required super.status,
+    required super.stage,
+    required super.approvalMode,
+    super.totalAmount,
+    super.currency,
+    super.evidenceDueAt,
+    super.ownerDecisionDueAt,
+    super.paymentDestination,
+    super.paymentReceivedStatus,
+    super.paymentReceivedAmount,
+    super.requirements,
+    super.evidence,
+    super.bookings,
+    super.createdAt,
+    this.bookerName,
+    this.bookerUserId,
+  });
+
+  factory OwnerQueueGroup.fromJson(Map<String, dynamic> j) => OwnerQueueGroup(
+    id: j['id']?.toString() ?? '',
+    venueId: j['venueId']?.toString() ?? '',
+    venueName: j['venueName']?.toString() ?? '',
+    timezone: j['timezone']?.toString() ?? 'Asia/Bangkok',
+    status: bookingGroupStatusFrom(j['status']?.toString()),
+    stage: j['stage']?.toString() ?? 'booking',
+    approvalMode: bookingApprovalModeFrom(j['approvalMode']?.toString()),
+    totalAmount: (j['totalAmount'] as num?)?.toDouble(),
+    currency: j['currency']?.toString() ?? 'THB',
+    evidenceDueAt: DateTime.tryParse(j['evidenceDueAt']?.toString() ?? ''),
+    ownerDecisionDueAt: DateTime.tryParse(
+      j['ownerDecisionDueAt']?.toString() ?? '',
+    ),
+    paymentDestination: j['paymentDestination']?.toString(),
+    paymentReceivedStatus:
+        j['paymentReceivedStatus']?.toString() ?? 'unknown',
+    paymentReceivedAmount: (j['paymentReceivedAmount'] as num?)?.toDouble(),
+    requirements:
+        (j['requirements'] as List?)
+            ?.map(
+              (e) => EvidenceRequirement.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
+            .toList() ??
+        const [],
+    evidence:
+        (j['evidence'] as List?)
+            ?.map(
+              (e) => GroupEvidenceItem.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
+            .toList() ??
+        const [],
+    bookings:
+        (j['bookings'] as List?)
+            ?.map(
+              (e) => BookingGroupChild.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
+            .toList() ??
+        const [],
+    createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+    bookerName: j['bookerName']?.toString(),
+    bookerUserId: j['userId']?.toString(),
+  );
+}
+
+/// Owner evidence queue payload: attention groups + open claims + active
+/// refund cases.
+class OwnerEvidenceQueue {
+  final DateTime? serverNow;
+  final List<OwnerQueueGroup> groups;
+  final List<GroupPaymentClaim> claims;
+  final List<GroupRefundCase> refundCases;
+
+  const OwnerEvidenceQueue({
+    this.serverNow,
+    this.groups = const [],
+    this.claims = const [],
+    this.refundCases = const [],
+  });
+
+  factory OwnerEvidenceQueue.fromJson(Map<String, dynamic> j) =>
+      OwnerEvidenceQueue(
+        serverNow: DateTime.tryParse(j['serverNow']?.toString() ?? ''),
+        groups:
+            (j['groups'] as List?)
+                ?.map(
+                  (e) => OwnerQueueGroup.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        claims:
+            (j['claims'] as List?)
+                ?.map(
+                  (e) => GroupPaymentClaim.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+        refundCases:
+            (j['refundCases'] as List?)
+                ?.map(
+                  (e) => GroupRefundCase.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList() ??
+            const [],
+      );
+}
+
+/// One admin-visible slip-verification provider registry row (no secrets —
+/// `hasApiKey` only signals that a secret-store reference exists).
+class SlipVerificationProvider {
+  final String code;
+  final String displayName;
+  final String? endpointUrl;
+  final bool hasApiKey;
+  final double costPerCheck;
+  final int verifyTimeoutMinutes;
+  final Map<String, dynamic> capabilities;
+  final bool isEnabled;
+  final int priority;
+  final String? notes;
+  final DateTime? updatedAt;
+
+  const SlipVerificationProvider({
+    required this.code,
+    required this.displayName,
+    this.endpointUrl,
+    this.hasApiKey = false,
+    this.costPerCheck = 0,
+    this.verifyTimeoutMinutes = 15,
+    this.capabilities = const {},
+    this.isEnabled = false,
+    this.priority = 100,
+    this.notes,
+    this.updatedAt,
+  });
+
+  factory SlipVerificationProvider.fromJson(Map<String, dynamic> j) =>
+      SlipVerificationProvider(
+        code: j['code']?.toString() ?? '',
+        displayName: j['displayName']?.toString() ?? '',
+        endpointUrl: j['endpointUrl']?.toString(),
+        hasApiKey: j['hasApiKey'] == true,
+        costPerCheck: (j['costPerCheck'] as num?)?.toDouble() ?? 0,
+        verifyTimeoutMinutes:
+            (j['verifyTimeoutMinutes'] as num?)?.toInt() ?? 15,
+        capabilities:
+            j['capabilities'] is Map
+                ? Map<String, dynamic>.from(j['capabilities'] as Map)
+                : const {},
+        isEnabled: j['isEnabled'] == true,
+        priority: (j['priority'] as num?)?.toInt() ?? 100,
+        notes: j['notes']?.toString(),
+        updatedAt: DateTime.tryParse(j['updatedAt']?.toString() ?? ''),
+      );
 }

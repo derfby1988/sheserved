@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const videoService = require('../services/video-service');
+const incidentMapService = require('../services/incident-map');
 const socketService = require('../services/socket-service');
 const { resolveEmergencyCategoryNames } = require('../services/emergency-category-names');
 const faceBlurService = require('../services/face-blur-service');
@@ -161,6 +162,7 @@ module.exports = (pool, supabase = null) => {
             // type 'emergency' (fail-open: invalidateCachePattern จับ error เอง)
             if ((type || 'normal') === 'emergency') {
                 invalidateCachePattern('video:emergency:list:*');
+                invalidateCachePattern('video:emergency:map:*'); // §22.4.7
             }
 
             // 2. Handle GPS Tracks if provided
@@ -371,6 +373,7 @@ module.exports = (pool, supabase = null) => {
             // invalidate เฉพาะ emergency_photo (thai_mhung_photo ไม่อยู่ใน list query)
             if (videoType === 'emergency_photo') {
                 invalidateCachePattern('video:emergency:list:*');
+                invalidateCachePattern('video:emergency:map:*'); // §22.4.7
             }
 
             // ✅ อัปเดต Thumbnail ให้กับเหตุการณ์หลัก (Incident) โดยอัปเดตเสมอเพื่ออัปเดตภาพ Animated ล่าสุด
@@ -645,6 +648,43 @@ module.exports = (pool, supabase = null) => {
         } catch (error) {
             console.error('Error fetching emergency videos:', error.message);
             res.status(500).json({ error: 'Failed to fetch emergency videos' });
+        }
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // Incident Overview Map (VIDEO_SYSTEM_PLAN.md §22.4)
+    // GET /api/videos/emergency/map?category_id=<uuid>&bounds=s,w,n,e&zoom=<n>[&cursor][&limit]
+    // Auth parity with /emergency/list (guest-readable, ipLimiter);
+    // Local PostgreSQL first, Supabase RPC fallback, fail-closed.
+    // ─────────────────────────────────────────────────────────────
+    router.get('/emergency/map', ipLimiter, async (req, res) => {
+        try {
+            const params = incidentMapService.parseMapQuery(req.query);
+            const cacheKey = [
+                'video:emergency:map:v1',
+                params.categoryId,
+                params.zoom,
+                `${params.bounds.south.toFixed(4)},${params.bounds.west.toFixed(4)},${params.bounds.north.toFixed(4)},${params.bounds.east.toFixed(4)}`,
+                params.cursor || '-',
+                params.limit,
+            ].join(':');
+
+            const data = await cacheAside(
+                cacheKey,
+                () => incidentMapService.fetchIncidentMap({
+                    pool,
+                    supabase,
+                    params,
+                }),
+                TTL.MAP,
+            );
+            res.json(data);
+        } catch (error) {
+            if (error.statusCode === 400) {
+                return res.status(400).json({ error: error.message });
+            }
+            console.error('Error fetching incident map:', error.message);
+            res.status(500).json({ error: 'Failed to fetch incident map' });
         }
     });
 

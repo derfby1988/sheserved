@@ -217,6 +217,9 @@ class CourtAvailabilityPicker extends StatelessWidget {
     if (!end.isAfter(now ?? VenueLocalTime.now(timezone))) {
       return _SlotState.elapsed;
     }
+    // Evidence-gated holds render distinctly — the slot may still free up
+    // if the group forfeits or is cancelled, but it is not bookable now.
+    if (_overlaps(start, end, availability.held)) return _SlotState.held;
     if (_overlaps(start, end, availability.blocked)) {
       return _SlotState.blocked;
     }
@@ -231,7 +234,7 @@ class CourtAvailabilityPicker extends StatelessWidget {
   }
 }
 
-enum _SlotState { free, booked, closed, elapsed, blocked, notOpen }
+enum _SlotState { free, booked, closed, elapsed, blocked, held, notOpen }
 
 /// The colour legend under the grid. Long-pressing an entry shows a
 /// transient explanation of that slot state, then fades it out again.
@@ -273,6 +276,12 @@ class _StatusLegendState extends State<_StatusLegend> {
       label: 'ระงับชั่วคราว',
       explanation:
           'ระงับชั่วคราว — เจ้าของหรือผู้จัดการระงับช่วงนี้ไว้ ผู้มีสิทธิแตะสล็อตสีส้มเพื่อจัดการ',
+    ),
+    (
+      color: Colors.amber.shade100,
+      label: 'รอหลักฐาน',
+      explanation:
+          'รอหลักฐาน — มีผู้จองพักช่วงนี้ไว้ระหว่างส่งหลักฐาน ช่วงอาจว่างอีกครั้งถ้าหลักฐานไม่สำเร็จหรือหมดเวลา',
     ),
     (
       color: Colors.grey.shade200,
@@ -455,6 +464,12 @@ class _SlotChip extends StatelessWidget {
         onTap != null && canSelect && !managementSelection
             ? 'ระงับชั่วคราว — แตะเพื่อจัดการ'
             : 'ระงับชั่วคราว',
+      ),
+      _SlotState.held => (
+        Colors.amber.shade100,
+        Colors.amber.shade400,
+        Colors.amber.shade900,
+        'รอหลักฐาน — อาจว่างอีกครั้งถ้าหลักฐานไม่ผ่าน',
       ),
       _SlotState.notOpen => (
         Colors.blueGrey.shade100,

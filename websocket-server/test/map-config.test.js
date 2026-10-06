@@ -490,3 +490,28 @@ test('validateMapConfig: unknown feature warns instead of failing', () => {
   assert.deepEqual(errors, []);
   assert.match(warnings.join(' '), /future_feature/);
 });
+
+test('validateMapConfig: incidentOverviewMap gate accepts boolean enabled', () => {
+  const { validateMapConfig } = require('../routes/map-config');
+  const cfg = seedConfig();
+  cfg.features = { incidentOverviewMap: { enabled: true } };
+  const { errors } = validateMapConfig(cfg, { environment: 'dev' });
+  assert.deepEqual(errors, []);
+});
+
+test('validateMapConfig: features gate must be boolean and known names warn', () => {
+  const { validateMapConfig } = require('../routes/map-config');
+  const cfg = seedConfig();
+  cfg.features = { incidentOverviewMap: { enabled: 'yes' }, futureGate: { enabled: true } };
+  const { errors, warnings } = validateMapConfig(cfg, { environment: 'dev' });
+  assert.equal(errors.some((e) => e.includes('features.incidentOverviewMap.enabled')), true);
+  assert.match(warnings.join(' '), /futureGate/);
+});
+
+test('validateMapConfig: features must be an object when present', () => {
+  const { validateMapConfig } = require('../routes/map-config');
+  const cfg = seedConfig();
+  cfg.features = 'on';
+  const { errors } = validateMapConfig(cfg, { environment: 'dev' });
+  assert.equal(errors.some((e) => e.includes('features: must be an object')), true);
+});

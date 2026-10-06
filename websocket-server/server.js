@@ -87,6 +87,8 @@ const inventoryAlertChecker = require('./services/inventory-alert-checker');
 const { archiveChatMessages } = require('./services/chat-archive-service');
 const { notificationsRoutes, professionChangeRoute } = require('./routes/notifications');
 const { sportsRoutes } = require('./routes/sports');
+const { sportsEvidenceRoutes } = require('./routes/sports-evidence');
+const slipVerificationWorker = require('./services/slip-verification-worker');
 const { chatApiRoutes } = require('./routes/chat-api');
 const { healthRoutes } = require('./routes/health');
 const { emergencyHealthRoutes } = require('./routes/emergency-health');
@@ -370,6 +372,13 @@ app.use(
   '/api/sports/propose',
   verifyToken(pool),
   sportsRoutes({ supabaseForSync, socketService }),
+);
+// Private booking-evidence read — the short-lived read token minted by
+// mint_sports_venue_evidence_read_token is the credential (booker/manager
+// scope is decided server-side at mint time), so no JWT middleware here.
+app.use(
+  '/api/sports',
+  sportsEvidenceRoutes({ supabaseForSync }),
 );
 // PDPA face blur for clients without on-device ML Kit (Flutter Web).
 // Reuses services/face-blur-service.js (deface/CenterFace) — fail-closed.
@@ -1969,6 +1978,11 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // 🔒 เริ่ม Escrow Deadline Checker (scheduled job ทุก 15 นาที)
   escrowDeadlineChecker.start();
+
+  // 🧾 Sports Hub slip verification worker — drains the durable outbox
+  // through claim/apply RPCs; no-op unless the admin enables a provider
+  // and the env flag stays on.
+  slipVerificationWorker.start();
 
   // � เริ่ม Inventory Alert Checker (scheduled job ทุก 24 ชั่วโมง)
   inventoryAlertChecker.start();

@@ -129,6 +129,8 @@ class CourtOwnerBookingManager extends StatelessWidget {
       VenueBookingStatus.cancelled => ('ยกเลิก', Colors.red),
       VenueBookingStatus.rejected => ('ปฏิเสธ', Colors.red),
       VenueBookingStatus.expired => ('หมดอายุ', Colors.grey),
+      VenueBookingStatus.awaitingEvidence => ('รอหลักฐาน', Colors.amber),
+      VenueBookingStatus.forfeited => ('หมดเวลาหลักฐาน', Colors.red),
       VenueBookingStatus.completed => ('เสร็จสิ้น', AppColors.primaryDark),
     };
     return Container(

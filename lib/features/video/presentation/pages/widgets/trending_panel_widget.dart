@@ -43,7 +43,12 @@ class TrendingPanelWidget extends StatefulWidget {
     this.selectedCategoryIds = const {},
     this.onApplyCategoryFilter,
     this.filterResetToken = 0,
+    this.pinnedFromMapVideoId,
   });
+
+  /// ✅ Phase 22: การ์ดที่เลือกจากแผนที่เกิดเหตุ — แสดงป้าย "จากแผนที่"
+  /// (§22.1: ปักบนสุดโดยไม่นับในผลกรอง/ไม่กระทบ pagination)
+  final String? pinnedFromMapVideoId;
 
   @override
   State<TrendingPanelWidget> createState() => _TrendingPanelWidgetState();
@@ -557,6 +562,41 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
                                       video.viewerCount,
                                 ),
                               ),
+
+                              // ✅ Phase 22: ป้าย "จากแผนที่" บนการ์ดที่เลือก
+                              // จากแผนที่เกิดเหตุ (§22.1)
+                              if (video.id == widget.pinnedFromMapVideoId)
+                                Positioned(
+                                  top: 6,
+                                  left: 6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFF6B35)
+                                          .withValues(alpha: 0.9),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.map_outlined,
+                                            size: 10, color: Colors.white),
+                                        SizedBox(width: 3),
+                                        Text(
+                                          'จากแผนที่',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),

@@ -351,18 +351,30 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   /// ลิสต์การ์ดที่ส่งเข้ากล่องยอดนิยม = role filter เดิม + OR filter ตามหมวด
   /// (ยกเว้นช่วง suspension ที่คืน role filter อย่างเดียว)
+  /// ✅ Phase 22: การ์ดที่เลือกจากแผนที่ถูกปักบนสุดพร้อมป้าย "จากแผนที่" —
+  /// ไม่นับรวมในผลกรอง ไม่กระทบ pagination (§22.1)
   List<Video> _trendingVideosForPanel() {
     final videos = _filteredTrendingVideos();
+    List<Video> result;
     if (_missionFilterSuspended || _selectedTrendingCategoryIds.isEmpty) {
-      return videos;
+      result = videos;
+    } else {
+      result = videos
+          .where(
+            (v) =>
+                v.categoryId != null &&
+                _selectedTrendingCategoryIds.contains(v.categoryId),
+          )
+          .toList();
     }
-    return videos
-        .where(
-          (v) =>
-              v.categoryId != null &&
-              _selectedTrendingCategoryIds.contains(v.categoryId),
-        )
-        .toList();
+    final pinnedId = _incidentMapSession?.pinnedVideoId;
+    if (pinnedId != null &&
+        _currentVideo != null &&
+        _currentVideo!.id == pinnedId &&
+        !result.any((v) => v.id == pinnedId)) {
+      result = [_currentVideo!, ...result];
+    }
+    return result;
   }
 
   /// ติดตามการเข้า/ออก suspension:
@@ -399,6 +411,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   /// (เดิมเปิดจากไอคอนใน header ของกล่องยอดนิยม) — ใช้ state ชุดเดิมทั้งหมด
   /// [missionSuspendSignal] ทำให้ sheet ปิดตัวเองเมื่อเข้าสู่ mission/reporter
   /// lock โดยไม่ commit draft
+  /// ✅ Phase 22: ส่ง [onOpenIncidentMap] เมื่อ feature gate เปิด — ปุ่ม
+  /// "แผนที่เกิดเหตุ" ใต้แต่ละหมวดใช้หมวดนั้นเพียงหมวดเดียว ไม่แตะ draft
   void _openTrendingCategoryFilterSheet() {
     TrendingCategoryFilterSheet.show(
       context,
@@ -406,6 +420,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       initialSelectedIds: _selectedTrendingCategoryIds,
       suspensionSignal: _missionSuspendSignal,
       onApply: _applyTrendingCategoryFilter,
+      onOpenIncidentMap:
+          _canShowIncidentMapEntry ? _openIncidentMapForCategory : null,
     );
   }
 

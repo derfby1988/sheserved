@@ -19,12 +19,18 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
   final Future<bool> Function(Set<String> selected)? onApply;
   final ValueListenable<bool> suspensionSignal;
 
+  /// Phase 22 — ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด: ใช้ `categoryId` ของหมวด
+  /// นั้นเพียงหมวดเดียว ไม่อ่าน/commit `_draft` และไม่เปลี่ยนตัวกรองยอดนิยม
+  /// (null = ปิด feature gate → ไม่แสดงปุ่ม)
+  final void Function(DonationCategory category)? onOpenIncidentMap;
+
   const TrendingCategoryFilterSheet({
     super.key,
     required this.categories,
     required this.initialSelectedIds,
     required this.suspensionSignal,
     this.onApply,
+    this.onOpenIncidentMap,
   });
 
   static Future<void> show(
@@ -33,6 +39,7 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
     required Set<String> initialSelectedIds,
     required ValueListenable<bool> suspensionSignal,
     Future<bool> Function(Set<String> selected)? onApply,
+    void Function(DonationCategory category)? onOpenIncidentMap,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -48,6 +55,7 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
         initialSelectedIds: initialSelectedIds,
         suspensionSignal: suspensionSignal,
         onApply: onApply,
+        onOpenIncidentMap: onOpenIncidentMap,
       ),
     );
   }
@@ -175,7 +183,7 @@ class _TrendingCategoryFilterSheetState
           ),
         ),
         const SizedBox(height: 10),
-        for (final category in widget.categories)
+        for (final category in widget.categories) ...[
           NeumorphicSwitchTile(
             title: category.name,
             value: _draft.contains(category.id),
@@ -189,6 +197,33 @@ class _TrendingCategoryFilterSheetState
                     }
                   }),
           ),
+          // ✅ Phase 22: ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด — ใช้หมวดนั้น
+          // เพียงหมวดเดียว ไม่แตะ draft/ตัวกรอง (§22.1)
+          if (widget.onOpenIncidentMap != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: NeumorphicPillButton(
+                  text: 'แผนที่เกิดเหตุ',
+                  icon: Icons.map_outlined,
+                  height: 32,
+                  fontSize: 12,
+                  iconSize: 15,
+                  depth: 3,
+                  blur: 6,
+                  // ✅ §22.1: กดแล้ว sheet ปิดตัวเองก่อน (ไม่ commit draft)
+                  // แล้ว callback จึงเข้าสู่โหมดแผนที่ — page ไม่ต้อง pop ซ้ำ
+                  onPressed: _applying
+                      ? null
+                      : () {
+                          Navigator.of(context).pop();
+                          widget.onOpenIncidentMap!(category);
+                        },
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }

@@ -48,6 +48,10 @@ class LiveViewWidget extends StatefulWidget {
   final void Function(ThaiMhungRulerPhoto photo)? onNewPhotoArrived;
   final void Function(bool isOverlayVisible)? onOverlayChanged;
   final GlobalKey? trendingPanelKey;
+
+  /// ✅ Phase 22: การ์ดที่เลือกจากแผนที่เกิดเหตุ — แสดงป้าย "จากแผนที่"
+  /// บนการ์ดนั้นในกล่องยอดนิยม (§22.1)
+  final String? pinnedFromMapVideoId;
   final VoidCallback? onOpenFullscreen;
   // ✅ GlobalKey ของแถวปุ่ม action (ส่งกำลังใจ/บริจาค/ให้ทาง) — ใช้วัดขอบล่าง
   // เพื่อจำกัดความสูงแชท ไม่ให้ฟองข้อความลอยขึ้นไปบังปุ่มเหล่านี้
@@ -99,6 +103,7 @@ class LiveViewWidget extends StatefulWidget {
     this.onNewPhotoArrived,
     this.onOverlayChanged,
     this.trendingPanelKey,
+    this.pinnedFromMapVideoId,
     this.actionButtonsKey,
     this.videoCardKey,
     this.onOpenFullscreen,
@@ -109,10 +114,10 @@ class LiveViewWidget extends StatefulWidget {
   });
 
   @override
-  State<LiveViewWidget> createState() => _LiveViewWidgetState();
+  State<LiveViewWidget> createState() => LiveViewWidgetState();
 }
 
-class _LiveViewWidgetState extends State<LiveViewWidget>
+class LiveViewWidgetState extends State<LiveViewWidget>
     with WidgetsBindingObserver {
   bool _isKeyboardOpen = false;
 
@@ -163,6 +168,30 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
     if (_isKeyboardOpen != isOpen) {
       if (mounted) setState(() => _isKeyboardOpen = isOpen);
     }
+  }
+
+  /// ✅ Phase 22 (§22.3 ข้อ 5): เปิด overlay ภาพบนการ์ดจากแผนที่เกิดเหตุ —
+  /// การ์ดต้อง **หยุด** อยู่เบื้องหลังจริง (ปัจจุบัน overlay เดิมไม่ pause
+  /// ตอนเปิด) และปิด overlay แล้วจึงเล่นต่อตาม flow เดิม
+  void showOverlayPhoto({required String photoUrl}) {
+    if (!mounted) return;
+    try {
+      widget.chewieController?.videoPlayerController.pause();
+    } catch (_) {}
+    setState(() {
+      _selectedOverlayPhotoUrl = photoUrl;
+      _selectedOverlayPhotoIndex = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onOverlayChanged?.call(true);
+    });
+  }
+
+  /// pause ตอนเปิด overlay จาก Ruler gallery เองด้วย (fix เดียวกัน)
+  void _pauseVideoForOverlay() {
+    try {
+      widget.chewieController?.videoPlayerController.pause();
+    } catch (_) {}
   }
 
   bool _isControllerReady() {
@@ -535,6 +564,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                                     videoHeight, // ความสูงเท่ากับ Video Player พอดี
                                 canViewUnblurred: widget.canViewUnblurred,
                                 onPhotoTap: (index, photoUrl) {
+                                  _pauseVideoForOverlay(); // ✅ §22.2: การ์ดหยุดขณะ overlay เปิด
                                   setState(() {
                                     _selectedOverlayPhotoUrl = photoUrl;
                                     _selectedOverlayPhotoIndex = index;
@@ -580,6 +610,7 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                     alignment: Alignment.topCenter,
                     child: TrendingPanelWidget(
                       key: widget.trendingPanelKey,
+                      pinnedFromMapVideoId: widget.pinnedFromMapVideoId,
                       trendingVideos: widget.trendingVideos,
                       onLoadMore: widget.onLoadMoreTrending,
                       isLoadingTrending: widget.isLoadingTrending,

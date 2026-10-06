@@ -12,6 +12,7 @@ import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../widgets/court_owner_booking_manager.dart';
+import '../widgets/court_owner_evidence_queue.dart';
 
 /// Owner/manager booking queue for one venue: pending approvals plus
 /// upcoming confirmed bookings and history.
@@ -217,6 +218,13 @@ class _CourtOwnerBookingsPageState extends State<CourtOwnerBookingsPage> {
                           child: ListView(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             children: [
+                              if (_userId != null)
+                                CourtOwnerEvidenceQueue(
+                                  repo: widget.repo,
+                                  userId: _userId!,
+                                  venue: widget.venue,
+                                  onChanged: _load,
+                                ),
                               _sectionHeader('รออนุมัติ (${pending.length})'),
                               if (pending.isEmpty)
                                 _empty('ไม่มีคำขอรออนุมัติ')

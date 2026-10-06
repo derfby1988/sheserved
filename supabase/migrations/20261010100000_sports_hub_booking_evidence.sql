@@ -1570,6 +1570,7 @@ DECLARE
   v_venue RECORD;
   v_terms RECORD;
   v_court_ids UUID[];
+  v_venue_ids UUID[];
   v_venue_id UUID;
   v_timezone VARCHAR;
   v_policy JSONB;
@@ -1647,6 +1648,19 @@ BEGIN
     ORDER BY cid
   ) ids;
 
+  -- Venue uniformity is a structural error: check it deterministically
+  -- before the per-court lock loop so error precedence never depends on
+  -- UUID sort order.
+  SELECT array_agg(DISTINCT c.venue_id) INTO v_venue_ids
+  FROM (
+    SELECT c2.venue_id FROM public.sports_venue_courts c2
+    WHERE c2.id = ANY(v_court_ids)
+  ) c;
+  IF COALESCE(array_length(v_venue_ids, 1), 0) > 1 THEN
+    RAISE EXCEPTION 'GROUP_VENUE_MISMATCH';
+  END IF;
+  v_venue_id := v_venue_ids[1];
+
   -- Lock every involved court in a stable order before checks/inserts.
   FOR v_court IN
     SELECT c.id, c.venue_id, c.sport_id, c.capacity, c.is_active,
@@ -1661,11 +1675,6 @@ BEGIN
   LOOP
     IF NOT v_court.is_active THEN
       RAISE EXCEPTION 'COURT_NOT_FOUND';
-    END IF;
-    IF v_venue_id IS NULL THEN
-      v_venue_id := v_court.venue_id;
-    ELSIF v_court.venue_id <> v_venue_id THEN
-      RAISE EXCEPTION 'GROUP_VENUE_MISMATCH';
     END IF;
     IF v_approval_mode IS NULL THEN
       v_approval_mode := v_court.booking_approval_mode;
@@ -3537,6 +3546,16 @@ BEGIN
   IF v_booking.id IS NULL THEN
     RAISE EXCEPTION 'BOOKING_NOT_FOUND';
   END IF;
+  IF v_booking.booking_group_id IS NOT NULL THEN
+    SELECT g.* INTO v_group
+    FROM public.sports_venue_booking_groups g
+    WHERE g.id = v_booking.booking_group_id
+    FOR UPDATE;
+    -- Pre-confirmation the group is atomic: cancel it as a whole.
+    IF v_group.status IN ('pending', 'awaiting_evidence') THEN
+      RAISE EXCEPTION 'GROUP_CANCEL_REQUIRED';
+    END IF;
+  END IF;
   IF v_booking.status NOT IN ('pending','confirmed') THEN
     RAISE EXCEPTION 'BOOKING_NOT_CANCELLABLE';
   END IF;
@@ -3547,17 +3566,6 @@ BEGIN
 
   IF NOT v_is_booker AND NOT v_is_manager THEN
     RAISE EXCEPTION 'NOT_AUTHORIZED';
-  END IF;
-
-  IF v_booking.booking_group_id IS NOT NULL THEN
-    SELECT g.* INTO v_group
-    FROM public.sports_venue_booking_groups g
-    WHERE g.id = v_booking.booking_group_id
-    FOR UPDATE;
-    -- Pre-confirmation the group is atomic: cancel it as a whole.
-    IF v_group.status IN ('pending', 'awaiting_evidence') THEN
-      RAISE EXCEPTION 'GROUP_CANCEL_REQUIRED';
-    END IF;
   END IF;
 
   IF v_is_booker AND NOT v_is_manager THEN

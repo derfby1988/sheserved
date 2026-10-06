@@ -6016,9 +6016,9 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 - ห้าม log raw token; socket auth เป็นชั้น transport เท่านั้น — ไม่เปลี่ยน event semantics, mission rules, หรือ Phase 20 filter behavior
 - `disableMultiplex()` ไม่ช่วย (ทดลองแล้ว) — root fix คือ `enableForceNew()` เท่านั้น
 
-## 22. Phase — แผนที่เกิดเหตุ (Category-specific Incident Overview Map — Planned)
+## 22. Phase — แผนที่เกิดเหตุ (Category-specific Incident Overview Map — Implemented v1)
 
-**สถานะ:** แผนใหม่ — ยังไม่ implement; ขอบเขต UX ตามการยืนยันของผู้ใช้ ส่วน data contract, renderer และ performance ต้องผ่าน design/test gate ก่อน rollout
+**สถานะ:** Implemented v1 (2026-10-06) — backend contract + Local/Supabase + renderer adapter (Google/OSM) + page mode + sheet entry + collision photo layout + realtime pill; รอ device verification/canary ตาม §22.8 ที่ยังไม่ได้ติ๊ก
 
 **เป้าหมาย:** เปิดแผนที่ภาพรวมทั่วประเทศไทยสำหรับเหตุการณ์หนึ่งหมวดจาก `EmergencyLivePage`; ผู้ใช้เลือกเหตุจากหมุดหรือภาพใน gallery แล้วสลับกลับมาดูการ์ด/ภาพของเหตุเดียวกันได้ โดยไม่ทำให้ตัวกรองหลายหมวดของ Phase 20 เปลี่ยนค่า
 
@@ -6236,3 +6236,27 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - ไม่ทำ heatmap, route/directions, แก้พิกัดเหตุ, offline map/tile download, admin filter, เปลี่ยน semantics ของ Trending, หรือ gallery ภาพผู้แจ้งเหตุจาก Phase 19 ใน Phase นี้
 - ไม่ทำ filter ตามช่วงอายุฝั่ง server, ไม่วางภาพตามพิกัดรายภาพ, ไม่ทำ timeline playback บนแผนที่ และไม่เปลี่ยน picker/route/place-search ของระบบอื่น
 - ไม่แก้ `MapBackgroundWidget` ให้เปลี่ยน provider ของ Home/Rescue/Group Create — ขอบเขต provider integration ของ Phase นี้จำกัดที่พื้นผิว Emergency ตาม §22.5
+
+### 22.10 บันทึกการ implement v1 (2026-10-06)
+
+**Backend (websocket-server)**
+- `services/incident-map-policy.js` — age-bucket policy (ช่วงต่อเนื่อง 24h/7d/35d/365d) + `isValidCoordinate` (ตัด (0,0) sentinel/out-of-range/null)
+- `services/incident-map.js` — `parseMapQuery` (validate UUID/bounds/zoom/limit), cursor base64url, grid clustering (cell = 180/2^zoom, centroid + byBucket), photo cap 3/เหตุ, `fetchIncidentMapLocal` (LATERAL first-point + cursor pagination + aggregate legend) และ `fetchIncidentMapSupabase` (RPC fallback) — fail-closed
+- `routes/video.js` — `GET /api/videos/emergency/map` (auth parity กับ /emergency/list: guest-readable + ipLimiter), cacheAside key `video:emergency:map:v1:{cat}:{zoom}:{bounds 4dp}:{cursor}:{limit}` TTL.MAP=120s; invalidate `video:emergency:map:*` ที่จุดเดียวกับ emergency list (video ใหม่/emergency_photo ใหม่)
+- `migrations/incident_map_indexes.sql` — btree: `video_gps_tracks(video_id, timestamp_offset)`, `videos(category_id, type, created_at DESC)`, `thai_mhung_photos(video_id, blur_status, created_at DESC, id DESC)` (EXPLAIN ก่อน/หลัง: videos เปลี่ยนเป็น Bitmap Index Scan; tracks ยัง seq scan เพราะตารางเล็ก 4 หน้า — planner จะสลับเองเมื่อโต)
+- Supabase: `supabase/migrations/20261010120000_incident_map_rpc.sql` — RPC `get_emergency_incident_map` (mirror เดียวกัน, SECURITY INVOKER) + เพิ่มคอลัมน์ `thai_mhung_photos.blur_status` ฝั่ง cloud (default 'completed') ให้ schema ตรงกับ local — apply แล้วและ smoke test ผ่านทั้งสอง path
+- Tests: `test/incident-map.test.js` (13 เคส — policy boundaries, validation, cursor, cluster, photo cap, route contract, Supabase fallback, fail-closed) + `test/map-config.test.js` (+3 เคส features gate) — npm test 41/41 ผ่าน
+
+**Flutter**
+- `models/incident_map_models.dart` — `IncidentAgeBucket` (สี/ป้ายไทย/relative age), `IncidentAgeBucketPolicy`, `IncidentMapBounds.thailand`, DTO point/cluster/legend/excluded/response + parse แบบ fail-safe
+- `data/repositories/incident_map_repository.dart` — Local API → Supabase RPC fallback, 4xx fail-closed ไม่ fallback, normalize URL ภาพ
+- `widgets/incident_map/incident_map_surface.dart` — พื้นผิวเดียวสอง renderer (GoogleMap marker bitmap จาก canvas / flutter_map widget markers), camera state ชุดเดียว + projector (Web Mercator สำหรับ Google, `projectAtZoom` สำหรับ OSM), photo overlay ตาม zoom ≥ 13, legend bar, state card
+- `widgets/incident_map/incident_map_photo_layout.dart` — collision layout pure function (ไม่ทับกัน/ไม่ทับหมุดเหตุอื่น/ไม่ล้นจอ, recency priority, cap 3/เหตุ)
+- `parts/emergency_incident_map_logic.dart` — `EmergencySurfaceMode` + `IncidentMapSession` + transition ตาม §22.3.1 (เข้า/แตะหมุด/ย้อนกลับ/เปลี่ยนหมวด/กลับจาก "เลือกเหตุการณ์อื่น"/pause-resume), gate จาก `MapConfigService.resolveTarget(MapFeature.emergency)`, realtime pill กรองตาม `categoryId`
+- `emergency_live_page.dart` — layer 2.5 ระหว่าง UI overlay กับแถวปุ่ม, PopScope (hardware back = ออกโหมดแผนที่), top bar (โหมดแผนที่: ซ่อนเครื่องมือ/ตัวกรอง + "เปลี่ยนประเภทเหตุ"; โหมดปกติมี session: "เลือกเหตุการณ์อื่น"), pinned card + ป้าย "จากแผนที่" (fullscreen ได้การ์ดที่ปักเพราะ `_trendingVideosForPanel()` ปักให้)
+- `trending_category_filter_sheet.dart` — ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด (disable ขณะ `_applying`, ไม่แตะ draft)
+- `emergency_top_bar.dart` — `trailingLabel`/`onTrailingTap` แทนปุ่มตัวกรองชั่วคราว
+- `live_view_widget.dart` — state เป็น public + `showOverlayPhoto()` + **pause ตอนเปิด overlay** (fix ตาม §22.2)
+- Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
+
+**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่, ตรวจ metric `map_load_emergency_overview` ระหว่าง canary และ cluster tap zoom-in animation (ปัจจุบัน cluster tap ยังไม่ขยับกล้อง — ทำผ่าน renderer controller ในขั้นถัดไป)

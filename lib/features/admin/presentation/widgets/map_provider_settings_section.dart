@@ -353,6 +353,10 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
         for (final f in MapFeature.values) _featureCard(f),
         _yieldWayLockedRow(),
         const SizedBox(height: 20),
+        _sectionTitle('ฟีเจอร์แผนที่ (Feature Gates)', Icons.extension),
+        const SizedBox(height: 8),
+        _incidentMapGateCard(),
+        const SizedBox(height: 20),
         _sectionTitle('บริการประกอบ (เส้นทาง / ค้นหา / จราจร)', Icons.alt_route),
         const SizedBox(height: 8),
         _servicesCard(),
@@ -684,6 +688,42 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
           ],
         ),
       );
+
+  /// §22.6 — server-driven feature gate for the per-category
+  /// "แผนที่เกิดเหตุ" entry (VIDEO_SYSTEM_PLAN.md §22.9: must be
+  /// switchable off without redeploying).
+  Widget _incidentMapGateCard() {
+    final enabled = _draft!.incidentOverviewMapEnabled;
+    return _card(
+      Row(
+        children: [
+          const Icon(Icons.map_outlined, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'แผนที่เกิดเหตุ (Incident Overview Map)',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'แสดงปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละประเภทเหตุในหน้าเหตุฉุกเฉิน',
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: enabled,
+            onChanged: (v) =>
+                _edit(_draft!.copyWith(incidentOverviewMapEnabled: v)),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ── Services / fallback ──────────────────────────────────────────────
 

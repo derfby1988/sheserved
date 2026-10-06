@@ -25,6 +25,7 @@ const TTL = {
   DONATION:   120,   // ยอดรวมบริจาค: 2 นาที (อัปเดตบ่อย)
   SESSION:    7200,  // Session: 2 ชั่วโมง (Sliding Expiration)
   DEFAULT:    600,   // ค่า default: 10 นาที
+  MAP:        120,   // แผนที่เหตุการณ์ (§22.4.7): 2 นาที — invalidate ตาม incident/photo
 };
 
 const LOCK_TTL_SEC = 5; // Mutex lock อายุ 5 วินาที

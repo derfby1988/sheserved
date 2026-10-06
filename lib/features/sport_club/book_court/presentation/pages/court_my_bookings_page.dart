@@ -9,6 +9,7 @@ import '../../application/book_court_booking_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/venue_local_time.dart';
+import '../widgets/booking_group_sheet.dart';
 import '../widgets/court_booking_action_dialogs.dart';
 import '../widgets/court_booking_dialog.dart';
 import '../widgets/court_review_sheet.dart';
@@ -27,6 +28,8 @@ class CourtMyBookingsPage extends StatefulWidget {
 
 class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   List<VenueBooking> _bookings = [];
+  List<VenueBookingGroup> _groups = [];
+  DateTime? _groupsServerNow;
   Set<String> _reviewedBookingIds = {};
   List<VenueReviewTag> _tagCatalog = const [];
   List<VenueReviewCategory> _categoryCatalog = const [];
@@ -56,6 +59,13 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       return;
     }
     setState(() => _loading = true);
+    // Group listing is additive — an evidence-surface failure must never
+    // hide the flat bookings the page already shows.
+    ({DateTime? serverNow, List<VenueBookingGroup> groups}) groupsRes =
+        (serverNow: null, groups: const []);
+    try {
+      groupsRes = await widget.repo.listMyBookingGroups(userId);
+    } catch (_) {}
     try {
       final results = await Future.wait([
         widget.repo.listMyBookings(userId),
@@ -69,6 +79,8 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
         _reviewedBookingIds = results[1] as Set<String>;
         _tagCatalog = results[2] as List<VenueReviewTag>;
         _categoryCatalog = results[3] as List<VenueReviewCategory>;
+        _groups = groupsRes.groups;
+        _groupsServerNow = groupsRes.serverNow;
         _loading = false;
       });
     } catch (_) {
@@ -230,11 +242,21 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Group children render inside their group card, never as loose rows.
+  List<VenueBooking> get _flatBookings =>
+      _bookings.where((b) => b.bookingGroupId == null).toList();
+
+  List<VenueBookingGroup> _groupsWhere(
+    bool Function(VenueBookingGroup) test,
+  ) => _groups.where(test).toList();
+
   @override
   Widget build(BuildContext context) {
     // Active appointments: the nearest one leads.
     final now = DateTime.now();
-    final active = _bookings.where((b) => b.isPending || b.isConfirmed).toList()
+    final active = _flatBookings
+        .where((b) => b.isPending || b.isConfirmed)
+        .toList()
       ..sort((a, b) {
         final aLive = a.endsAt.isAfter(now);
         final bLive = b.endsAt.isAfter(now);
@@ -246,7 +268,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     // Rejections stay ahead of expired requests; rejected bookings sort by
     // decision time, and expired requests by their scheduled start time.
     final rejectedOrExpired =
-        _bookings
+        _flatBookings
             .where(
               (b) =>
                   b.status == VenueBookingStatus.rejected ||
@@ -263,11 +285,35 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
                   )
                 : b.startsAt.compareTo(a.startsAt);
           });
-    final cancelled = _bookings
+    final cancelled = _flatBookings
         .where((b) => b.status == VenueBookingStatus.cancelled)
         .toList();
-    final completed = _bookings.where((b) => b.isCompleted).toList()
+    final completed = _flatBookings.where((b) => b.isCompleted).toList()
       ..sort((a, b) => b.endsAt.compareTo(a.endsAt));
+    final activeGroups = _groupsWhere(
+      (g) =>
+          g.status == BookingGroupStatus.pending ||
+          g.status == BookingGroupStatus.awaitingEvidence ||
+          g.status == BookingGroupStatus.confirmed ||
+          g.status == BookingGroupStatus.partiallyCancelled,
+    )..sort((a, b) {
+      final aLive = a.bookings.any((c) => c.endsAt.isAfter(now));
+      final bLive = b.bookings.any((c) => c.endsAt.isAfter(now));
+      if (aLive != bLive) return aLive ? -1 : 1;
+      return (b.createdAt ?? now).compareTo(a.createdAt ?? now);
+    });
+    final closedGroups = _groupsWhere(
+      (g) =>
+          g.status == BookingGroupStatus.rejected ||
+          g.status == BookingGroupStatus.expired ||
+          g.status == BookingGroupStatus.forfeited,
+    );
+    final cancelledGroups = _groupsWhere(
+      (g) => g.status == BookingGroupStatus.cancelled,
+    );
+    final completedGroups = _groupsWhere(
+      (g) => g.status == BookingGroupStatus.completed,
+    );
 
     return Scaffold(
       backgroundColor: NeumorphicTheme.baseColor,
@@ -346,18 +392,24 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
                                     rejectedOrExpired,
                                     'ไม่มีรายการที่ถูกปฏิเสธหรือหมดอายุ',
                                     Icons.block_outlined,
+                                    groups: closedGroups,
                                   ),
                                   2 => _statusTab(
                                     cancelled,
                                     'ไม่มีรายการที่ยกเลิก',
                                     Icons.cancel_outlined,
+                                    groups: cancelledGroups,
                                   ),
                                   3 => _statusTab(
                                     completed,
                                     'ไม่มีรายการที่เสร็จสิ้น',
                                     Icons.event_available_rounded,
+                                    groups: completedGroups,
                                   ),
-                                  _ => _bookingsTab(active),
+                                  _ => _bookingsTab(
+                                    active,
+                                    groups: activeGroups,
+                                  ),
                                 },
                               ),
                             ),
@@ -469,14 +521,19 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     );
   }
 
-  Widget _bookingsTab(List<VenueBooking> active) {
+  Widget _bookingsTab(
+    List<VenueBooking> active, {
+    List<VenueBookingGroup> groups = const [],
+  }) {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
-        if (active.isEmpty)
+        if (active.isEmpty && groups.isEmpty)
           _emptyCard(Icons.event_busy_rounded, 'ยังไม่มีการจอง')
-        else
+        else ...[
+          for (final g in groups) _buildGroupCard(g),
           for (final b in active) _buildBookingCard(b),
+        ],
       ],
     );
   }
@@ -485,16 +542,144 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   Widget _statusTab(
     List<VenueBooking> bookings,
     String emptyLabel,
-    IconData emptyIcon,
-  ) {
+    IconData emptyIcon, {
+    List<VenueBookingGroup> groups = const [],
+  }) {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
-        if (bookings.isEmpty)
+        if (bookings.isEmpty && groups.isEmpty)
           _emptyCard(emptyIcon, emptyLabel)
-        else
+        else ...[
+          for (final g in groups) _buildGroupCard(g),
           for (final b in bookings) _buildBookingCard(b),
+        ],
       ],
+    );
+  }
+
+  /// Evidence-gated group card — the countdown runs on the server clock;
+  /// tapping opens the group sheet for evidence upload/claim/refund state.
+  Widget _buildGroupCard(VenueBookingGroup g) {
+    final statusLabel = switch (g.status) {
+      BookingGroupStatus.pending => 'รอเจ้าของอนุมัติ',
+      BookingGroupStatus.awaitingEvidence => 'รอหลักฐาน/ชำระเงิน',
+      BookingGroupStatus.confirmed => 'ยืนยันแล้ว',
+      BookingGroupStatus.partiallyCancelled => 'ยกเลิกบางช่วง',
+      BookingGroupStatus.forfeited => 'หมดเวลาส่งหลักฐาน',
+      BookingGroupStatus.rejected => 'ถูกปฏิเสธ',
+      BookingGroupStatus.expired => 'หมดอายุ',
+      BookingGroupStatus.cancelled => 'ยกเลิกแล้ว',
+      BookingGroupStatus.completed => 'เสร็จสิ้น',
+    };
+    final needsAction = g.isAwaitingEvidence &&
+        g.requirements.any((r) => g.requirementOpen(r));
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () async {
+          final userId = _userId;
+          if (userId == null) return;
+          await BookingGroupSheet.show(
+            context,
+            repo: widget.repo,
+            userId: userId,
+            group: g,
+            serverNow: _groupsServerNow,
+          );
+          await _load();
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    g.venueName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: NeumorphicTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: needsAction
+                        ? Colors.amber.shade100
+                        : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: needsAction
+                          ? Colors.amber.shade900
+                          : NeumorphicTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final child in g.bookings)
+              Text(
+                '${child.unitLabel ?? 'สนาม'} ${child.courtName} — '
+                '${VenueLocalTime.formatInstantWall(child.startsAt, g.timezone)}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: NeumorphicTheme.textSecondary,
+                ),
+              ),
+            if (g.totalAmount != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'ยอดรวม ${g.totalAmount!.toStringAsFixed(2)} บาท',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: NeumorphicTheme.textPrimary,
+                  ),
+                ),
+              ),
+            if (needsAction)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.upload_file_rounded,
+                      size: 15,
+                      color: Colors.red,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'แตะเพื่อส่งหลักฐานก่อนหมดเวลา',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -670,6 +855,8 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       VenueBookingStatus.cancelled => ('ยกเลิก', Colors.red),
       VenueBookingStatus.rejected => ('ปฏิเสธ', Colors.red),
       VenueBookingStatus.expired => ('หมดอายุ', Colors.grey),
+      VenueBookingStatus.awaitingEvidence => ('รอหลักฐาน', Colors.amber),
+      VenueBookingStatus.forfeited => ('หมดเวลาหลักฐาน', Colors.red),
       VenueBookingStatus.completed => ('เสร็จสิ้น', AppColors.primaryDark),
     };
     return Container(

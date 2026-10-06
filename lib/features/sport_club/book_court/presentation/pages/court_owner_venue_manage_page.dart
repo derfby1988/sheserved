@@ -19,6 +19,7 @@ import '../../domain/court_booking_release_schedule.dart';
 import '../../domain/venue_setup_progress.dart';
 import '../widgets/owner_court_editor_dialog.dart';
 import '../widgets/venue_amenities_editor_dialog.dart';
+import '../widgets/venue_evidence_policy_dialog.dart';
 import '../widgets/venue_hours_editor_dialog.dart';
 import '../widgets/venue_profile_editor_sheet.dart';
 import '../widgets/venue_release_editor_dialog.dart';
@@ -118,6 +119,39 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
   bool get _amenitiesConfirmed => _venueMap['amenities_confirmed'] == true;
 
   bool get _usesPlatformTerms => _venueMap['uses_platform_terms'] == true;
+
+  /// Venue evidence policy reconstructed from the raw row columns —
+  /// null means the feature is off for every inheriting court.
+  VenueEvidencePolicy? get _venueEvidencePolicy {
+    final v = _venueMap;
+    if (v['evidence_requirements'] == null) return null;
+    return VenueEvidencePolicy.fromJson({
+      'requirements': v['evidence_requirements'],
+      'deadline_mode': v['evidence_deadline_mode'],
+      'minutes': v['evidence_minutes'],
+      'deadline_time': v['evidence_deadline_time']?.toString(),
+      'owner_approval_deadline_enabled':
+          v['owner_approval_evidence_deadline_enabled'],
+      'min_grace_minutes': v['evidence_min_grace_minutes'],
+      'owner_decision_minutes': v['owner_decision_minutes'],
+      'max_holds_per_user': v['evidence_max_holds_per_user'],
+      'payment_destination': v['payment_destination'],
+    });
+  }
+
+  /// Admin-controlled provider scope — auto_verify is only offered in the
+  /// editor when the venue is whitelisted/allow-all (the server still
+  /// re-validates an enabled provider exists).
+  bool get _allowAutoVerify {
+    final scope = _venueMap['verify_scope']?.toString();
+    return scope == 'whitelist' || scope == 'all';
+  }
+
+  bool get _venueHasReleaseRule {
+    final v = _venueMap;
+    return (v['booking_release_days'] as List?)?.isNotEmpty == true ||
+        v['booking_release_day_of_week'] != null;
+  }
 
   /// Resolved venue-level label for single-venue copy (Phase 21.7.19) —
   /// detail RPC value first, then the summary's, then the generic term.
@@ -715,6 +749,97 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     );
   }
 
+  /// Venue-level evidence policy (Phase 21.7.21). The dialog returns the
+  /// edited policy, [VenueEvidencePolicyDialog.disable] to clear it, or
+  /// null when dismissed.
+  Future<void> _editVenueEvidence() async {
+    final userId = _userId;
+    if (userId == null || _saving) return;
+    final result = await VenueEvidencePolicyDialog.show(
+      context,
+      initial: _venueEvidencePolicy,
+      canDisable: _venueEvidencePolicy != null,
+      venueHasReleaseRule: _venueHasReleaseRule,
+      allowAutoVerify: _allowAutoVerify,
+    );
+    if (!mounted || result == null) return;
+    if (identical(result, VenueEvidencePolicyDialog.disable)) {
+      await _persist(
+        () => widget.repo.setVenueEvidencePolicy(userId, _venue.id, null),
+        'ปิดการขอหลักฐานแล้ว',
+      );
+      return;
+    }
+    await _persist(
+      () => widget.repo.setVenueEvidencePolicy(
+        userId,
+        _venue.id,
+        result as VenueEvidencePolicy,
+      ),
+      'บันทึกหลักฐานการจองแล้ว',
+    );
+  }
+
+  /// Per-court override: inherit follows the venue policy, off disables
+  /// evidence for this court, custom opens the same policy editor.
+  Future<void> _editCourtEvidence(VenueCourt court) async {
+    final userId = _userId;
+    if (userId == null || _saving) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.sync_rounded),
+              title: const Text('ตามการตั้งค่าสถานที่'),
+              onTap: () => Navigator.pop(c, 'inherit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.block_rounded),
+              title: const Text('ไม่ขอหลักฐานสำหรับรายการนี้'),
+              onTap: () => Navigator.pop(c, 'off'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.tune_rounded),
+              title: const Text('กำหนดเองสำหรับรายการนี้'),
+              onTap: () => Navigator.pop(c, 'custom'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'custom') {
+      final result = await VenueEvidencePolicyDialog.show(
+        context,
+        initial: court.evidencePolicy ?? _venueEvidencePolicy,
+        canDisable: false,
+        venueHasReleaseRule:
+            _venueHasReleaseRule || court.bookingReleaseMode == 'custom',
+        allowAutoVerify: _allowAutoVerify,
+      );
+      if (!mounted || result is! VenueEvidencePolicy) return;
+      await _persist(
+        () => widget.repo.setCourtEvidencePolicy(
+          userId,
+          court.id,
+          'custom',
+          result,
+        ),
+        'บันทึกหลักฐานของ ${court.name} แล้ว',
+      );
+      return;
+    }
+    await _persist(
+      () => widget.repo.setCourtEvidencePolicy(userId, court.id, choice, null),
+      choice == 'off'
+          ? 'ปิดการขอหลักฐานของ ${court.name} แล้ว'
+          : 'ให้ ${court.name} ตามการตั้งค่าสถานที่แล้ว',
+    );
+  }
+
   Future<void> _persist(Future<void> Function() action, String ok) async {
     setState(() => _saving = true);
     try {
@@ -825,6 +950,7 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
                               _buildVenueInfoCard(),
                               _buildVenueLabelCard(),
                               _buildReleaseCard(),
+                              _buildEvidenceCard(),
                               VenueSetupChecklistCard(
                                 steps: steps,
                                 venueStatus: _venueStatus,
@@ -1142,6 +1268,92 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     );
   }
 
+  /// 21.7.21 evidence policy card — venue default plus per-court override
+  /// controls. The feature stays dark while the policy is NULL.
+  Widget _buildEvidenceCard() {
+    final policy = _venueEvidencePolicy;
+    final overridden = _courts.where((c) => c.evidenceMode != 'inherit');
+    final summary = policy == null
+        ? 'ไม่ขอหลักฐาน — จองแบบเดิม'
+        : '${policy.requirements.length} รายการ · '
+              '${switch (policy.deadlineMode) {
+                'after_release' => 'นับจากเวลาเปิดรอบ',
+                'release_day_time' =>
+                  'ภายใน ${(policy.deadlineTime ?? '').substring(0, (policy.deadlineTime?.length ?? 0) >= 5 ? 5 : policy.deadlineTime?.length ?? 0)} ของวันเปิดรอบ',
+                _ => 'ภายใน ${policy.minutes ?? '-'} นาทีหลังจอง',
+              }}'
+              '${policy.requirements.any((r) => r.isPaymentSlip) ? ' · มีสลิปชำระเงิน' : ''}';
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'หลักฐานการจอง',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _saving ? null : _editVenueEvidence,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: Text(policy == null ? 'เปิดใช้งาน' : 'แก้ไข'),
+              ),
+            ],
+          ),
+          _infoLine(Icons.fact_check_outlined, summary),
+          if (overridden.isNotEmpty)
+            _infoLine(
+              Icons.tune_rounded,
+              '${overridden.length} รายการตั้งหลักฐานเอง '
+              '(${overridden.map((c) => c.evidenceMode == 'off' ? 'ปิด' : 'กำหนดเอง').toSet().join('/')})',
+            ),
+          if (policy != null)
+            for (final court in _courts)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${court.name} — '
+                        '${switch (court.evidenceMode) {
+                          'off' => 'ไม่ขอหลักฐาน',
+                          'custom' => 'กำหนดเอง',
+                          _ => 'ตามสถานที่',
+                        }}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () => _editCourtEvidence(court),
+                      child: const Text(
+                        'ตั้งค่า',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          const SizedBox(height: 4),
+          Text(
+            'เมื่อเปิด ผู้จองต้องส่งหลักฐานก่อนกำหนด — ช่วงเวลาจะถูกพักไว้ระหว่างรอ '
+            'และถูกคืนอัตโนมัติถ้าหมดเวลา',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 21.7.19 venue-level unit label card. Shows the resolved label and its
   /// source (custom / reference sport / generic) and opens
   /// [VenueUnitLabelEditorDialog].
@@ -1349,6 +1561,21 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     }
     if (raw.contains('INVALID_RELEASE_RULE')) {
       return 'รอบเปิดจองไม่ถูกต้อง — เลือกวัน/เวลาและจองล่วงหน้าอย่างน้อย 7 วัน';
+    }
+    if (raw.contains('INVALID_EVIDENCE_REQUIREMENTS')) {
+      return 'รูปแบบรายการหลักฐานไม่ถูกต้อง กรุณาตรวจ key/ชื่อ/ประเภทอีกครั้ง';
+    }
+    if (raw.contains('INVALID_EVIDENCE_POLICY')) {
+      return 'การตั้งค่าหลักฐานไม่ถูกต้อง กรุณาตรวจตัวเลขและโหมดกำหนดเวลา';
+    }
+    if (raw.contains('PAYMENT_DESTINATION_REQUIRED')) {
+      return 'กรุณาระบุช่องทางรับชำระเงินสำหรับรายการที่บังคับส่งสลิป';
+    }
+    if (raw.contains('EVIDENCE_POLICY_REQUIRES_RELEASE')) {
+      return 'โหมดกำหนดเวลาตามรอบเปิดจองต้องตั้งรอบเปิดรับจองของสถานที่ก่อน';
+    }
+    if (raw.contains('VERIFY_NOT_ENABLED')) {
+      return 'การตรวจสลิปอัตโนมัติยังไม่เปิดสำหรับสถานที่นี้ กรุณาติดต่อทีมงาน';
     }
     if (raw.contains('INCOMPLETE_HOURS')) {
       return 'กรุณาระบุเวลาเปิด–ปิดให้ครบทั้ง 7 วัน';

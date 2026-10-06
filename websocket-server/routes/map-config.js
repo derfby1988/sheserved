@@ -185,6 +185,29 @@ function validateMapConfig(config, { environment, reason, confirmations } = {}) 
     }
   }
 
+  // features — server-driven UI feature gates shipped with the map config
+  // (VIDEO_SYSTEM_PLAN.md §22.6: the incident overview map entry must be
+  // toggleable from the server). Unknown names are warned, not rejected, so
+  // older clients can still save configs written by newer servers.
+  const KNOWN_FEATURE_GATES = ['incidentOverviewMap'];
+  const fv = config.features;
+  if (fv !== undefined && !_isObj(fv)) {
+    errors.push('features: must be an object');
+  } else if (_isObj(fv)) {
+    for (const [name, gate] of Object.entries(fv)) {
+      if (!_isObj(gate)) {
+        errors.push(`features.${name}: must be an object`);
+        continue;
+      }
+      if (typeof gate.enabled !== 'boolean') {
+        errors.push(`features.${name}.enabled: must be boolean`);
+      }
+      if (!KNOWN_FEATURE_GATES.includes(name)) {
+        warnings.push(`features.${name}: unknown feature gate ignored`);
+      }
+    }
+  }
+
   // fallback — must be an approved provider id, never silent.
   const fb = config.fallback;
   if (_isObj(fb) && fb.enabled === true) {

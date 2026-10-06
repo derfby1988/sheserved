@@ -22,6 +22,12 @@ class EmergencyTopBar extends StatelessWidget {
   final int selectedCategoryCount;
   final VoidCallback? onCategoryFilterTap;
 
+  /// Phase 22 — action ฝั่งขวาแบบข้อความ ("เลือกเหตุการณ์อื่น" ขณะมี
+  /// map-return context หรือ "เปลี่ยนประเภทเหตุ" ในโหมดแผนที่) — เมื่อให้มา
+  /// จะ **แทนที่** ปุ่มตัวกรองในตำแหน่งเดียวกัน (§22.1)
+  final String? trailingLabel;
+  final VoidCallback? onTrailingTap;
+
   const EmergencyTopBar({
     super.key,
     required this.onBackTap,
@@ -30,10 +36,14 @@ class EmergencyTopBar extends StatelessWidget {
     this.showCategoryFilter = false,
     this.selectedCategoryCount = 0,
     this.onCategoryFilterTap,
+    this.trailingLabel,
+    this.onTrailingTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final showTrailing =
+        trailingLabel != null && trailingLabel!.isNotEmpty && onTrailingTap != null;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -45,7 +55,10 @@ class EmergencyTopBar extends StatelessWidget {
           ),
         ] else
           const Spacer(),
-        if (showCategoryFilter && onCategoryFilterTap != null) ...[
+        if (showTrailing) ...[
+          const SizedBox(width: 8),
+          _TopBarTextPill(label: trailingLabel!, onTap: onTrailingTap!),
+        ] else if (showCategoryFilter && onCategoryFilterTap != null) ...[
           const SizedBox(width: 8),
           TrendingCategoryFilterButton(
             selectedCount: selectedCategoryCount,
@@ -53,6 +66,42 @@ class EmergencyTopBar extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// ป้ายข้อความแบบแคปซูลกระจก — ใช้พื้นที่เทียบเท่าปุ่มตัวกรอง (สูง 42)
+/// และย่อ/ตัดข้อความได้บนจอแคบ (§22.3.2)
+class _TopBarTextPill extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _TopBarTextPill({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(21),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
   }
 }

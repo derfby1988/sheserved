@@ -52,6 +52,7 @@ class _AdminCourtOwnerReviewPanelState
     extends State<AdminCourtOwnerReviewPanel> {
   List<VenueOwnerProfile> _applications = [];
   List<VenueSummary> _venues = [];
+  List<SlipVerificationProvider> _providers = [];
   bool _loading = true;
 
   /// Lazily loaded readiness details per venue id.
@@ -93,11 +94,13 @@ class _AdminCourtOwnerReviewPanelState
       final results = await Future.wait([
         widget.repo.listOwnerApplications(adminId),
         widget.repo.listVenuesForReview(adminId),
+        widget.repo.adminListSlipProviders(adminId),
       ]);
       if (!mounted) return;
       setState(() {
         _applications = results[0] as List<VenueOwnerProfile>;
         _venues = results[1] as List<VenueSummary>;
+        _providers = results[2] as List<SlipVerificationProvider>;
         _venueDetails.clear();
         _detailErrors.clear();
         _loading = false;
@@ -202,6 +205,13 @@ class _AdminCourtOwnerReviewPanelState
                   _empty('ไม่มีสถานที่รออนุมัติ')
                 else
                   for (final venue in _venues) _buildVenueCard(venue),
+                _sectionHeader(
+                  'ผู้ให้บริการตรวจสลิป (${_providers.length})',
+                ),
+                if (_providers.isEmpty)
+                  _empty('ยังไม่มีผู้ให้บริการ')
+                else
+                  for (final p in _providers) _buildProviderCard(p),
               ],
             ),
           );
@@ -416,6 +426,180 @@ class _AdminCourtOwnerReviewPanelState
     );
   }
 
+  Future<void> _toggleProvider(
+    SlipVerificationProvider p,
+    bool enabled,
+  ) async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    try {
+      await widget.repo.adminUpsertSlipProvider(
+        adminId: adminId,
+        code: p.code,
+        displayName: p.displayName,
+        isEnabled: enabled,
+      );
+      _toast(enabled ? 'เปิดผู้ให้บริการแล้ว' : 'ปิดผู้ให้บริการแล้ว');
+      await _load();
+    } catch (e) {
+      _toast(_mapError(e));
+    }
+  }
+
+  Future<void> _editProvider(SlipVerificationProvider p) async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    final endpoint = TextEditingController(text: p.endpointUrl ?? '');
+    final keyRef = TextEditingController();
+    final cost = TextEditingController(
+      text: p.costPerCheck.toStringAsFixed(2),
+    );
+    final timeout = TextEditingController(
+      text: '${p.verifyTimeoutMinutes}',
+    );
+    final priority = TextEditingController(text: '${p.priority}');
+    final notes = TextEditingController(text: p.notes ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ตั้งค่า ${p.displayName}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: endpoint,
+                decoration: const InputDecoration(
+                  labelText: 'Endpoint URL',
+                ),
+              ),
+              TextField(
+                controller: keyRef,
+                decoration: InputDecoration(
+                  labelText: 'Secret-store key ref',
+                  helperText: p.hasApiKey
+                      ? 'เว้นว่างเพื่อคงค่าเดิม'
+                      : 'ชื่อ env บนเซิร์ฟเวอร์ เช่น SLIPOK',
+                ),
+              ),
+              TextField(
+                controller: cost,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'ค่าใช้จ่ายต่อครั้ง',
+                ),
+              ),
+              TextField(
+                controller: timeout,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Timeout (นาที)',
+                ),
+              ),
+              TextField(
+                controller: priority,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'ลำดับความสำคัญ (น้อย=ก่อน)',
+                ),
+              ),
+              TextField(
+                controller: notes,
+                decoration: const InputDecoration(labelText: 'หมายเหตุ'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('บันทึก'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    try {
+      await widget.repo.adminUpsertSlipProvider(
+        adminId: adminId,
+        code: p.code,
+        displayName: p.displayName,
+        endpointUrl: endpoint.text.trim().isEmpty
+            ? null
+            : endpoint.text.trim(),
+        apiKeyRef: keyRef.text.trim().isEmpty ? null : keyRef.text.trim(),
+        costPerCheck: double.tryParse(cost.text.trim()),
+        verifyTimeoutMinutes: int.tryParse(timeout.text.trim()),
+        priority: int.tryParse(priority.text.trim()),
+        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+      );
+      _toast('บันทึกผู้ให้บริการแล้ว');
+      await _load();
+    } catch (e) {
+      _toast(_mapError(e));
+    }
+  }
+
+  Widget _buildProviderCard(SlipVerificationProvider p) {
+    return NeumorphicContainer(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${p.displayName} (${p.code})',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Switch(
+                value: p.isEnabled,
+                onChanged: (v) => _toggleProvider(p, v),
+              ),
+            ],
+          ),
+          Text(
+            [
+              'priority ${p.priority}',
+              '฿${p.costPerCheck.toStringAsFixed(2)}/ครั้ง',
+              'timeout ${p.verifyTimeoutMinutes} นาที',
+              p.hasApiKey ? 'มี API key' : 'ยังไม่ตั้ง API key',
+            ].join(' · '),
+            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+          ),
+          if (p.notes?.isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                p.notes!,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => _editProvider(p),
+              child: const Text('แก้ไข'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Text(
@@ -444,6 +628,10 @@ class _AdminCourtOwnerReviewPanelState
     }
     if (raw.contains('INVALID_STATUS')) {
       return 'สถานะสถานที่ไม่อนุญาตให้ทำรายการนี้';
+    }
+    if (raw.contains('INVALID_PROVIDER') ||
+        raw.contains('INVALID_VERIFY_POLICY')) {
+      return 'ค่าที่ตั้งไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

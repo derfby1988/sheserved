@@ -1,7 +1,7 @@
 # แผนรองรับ Google Maps และ OSM-based Tiles สำหรับ Sheserved
 
 > **วันที่สร้าง:** 2026-10-04
-> **สถานะ:** ข้อเสนอ implementation plan — ยังไม่ได้ implement
+> **สถานะ:** อยู่ระหว่าง rollout — Phase 0/1/2 เสร็จแล้ว (หลักฐาน: `docs/evidence/map_provider_phase0..2/`); Phase 3–8 ยังไม่เริ่ม
 > **ขอบเขต:** Web, iOS, Android และระบบย่อยที่มีหรือจะมีแผนที่ใน Sheserved
 > **เอกสารอ้างอิงที่ต้อง reconcile:** `docs/plans/Match_Sport_PLAN.md`, `docs/plans/VIDEO_SYSTEM_PLAN.md`, `docs/plans/Delivery_PLAN.md`, `docs/guides/ui_rendering_standards.md`, `docs/plans/ui_rendering_standards.md`, `docs/guides/flutter_web_enablement_plan.md`, `docs/secure/google_maps_key_restriction_guide.md`
 
@@ -41,11 +41,11 @@
 
 **Leaflet:** เป็น JavaScript map library สำหรับเว็บ ไม่ควรเป็นตัวเลือกใน Flutter Settings เพราะต้องดูแล WebView/JS bridge แยกจากแอปมือถือ ตัวเทียบเท่าใน Flutter คือ `flutter_map` ซึ่งใช้ API กลางข้าม Web/iOS/Android ได้
 
-### 2.2 Provider settings ยังไม่ครบวงจร
+### 2.2 Provider settings (อัปเดตหลัง Phase 1)
 
-`PlatformService` เก็บ master switch และค่ารายหน้าของ Web ในหน่วยความจำ และ `shouldShowLiveMap()` ตัดสินใจจากค่านั้น ยังไม่มี provider selection, tile source หรือ persistence (`lib/services/platform_service.dart:18-67`)
+~~`PlatformService` เก็บ master switch และค่ารายหน้าของ Web ในหน่วยความจำ~~ — Phase 1 เพิ่ม provider config ที่ persist จริงแล้ว: ตาราง `map_provider_config` (+audit), endpoints `GET /api/map-config`, `GET/PUT /api/admin/map-config` + history/rollback (admin-only, optimistic revision), model `lib/features/admin/models/map_provider_config.dart` (registry + `resolveTarget(feature, platform)`), `MapConfigService` (safe default เมื่อ server ล่ม) และ section ใหม่ใน Platform Settings (draft/save/conflict/rollback)
 
-หน้า Platform Settings มี Web on/off และรายหน้า แต่ iOS/Android toggles เปลี่ยนเฉพาะ widget state และ Save แสดง success SnackBar โดยไม่บันทึก (`lib/features/admin/presentation/pages/platform_settings_page.dart:71-183,566-585`)
+ข้อจำกัดเดิมที่ยังอยู่: config ยังไม่ได้ขับ renderer ของ production map (Phase 3+ เป็นคนต่อ) และ `PlatformService`/`shouldShowLiveMap()` เดิมยังทำงานแยกจาก config ใหม่นี้
 
 ### 2.3 ระบบย่อยที่ใช้ Google Maps อยู่
 
@@ -458,17 +458,52 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 
 ## 10. ลำดับ rollout ตามความสำคัญและความง่ายในการทดสอบ
 
-| Phase | Priority / ความยากทดสอบ | ขอบเขตและ exit gate |
-|---|---|---|
-| 0. Baseline + เลือก tile-source profile | P0 / ง่ายมาก | ยืนยันตัวเลือก provider, key restrictions, attribution, CSP/CORS, privacy, defaults; เก็บ screenshot/behavior baseline ของ Google; เลือก production source จากหลายตัวเลือก (ไม่ hardcode OSM Standard) |
-| 1. Settings model + persistence | P0 / ง่าย | config resolver, platform defaults, feature overrides, validation, revision, backend admin path; UI เลือก Google/OSM + source; unit/API/widget tests พิสูจน์ save/reload, permission, fallback config ก่อนเปลี่ยน renderer |
-| 2. Shared adapter + fake tile harness | P0 / ปานกลาง | map model/controller facade + Google/OSM adapter; automated tests ใช้ fake/local tiles; Google behavior เดิมผ่าน regression |
-| 3. Group Create Map | P1 / ง่ายสุดในกลุ่มแผนที่จริง | tap/drag pin, use location, fullscreen, restore พิกัด, สร้างก๊วนได้ `lat/lng` เดิม; Nominatim/Places flow ไม่เปลี่ยน |
-| 4. Home Map | P1 / ง่าย–ปานกลาง | initial camera, user location, nearest emergency, event markers, re-center, route polyline; permission denied + network interruption |
-| 5. Yield Way Dialog | P1 / ปานกลาง | inherit จาก Emergency; alert fixtures, fit bounds, route line, marker, ปุ่มให้ทาง/ไม่สะดวก, callback |
-| 6. Rescue Map | P1 / ยาก | แยก renderer จาก Directions; native Directions/polyline ไม่เปลี่ยน; Web route ตามสถานะจริงจนมี routing backend; loading/error + zero-area bounds |
-| 7. Emergency Live Map | P0 safety / ยากสุด | markers, responder routes, profession colors, live location, camera fit, overlays; ผ่าน Mission Lock, websocket, response state, controller lifecycle; OSM แสดงว่าไม่มี traffic; ห้าม production rollout ก่อน safety gate |
-| 8. Map systems อนาคต | P2 / ง่ายต่อระบบ | register feature key + ใช้ selector/config เดียวกันเมื่อมี map จริง; ไม่ reintroduce Sport Club Map View เพียงเพราะมี OSM |
+| Phase | Priority / ความยากทดสอบ | สถานะ | ขอบเขตและ exit gate |
+|---|---|---|---|
+| 0. Baseline + เลือก tile-source profile | P0 / ง่ายมาก | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase0/phase0_report.md)) | ยืนยันตัวเลือก provider, key restrictions, attribution, CSP/CORS, privacy, defaults; เก็บ screenshot/behavior baseline ของ Google; เลือก production source จากหลายตัวเลือก (ไม่ hardcode OSM Standard) |
+| 1. Settings model + persistence | P0 / ง่าย | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase1/phase1_report.md)) | config resolver, platform defaults, feature overrides, validation, revision, backend admin path; UI เลือก Google/OSM + source; unit/API/widget tests พิสูจน์ save/reload, permission, fallback config ก่อนเปลี่ยน renderer |
+| 2. Shared adapter + fake tile harness | P0 / ปานกลาง | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase2/phase2_report.md)) | map model/controller facade + Google/OSM adapter; automated tests ใช้ fake/local tiles; Google behavior เดิมผ่าน regression |
+| 3. Group Create Map | P1 / ง่ายสุดในกลุ่มแผนที่จริง | ⬜ ยังไม่เริ่ม | tap/drag pin, use location, fullscreen, restore พิกัด, สร้างก๊วนได้ `lat/lng` เดิม; Nominatim/Places flow ไม่เปลี่ยน |
+| 4. Home Map | P1 / ง่าย–ปานกลาง | ⬜ ยังไม่เริ่ม | initial camera, user location, nearest emergency, event markers, re-center, route polyline; permission denied + network interruption |
+| 5. Yield Way Dialog | P1 / ปานกลาง | ⬜ ยังไม่เริ่ม | inherit จาก Emergency; alert fixtures, fit bounds, route line, marker, ปุ่มให้ทาง/ไม่สะดวก, callback |
+| 6. Rescue Map | P1 / ยาก | ⬜ ยังไม่เริ่ม | แยก renderer จาก Directions; native Directions/polyline ไม่เปลี่ยน; Web route ตามสถานะจริงจนมี routing backend; loading/error + zero-area bounds |
+| 7. Emergency Live Map | P0 safety / ยากสุด | ⬜ ยังไม่เริ่ม (ส่วนย่อย §22 incident map ทำแล้ว — ดู §10.3) | markers, responder routes, profession colors, live location, camera fit, overlays; ผ่าน Mission Lock, websocket, response state, controller lifecycle; OSM แสดงว่าไม่มี traffic; ห้าม production rollout ก่อน safety gate |
+| 8. Map systems อนาคต | P2 / ง่ายต่อระบบ | ⬜ ยังไม่เริ่ม | register feature key + ใช้ selector/config เดียวกันเมื่อมี map จริง; ไม่ reintroduce Sport Club Map View เพียงเพราะมี OSM |
+
+### 10.3 สถานะจริงหลัง Phase 0–2 และงานที่ค้าง (อัปเดต 2026-10-06)
+
+**งานขนานที่ลงจอดก่อนกำหนด — Incident Overview Map (VIDEO_SYSTEM_PLAN §22):**
+`widgets/incident_map/incident_map_surface.dart` เป็นพื้นผิวสอง renderer
+(Google canvas-bitmap markers / flutter_map widget markers) ที่ gate ด้วย
+`resolveTarget(MapFeature.emergency)` + feature gate
+`features.incidentOverviewMap.enabled` — พิสูจน์แล้วว่า contract ของ Phase 1
+ขับ renderer จริงได้ แต่ surface นี้ **ไม่ได้ใช้ shared adapter ของ Phase 2**
+เพราะต้องการสิ่งที่ shared model ยังไม่มี: cluster markers ขนาดตาม count,
+canvas-generated bitmaps, photo-card overlay ที่วางตำแหน่งด้วย manual
+projection — งานค้าง: ตัดสินใจว่าจะย้ายมาใช้ shared layer (ขยาย model ให้รองรับ
+cluster/overlay) หรือบันทึกเป็น documented carve-out
+
+**งานค้างจาก Phase 0–2:**
+
+- Production tile source ยังไม่ตัดสิน — OSM Standard อนุมัติเฉพาะ
+  dev/staging/smoke; CARTO keyless endpoint ตายแล้ว (HTTP 200 + "API KEY
+  REQUIRED" watermark) ต้องสมัคร key/ยืนยัน commercial terms หรือเลือก
+  managed provider/self-host (§15 ข้อ 1 ยังเปิด)
+- **Web CSP ยังไม่แก้ใน source** — หลักฐาน Phase 0/2 patch เฉพาะ generated
+  build; `web/index.html` (หรือต้นทาง `flutter_bootstrap.js`) ต้องเพิ่ม tile
+  hosts ลง `connect-src` และตั้ง `useLocalCanvasKit` ถาวรก่อนเชื่อม OSM บน
+  web จริง ไม่เช่นนั้น CanvasKit boot ล้มตั้งแต่ก่อนแผนที่
+- OSM adapter: `animateTo` เป็น instant move (ไม่มี animated camera), persistent
+  `padding` ไม่ propagate นอก `fitToBounds`, ไม่มี tilt — ต้องตัดสินใจว่าพอหรือ
+  เพิ่ม `flutter_map_animations` ก่อน Phase 6–7 (Rescue/Emergency)
+- Google adapter ยังไม่เคย render จริงบนอุปกรณ์ (smoke เฉพาะ OSM) — Phase 3
+  ต้อง smoke ทั้งสอง renderer หลัง config flag
+- Semantics/keyboard-traversal test ของ settings UI ยัง partial → Phase 8
+- ยืนยัน deploy path ของ `database/migrations/04_create_map_provider_config.sql`
+  เมื่อจะเปิด staging/prod
+- Incident map (§22) ค้างตามแผนของมันเอง: device verification ทั้งสอง
+  renderer, load test, canary metric `map_load_emergency_overview`, cluster
+  tap zoom-in animation
 
 ### เงื่อนไข rollout ทั่วไป
 
@@ -689,9 +724,9 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 
 ## 15. จุดตัดสินใจที่ต้องยืนยันก่อน implement
 
-1. **Tile source สำหรับ production:** เลือก managed provider รายใด หรือ self-host (ต้องประเมินราคา/quota/คุณภาพแผนที่ไทย/privacy)
-2. **Web default:** เปิด OSM ให้ทุกหน้าหรือเปิดเฉพาะบาง feature ในช่วงแรก
-3. **Emergency/Rescue:** ยอมรับการไม่มี traffic layer บน OSM หรือคง Google จนกว่าจะมี traffic provider
-4. **Routing บน Web:** จะทำ backend proxy/OSRM หรือคงปิด route drawing บน Web
-5. **Storage ของ config:** ตารางใหม่ + backend endpoint หรือใช้ `app_settings` เดิมที่แก้ policy
-6. **Permission:** ใช้ role `admin` ต่อก่อน แล้วค่อยแยก `platform.map.manage`
+1. **Tile source สำหรับ production:** เลือก managed provider รายใด หรือ self-host (ต้องประเมินราคา/quota/คุณภาพแผนที่ไทย/privacy) — **ค้างอยู่** (Phase 0 ตัด CARTO keyless + OpenTopoMap ออกจาก production candidates แล้ว; OSM Standard อนุมัติเฉพาะ dev/staging)
+2. **Web default:** เปิด OSM ให้ทุกหน้าหรือเปิดเฉพาะบาง feature ในช่วงแรก — **ค้างอยู่** (ตอนนี้ config default ปิด OSM บน web ไว้ก่อน)
+3. **Emergency/Rescue:** ยอมรับการไม่มี traffic layer บน OSM หรือคง Google จนกว่าจะมี traffic provider — **ค้างอยู่** (ตอนนี้ `MapCapabilities` รายงาน `trafficLayer:false` พร้อมให้ UI ซ่อน toggle)
+4. **Routing บน Web:** จะทำ backend proxy/OSRM หรือคงปิด route drawing บน Web — **ค้างอยู่**
+5. **Storage ของ config:** ตารางใหม่ + backend endpoint หรือใช้ `app_settings` เดิมที่แก้ policy — **ตัดสินใจแล้ว:** ตาราง `map_provider_config` + endpoints เฉพาะ (Phase 1) ไม่เขียน `app_settings`
+6. **Permission:** ใช้ role `admin` ต่อก่อน แล้วค่อยแยก `platform.map.manage` — **ตัดสินใจแล้วชั่วคราว:** `requireRole('admin')` (Phase 1); แยก scope เป็นงานอนาคต

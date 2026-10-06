@@ -575,4 +575,102 @@ void main() {
       expect(find.textContaining('ว่าง — '), findsNothing);
     });
   });
+
+  group('evidence holds (21.7.21)', () {
+    test('decodes held ranges from the availability payload', () {
+      final a = CourtAvailability.fromJson({
+        'courtId': 'c1',
+        'booked': [],
+        'blocked': [],
+        'held': [
+          {
+            'startsAt': '2040-01-01T08:00:00Z',
+            'endsAt': '2040-01-01T09:00:00Z',
+          },
+        ],
+        'hours': [],
+      });
+      expect(a.held.single.startsAt, DateTime.utc(2040, 1, 1, 8));
+      expect(a.held.single.endsAt, DateTime.utc(2040, 1, 1, 9));
+    });
+
+    test('older payloads without held still decode', () {
+      final a = CourtAvailability.fromJson({
+        'courtId': 'c1',
+        'booked': [],
+        'blocked': [],
+        'hours': [],
+      });
+      expect(a.held, isEmpty);
+    });
+
+    testWidgets('held slots are shown but not selectable', (tester) async {
+      const timezone = 'Asia/Bangkok';
+      final date = DateTime(2040, 1, 1);
+      DateTime at(int hour) => VenueLocalTime.atWallTime(date, timezone, hour);
+      final availability = CourtAvailability(
+        courtId: 'court-1',
+        held: [(startsAt: at(15), endsAt: at(16))],
+        hours: [
+          VenueOperatingHours(
+            dayOfWeek: at(0).weekday % 7,
+            openTime: '14:00',
+            closeTime: '22:00',
+          ),
+        ],
+      );
+      DateTime? tapped;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: availability,
+              date: date,
+              timezone: timezone,
+              now: at(13),
+              onSlotTap: (start, end) => tapped = start,
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byTooltip('รอหลักฐาน — อาจว่างอีกครั้งถ้าหลักฐานไม่ผ่าน'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('15:00'));
+      expect(tapped, isNull);
+    });
+
+    testWidgets('free-only hides held slots from selection', (tester) async {
+      const timezone = 'Asia/Bangkok';
+      final date = DateTime(2040, 1, 1);
+      DateTime at(int hour) => VenueLocalTime.atWallTime(date, timezone, hour);
+      final availability = CourtAvailability(
+        courtId: 'court-1',
+        held: [(startsAt: at(15), endsAt: at(16))],
+        hours: [
+          VenueOperatingHours(
+            dayOfWeek: at(0).weekday % 7,
+            openTime: '14:00',
+            closeTime: '22:00',
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtAvailabilityPicker(
+              availability: availability,
+              date: date,
+              timezone: timezone,
+              now: at(13),
+              freeOnly: true,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('15:00'), findsNothing);
+    });
+  });
 }

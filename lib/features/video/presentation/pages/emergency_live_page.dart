@@ -44,6 +44,12 @@ import 'widgets/emergency_map_section.dart';
 import 'widgets/emergency_ui_overlay.dart';
 import 'widgets/emergency_top_bar.dart';
 import 'widgets/trending_category_filter_sheet.dart';
+import '../../models/incident_map_models.dart';
+import '../../data/repositories/incident_map_repository.dart';
+import '../../../../services/map_config_service.dart';
+import '../../../../services/platform_service.dart';
+import '../../../admin/models/map_provider_config.dart';
+import 'widgets/incident_map/incident_map_surface.dart';
 import 'widgets/emergency_chat_widget.dart';
 import 'widgets/fullscreen_video_viewer.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
@@ -58,6 +64,7 @@ import 'package:intl/intl.dart';
 part 'parts/emergency_reporting_logic.dart';
 part 'parts/emergency_websocket_logic.dart';
 part 'parts/emergency_navigation_logic.dart';
+part 'parts/emergency_incident_map_logic.dart';
 
 /// หน้า Emergency Live - ออกแบบตาม Figma
 /// แสดงวิดีโอไลฟ์ + แผนที่ GPS + ปุ่มโต้ตอบ
@@ -209,6 +216,26 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   int _initDataGeneration = 0;
   String? _highlightVideoId;
 
+  // ✅ Phase 22: แผนที่เกิดเหตุ — mode/session/state (§22.3)
+  // fields อยู่ที่นี่ (State class) ส่วน logic อยู่ใน
+  // parts/emergency_incident_map_logic.dart (extension ประกาศ field ไม่ได้)
+  EmergencySurfaceMode _surfaceMode = EmergencySurfaceMode.live;
+  IncidentMapSession? _incidentMapSession;
+  IncidentMapUiState _incidentMapUiState = IncidentMapUiState.loading;
+  IncidentMapResponse? _incidentMapData;
+  IncidentAgeBucket? _incidentMapHighlightedBucket;
+  IncidentMapAvailability? _incidentMapAvailability;
+  bool _incidentOverviewMapEnabled = false;
+  int _incidentMapFetchGeneration = 0;
+  IncidentMapRepository? _incidentMapRepository;
+  int _incidentMapNewCount = 0;
+  StreamSubscription? _incidentMapRealtimeSub;
+  final GlobalKey<LiveViewWidgetState> _liveViewKey =
+      GlobalKey<LiveViewWidgetState>();
+
+  bool get _isIncidentMapMode =>
+      _surfaceMode == EmergencySurfaceMode.incidentMap;
+
   int _prepCountdown = 0;
   int _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
   Timer? _countdownTimer;
@@ -265,6 +292,8 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _loadDonationRequests(); // ✅ โหลดรายการคำร้องบริจาคที่แอคทีฟอยู่
     _startResponderTracking();
     _initCompass();
+    _loadIncidentMapGate(); // ✅ Phase 22: feature gate จาก server config
+    _subscribeIncidentMapRealtime(); // ✅ Phase 22: realtime pill (§22.3.6)
   }
 
   ThaiMhungRulerPhoto? _floatingMapPhoto;
@@ -306,6 +335,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     if (_currentVideoId != null) {
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     }
+    _incidentMapRealtimeSub?.cancel(); // ✅ Phase 22
     _videoPlayerController?.removeListener(_syncGpsWithVideo);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
@@ -429,7 +459,15 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       maxChatHeight = availableChatHeight.clamp(100.0, mq.size.height * 0.25);
     }
 
-    return Scaffold(
+    return PopScope(
+      // ✅ Phase 22: hardware back ในโหมดแผนที่ = ออกจากโหมดแผนที่ก่อน
+      // ไม่ pop ออกจากหน้า (§22.3.5)
+      canPop: !_isIncidentMapMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_isIncidentMapMode) _exitIncidentMapMode();
+      },
+      child: Scaffold(
       body: GestureDetector(
         onTap: () {
           if (_isChatVisible) {
@@ -611,16 +649,27 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               content: _buildMainContent(),
             ),
 
+            // ✅ Phase 22 Layer 2.5: แผนที่เกิดเหตุ — แทรกระหว่าง UI overlay
+            // (Layer 2) กับแถวปุ่ม (Layer 3) เพื่อให้แถวปุ่มอยู่เหนือแผนที่
+            // และปิดบังการ์ด/แท็บ/แชทของโหมดปกติ (§22.3.2)
+            if (_isIncidentMapMode)
+              Positioned.fill(child: _buildIncidentMapLayer()),
+
             // Layer 3: Top Bar (Back Button, Video Controls, Trending Filter)
             // ✅ Phase 20: ปุ่มตัวกรองประเภทเหตุชิดขวาของแถวนี้ (เดิมอยู่ใน
             // header ของกล่องยอดนิยม) — เงื่อนไขการแสดงต้องเทียบเท่าเดิม:
             // UI เปิด + tab 0 + ไม่ได้กำลังรายงานไทยมุง + filter พร้อม
+            // ✅ Phase 22: ในโหมดแผนที่ — ซ่อนเครื่องมือวิดีโอ/ตัวกรอง,
+            // ย้อนกลับ = ออกจากโหมดแผนที่, ฝั่งขวา = "เปลี่ยนประเภทเหตุ";
+            // ในโหมดปกติที่มี map-return context — ฝั่งขวา = "เลือกเหตุการณ์อื่น"
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
               left: 16,
               right: 16,
               child: EmergencyTopBar(
-                onBackTap: () => Navigator.of(context).pop(),
+                onBackTap: _isIncidentMapMode
+                    ? _exitIncidentMapMode
+                    : () => Navigator.of(context).pop(),
                 backButtonVisible:
                     _isUiVisible &&
                     _selectedTab != 2 &&
@@ -628,6 +677,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                     !_isThaiMhungReporting,
                 videoControls:
                     _isUiVisible &&
+                        !_isIncidentMapMode &&
                         _selectedTab != 2 &&
                         _selectedTab != 1 &&
                         !_isThaiMhungReporting &&
@@ -639,11 +689,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                     : null,
                 showCategoryFilter:
                     _isUiVisible &&
+                    !_isIncidentMapMode &&
                     _selectedTab == 0 &&
                     !_isThaiMhungReporting &&
                     _canShowTrendingCategoryFilter,
                 selectedCategoryCount: _selectedTrendingCategoryIds.length,
                 onCategoryFilterTap: _openTrendingCategoryFilterSheet,
+                trailingLabel: _isIncidentMapMode
+                    ? 'เปลี่ยนประเภทเหตุ'
+                    : (_incidentMapSession?.pinnedVideoId != null &&
+                            !_isIncidentMapMode)
+                        ? 'เลือกเหตุการณ์อื่น'
+                        : null,
+                onTrailingTap: _isIncidentMapMode
+                    ? _openIncidentMapCategoryPicker
+                    : (_incidentMapSession?.pinnedVideoId != null
+                        ? _returnToIncidentMap
+                        : null),
               ),
             ),
 
@@ -807,6 +869,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               Positioned.fill(child: _buildEmergencyHealthPanicOverlay()),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1090,6 +1153,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
         );
       } else {
         return LiveViewWidget(
+          key: _liveViewKey,
           chewieController: _chewieController,
           currentVideoId: _currentVideoId,
           currentVideo: _currentVideo,
@@ -1111,6 +1175,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           // การ์ดภารกิจตนเอง + การ์ดที่ได้รับแจ้งเตือน/มีสิทธิเข้าร่วมเป็นจิตอาสา
           // ✅ Phase 20: ต่อด้วย category filter (ยกเว้นช่วง suspension)
           trendingVideos: _trendingVideosForPanel(),
+          pinnedFromMapVideoId: _incidentMapSession?.pinnedVideoId,
           onLoadMoreTrending: _loadMoreTrendingVideos,
           isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
           selectedTrendingCategoryIds: _selectedTrendingCategoryIds,

@@ -184,6 +184,9 @@ void main() {
     // Dirty → save bar appears.
     expect(find.text('บันทึกการตั้งค่า'), findsOneWidget);
 
+    // §22.10 gate card ทำให้เนื้อหาสูงขึ้น — scroll ให้ปุ่มบันทึกมองเห็นก่อน
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();
 
@@ -208,6 +211,9 @@ void main() {
     await tester.tap(
       find.byWidgetPredicate((w) => w is Switch && w.value == false).first,
     );
+    await tester.pumpAndSettle();
+    // §22.10 gate card ทำให้เนื้อหาสูงขึ้น — scroll ให้ปุ่มบันทึกมองเห็นก่อน
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();
@@ -256,6 +262,9 @@ void main() {
     await tester.tap(
       find.byWidgetPredicate((w) => w is Switch && w.value == false).first,
     );
+    await tester.pumpAndSettle();
+    // §22.10 gate card ทำให้เนื้อหาสูงขึ้น — scroll ให้ปุ่มบันทึกมองเห็นก่อน
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();

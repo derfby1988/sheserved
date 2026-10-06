@@ -988,6 +988,424 @@ class BookCourtRepository {
         .toSet();
   }
 
+  // =============== Evidence-gated booking groups (Phase 21.7.21) ========
+
+  /// Sanitized policy surface for the booking dialog — NULL when the court
+  /// has no effective evidence policy (legacy flow applies).
+  Future<CourtEvidenceSurface?> getCourtEvidenceSurface(
+    String courtId,
+  ) async {
+    final res = await _client.rpc(
+      'get_sports_venue_court_evidence_surface',
+      params: {'p_court_id': courtId},
+    );
+    if (res == null) return null;
+    return CourtEvidenceSurface.fromJson(
+      Map<String, dynamic>.from(res as Map),
+    );
+  }
+
+  /// Creates an atomic booking group. Every item must carry the same venue
+  /// and approval mode; the server computes prices and deadlines.
+  /// [items] entries: {courtId, startsAt, endsAt, priceScheduleVersion?}.
+  Future<String> createBookingGroup({
+    required String userId,
+    required List<
+      ({
+        String courtId,
+        DateTime startsAt,
+        DateTime endsAt,
+        int? priceScheduleVersion,
+      })
+    >
+    items,
+    required int termsVersion,
+    String? idempotencyKey,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'create_sports_venue_booking_group',
+      params: {
+        'p_user_id': userId,
+        'p_items': [
+          for (final item in items)
+            {
+              'court_id': item.courtId,
+              'starts_at': item.startsAt.toUtc().toIso8601String(),
+              'ends_at': item.endsAt.toUtc().toIso8601String(),
+              ...?(item.priceScheduleVersion == null
+                  ? null
+                  : {
+                      'expected_price_schedule_version':
+                          item.priceScheduleVersion,
+                    }),
+            },
+        ],
+        'p_terms_version': termsVersion,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    final groupId = res.toString();
+    _notifyVenueBooking(groupId);
+    return groupId;
+  }
+
+  /// Submits evidence files already uploaded to the private bucket.
+  /// [items] entries: {requirementKey, storagePath, mime?, sizeBytes?}.
+  /// Returns per-item results (evidenceId, revision, verificationStatus).
+  Future<List<Map<String, dynamic>>> submitGroupEvidence({
+    required String userId,
+    required String groupId,
+    required List<
+      ({
+        String requirementKey,
+        String storagePath,
+        String? mime,
+        int? sizeBytes,
+      })
+    >
+    items,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'submit_sports_venue_booking_evidence',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_items': [
+          for (final item in items)
+            {
+              'requirement_key': item.requirementKey,
+              'storage_path': item.storagePath,
+              if (item.mime != null) 'mime': item.mime,
+              if (item.sizeBytes != null) 'size_bytes': item.sizeBytes,
+            },
+        ],
+      },
+    );
+    return (res as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  /// Booker or manager cancels the whole open group; held slots release.
+  Future<void> cancelBookingGroup(
+    String userId,
+    String groupId, {
+    String? reason,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'cancel_sports_venue_booking_group',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_reason': reason,
+      },
+    );
+    _notifyVenueBooking(groupId);
+  }
+
+  /// Manager/owner decision. Group-level (requirementKey null): approve a
+  /// pending group (pre-approval → hold, or confirm) or reject it.
+  /// Evidence-level: approve/reject the current revision of one
+  /// requirement — payment slips are owner-only server-side.
+  /// Returns 'confirmed' | 'rejected' | 'conflict' | 'awaiting_evidence' |
+  /// 'evidence_approved' | 'evidence_rejected'.
+  Future<String> decideBookingGroup({
+    required String userId,
+    required String groupId,
+    required String decision,
+    String? reason,
+    String? requirementKey,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'decide_sports_venue_booking_group',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_decision': decision,
+        'p_reason': reason,
+        'p_requirement_key': requirementKey,
+      },
+    );
+    _notifyVenueBooking(groupId);
+    return res.toString();
+  }
+
+  /// Booker moves pending (pre-hold) group children to new slots.
+  /// [items] must cover every pending child exactly once.
+  Future<void> changeBookingGroupSlots({
+    required String userId,
+    required String groupId,
+    required List<({String bookingId, DateTime startsAt, DateTime endsAt})>
+    items,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'change_sports_venue_booking_group_slots',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_items': [
+          for (final item in items)
+            {
+              'booking_id': item.bookingId,
+              'starts_at': item.startsAt.toUtc().toIso8601String(),
+              'ends_at': item.endsAt.toUtc().toIso8601String(),
+            },
+        ],
+      },
+    );
+    _notifyVenueBooking(groupId);
+  }
+
+  /// Booker reports an actual transfer the provider could not confirm
+  /// (or after forfeit) — the owner decides whether money arrived.
+  Future<String> reportGroupPaymentClaim({
+    required String userId,
+    required String groupId,
+    double? reportedAmount,
+    String? transferReference,
+    String? evidencePath,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'report_sports_venue_booking_payment_claim',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_reported_amount': reportedAmount,
+        'p_transfer_reference': transferReference,
+        'p_evidence_path': evidencePath,
+      },
+    );
+    return res.toString();
+  }
+
+  /// Booker view: own groups with countdowns, evidence, claims, refunds.
+  Future<({DateTime? serverNow, List<VenueBookingGroup> groups})>
+  listMyBookingGroups(String userId) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'list_my_sports_venue_booking_groups',
+      params: {'p_user_id': userId},
+    );
+    final map = Map<String, dynamic>.from(res as Map);
+    return (
+      serverNow: DateTime.tryParse(map['serverNow']?.toString() ?? ''),
+      groups: (map['groups'] as List? ?? const [])
+          .map(
+            (e) =>
+                VenueBookingGroup.fromJson(Map<String, dynamic>.from(e)),
+          )
+          .toList(),
+    );
+  }
+
+  /// Owner/manager queue: attention groups, open payment claims, active
+  /// refund cases.
+  Future<OwnerEvidenceQueue> listEvidenceQueue(
+    String userId,
+    String venueId,
+  ) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'list_sports_venue_evidence_queue',
+      params: {'p_user_id': userId, 'p_venue_id': venueId},
+    );
+    return OwnerEvidenceQueue.fromJson(
+      Map<String, dynamic>.from(res as Map),
+    );
+  }
+
+  /// Owner-only claim decision. [decision] is 'received' (requires
+  /// [receivedAmount]) or 'not_received'.
+  Future<void> decidePaymentClaim({
+    required String userId,
+    required String claimId,
+    required String decision,
+    double? receivedAmount,
+    String? note,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'decide_sports_venue_booking_payment_claim',
+      params: {
+        'p_user_id': userId,
+        'p_claim_id': claimId,
+        'p_decision': decision,
+        'p_received_amount': receivedAmount,
+        'p_note': note,
+      },
+    );
+  }
+
+  /// Owner-only refund-case action: 'approve' (requires refundAmount),
+  /// 'complete' (externalRef/receiptPath for the manual transfer record),
+  /// 'fail' or 'not_refundable' (reason required for the last).
+  Future<void> decideRefundCase({
+    required String userId,
+    required String caseId,
+    required String action,
+    double? refundAmount,
+    String? reason,
+    String? externalRef,
+    String? receiptPath,
+  }) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'decide_sports_venue_booking_refund_case',
+      params: {
+        'p_user_id': userId,
+        'p_case_id': caseId,
+        'p_action': action,
+        'p_refund_amount': refundAmount,
+        'p_reason': reason,
+        'p_external_ref': externalRef,
+        'p_receipt_path': receiptPath,
+      },
+    );
+  }
+
+  /// Mints a short-lived read token for one private evidence path. The
+  /// Node backend redeems it and streams the object — the bucket stays
+  /// INSERT-only with no public URL.
+  Future<String> mintEvidenceReadToken(
+    String userId,
+    String storagePath,
+  ) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'mint_sports_venue_evidence_read_token',
+      params: {'p_user_id': userId, 'p_path': storagePath},
+    );
+    final map = Map<String, dynamic>.from(res as Map);
+    return map['token']?.toString() ?? '';
+  }
+
+  // =============== Owner evidence policy config ========================
+
+  /// Venue-level evidence policy. `policy == null` disables the feature
+  /// (server clears every policy column).
+  Future<void> setVenueEvidencePolicy(
+    String userId,
+    String venueId,
+    VenueEvidencePolicy? policy,
+  ) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_evidence_policy',
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_policy': policy?.toJson(),
+      },
+    );
+  }
+
+  /// Court override: [mode] is 'inherit' | 'off' | 'custom'. 'custom'
+  /// requires a complete [policy]; 'inherit'/'off' ignore it.
+  Future<void> setCourtEvidencePolicy(
+    String userId,
+    String courtId,
+    String mode,
+    VenueEvidencePolicy? policy,
+  ) async {
+    _assertCurrentUser(userId);
+    await _client.rpc(
+      'set_sports_venue_court_evidence_policy',
+      params: {
+        'p_user_id': userId,
+        'p_court_id': courtId,
+        'p_mode': mode,
+        'p_policy': policy?.toJson(),
+      },
+    );
+  }
+
+  // =============== Admin provider controls (Phase 21.7.21.6) ===========
+
+  /// Admin-only venue verify policy: scope ('disabled'|'whitelist'|'all'),
+  /// cost bearer, monthly quota and worker timeout.
+  Future<void> adminSetVenueVerifyPolicy({
+    required String adminId,
+    required String venueId,
+    String? verifyScope,
+    String? costBearer,
+    int? monthlyQuota,
+    int? verifyTimeoutMinutes,
+    bool clearQuota = false,
+    bool clearTimeout = false,
+  }) async {
+    _assertCurrentUser(adminId);
+    await _client.rpc(
+      'admin_set_sports_venue_verify_policy',
+      params: {
+        'p_admin_id': adminId,
+        'p_venue_id': venueId,
+        'p_verify_scope': verifyScope,
+        'p_verify_cost_bearer': costBearer,
+        'p_verify_monthly_quota': monthlyQuota,
+        'p_verify_timeout_minutes': verifyTimeoutMinutes,
+        'p_clear_quota': clearQuota,
+        'p_clear_timeout': clearTimeout,
+      },
+    );
+  }
+
+  Future<List<SlipVerificationProvider>> adminListSlipProviders(
+    String adminId,
+  ) async {
+    _assertCurrentUser(adminId);
+    final res = await _client.rpc(
+      'admin_list_slip_verification_providers',
+      params: {'p_admin_id': adminId},
+    );
+    return (res as List)
+        .map(
+          (e) => SlipVerificationProvider.fromJson(
+            Map<String, dynamic>.from(e),
+          ),
+        )
+        .toList();
+  }
+
+  /// Admin provider registry upsert. [apiKeyRef] is a secret-store name —
+  /// never a raw key.
+  Future<void> adminUpsertSlipProvider({
+    required String adminId,
+    required String code,
+    required String displayName,
+    String? endpointUrl,
+    String? apiKeyRef,
+    double? costPerCheck,
+    int? verifyTimeoutMinutes,
+    Map<String, dynamic>? capabilities,
+    bool? isEnabled,
+    int? priority,
+    String? notes,
+  }) async {
+    _assertCurrentUser(adminId);
+    await _client.rpc(
+      'admin_upsert_slip_verification_provider',
+      params: {
+        'p_admin_id': adminId,
+        'p_code': code,
+        'p_display_name': displayName,
+        'p_endpoint_url': endpointUrl,
+        'p_api_key_ref': apiKeyRef,
+        'p_cost_per_check': costPerCheck,
+        'p_verify_timeout_minutes': verifyTimeoutMinutes,
+        'p_capabilities': capabilities,
+        'p_is_enabled': isEnabled,
+        'p_priority': priority,
+        'p_notes': notes,
+      },
+    );
+  }
+
   // =============== Reviews ===============
 
   Future<String> submitReview({

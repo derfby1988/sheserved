@@ -337,6 +337,11 @@ class MapProviderConfig {
   final FallbackConfig fallback;
   final RateConfig rateConfig;
 
+  /// Server-driven UI feature gate (VIDEO_SYSTEM_PLAN.md §22.6): shows the
+  /// per-category "แผนที่เกิดเหตุ" entry in the trending filter sheet.
+  /// Absent/false = hidden (safe default — §4.9).
+  final bool incidentOverviewMapEnabled;
+
   const MapProviderConfig({
     required this.revision,
     required this.environment,
@@ -345,6 +350,7 @@ class MapProviderConfig {
     required this.services,
     required this.fallback,
     required this.rateConfig,
+    this.incidentOverviewMapEnabled = false,
   });
 
   /// Environment default embedded in the app — used when the server config
@@ -369,9 +375,15 @@ class MapProviderConfig {
         : json; // tolerate bare config docs
     final pd = config['platformDefaults'];
     final fo = config['featureOverrides'];
+    final features = config['features'];
+    final incidentGate =
+        (features is Map && features['incidentOverviewMap'] is Map)
+            ? (features['incidentOverviewMap'] as Map)['enabled']
+            : null;
     return MapProviderConfig(
       revision: (json['revision'] as num?)?.toInt() ?? 0,
       environment: json['environment'] as String? ?? 'dev',
+      incidentOverviewMapEnabled: incidentGate == true,
       platformDefaults: {
         for (final p in MapPlatform.values)
           p: MapTarget.fromJson(
@@ -410,6 +422,9 @@ class MapProviderConfig {
         'services': services.toJson(),
         'fallback': fallback.toJson(),
         'rateConfig': rateConfig.toJson(),
+        'features': {
+          'incidentOverviewMap': {'enabled': incidentOverviewMapEnabled},
+        },
       };
 
   /// Dirty check: compares config payload only (revision/env excluded).
@@ -424,6 +439,7 @@ class MapProviderConfig {
     ServiceConfig? services,
     FallbackConfig? fallback,
     RateConfig? rateConfig,
+    bool? incidentOverviewMapEnabled,
   }) =>
       MapProviderConfig(
         revision: revision ?? this.revision,
@@ -433,6 +449,8 @@ class MapProviderConfig {
         services: services ?? this.services,
         fallback: fallback ?? this.fallback,
         rateConfig: rateConfig ?? this.rateConfig,
+        incidentOverviewMapEnabled:
+            incidentOverviewMapEnabled ?? this.incidentOverviewMapEnabled,
       );
 
   /// Resolve the effective target for [feature] on [platform]:

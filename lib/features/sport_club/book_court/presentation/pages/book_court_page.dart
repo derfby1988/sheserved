@@ -21,6 +21,7 @@ import '../../data/book_court_repository.dart';
 import '../../domain/book_court_filter.dart';
 import '../../domain/venue_local_time.dart';
 import '../widgets/book_court_filter_sheet.dart';
+import '../widgets/booking_group_sheet.dart';
 import '../widgets/book_court_quick_filter_row.dart';
 import '../widgets/court_booking_dialog.dart';
 import '../widgets/court_card.dart';
@@ -410,6 +411,15 @@ class _BookCourtPageState extends State<BookCourtPage> {
     );
     if (ranges == null || ranges.isEmpty || !mounted) return;
 
+    // Evidence-gated courts take the atomic group path; when the venue
+    // has no policy (surface == null) the legacy per-slot flow is
+    // completely unchanged.
+    CourtEvidenceSurface? evidenceSurface;
+    try {
+      evidenceSurface = await _repo.getCourtEvidenceSurface(court.id);
+    } catch (_) {}
+    if (!mounted) return;
+
     final slots = [
       for (final range in ranges)
         (
@@ -428,7 +438,9 @@ class _BookCourtPageState extends State<BookCourtPage> {
           context,
           terms: terms,
           venueName: venue.name,
-          acceptLabel: slots.length > 1
+          acceptLabel: evidenceSurface != null
+              ? 'ยอมรับและดำเนินการต่อ'
+              : slots.length > 1
               ? 'ยอมรับและจอง ${slots.length - completed} ช่วง'
               : 'ยอมรับและจอง',
         );
@@ -442,6 +454,27 @@ class _BookCourtPageState extends State<BookCourtPage> {
               'ยกเลิกการจองช่วงที่เหลือ',
             );
           }
+          return;
+        }
+        if (evidenceSurface != null) {
+          // Atomic group create — every selected range succeeds or none do.
+          final groupId = await _repo.createBookingGroup(
+            userId: actorUserId,
+            items: [
+              for (final range in ranges)
+                (
+                  courtId: court.id,
+                  startsAt: range.start,
+                  endsAt: range.end,
+                  priceScheduleVersion:
+                      range.priceQuote.priceScheduleVersion,
+                ),
+            ],
+            termsVersion: accepted.version,
+            idempotencyKey: const Uuid().v4(),
+          );
+          if (!mounted) return;
+          await _openGroupSheet(groupId);
           return;
         }
         final result = await _booking.bookSlots(
@@ -486,6 +519,37 @@ class _BookCourtPageState extends State<BookCourtPage> {
           completed,
           _mapBookingError(error, timezone: venue.timezone),
         );
+      }
+    }
+  }
+
+  /// Opens the evidence/hold detail sheet for a freshly created or
+  /// existing booking group. The group is looked up from the booker
+  /// listing so countdowns always run on the server clock.
+  Future<void> _openGroupSheet(String groupId) async {
+    final userId = _userId;
+    if (userId == null) return;
+    try {
+      final res = await _repo.listMyBookingGroups(userId);
+      if (!mounted) return;
+      final group = res.groups
+          .where((g) => g.id == groupId)
+          .cast<VenueBookingGroup?>()
+          .firstOrNull;
+      if (group == null) {
+        _toast('สร้างการจองแล้ว — ดูรายละเอียดในหน้าการจองของฉัน');
+        return;
+      }
+      await BookingGroupSheet.show(
+        context,
+        repo: _repo,
+        userId: userId,
+        group: group,
+        serverNow: res.serverNow,
+      );
+    } catch (_) {
+      if (mounted) {
+        _toast('สร้างการจองแล้ว — ดูรายละเอียดในหน้าการจองของฉัน');
       }
     }
   }

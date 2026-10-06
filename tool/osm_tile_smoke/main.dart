@@ -1,52 +1,21 @@
-// Scratch harness for Phase 0 (map_provider_rollout_plan.md §10.2 Phase 0).
-// Low-volume smoke test of keyless candidate tile sources on device + web/Caddy.
+// Scratch harness for Phase 0→2 (map_provider_rollout_plan.md §10.2).
+// Smoke-tests the PRODUCTION shared map adapter (lib/shared/map/) with real
+// tile sources on device + web/Caddy — NOT a copy of adapter code.
 // NOT part of the app — run with:
 //   flutter run -t tool/osm_tile_smoke/main.dart -d <device>
 //   flutter build web -t tool/osm_tile_smoke/main.dart -o build/osm_smoke
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:sheserved/features/admin/models/map_provider_config.dart';
+import 'package:sheserved/shared/map/map_controller.dart';
+import 'package:sheserved/shared/map/map_types.dart';
+import 'package:sheserved/shared/map/sheserved_map.dart';
 
 void main() => runApp(const TileSmokeApp());
 
-class TileSource {
-  const TileSource(this.id, this.label, this.urlTemplate, this.attribution);
-
-  final String id;
-  final String label;
-  final String urlTemplate;
-  final String attribution;
-}
-
-// Keyless candidates only — sources that need an API key/signup are evaluated
-// in the Phase 0 decision record, not hardcoded here.
-const _sources = [
-  TileSource(
-    'osm_standard',
-    'OSM Standard',
-    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    '© OpenStreetMap contributors',
-  ),
-  TileSource(
-    'carto_light',
-    'CARTO Light',
-    'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    '© OpenStreetMap contributors © CARTO',
-  ),
-  TileSource(
-    'carto_voyager',
-    'CARTO Voyager',
-    'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    '© OpenStreetMap contributors © CARTO',
-  ),
-  TileSource(
-    'opentopo',
-    'OpenTopoMap',
-    'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
-    '© OpenStreetMap contributors, SRTM | style: © OpenTopoMap (CC-BY-SA)',
-  ),
-];
+// Candidate tile sources — resolved through the production registry so the
+// smoke exercises the same catalog the app config uses.
+final _registry = TileSourceRegistry.defaults();
+final _sources = _registry.sources.values.toList();
 
 class TileSmokeApp extends StatefulWidget {
   const TileSmokeApp({super.key});
@@ -63,34 +32,61 @@ class _TileSmokeAppState extends State<TileSmokeApp> {
     return i < 0 ? 0 : i;
   })();
 
+  SheservedMapController? _map;
+
+  static const _incident = MapLatLng(13.7600, 100.5100);
+  static const _user = MapLatLng(13.7520, 100.4940);
+  static const _markers = {
+    MapMarker(id: 'incident', position: _incident, hue: 0, label: 'เหตุ'),
+    MapMarker(id: 'user', position: _user, hue: 210, label: 'เรา'),
+  };
+  static const _polylines = {
+    MapPolyline(id: 'route', points: [_user, _incident], color: Colors.red),
+  };
+
   @override
   Widget build(BuildContext context) {
     final source = _sources[_index];
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        appBar: AppBar(title: Text('Tile smoke: ${source.label}')),
+        appBar: AppBar(
+          title: Text('Adapter smoke: ${source.label}'),
+          actions: [
+            IconButton(
+              tooltip: 'fitToBounds (facade)',
+              icon: const Icon(Icons.fit_screen),
+              onPressed: () => _map?.fitToBounds(
+                const [_incident, _user],
+                padding: 60,
+              ),
+            ),
+            IconButton(
+              tooltip: 'animateTo (facade)',
+              icon: const Icon(Icons.my_location),
+              onPressed: () => _map?.animateTo(_user, zoom: 15),
+            ),
+          ],
+        ),
         body: Column(
           children: [
             Expanded(
-              child: FlutterMap(
-                options: const MapOptions(
-                  initialCenter: LatLng(13.7563, 100.5018), // Bangkok
-                  initialZoom: 12,
+              child: SheservedMap(
+                key: ValueKey(source.id),
+                target: MapTarget(
+                  enabled: true,
+                  renderer: MapRendererKind.osm,
+                  tileSourceId: source.id,
                 ),
-                children: [
-                  TileLayer(
-                    key: ValueKey(source.id),
-                    urlTemplate: source.urlTemplate,
-                    userAgentPackageName: 'com.sheserved.mapsmoke',
-                    tileProvider: CancellableNetworkTileProvider(),
-                  ),
-                  RichAttributionWidget(
-                    attributions: [
-                      TextSourceAttribution(source.attribution),
-                    ],
-                  ),
-                ],
+                registry: _registry,
+                initialCamera: const MapCameraPosition(
+                  center: MapLatLng(13.7563, 100.5018),
+                  zoom: 12,
+                ),
+                markers: _markers,
+                polylines: _polylines,
+                onMapCreated: (c) => _map = c,
+                onTap: (p) => debugPrint('map tap: $p'),
               ),
             ),
             SafeArea(
