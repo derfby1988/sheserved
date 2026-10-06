@@ -3,6 +3,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/tlz_drawer.dart';
 import '../../../../shared/widgets/tlz_hamburger_menu.dart';
 import '../../../../services/platform_service.dart';
+import '../widgets/map_provider_settings_section.dart';
 import 'package:flutter/foundation.dart';
 
 class PlatformSettingsPage extends StatefulWidget {
@@ -180,6 +181,11 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
                       description:
                           'อนุญาตค้นหาสถานที่ผ่าน Google Places API อัตโนมัติเมื่อค้นหาใน OpenStreetMap (ฟรี) ไม่พบผลลัพธ์',
                     ),
+                    const SizedBox(height: 32),
+                    // Phase 1 — map provider config (map_provider_rollout_plan.md §4).
+                    // Saves through PUT /api/admin/map-config only; runtime
+                    // renderers are NOT switched by this section.
+                    const MapProviderSettingsSection(),
                     const SizedBox(height: 32),
                     _buildSaveButton(),
                   ],

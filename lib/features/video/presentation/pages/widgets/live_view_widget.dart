@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:sheserved/features/donation/models/donation_models.dart';
@@ -63,13 +62,12 @@ class LiveViewWidget extends StatefulWidget {
 
   /// ✅ Phase 20: ตัวกรองประเภทเหตุของกล่องยอดนิยม — ส่งต่อให้
   /// [TrendingPanelWidget] ตรง ๆ (page เป็นเจ้าของ state)
-  final List<DonationCategory> trendingFilterCategories;
+  /// ปุ่มเปิด sheet อยู่ที่ `EmergencyTopBar` แล้ว จึงไม่ส่ง categories/
+  /// canShow/missionSuspendSignal ผ่าน widget นี้
   final Set<String> selectedTrendingCategoryIds;
-  final bool canShowTrendingCategoryFilter;
   final Future<bool> Function(Set<String> selected)?
   onApplyTrendingCategoryFilter;
   final int trendingFilterResetToken;
-  final ValueListenable<bool> missionSuspendSignal;
 
   const LiveViewWidget({
     super.key,
@@ -105,12 +103,9 @@ class LiveViewWidget extends StatefulWidget {
     this.videoCardKey,
     this.onOpenFullscreen,
     this.lockToCurrentVideo = false,
-    this.trendingFilterCategories = const [],
     this.selectedTrendingCategoryIds = const {},
-    this.canShowTrendingCategoryFilter = false,
     this.onApplyTrendingCategoryFilter,
     this.trendingFilterResetToken = 0,
-    required this.missionSuspendSignal,
   });
 
   @override
@@ -592,15 +587,11 @@ class _LiveViewWidgetState extends State<LiveViewWidget>
                       highlightVideoId: widget.highlightVideoId,
                       onSwitchVideo: widget.onSwitchVideo,
                       lockToCurrentVideo: widget.lockToCurrentVideo,
-                      filterCategories: widget.trendingFilterCategories,
                       selectedCategoryIds:
                           widget.selectedTrendingCategoryIds,
-                      canShowCategoryFilter:
-                          widget.canShowTrendingCategoryFilter,
                       onApplyCategoryFilter:
                           widget.onApplyTrendingCategoryFilter,
                       filterResetToken: widget.trendingFilterResetToken,
-                      missionSuspendSignal: widget.missionSuspendSignal,
                     ),
                   ),
                 ),

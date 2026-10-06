@@ -1,24 +1,10 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:sheserved/config/app_config.dart';
-import 'package:sheserved/features/donation/models/donation_models.dart';
 import 'package:sheserved/services/websocket_service.dart';
 import '../../../models/video_models.dart';
-import 'trending_category_filter_sheet.dart';
 import 'video_skeleton_widget.dart';
-
-/// ค่าเริ่มต้นของ [TrendingPanelWidget.missionSuspendSignal] — ไม่เคยเปลี่ยน
-class _NeverSuspendSignal implements ValueListenable<bool> {
-  const _NeverSuspendSignal();
-  @override
-  bool get value => false;
-  @override
-  void addListener(VoidCallback listener) {}
-  @override
-  void removeListener(VoidCallback listener) {}
-}
 
 class TrendingPanelWidget extends StatefulWidget {
   final List<Video> trendingVideos;
@@ -34,20 +20,16 @@ class TrendingPanelWidget extends StatefulWidget {
   final bool lockToCurrentVideo;
 
   /// ✅ Phase 20: ตัวกรองประเภทเหตุของกล่องยอดนิยม (multi-select)
-  /// - [canShowCategoryFilter] ควบคุมการแสดงไอคอน (ซ่อนระหว่าง mission lock,
-  ///   ตอนโหลดหมวด/ลิสต์รอบแรก หรือเมื่อไม่มีหมวดฉุกเฉิน)
-  /// - [onApplyCategoryFilter] คืน true เมื่อ commit สำเร็จเท่านั้น —
-  ///   sheet จะแสดง error + retry เมื่อคืน false
-  final List<DonationCategory> filterCategories;
+  /// ปุ่มเปิด sheet ย้ายไปอยู่แถวบนสุดแล้ว (`EmergencyTopBar`) — panel เหลือ
+  /// เฉพาะสถานะที่ต้องใช้แสดงผล:
+  /// - [selectedCategoryIds] ใช้ตัดสิน empty state ("ไม่พบเหตุในประเภทที่เลือก")
+  /// - [onApplyCategoryFilter] ใช้โดยปุ่ม "ล้างตัวกรอง" ใน empty state และ
+  ///   ต้องคืน true เมื่อ commit สำเร็จเท่านั้น
   final Set<String> selectedCategoryIds;
-  final bool canShowCategoryFilter;
   final Future<bool> Function(Set<String> selected)? onApplyCategoryFilter;
 
   /// เปลี่ยนค่าเมื่อ filter ที่ commit เปลี่ยน — panel เลื่อนกลับบนสุด
   final int filterResetToken;
-
-  /// true เมื่อระบบเข้าสู่ mission suspension — sheet ที่เปิดอยู่จะปิดตัวเอง
-  final ValueListenable<bool> missionSuspendSignal;
 
   const TrendingPanelWidget({
     super.key,
@@ -58,12 +40,9 @@ class TrendingPanelWidget extends StatefulWidget {
     this.highlightVideoId,
     this.onLoadMore,
     this.lockToCurrentVideo = false,
-    this.filterCategories = const [],
     this.selectedCategoryIds = const {},
-    this.canShowCategoryFilter = false,
     this.onApplyCategoryFilter,
     this.filterResetToken = 0,
-    this.missionSuspendSignal = const _NeverSuspendSignal(),
   });
 
   @override
@@ -162,85 +141,6 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
     } else if (oldWidget.isLoadingTrending && !widget.isLoadingTrending) {
       _scrollToSelectedCard();
     }
-  }
-
-  /// ✅ Phase 20: เปิด bottom sheet เลือกประเภทเหตุ — draft อยู่ใน sheet
-  /// commit เข้า page state เฉพาะเมื่อ apply สำเร็จ
-  void _openCategoryFilterSheet() {
-    if (!widget.canShowCategoryFilter) return;
-    TrendingCategoryFilterSheet.show(
-      context,
-      categories: widget.filterCategories,
-      initialSelectedIds: widget.selectedCategoryIds,
-      suspensionSignal: widget.missionSuspendSignal,
-      onApply: widget.onApplyCategoryFilter,
-    );
-  }
-
-  /// ไอคอนตัวกรองทางขวาของป้าย "ยอดนิยม" — ขนาดกะทัดรัดไม่ให้ header สูงขึ้น
-  Widget _buildCategoryFilterButton() {
-    final count = widget.selectedCategoryIds.length;
-    return Tooltip(
-      message: 'กรองตามประเภทเหตุ',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _openCategoryFilterSheet,
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: count > 0
-                  ? const Color(0xFFFF6B35).withOpacity(0.14)
-                  : Colors.white.withOpacity(0.55),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: count > 0
-                    ? const Color(0xFFFF6B35).withOpacity(0.5)
-                    : Colors.white.withOpacity(0.8),
-              ),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  Icons.tune,
-                  size: 16,
-                  color: count > 0
-                      ? const Color(0xFFFF6B35)
-                      : Colors.black54,
-                ),
-                if (count > 0)
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFF6B35),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$count',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 7,
-                            fontWeight: FontWeight.bold,
-                            height: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _scrollToSelectedCard() {
@@ -368,49 +268,23 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 10),
-            // ✅ Phase 20: header เป็น Row ที่สูงเท่าป้ายเดิม — ไอคอนตัวกรอง
-            // (32px) ล้นแนวตั้งผ่าน OverflowBox เพื่อไม่ให้ header/panel สูง
-            // ขึ้น (RescueControlPanel วัดตำแหน่งจากขอบล่างของ panel นี้)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6B35),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'ยอดนิยม',
-                    style: TextStyle(
-                      fontFamily: 'SukhumvitSet',
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+            // ✅ Phase 20: ป้าย header สูงเท่าเดิม (RescueControlPanel วัด
+            // ตำแหน่งจากขอบล่างของ panel นี้) — ปุ่มตัวกรองย้ายไปแถวบนสุดแล้ว
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'ยอดนิยม',
+                style: TextStyle(
+                  fontFamily: 'SukhumvitSet',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
-                if (widget.canShowCategoryFilter) ...[
-                  const SizedBox(width: 6),
-                  // ล็อกความสูงเท่าป้าย (~22px) — ปุ่ม 32px ล้นบน/ล่านเท่า ๆ
-                  // กันผ่าน OverflowBox จึงไม่ทำให้ header/panel สูงขึ้น
-                  SizedBox(
-                    width: 32,
-                    height: 22,
-                    child: OverflowBox(
-                      minWidth: 32,
-                      maxWidth: 32,
-                      minHeight: 32,
-                      maxHeight: 32,
-                      child: _buildCategoryFilterButton(),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
             const SizedBox(height: 8),
             Flexible(

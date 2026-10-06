@@ -395,6 +395,20 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
+  /// Phase 20: เปิด bottom sheet ตัวกรองประเภทเหตุจากปุ่มในแถวบนสุด
+  /// (เดิมเปิดจากไอคอนใน header ของกล่องยอดนิยม) — ใช้ state ชุดเดิมทั้งหมด
+  /// [missionSuspendSignal] ทำให้ sheet ปิดตัวเองเมื่อเข้าสู่ mission/reporter
+  /// lock โดยไม่ commit draft
+  void _openTrendingCategoryFilterSheet() {
+    TrendingCategoryFilterSheet.show(
+      context,
+      categories: _emergencyCategories,
+      initialSelectedIds: _selectedTrendingCategoryIds,
+      suspensionSignal: _missionSuspendSignal,
+      onApply: _applyTrendingCategoryFilter,
+    );
+  }
+
   /// Phase 20: Apply ตัวกรองแบบ transaction — fetch หน้า 1 ด้วยชุดหมวดใหม่
   /// สำเร็จแล้วเท่านั้นจึง commit ลง _selectedTrendingCategoryIds;
   /// ล้มเหลว/ยกเลิก → คง selection และลิสต์เดิมไว้

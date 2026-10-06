@@ -1,0 +1,112 @@
+# ═══════════════════════════════════════════════════════════
+# Phase 0 Baseline — Google map capture (map_provider_rollout_plan.md §10.2)
+# เก็บ: home (guest + หลัง login), group create map บน iOS simulator
+# ไม่แตะ Emergency/Rescue/YieldWay — ต้อง synthetic incident บน staging เท่านั้น
+# รัน: maestro test maestro/baseline_00_map_provider.yaml
+# Login pattern ตาม docs/guides/login_CPH1989.yaml (hideKeyboard + below: selector)
+# ═══════════════════════════════════════════════════════════
+
+appId: com.sheserved.app
+env:
+  USERNAME: "test"
+  PASSWORD: "12345678"
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# Step 1: ปิด system location dialog ถ้าเด้ง
+- runFlow:
+    when:
+      visible: "อนุญาตในระหว่างใช้งานแอป"
+    commands:
+      - tapOn: "อนุญาตในระหว่างใช้งานแอป"
+      - waitForAnimationToEnd:
+          timeout: 5000
+
+- extendedWaitUntil:
+    visible: "ค้นหายา.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 8000
+
+- takeScreenshot: baseline_ios_home_guest
+
+# Step 2: เข้า Sport Club → กดสร้างก๊วน → ระบบพาไป login → กลับมาหน้าสร้างก๊วน
+- extendedWaitUntil:
+    visible: "เข้าคลับ"
+    timeout: 15000
+- tapOn: "เข้าคลับ"
+- waitForAnimationToEnd:
+    timeout: 8000
+
+- extendedWaitUntil:
+    visible: "สร้างก๊วน"
+    timeout: 30000
+- takeScreenshot: baseline_ios_sport_club
+
+- tapOn: "สร้างก๊วน"
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Step 3: login (redirect จากการสร้างก๊วน) — pattern จาก login_CPH1989.yaml
+- extendedWaitUntil:
+    visible: "ยินดีต้อนรับ!"
+    timeout: 30000
+- tapOn:
+    below:
+      text: "ชื่อผู้ใช้ / เบอร์โทรศัพท์"
+- inputText: "${USERNAME}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+# iOS: hideKeyboard ใช้ไม่ได้ — tap title (non-interactive) ปิด keyboard แทน
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    below:
+      text: "รหัสผ่าน"
+- inputText: "${PASSWORD}"
+- waitForAnimationToEnd:
+    timeout: 1000
+
+- tapOn: "ยินดีต้อนรับ!"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "เข้าสู่ระบบ"
+
+# login สำเร็จ = หน้า login หายไป (toast ไม่มี a11y text)
+- extendedWaitUntil:
+    notVisible: "ยินดีต้อนรับ!"
+    timeout: 30000
+
+# Step 4: ปิด BackgroundPermissionDialog ถ้ามี
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "ไว้ทีหลัง"
+    commands:
+      - tapOn: "ไว้ทีหลัง"
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# Step 5: ระบบพากลับมาหน้าสร้างก๊วนอัตโนมัติหลัง login — เก็บ Google map baseline
+- extendedWaitUntil:
+    visible: ".*(สร้างก๊วนใหม่|สร้างก๊วนกีฬา|สร้างก๊วน).*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 8000
+
+- takeScreenshot: baseline_ios_group_create_form
+
+- scroll
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: baseline_ios_group_create_map_1
+- scroll
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: baseline_ios_group_create_map_2

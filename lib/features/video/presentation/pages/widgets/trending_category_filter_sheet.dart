@@ -8,6 +8,9 @@ import 'package:sheserved/shared/widgets/neumorphic/neumorphic.dart';
 /// - รายการหมวดเรียงตาม [categories] ที่ส่งมา (display_order จากหน้าแล้ว)
 /// - draft อยู่ใน sheet — commit เข้า page state เฉพาะเมื่อ apply สำเร็จ
 /// - apply เป็น async: ล้มเหลว → แสดง error + ปุ่มลองใหม่ โดยไม่แตะค่าเดิม
+/// - footer มี 2 ปุ่ม: "ล้างค่าทั้งหมด" (สีส้ม — ล้าง draft แล้ว commit ทันที)
+///   และ "แสดงผล" (commit draft ปัจจุบัน); ไม่มีปุ่มยกเลิก — ปิด sheet ได้ทาง
+///   ปุ่มปิดมุมขวาบนหรือแตะฉากหลัง ซึ่งไม่ commit draft
 /// - [suspensionSignal] = true (เข้าสู่ mission/reporter lock) → ปิด route
 ///   นี้เองโดยไม่ commit draft — ห้าม pop หน้าจอแม่
 class TrendingCategoryFilterSheet extends StatefulWidget {
@@ -65,9 +68,7 @@ class _TrendingCategoryFilterSheetState
     super.initState();
     widget.suspensionSignal.addListener(_onSuspensionChanged);
     // เปิดมาระหว่างที่ suspension เริ่มไปแล้ว → ปิดทันที
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _onSuspensionChanged(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onSuspensionChanged());
   }
 
   @override
@@ -82,6 +83,17 @@ class _TrendingCategoryFilterSheetState
     if (route != null && route.isCurrent) {
       Navigator.of(context).maybePop();
     }
+  }
+
+  /// สีส้มเดียวกับป้าย "ยอดนิยม"/ปุ่มตัวกรองประเภทเหตุในแถวบนสุด
+  static const Color _clearAllColor = Color(0xFFFF6B35);
+
+  /// ล้างตัวกรองทั้งหมดแล้ว commit ทันที — ไม่ปิด sheet เองตรงนี้
+  /// (`_apply` จะ pop เมื่อ commit สำเร็จ; ล้มเหลวจะคง sheet + error/retry)
+  Future<void> _clearAllAndApply() async {
+    if (_applying) return;
+    setState(() => _draft.clear());
+    await _apply();
   }
 
   Future<void> _apply() async {
@@ -110,10 +122,9 @@ class _TrendingCategoryFilterSheetState
   @override
   Widget build(BuildContext context) {
     return NeumorphicSheetShell(
-      title: 'กรองประเภทเหตุ',
+      title: 'คัดกรองเหตุ และแผนที่',
       icon: Icons.filter_list_rounded,
       heightFactor: 0.6,
-      onClearAll: _applying ? null : () => setState(() => _draft.clear()),
       onClose: _applying ? null : () => Navigator.of(context).pop(),
       footer: Column(
         mainAxisSize: MainAxisSize.min,
@@ -128,12 +139,14 @@ class _TrendingCategoryFilterSheetState
           ],
           Row(
             children: [
+              // ✅ ย้ายปุ่มล้างค่าทั้งหมดจาก header มาแทนตำแหน่งเดิมของ
+              // "ยกเลิก" — กดแล้วล้าง draft + commit ทันที (กลับไปแสดงทุก
+              // ประเภท) แล้ว sheet ปิดเองเมื่อ apply สำเร็จ
               Expanded(
                 child: NeumorphicPillButton(
-                  text: 'ยกเลิก',
-                  onPressed: _applying
-                      ? null
-                      : () => Navigator.of(context).pop(),
+                  text: 'ล้างค่าทั้งหมด',
+                  color: _clearAllColor,
+                  onPressed: _applying ? null : _clearAllAndApply,
                 ),
               ),
               const SizedBox(width: 12),
@@ -153,7 +166,7 @@ class _TrendingCategoryFilterSheetState
       children: [
         Text(
           _draft.isEmpty
-              ? 'แสดงเหตุการณ์ทุกประเภท'
+              ? 'เลือกแสดงแผนที่ เพื่อประเมินสถานการณ์'
               : 'เลือก ${_draft.length} ประเภท',
           style: const TextStyle(
             fontSize: 12.5,

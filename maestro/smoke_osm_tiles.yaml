@@ -1,0 +1,26 @@
+# Phase 0 smoke — switch tile sources in tool/osm_tile_smoke harness
+# ต้องเปิด harness ค้างไว้ (flutter run -t tool/osm_tile_smoke/main.dart)
+appId: com.sheserved.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "OSM Standard"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 6000
+- takeScreenshot: smoke_ios_osm_standard
+
+- tapOn: "CARTO Light"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: smoke_ios_carto_light
+
+- tapOn: "CARTO Voyager"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: smoke_ios_carto_voyager
+
+- tapOn: "OpenTopoMap"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: smoke_ios_opentopomap

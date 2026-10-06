@@ -62,6 +62,7 @@ const { resolveEmergencyCategoryNames } = require('./services/emergency-category
 const adminRoutes = require('./routes/admin');
 const consultationRoutes = require('./routes/consultation');
 const victimsRoutes = require('./routes/victims');
+const mapConfigRoutes = require('./routes/map-config');
 // Phase 13.2 — Auth routes
 const authRoutes = require('./routes/auth');
 const { shutdown: shutdownConsultationQueue } = require('./services/consultation-queue');
@@ -333,6 +334,11 @@ if (pool) {
   // Phase 1 — Route Security: verify identity before protected routes
   app.use('/api/admin', verifyToken(pool));
   app.use('/api/admin', adminRoutes(pool));
+
+  // Map provider config — Phase 1 (map_provider_rollout_plan.md §4.6):
+  // GET /api/map-config is a safe public read; /api/admin/map-config* is
+  // role-gated inside the router. Single router mounted at /api.
+  app.use('/api', verifyToken(pool), mapConfigRoutes(pool));
 
   // Write endpoints on videos require auth; reads remain open
   app.use('/api/videos', verifyToken(pool));

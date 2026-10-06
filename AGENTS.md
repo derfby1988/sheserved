@@ -12,6 +12,16 @@ Note: on this machine `flutter analyze` crashes ("Could not find a command named
 ships the AOT snapshot). Use `dart analyze lib test` instead; it reports the same
 lints (the repo carries ~2.3k pre-existing info-level ones, so filter by path).
 
+Two tests fail on a clean checkout and are not regressions:
+`test/widget_test.dart` (stale rename-era assertion for the text `SHESERVED`) and
+`test/integration/phase2_role_sync_test.dart` (needs an initialized Supabase
+instance). Everything else should pass (`flutter test` → ~600 passed, 11 skipped).
+
+Before running `dart format` on a file you touched, check whether it was already
+unformatted at HEAD (`git show HEAD:<path> > /tmp/x.dart && dart format
+--output=none --set-exit-if-changed /tmp/x.dart`). Several video/emergency files
+carry pre-existing drift, and formatting them whole adds unrelated diff noise.
+
 ## Backend machine IP changes
 
 When the primary machine's LAN IP changes (or a report looks like an IP

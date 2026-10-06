@@ -42,7 +42,8 @@ import 'widgets/donation_sheet_widget.dart';
 import 'widgets/thai_mhung_gallery_widget.dart';
 import 'widgets/emergency_map_section.dart';
 import 'widgets/emergency_ui_overlay.dart';
-import 'widgets/floating_back_button.dart';
+import 'widgets/emergency_top_bar.dart';
+import 'widgets/trending_category_filter_sheet.dart';
 import 'widgets/emergency_chat_widget.dart';
 import 'widgets/fullscreen_video_viewer.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
@@ -610,34 +611,39 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               content: _buildMainContent(),
             ),
 
-            // Layer 3: Top Bar (Back Button and Custom Video Controls)
+            // Layer 3: Top Bar (Back Button, Video Controls, Trending Filter)
+            // ✅ Phase 20: ปุ่มตัวกรองประเภทเหตุชิดขวาของแถวนี้ (เดิมอยู่ใน
+            // header ของกล่องยอดนิยม) — เงื่อนไขการแสดงต้องเทียบเท่าเดิม:
+            // UI เปิด + tab 0 + ไม่ได้กำลังรายงานไทยมุง + filter พร้อม
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
               left: 16,
               right: 16,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  FloatingBackButton(
-                    visible:
-                        _isUiVisible &&
+              child: EmergencyTopBar(
+                onBackTap: () => Navigator.of(context).pop(),
+                backButtonVisible:
+                    _isUiVisible &&
+                    _selectedTab != 2 &&
+                    _selectedTab != 1 &&
+                    !_isThaiMhungReporting,
+                videoControls:
+                    _isUiVisible &&
                         _selectedTab != 2 &&
                         _selectedTab != 1 &&
-                        !_isThaiMhungReporting,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  if (_isUiVisible &&
-                      _selectedTab != 2 &&
-                      _selectedTab != 1 &&
-                      !_isThaiMhungReporting &&
-                      _chewieController != null &&
-                      !_isOverlayVisible) ...[
-                    const SizedBox(width: 12),
-                    GlassmorphismVideoControls(
-                      controller: _chewieController!.videoPlayerController,
-                    ),
-                  ],
-                ],
+                        !_isThaiMhungReporting &&
+                        _chewieController != null &&
+                        !_isOverlayVisible
+                    ? GlassmorphismVideoControls(
+                        controller: _chewieController!.videoPlayerController,
+                      )
+                    : null,
+                showCategoryFilter:
+                    _isUiVisible &&
+                    _selectedTab == 0 &&
+                    !_isThaiMhungReporting &&
+                    _canShowTrendingCategoryFilter,
+                selectedCategoryCount: _selectedTrendingCategoryIds.length,
+                onCategoryFilterTap: _openTrendingCategoryFilterSheet,
               ),
             ),
 
@@ -1107,12 +1113,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           trendingVideos: _trendingVideosForPanel(),
           onLoadMoreTrending: _loadMoreTrendingVideos,
           isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
-          trendingFilterCategories: _emergencyCategories,
           selectedTrendingCategoryIds: _selectedTrendingCategoryIds,
-          canShowTrendingCategoryFilter: _canShowTrendingCategoryFilter,
           onApplyTrendingCategoryFilter: _applyTrendingCategoryFilter,
           trendingFilterResetToken: _trendingFilterResetToken,
-          missionSuspendSignal: _missionSuspendSignal,
           highlightVideoId: _highlightVideoId,
           canViewUnblurred: _canViewUnblurred,
           yieldWayCount: '$_yieldWayCount คน',

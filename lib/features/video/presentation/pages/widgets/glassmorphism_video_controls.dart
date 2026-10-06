@@ -153,7 +153,9 @@ class _GlassmorphismVideoControlsState extends State<GlassmorphismVideoControls>
         splashColor: Colors.white.withValues(alpha: 0.2),
         highlightColor: Colors.white.withValues(alpha: 0.1),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          // 12 (เดิม 14): แถบเครื่องมือรวม ~215px — พอดีจอ 320dp โดยแทบไม่
+          // ต้องเลื่อน และยังคง touch target 48x40 ต่อปุ่ม
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Icon(icon, color: Colors.white, size: 24),
         ),
       ),

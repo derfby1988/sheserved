@@ -5776,14 +5776,14 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 
 เพิ่มตัวกรองประเภทเหตุให้ **กล่องยอดนิยม** ในหน้าเหตุการณ์สด:
 
-- ไอคอนปุ่มตัวกรองอยู่ **ด้านขวาของป้าย "ยอดนิยม"**
-- กดไอคอนแล้วเปิด **bottom sheet** ให้เลือกประเภทเหตุได้ **หลายตัวพร้อมกัน** (เช่น เลือกเฉพาะน้ำท่วม หรือเลือกไฟไหม้ + ฝุ่นรวมกัน)
+- ปุ่มตัวกรองอยู่ **ชิดขวาของแถวบนสุด** (แถวเดียวกับปุ่มย้อนกลับ) — ย้ายจากเดิมที่อยู่ใน header ของกล่องยอดนิยมเมื่อ 2026-10-06 (§20.10)
+- กดปุ่มแล้วเปิด **bottom sheet** ให้เลือกประเภทเหตุได้ **หลายตัวพร้อมกัน** (เช่น เลือกเฉพาะน้ำท่วม หรือเลือกไฟไหม้ + ฝุ่นรวมกัน)
 - รายการประเภทดึงจาก **ตารางจริง** `donation_categories` เฉพาะ `is_emergency = true` เรียงตาม `display_order` ascending — ลำดับเดียวกับแถบหมวดหมู่ในหน้าอัปโหลด/แจ้งเหตุ และหน้า admin หมวดหมู่ตามภาพ (`#1 อุบัติเหตุ`, `#2 น้ำท่วม`)
 - ไม่เลือกอะไร = แสดงทั้งหมด (พฤติกรรมเดิมเป๊ะ)
 
 ### 20.2 สภาพปัจจุบันและช่องว่างที่ยืนยันจากโค้ด
 
-- ป้าย "ยอดนิยม" เป็น badge เดี่ยวใน header ของ `TrendingPanelWidget` ยังไม่มี action ใด ๆ ข้าง ๆ — `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart:251-266`
+- ป้าย "ยอดนิยม" เป็น badge เดี่ยวใน header ของ `TrendingPanelWidget` ยังไม่มี action ใด ๆ ข้าง ๆ — `lib/features/video/presentation/pages/widgets/trending_panel_widget.dart:251-266` (เดิม; ตั้งแต่ 2026-10-06 ปุ่มตัวกรองอยู่ในแถวบนสุดแล้ว — §20.10)
 - รายการที่แสดงมาจาก `_filteredTrendingVideos()` ซึ่งกรองตามบทบาทอยู่แล้ว 3 ชั้น: Mission Lock ของผู้แจ้ง (`_isReporterLocked` + `_reporterActiveMissionVideoIds`), สิทธิ์จิตอาสา (`_eligibleTrendingVideoIds`), และโหมดภารกิจ (`lockToCurrentVideo`) — `lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart:284-330`; ตัวกรองใหม่ต้องเป็นชั้นเสริม ไม่ทับกฎเดิม
 - API `/api/videos/emergency/list` รับแค่ `page`/`limit` ผ่าน `clampPagination`, cache key `video:emergency:list:v3:{page}:{limit}` และ SQL เป็น `WHERE v.type IN ('emergency','emergency_photo')` + `LIMIT/OFFSET` — `websocket-server/routes/video.js:548-584`
 - `GET /api/videos/` รองรับ `category_id` แบบค่าเดียวเท่านั้น (`routes/video.js:93-115`) จึงใช้กับ multi-select ไม่ได้
@@ -5798,7 +5798,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 
 | เรื่อง | ค่าที่เลือก | หมายเหตุ |
 |---|---|---|
-| รูปแบบ UI | **Bottom sheet เลือกหลายตัว** เปิดจากไอคอนด้านขวาป้าย "ยอดนิยม" | มีปุ่ม "ล้างทั้งหมด"/"ยกเลิก"/"แสดงผล"; icon ใช้สี active เมื่อมี filter เพื่อรักษาความกว้าง header |
+| รูปแบบ UI | **Bottom sheet เลือกหลายตัว** เปิดจากปุ่มชิดขวาของแถวบนสุด (แถวเดียวกับปุ่มย้อนกลับ) | footer มี 2 ปุ่ม: "ล้างค่าทั้งหมด" (สีส้ม — ล้าง draft แล้ว commit ทันที + ปิด sheet เมื่อสำเร็จ) และ "แสดงผล"; ไม่มีปุ่มยกเลิก/ปุ่มล้างใน header — ปิดโดยไม่ commit ทำได้ผ่านปุ่มปิดมุมขวาบน/barrier; ปุ่มเปิดเป็นวงกลมกระจกขนาดเดียวกับปุ่มย้อนกลับและใช้สี active + badge นับจำนวนเมื่อมี filter — ไม่อยู่ใน header ของกล่องแล้ว จึงไม่กระทบความกว้าง/ความสูงของแผง |
 | semantics | **OR (union)** | เลือกหลายประเภท = เห็นรวมกัน; ไม่เลือกเลย = ทั้งหมด |
 | จุดกรอง | **Server-side + Supabase fallback + client-side guard** | ทั้ง Local API และ Supabase กรองก่อน pagination; client ตรวจ/กรองซ้ำเพื่อป้องกันการ์ดผิดประเภทหลุด |
 | ชุดประเภท | **ทุกหมวด `is_emergency = true` ตาม `display_order`** | ไม่จำกัดเฉพาะที่มีเหตุ; ใช้ลิสต์ที่โหลดอยู่แล้ว ไม่ยิง query ใหม่ |
@@ -5813,9 +5813,9 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 
 ### 20.4 สถาปัตยกรรมและ invariant
 
-1. **ตำแหน่งไอคอนและ layout:** ใช้ compact **Row** ที่จัดกลุ่ม label "ยอดนิยม" + ปุ่มกรองไว้ใกล้กัน โดยไอคอนอยู่ด้านขวาของ label; reserve slot ตามความสูงปัจจุบันของ header, จำกัด icon hit target ให้พอดีกับความกว้างแผง และห้ามใช้ overlay/`Positioned` ที่อาจทับ label บนจอแคบ. รักษาตำแหน่ง/ขนาดกล่องเดิมให้มากที่สุด; เพิ่ม golden/layout regression ที่ความกว้าง 320/375/390 dp และตรวจ `_trendingPanelBottom`/`_trendingPanelRight` เพื่อไม่ให้ Rescue Control Panel เคลื่อน (`emergency_live_page.dart:676-694`)
-2. **ไอคอนและสถานะ:** ใช้ `Icons.filter_list` หรือ `tune` ใน `IconButton` แบบ compact; เมื่อมี filter ให้ใช้สีเน้นแทน badge นับจำนวนเพื่อไม่ให้ header กว้าง/ซ้อนบนจอเล็ก; ปุ่มที่มองเห็นต้องมี tooltip/semantics, focus และ hit target ที่ทดสอบได้ในแผงความกว้างจริง
-3. **Bottom sheet:** ใช้ `_emergencyCategories` ชุดเดียวกับแถบรายงานโดยไม่ sort ซ้ำ; draft checkbox หลายตัว + "ล้างทั้งหมด" + "ยกเลิก" + "แสดงผล"; Cancel/barrier ไม่เปลี่ยน committed state. Apply เรียก fetch หน้าแรกแบบ transactional: ระหว่างโหลดปิดปุ่ม Apply, ถ้าสำเร็จ commit state/แทน list, ถ้าล้มเหลวคง state/list เดิมและแสดง retry ใน sheet. `isScrollControlled`, safe area, keyboard inset; scroll ได้เมื่อหมวดเยอะ; ใช้ shared/glass component เดิมและทดสอบ sheet ทับแชท/keyboard
+1. **ตำแหน่งปุ่มและ layout:** ปุ่มตัวกรองอยู่ใน `EmergencyTopBar` (แถวบนสุดร่วมกับปุ่มย้อนกลับ) ชิดขวาของจอ; ระหว่างกลางใช้ `Expanded` + `Align` ครอบเครื่องมือวิดีโอ — **ห้ามใช้ `Flexible` คู่กับ `Spacer`** เพราะจะแบ่งพื้นที่ว่างคนละครึ่งและบีบเครื่องมือแม้จอกว้าง; header ของกล่องยอดนิยมเหลือเฉพาะป้าย "ยอดนิยม" ความสูงเท่าเดิม เพื่อให้ `_trendingPanelBottom`/`_trendingPanelRight` และ Rescue Control Panel ไม่เคลื่อน (`emergency_live_page.dart:676-694`); เพิ่ม layout regression ที่ความกว้าง 320/375/390 dp
+2. **ปุ่มและสถานะ:** ปุ่มเป็นวงกลมกระจกขนาดเท่าปุ่มย้อนกลับ (42px) ใช้ `Icons.tune` + badge นับจำนวนเมื่อมี filter (badge ปลอดภัยเพราะไม่ได้อยู่ในแผงแคบแล้ว); ต้องมี tooltip/semantics และ hit target ที่ทดสอบได้ในแถวบนสุดจริง
+3. **Bottom sheet:** ใช้ `_emergencyCategories` ชุดเดียวกับแถบรายงานโดยไม่ sort ซ้ำ; draft checkbox หลายตัว; footer มี "ล้างค่าทั้งหมด" (ข้อความสีส้ม `0xFFFF6B35` — ล้าง draft แล้วเรียก `_apply()` ทันที เสมือน Apply ชุดว่าง) + "แสดงผล" — ไม่มีปุ่ม "ยกเลิก" และไม่มีปุ่มล้างใน header; ปุ่มปิดมุมขวาบน/barrier ไม่เปลี่ยน committed state. Apply (รวมเส้นทางล้างค่า) เรียก fetch หน้าแรกแบบ transactional: ระหว่างโหลดปิดปุ่มทั้งสอง, ถ้าสำเร็จ commit state/แทน list แล้วปิด sheet, ถ้าล้มเหลวคง state/list เดิมและแสดง retry ใน sheet. `isScrollControlled`, safe area, keyboard inset; scroll ได้เมื่อหมวดเยอะ; ใช้ shared/glass component เดิมและทดสอบ sheet ทับแชท/keyboard
 4. **Server contract:** `GET /api/videos/emergency/list?page&limit&category_ids=a,b,c`; client สร้าง query ด้วย `Uri`/URL encoder, server parse เป็น UUID list, trim/dedupe/canonicalize และ sort ก่อนใช้; empty param ที่ส่งมาอย่างชัดเจนหรือ UUID ผิดรูปแบบคืน 400, cap จำนวนต้องไม่น้อยกว่า emergency categories ที่เปิดใช้จริง (ตรวจ count ก่อน rollout; ห้าม truncate เงียบ ๆ). เพิ่ม `AND v.category_id = ANY($n::uuid[])` ก่อน `ORDER BY/LIMIT/OFFSET`; เมื่อมี filter ใช้ order `created_at DESC, id DESC` เพื่อให้ filtered offset pages deterministic; unfiltered query/order/cache คงเดิมทุกประการ. bind parameter เท่านั้น ไม่ interpolate SQL. เมื่อกรองแล้วตอบ marker header `X-Emergency-Category-Filter: applied`; expose header ผ่าน CORS สำหรับ Flutter Web; client ที่ไม่ได้รับ marker จาก local API ให้ทิ้งผล local ที่อาจไม่กรองแล้วใช้ Supabase fallback. ไม่ส่ง param = response body/semantics เดิมเป๊ะ.
 5. **Cache:** คง Redis key/cache-aside v3 และ client in-memory cache เฉพาะ request ไม่กรองไว้เหมือนเดิม. Request ที่มี `category_ids` **bypass Redis cache-aside และ shared in-memory page-1 cache** — ไม่สร้าง key ต่อ combination, ไม่มี key-space explosion/stale cross-filter data, และ wildcard invalidation เดิมยังใช้กับ unfiltered cache. Filtered query ใช้ index `idx_videos_category_id`; ยืนยันด้วย `EXPLAIN (ANALYZE, BUFFERS)`/latency ก่อน rollout; ถ้าต้องเพิ่ม index ให้แยกทบทวน migration แทนการเพิ่มโดยไม่วัด
 6. **Pagination / request race:** filter มีผลบน server/Supabase ก่อน pagination. ทุกการเปลี่ยน effective filter (selected IDs หรือ lock suspend/resume) สร้าง request generation ใหม่, reset page=1/hasMore/loading-more และ scroll list กลับบน; ผล response ของ generation/key เก่าทิ้งทั้ง first-page และ load-more. คำนวณ next page จาก raw server page length, commit page number เฉพาะเมื่อ request สำเร็จ; error ให้มี retry affordance ใน footer/โหลดหน้าถัดไปซ้ำหน้าเดิม; append แบบ dedupe ด้วย `video.id`. เมื่อ realtime refresh ให้โหลดหน้า 1 ใหม่ด้วย effective filter ปัจจุบันและแทนชุดเก่า — ไม่ทำ client scan ข้ามหน้าแบบไม่จำกัด. ใช้ offset contract เดิมเพื่อกระทบต่ำ; `id` tie-break + client dedupe + refresh ซ่อม drift หลังมี insert. ระบุเป็นข้อจำกัด inherited ว่า offset ไม่ให้ snapshot consistency ระหว่างการ insert พร้อม paging; ถ้าต้องการ guarantee no-gap/no-duplicate ระหว่าง live inserts ให้ทำ cursor-pagination เป็น phase แยก
@@ -5831,12 +5831,12 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 
 ### 20.5 โหมดการแสดงไอคอนตัวกรอง (show / hide / enable)
 
-กล่องยอดนิยมถูกสร้างเฉพาะใน `_buildMainContent()` ตอน `_selectedTab == 0` และ `!_isThaiMhungReporting`; อยู่ใน content ของ `EmergencyUiOverlay` ที่มี `IgnorePointer(ignoring: !isUiVisible)` + `AnimatedOpacity`. คำนวณ `missionFilterSuspended` ที่หน้า (current response, pending response หรือ reporter lock) และ `canShowCategoryFilter` จาก `_emergencyCategories.isNotEmpty`, initial trending/mission gate, และ suspension — แยกจาก refresh loading; ส่งค่าผ่าน `LiveViewWidget` ไป `TrendingPanelWidget` เพื่อไม่ให้ child เดาสถานะจาก UI เอง.
+กล่องยอดนิยมถูกสร้างเฉพาะใน `_buildMainContent()` ตอน `_selectedTab == 0` และ `!_isThaiMhungReporting`; อยู่ใน content ของ `EmergencyUiOverlay` ที่มี `IgnorePointer(ignoring: !isUiVisible)` + `AnimatedOpacity`. คำนวณ `missionFilterSuspended` ที่หน้า (current response, pending response หรือ reporter lock) และ `canShowCategoryFilter` จาก `_emergencyCategories.isNotEmpty`, initial trending/mission gate, และ suspension — แยกจาก refresh loading; ค่าเหล่านี้ใช้ตัดสิน `showCategoryFilter` ของ `EmergencyTopBar` โดยตรง (ปุ่มไม่อยู่ใน `EmergencyUiOverlay` จึงไม่ได้รับ `IgnorePointer` อัตโนมัติ — ต้องรวม `_isUiVisible` ในเงื่อนไขเอง) ส่วน `TrendingPanelWidget` รับเพียง `selectedCategoryIds`/`onApplyCategoryFilter` สำหรับ empty state.
 
 | โหมด / สถานะ | เงื่อนไขในโค้ด | พฤติกรรมกล่องยอดนิยม | ไอคอนตัวกรอง |
 |---|---|---|---|
 | ปกติ (ผู้ชมทั่วไป / จิตอาสาที่มีสิทธิ์และยังไม่มีภารกิจค้าง) | `_selectedTab == 0`, `!_isThaiMhungReporting`, `!missionFilterSuspended`, `_emergencyCategories.isNotEmpty`, initial trending/mission gate พร้อม | แสดงการ์ดตาม role filter เดิมและ category filter ที่ commit แล้ว | **แสดง + ใช้งานได้** |
-| UI ถูกซ่อน (แตะจอ) | `_isUiVisible == false` → `IgnorePointer` + opacity 0 | ยัง render แต่กดไม่ได้ | ไม่ต้องเขียนเงื่อนไขเพิ่ม — inert อัตโนมัติ; ห้ามให้การเปิด/ปิด sheet ไปสลับ `_isUiVisible` |
+| UI ถูกซ่อน (แตะจอ) | `_isUiVisible == false` → กล่องยัง render แต่ `IgnorePointer` + opacity 0 | ยัง render แต่กดไม่ได้ | **ซ่อนปุ่ม** — ปุ่มอยู่นอก `EmergencyUiOverlay` จึงต้องใส่ `_isUiVisible` ใน `showCategoryFilter` เอง (เหมือนปุ่มย้อนกลับ/เครื่องมือวิดีโอ); ห้ามให้การเปิด/ปิด sheet ไปสลับ `_isUiVisible` |
 | จิตอาสามีภารกิจที่เหตุปัจจุบัน | `_currentResponseId != null` → `lockToCurrentVideo` | แสดงตาม mission lock เดิม | **ซ่อน + suspend** (query ใช้ unfiltered list; selection คงอยู่) |
 | จิตอาสามีภารกิจค้างที่อีกเหตุ | `_pendingMissionVideoId != null && _currentResponseId == null` | browse ได้ตาม role rules เดิม; ต้องไม่กรอง/ทำให้ card ภารกิจหาย | **ซ่อน + suspend** (query unfiltered; selection คงอยู่) |
 | ผู้แจ้งมีภารกิจค้าง | `_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty && _currentResponseId == null && _pendingMissionVideoId == null` | แสดงเฉพาะการ์ดภารกิจตนเอง + การ์ดปัจจุบันตามกฎเดิม | **ซ่อน + suspend** (query unfiltered; selection คงอยู่) |
@@ -5855,7 +5855,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 
 1. การซ่อนไอคอน **ห้ามล้าง** `_selectedTrendingCategoryIds` — ค่าอยู่ใน session state และกลับมาทำงานเองเมื่อพ้นเงื่อนไขที่ซ่อน
 2. ไอคอนแสดงก็ต่อเมื่อกล่องถูกสร้าง, `_emergencyCategories.isNotEmpty`, initial trending/mission gate พร้อม, และไม่มี mission suspension — ไม่มีข้อยกเว้นเพื่อแสดงไอคอนตอนข้อมูลไม่พร้อม
-3. การซ่อน/แสดงไอคอนต้อง **ไม่เปลี่ยนความสูง header** ของกล่อง เพราะ Rescue Control Panel อ้างตำแหน่งจาก `_trendingPanelBottom`/`_trendingPanelRight` ที่วัดจากกล่องนี้ (`emergency_live_page.dart:676-694`)
+3. การซ่อน/แสดงปุ่มต้อง **ไม่เปลี่ยนความสูง header** ของกล่อง (ปุ่มไม่ได้อยู่ในแผงแล้ว จึงเหลือเพียงป้าย "ยอดนิยม" ความสูงคงที่) เพราะ Rescue Control Panel อ้างตำแหน่งจาก `_trendingPanelBottom`/`_trendingPanelRight` ที่วัดจากกล่องนี้ (`emergency_live_page.dart:676-694`)
 4. เปิด/ปิด bottom sheet ต้องไม่เปลี่ยน `_isUiVisible`, `_selectedTab`, `_isThaiMhungReporting`, `_isChatVisible` และไม่เรียก `_toggleUiVisibility()`
 5. Bottom sheet เป็น modal route (`isScrollControlled`, `useSafeArea`, keyboard inset) และ barrier ต้องกันการ tap แผนที่/การ์ด — ห้ามให้ map-tap ปิด UI ระหว่าง sheet เปิด; child `IconButton` tap ต้องไม่ bubble ไป `_toggleUiVisibility()`
 6. ถ้าขณะ sheet เปิดอยู่แล้วผู้ใช้เข้าสู่โหมดล็อก (เช่น รับภารกิจสำเร็จจากที่อื่น) → sheet ปิดตัวเอง และ **ค่าที่ติ๊กไว้แต่ยังไม่กดยืนยันต้องไม่ถูกนำไปใช้**
@@ -5868,7 +5868,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 1. **Server:** เพิ่ม parser/validation สำหรับ `category_ids`, SQL filter ก่อน pagination, applied-marker header/CORS exposure, และ bypass cache เฉพาะ filtered request; คง unfiltered key/handler เดิม. Tests ครอบคลุม OR/NULL/invalid/cap/marker/cache bypass.
 2. **Repository:** ส่ง canonical `categoryIds` ให้ Local API และ Supabase fallback; ถ้า local response ไม่มี applied marker ให้ discard แล้ว query Supabase ด้วย filter. Filtered calls bypass `_trendingCacheData`/`_trendingInFlight` ที่มีไว้แชร์ unfiltered page 1; unfiltered consumers ไม่เปลี่ยน.
 3. **State + pagination:** page-owned committed `Set<String>` (session) + sheet draft; transactional Apply; effective filter ว่างเมื่อ `missionFilterSuspended`; generation/key guard first-page/load-more; reset page/scroll/loading state เมื่อ filter/mode เปลี่ยน; advance page เฉพาะ success, retry page เดิมเมื่อ fail, dedupe IDs; recompute role eligibility หลัง list เปลี่ยน.
-4. **UI:** compact fixed-height Row (label + icon ด้านขวา); modal multi-select ใช้ category list order เดิม; Apply/Cancel/Clear, loading/error/retry, empty state. Keep filter state/page-owned; ส่ง `_emergencyCategories`, committed IDs, `canShowCategoryFilter` และ callback ผ่าน `LiveViewWidget` ไป `TrendingPanelWidget` — ไม่ย้าย session state เข้า widget ที่ถูก dispose ตาม tab.
+4. **UI:** ปุ่มตัวกรองใน `EmergencyTopBar` ชิดขวา (header ของกล่องเหลือป้ายอย่างเดียว); modal multi-select ใช้ category list order เดิม; Apply/Cancel/Clear, loading/error/retry, empty state. Keep filter state/page-owned; หน้าเป็นเจ้าของ `_openTrendingCategoryFilterSheet()` และส่ง `showCategoryFilter`/count/callback ให้ `EmergencyTopBar` ส่วน `TrendingPanelWidget` รับแค่ committed IDs + `onApplyCategoryFilter` สำหรับ empty state — ไม่ย้าย session state เข้า widget ที่ถูก dispose ตาม tab.
 5. **Composition/realtime/playback:** separate selector สำหรับ role rules + strict category guard; ไม่ pin current card นอกประเภท; หลัง explicit Apply ที่สำเร็จ ให้ auto-switch current player ไปการ์ดแรกที่ผ่าน role/category filter ตามข้อ 7 เมื่อเข้าเงื่อนไข; lock enter → unfiltered fetch, lock exit → reload selected filter; realtime refresh ใช้ effective filter ปัจจุบันและไม่ auto-switch.
 6. **Tests + rollout:** ตาม §20.8–§20.9
 
@@ -5878,7 +5878,8 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 |---|---|---|
 | Filtered cache ปะปนข้าม combination หรือเพิ่ม Redis cardinality | สูง | filtered requests bypass Redis/client shared caches; unfiltered v3 cache คงเดิม; tests ยืนยัน no filtered result เขียนทับหรืออ่านจาก cache unfiltered |
 | Apply filter แล้ว player ยังเป็นเหตุที่ไม่ตรงหมวด หรือ auto-switch กระทบ mission/เหตุใหม่ | สูง | auto-switch เฉพาะ successful explicit Apply + current category ไม่ตรง + มีการ์ดที่ผ่าน role/category filter + ไม่มี mission suspension; capture currentVideoId แล้ว skip หากเปลี่ยนระหว่าง request; failure/empty result คง player; reuse `_switchVideo()` แต่ไม่ fetch trending ซ้ำ; realtime ไม่ auto-switch |
-| เพิ่มไอคอนทำให้ header/แผงแคบเปลี่ยนตำแหน่งหรือ overflow | สูง | compact Row โดยไม่ overlay ทับ label; เก็บ header slot height; golden/layout test 320/375/390 dp และวัด panel/Rescue Control Panel rect |
+| ปุ่มตัวกรองในแถวบนสุดทำให้แถวล้นจอเล็ก (ร่วมกับเครื่องมือวิดีโอ) | สูง | `Expanded` + `Align` ครอบเครื่องมือวิดีโอ (ไม่ใช้ `Flexible`+`Spacer` ที่แบ่งพื้นที่ครึ่งกัน) และลด padding ปุ่มเครื่องมือ 14→12 (~215px) ให้พอดี 320dp; layout test 320/375/390 dp วัดว่าปุ่มชิดขวาจริง ไม่ทับเครื่องมือ และไม่มี overflow |
+| ปุ่มตัวกรองหลุดสถานะ UI (โผล่ตอน UI ซ่อน/ไม่มีแผง) | ปานกลาง | เงื่อนไข `showCategoryFilter` ต้องรวม `_isUiVisible` + `_selectedTab == 0` + `!_isThaiMhungReporting` + `_canShowTrendingCategoryFilter` เพราะปุ่มอยู่นอก `EmergencyUiOverlay`; panel header height คงเดิม (วัด panel/Rescue Control Panel rect) |
 | Server กับ client กรองไม่ตรงกัน (NULL, deleted ID, fallback) | สูง | parity test Local API vs Supabase; marker header บอกว่า server apply filter; client guard ใช้กฎเดียวกัน |
 | Local API รุ่นเก่า ignore query param แต่ตอบ 200 | สูง | filtered Local response ต้องมี applied-marker; ไม่มี marker ให้ discard body แล้วใช้ Supabase fallback ที่ filter ก่อน range; CORS expose header + compatibility test |
 | ผู้ใช้ส่ง id ปลอม/จำนวนมาก → query หนักหรือ 500 | ปานกลาง | validate UUID + cap จำนวนอย่างน้อยเท่ากับจำนวนหมวดฉุกเฉินจริง + คืน 400 แทน 500 + rate limit เดิม |
@@ -5905,7 +5906,7 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - [ ] Static filtered fixture pagination หน้า 1/2/3 รวม records ที่ `created_at` เท่ากัน ยืนยัน order `created_at DESC, id DESC`/ไม่มี duplicate; unfiltered order/cache ไม่เปลี่ยน. Insert ระหว่างหน้าอาจ shift offset (known limitation), realtime refresh reset page 1 และ generation ทิ้ง response stale
 
 **Flutter / UI**
-- [ ] ไอคอนอยู่ด้านขวาของ label; visual golden/layout ที่ 320/375/390 dp ยืนยันว่า label ไม่ทับปุ่ม, header/panel rect ไม่เพิ่มความสูง และ Rescue Control Panel ไม่เลื่อน
+- [ ] ปุ่มตัวกรองชิดขวาของแถวบนสุด (แถวเดียวกับปุ่มย้อนกลับ) และอยู่ทางขวาของเครื่องมือวิดีโอ; layout test ที่ 320/375/390 dp ยืนยันว่าไม่ล้นจอ (320dp = เครื่องมือ ~215px + ปุ่มยังพอดี), header/panel rect ไม่เปลี่ยนความสูง และ Rescue Control Panel ไม่เลื่อน
 - [ ] Sheet ใช้ `_emergencyCategories` source/order เดียวกับแถบแจ้งเหตุ; multi-select OR, draft/Apply/Cancel/Clear ทำงาน; cancel/barrier ไม่ commit
 - [ ] Apply สำเร็จแล้ว filter cards ตรง selected IDs; ปุ่มล้างคืน list ทั้งหมด; active tint แสดงสถานะโดยไม่เพิ่ม badge/ความกว้าง
 - [ ] Apply เมื่อ current category ไม่ตรง + filtered panel มีการ์ด + ไม่มี mission → switch ไปการ์ดแรกที่มองเห็น; current ตรงหมวด/clear/failure/empty/suspension/current ID เปลี่ยนระหว่าง request → ไม่ switch; fullscreen ใช้ list ที่กรองแล้ว; ไม่มี synthetic view/like หรือ Trending fetch ซ้ำ
@@ -5923,14 +5924,14 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - [ ] `_pendingMissionVideoId != null` ขณะดูเหตุอื่น → ซ่อนไอคอน/พัก filter; pending mission card ยังไม่ถูก category filter ซ่อน
 - [ ] Reporter lock → ซ่อนไอคอน/ใช้ reporter set เดิม; ปลด lock แล้ว reload filter เดิม
 - [ ] Category list loading/failed/empty และไม่มี last-known-good → ซ่อนไอคอน; refresh fail เมื่อมี last-known-good ไม่ล้าง list/state
-- [ ] `_isUiVisible == false` → parent IgnorePointer ทำงาน; icon tap ไม่เปิด sheet; เปิด/ปิด sheet ไม่เปลี่ยน `_isUiVisible`/tab/chat state
+- [ ] `_isUiVisible == false` → ปุ่มหายไปพร้อมเงื่อนไข `showCategoryFilter` (ปุ่มอยู่นอก `EmergencyUiOverlay` จึงไม่พึ่ง IgnorePointer ของ overlay); เปิด/ปิด sheet ไม่เปลี่ยน `_isUiVisible`/tab/chat state
 - [ ] Keyboard/chat เปิด → bottom sheet ทับได้, safe area/keyboard inset ถูกต้อง, ไม่ unfocus/ปิด chat เอง; modal barrier กัน tap ที่ map
 - [ ] Tab 1/2, Thai Mhung reporting, fullscreen → ไม่มีไอคอน/ไม่มี exception
 - [ ] Sheet เปิดแล้วเกิด mission suspension → ปิดเฉพาะ route ของ sheet; draft ไม่ commit; ห้าม pop หน้า EmergencyLivePage
 - [ ] พ้น suspension → ไอคอนกลับมา active เมื่อมี selection และ panel geometry เดิม
 
 **Acceptance Criteria**
-- ผู้ใช้กดไอคอนขวาป้าย "ยอดนิยม" แล้วเลือกได้หลายประเภทพร้อมกัน และการ์ดแสดงเฉพาะประเภทที่เลือก
+- ผู้ใช้กดปุ่มตัวกรองชิดขวาของแถวบนสุด แล้วเลือกได้หลายประเภทพร้อมกัน และการ์ดแสดงเฉพาะประเภทที่เลือก
 - รายการประเภทมาจากตารางจริง เรียงตาม `display_order` ตรงกับแถบหมวดหมู่และหน้า admin
 - ไม่มี regression ต่อ Mission Lock/สิทธิ์จิตอาสา, viewer/interactions, thumbnail realtime, แผนที่ และ existing no-filter trending behavior
 - ไอคอนปรากฏเฉพาะ category-ready + unlocked; ระหว่าง mission ซ่อน/พัก filter แล้วคืนค่าเดิมหลังปลดล็อก; matching cards เข้มงวดและ playback เปลี่ยนเฉพาะตามกฎ Apply ใน §20.4 ข้อ 7
@@ -5941,6 +5942,43 @@ Rollout ต้อง monitor storage growth และ CDN egress เทียบ
 - **Rollout:** deploy backend support/validation/applied marker + CORS header exposure ก่อน; verify filtered response and Supabase fallback. จากนั้น deploy client ที่ feature flag ปิดเป็นค่าเริ่มต้น/เปิด canary; client เก่าที่ไม่ส่ง param ใช้ unfiltered v3 cache เดิม. เฝ้า filtered query latency, DB CPU/rows, fallback rate, filter errors และ geometry metrics; filtered request ไม่สร้าง Redis cache keys
 - **Rollback:** ปิด client feature flag แล้วกลับ `category_ids` ว่าง/ไม่ส่ง param และใช้ UI เดิม; backend คง backward-compatible. ไม่ต้อง rollback schema/migration (ไม่มีเพิ่ม); ถ้า query load เกิน budget ให้ปิด feature และทบทวน index/query ก่อนเปิดใหม่
 - **Out of scope:** ตัวกรองในแผนที่/ลิสต์อื่น, ตัวกรองฝั่ง admin, การเปลี่ยน semantics ของ `GET /api/videos/` (ค่า `category_id` เดี่ยว), การจำค่าตัวกรองข้ามการเปิดแอป, การเพิ่มหมวดหมู่ใหม่หรือแก้ `display_order`
+
+### 20.10 ปรับตำแหน่งปุ่มตัวกรองไปแถวบนสุด (2026-10-06)
+
+**เหตุผล:** ปุ่มเดิมอยู่ใน header ของกล่องยอดนิยมซึ่งกว้างเพียง 35% ของจอ — บนจอแคบทำให้ header แน่น และผู้ใช้ต้องมองสองจุด (ป้ายกับปุ่ม) ในพื้นที่เดียวกัน จึงย้ายไปแถวบนสุดชิดขวา ซึ่งเป็นพื้นที่ว่างอยู่แล้วและตรงกับสัญชาตญาณการใช้งาน (ระดับเดียวกับปุ่มย้อนกลับ)
+
+**สิ่งที่เปลี่ยน**
+
+| ไฟล์ | การเปลี่ยน |
+|---|---|
+| `widgets/emergency_top_bar.dart` (ใหม่) | แถวบนสุด: ปุ่มย้อนกลับ + เครื่องมือวิดีโอ + ปุ่มตัวกรองชิดขวา; ระหว่างกลางใช้ `Expanded` + `Align` เพื่อไม่บีบเครื่องมือบนจอกว้าง และให้หดได้บนจอแคบ (เครื่องมือมี horizontal scroll อยู่แล้ว) |
+| `widgets/trending_category_filter_button.dart` (ใหม่) | ปุ่มวงกลมกระจก 42px + badge นับจำนวน (ย้ายสไตล์มาจากไอคอน 32px ในแผง) |
+| `widgets/trending_panel_widget.dart` | header เหลือป้าย "ยอดนิยม"; ถอด `canShowCategoryFilter`/`filterCategories`/`missionSuspendSignal` ที่ตายแล้ว; คง `selectedCategoryIds` + `onApplyCategoryFilter` สำหรับ empty state |
+| `widgets/live_view_widget.dart` | ถอด props ที่ไม่ใช้แล้ว (`trendingFilterCategories`, `canShowTrendingCategoryFilter`, `missionSuspendSignal`) |
+| `emergency_live_page.dart` / `parts/emergency_navigation_logic.dart` | ใช้ `EmergencyTopBar`; เพิ่ม `_openTrendingCategoryFilterSheet()` ที่หน้า (ใช้ `_emergencyCategories`, `_selectedTrendingCategoryIds`, `_missionSuspendSignal`, `_applyTrendingCategoryFilter` ชุดเดิม) |
+| `widgets/glassmorphism_video_controls.dart` | ลด padding ปุ่มแนวนอน 14 → 12 (แถบรวม ~215px) เพื่อให้พอดีจอ 320dp โดยแทบไม่ต้องเลื่อน |
+
+**สิ่งที่รักษาไว้ (ไม่เปลี่ยน semantics)**
+
+- เงื่อนไขการแสดงเทียบเท่าเดิม: `_isUiVisible && _selectedTab == 0 && !_isThaiMhungReporting && _canShowTrendingCategoryFilter` (mission suspension/category readiness ยังมาจาก getter เดิม)
+- Sheet ยังเป็น modal เดียวกัน, draft/Apply transactional เดิม, และปิดตัวเองเมื่อ `_missionSuspendSignal` เป็น true โดยไม่ commit draft
+- Mission Lock, role eligibility, Phase 20 playback auto-switch, event semantics และ server contract ไม่ถูกแตะ
+- ความสูง header ของแผงคงเดิม → `_trendingPanelBottom`/`_trendingPanelRight` และตำแหน่ง Rescue Control Panel ไม่เลื่อน
+- Fullscreen เป็น route แยก จึงไม่มีปุ่มนี้อยู่แล้ว (ตรงตาม §20.5)
+
+**Test:** `test/features/emergency_top_bar_test.dart` (layout 320/375/390 dp ไม่ล้น, ปุ่มชิดขวา, ซ่อนตามเงื่อนไข, badge, tap callbacks, เปิด sheet/apply/retry/suspension) และ `test/features/trending_panel_filter_test.dart` (policy + empty state) — ผ่านทั้งหมด
+
+### 20.11 ปรับ footer ของ sheet ตัวกรอง — ล้างค่าทั้งหมดแทนปุ่มยกเลิก (2026-10-06)
+
+**เหตุผล:** ปุ่ม "ยกเลิก" ซ้ำซ้อนกับปุ่มปิดมุมขวาบนและ barrier (ทั้งสามปิดโดยไม่ commit draft) จึงเอาออกและย้าย "ล้างค่าทั้งหมด" จาก header มาใส่ตำแหน่งเดิม — footer เหลือ 2 ปุ่มตาม spec ที่ผู้ใช้ยืนยัน ("ล้าง + แสดงผล + ปิดทันที")
+
+**พฤติกรรมใหม่ใน `widgets/trending_category_filter_sheet.dart`**
+
+- Footer: `NeumorphicPillButton` "ล้างค่าทั้งหมด" (ข้อความสีส้ม `0xFFFF6B35` — ชุดเดียวกับป้าย "ยอดนิยม"/ปุ่มตัวกรอง) + `NeumorphicVerifyButton` "แสดงผล" — ทั้งคู่ `Expanded` จึงไม่ล้นบนจอแคบ และถูก disable พร้อมกันระหว่าง `_applying`
+- "ล้างค่าทั้งหมด" → `_clearAllAndApply()`: ล้าง `_draft` แล้วเรียก `_apply()` — เส้นทาง transactional เดียวกับ Apply ปกติ จึงได้ semantics เดิมครบ (commit `Set` ว่าง → แสดงทุกประเภท → ปิด sheet เมื่อสำเร็จ; ล้มเหลว → sheet คงเปิด + error/retry)
+- Header เหลือ title + ปุ่มปิด; `NeumorphicSheetShell.onClearAll` ยังเป็น API ที่ใช้ได้กับ sheet อื่น — เพียงไม่ส่งจาก sheet นี้
+
+**Test:** เพิ่มเคสใน `test/features/emergency_top_bar_test.dart` — ไม่มี "ยกเลิก"/"ล้างทั้งหมด", ข้อความ "ล้างค่าทั้งหมด" สี `0xFFFF6B35`, กดแล้ว `onApply` ได้รับ `Set` ว่างและ sheet ปิด, กรณี `onApply` คืน false sheet คงเปิดพร้อม retry error
 
 ## 21. Phase — WebSocket Realtime Auth Recovery (Implemented — รอ Device Verification)
 

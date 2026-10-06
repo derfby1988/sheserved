@@ -1,31 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sheserved/features/donation/models/donation_models.dart';
 import 'package:sheserved/features/video/models/video_models.dart';
 import 'package:sheserved/features/video/presentation/pages/trending_category_filter_policy.dart';
 import 'package:sheserved/features/video/presentation/pages/widgets/trending_panel_widget.dart';
-
-const _categories = [
-  DonationCategory(
-    id: 'cat-accident',
-    name: 'อุบัติเหตุ',
-    isEmergency: true,
-    displayOrder: 1,
-  ),
-  DonationCategory(
-    id: 'cat-flood',
-    name: 'น้ำท่วม',
-    isEmergency: true,
-    displayOrder: 2,
-  ),
-  DonationCategory(
-    id: 'cat-fire',
-    name: 'ไฟไหม้',
-    isEmergency: true,
-    displayOrder: 3,
-  ),
-];
 
 Video _video(String id, {String? categoryId}) => Video(
   id: id,
@@ -37,12 +14,13 @@ Video _video(String id, {String? categoryId}) => Video(
   createdAt: DateTime(2026, 10, 5, 8),
 );
 
+/// หมายเหตุ: ปุ่มเปิด sheet ตัวกรองย้ายไปอยู่แถวบนสุด (`EmergencyTopBar`) แล้ว —
+/// เทสต์ของปุ่ม/sheet อยู่ใน `emergency_top_bar_test.dart`; panel เหลือหน้าที่
+/// แสดงผล empty state ของ filter ที่ commit ไว้
 Widget _panel({
   List<Video>? videos,
-  bool canShowCategoryFilter = false,
   Set<String> selectedCategoryIds = const {},
   Future<bool> Function(Set<String>)? onApplyCategoryFilter,
-  ValueListenable<bool>? missionSuspendSignal,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -55,12 +33,8 @@ Widget _panel({
             isLoadingTrending: false,
             currentVideoId: null,
             onSwitchVideo: (_) {},
-            filterCategories: _categories,
             selectedCategoryIds: selectedCategoryIds,
-            canShowCategoryFilter: canShowCategoryFilter,
             onApplyCategoryFilter: onApplyCategoryFilter,
-            missionSuspendSignal:
-                missionSuspendSignal ?? ValueNotifier<bool>(false),
           ),
         ),
       ),
@@ -159,43 +133,19 @@ void main() {
   });
 
   group('TrendingPanelWidget — Phase 20 category filter', () {
-    testWidgets('hides the filter icon when canShowCategoryFilter is false', (
-      tester,
-    ) async {
+    testWidgets('header keeps the label without a filter icon', (tester) async {
       await tester.pumpWidget(_panel());
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 700));
-      expect(find.byIcon(Icons.tune), findsNothing);
       expect(find.text('ยอดนิยม'), findsOneWidget);
+      expect(find.byIcon(Icons.tune), findsNothing);
     });
-
-    testWidgets(
-      'shows the filter icon right of the label and the selection badge count',
-      (tester) async {
-        await tester.pumpWidget(
-          _panel(
-            canShowCategoryFilter: true,
-            selectedCategoryIds: const {'cat-flood', 'cat-fire'},
-          ),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 700));
-        expect(find.byIcon(Icons.tune), findsOneWidget);
-        expect(find.text('2'), findsOneWidget);
-
-        // ไอคอนอยู่ทางขวาของป้าย "ยอดนิยม"
-        final labelX = tester.getCenter(find.text('ยอดนิยม')).dx;
-        final iconX = tester.getCenter(find.byIcon(Icons.tune)).dx;
-        expect(iconX, greaterThan(labelX));
-      },
-    );
 
     testWidgets('filtered empty state offers a clear action', (tester) async {
       Set<String>? applied;
       await tester.pumpWidget(
         _panel(
           videos: const [],
-          canShowCategoryFilter: true,
           selectedCategoryIds: const {'cat-flood'},
           onApplyCategoryFilter: (ids) async {
             applied = ids;
@@ -213,105 +163,15 @@ void main() {
       expect(applied, isEmpty);
     });
 
-    testWidgets(
-      'sheet opens with draft multi-select and applies committed ids',
-      (tester) async {
-        Set<String>? applied;
-        await tester.pumpWidget(
-          _panel(
-            canShowCategoryFilter: true,
-            selectedCategoryIds: const {'cat-flood'},
-            onApplyCategoryFilter: (ids) async {
-              applied = ids;
-              return true;
-            },
-          ),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 700));
-
-        await tester.tap(find.byIcon(Icons.tune));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 700));
-        expect(find.text('กรองประเภทเหตุ'), findsOneWidget);
-        // หมวดเรียงตามลำดับที่ส่งมา (display_order จากหน้า)
-        expect(find.text('อุบัติเหตุ'), findsOneWidget);
-        expect(find.text('น้ำท่วม'), findsOneWidget);
-        expect(find.text('ไฟไหม้'), findsOneWidget);
-
-        // เลือกเพิ่ม "ไฟไหม้" (น้ำท่วมถูกเลือกไว้แล้วใน draft) แล้วกดแสดงผล
-        await tester.tap(find.text('ไฟไหม้'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 700));
-        await tester.tap(find.text('แสดงผล'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 700));
-        expect(applied, {'cat-flood', 'cat-fire'});
-        // apply สำเร็จ → sheet ปิด
-        expect(find.text('กรองประเภทเหตุ'), findsNothing);
-      },
-    );
-
-    testWidgets('failed apply keeps the sheet open with a retry error', (
+    testWidgets('no empty-filter message while the filter is empty', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _panel(
-          canShowCategoryFilter: true,
-          onApplyCategoryFilter: (_) async => false,
-        ),
-      );
+      await tester.pumpWidget(_panel(videos: const []));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 700));
-      await tester.tap(find.byIcon(Icons.tune));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-
-      await tester.tap(find.text('น้ำท่วม'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      await tester.tap(find.text('แสดงผล'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-
-      expect(find.text('กรองประเภทเหตุ'), findsOneWidget);
-      expect(
-        find.text('โหลดรายการไม่สำเร็จ — กรุณาลองอีกครั้ง'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('suspension signal closes the sheet without applying', (
-      tester,
-    ) async {
-      final signal = ValueNotifier<bool>(false);
-      var applyCalls = 0;
-      await tester.pumpWidget(
-        _panel(
-          canShowCategoryFilter: true,
-          missionSuspendSignal: signal,
-          onApplyCategoryFilter: (_) async {
-            applyCalls++;
-            return true;
-          },
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      await tester.tap(find.byIcon(Icons.tune));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      expect(find.text('กรองประเภทเหตุ'), findsOneWidget);
-
-      // เข้าสู่ mission lock ระหว่างเปิด sheet → ปิดโดยไม่ commit draft
-      await tester.tap(find.text('ไฟไหม้'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      signal.value = true;
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 700));
-      expect(find.text('กรองประเภทเหตุ'), findsNothing);
-      expect(applyCalls, 0);
+      expect(find.text('ไม่พบเหตุในประเภทที่เลือก'), findsNothing);
+      expect(find.text('ล้างตัวกรอง'), findsNothing);
+      expect(find.text('ไม่มีข้อมูล'), findsOneWidget);
     });
   });
 }

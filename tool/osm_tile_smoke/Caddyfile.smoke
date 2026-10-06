@@ -1,0 +1,57 @@
+# Scratch Caddyfile สำหรับ Phase 0 OSM tile smoke (ไม่ใช้ใน production)
+# เสิร์ฟ build/osm_smoke บน :8082 ด้วย CSP เดียวกับ Caddyfile.dev :8081 block
+# เพื่อทดสอบว่า tile hosts ผ่าน CSP จริงของระบบหรือไม่
+# รัน: caddy run --config tool/osm_tile_smoke/Caddyfile.smoke --adapter caddyfile
+
+{
+	admin off
+	auto_https off
+}
+
+:8082 {
+	root * /Users/dave_macmini/sheserved/build/osm_smoke
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:8080 ws://localhost:8080 http://127.0.0.1:8080 ws://127.0.0.1:8080 http://192.168.1.167:8080 ws://192.168.1.167:8080 https://psxcgdwcwjdbpaemkozq.supabase.co wss://psxcgdwcwjdbpaemkozq.supabase.co https://accounts.google.com https://www.googleapis.com https://unpkg.com https://fonts.googleapis.com https://fonts.gstatic.com; frame-src https://accounts.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	}
+
+	@notStatic not path /canvaskit/* /assets/* /icons/*
+	header @notStatic Cache-Control "no-cache"
+
+	@static path /canvaskit/* /assets/* /icons/*
+	header @static Cache-Control "public, max-age=86400"
+
+	try_files {path} /index.html
+	file_server
+}
+
+# Variant B (Phase 0 experiment): CSP เดียวกับ :8081 + connect-src เพิ่ม candidate tile hosts
+# engine (canvaskit) ยังโหลดจาก 'self' ผ่าน useLocalCanvasKit ใน flutter_bootstrap.js
+# จุดประสงค์: พิสูจน์ว่าถ้าอนุญาต tile hosts ใน connect-src แล้ว tile โหลดผ่าน CanvasKit fetch ได้จริง
+
+:8083 {
+	root * /Users/dave_macmini/sheserved/build/osm_smoke
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:8080 ws://localhost:8080 http://127.0.0.1:8080 ws://127.0.0.1:8080 http://192.168.1.167:8080 ws://192.168.1.167:8080 https://psxcgdwcwjdbpaemkozq.supabase.co wss://psxcgdwcwjdbpaemkozq.supabase.co https://accounts.google.com https://www.googleapis.com https://unpkg.com https://fonts.googleapis.com https://fonts.gstatic.com https://tile.openstreetmap.org https://basemaps.cartocdn.com https://a.tile.opentopomap.org https://b.tile.opentopomap.org https://c.tile.opentopomap.org; frame-src https://accounts.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	}
+
+	@notStatic3 not path /canvaskit/* /assets/* /icons/*
+	header @notStatic3 Cache-Control "no-cache"
+
+	@static3 path /canvaskit/* /assets/* /icons/*
+	header @static3 Cache-Control "public, max-age=86400"
+
+	try_files {path} /index.html
+	file_server
+}
