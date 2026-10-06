@@ -167,32 +167,56 @@ void main() {
     });
   });
 
+  group('GlobalSlipVerificationPolicy', () {
+    test('decodes platform scope and rollout counts', () {
+      final policy = GlobalSlipVerificationPolicy.fromJson({
+        'scope': 'whitelist',
+        'approvedVenueCount': 12,
+        'allowlistedVenueCount': 3,
+        'configuredProviderCount': 1,
+      });
+      expect(policy.scope, 'whitelist');
+      expect(policy.approvedVenueCount, 12);
+      expect(policy.allowlistedVenueCount, 3);
+      expect(policy.configuredProviderCount, 1);
+    });
+
+    test('defaults global scope to disabled', () {
+      expect(GlobalSlipVerificationPolicy.fromJson({}).scope, 'disabled');
+    });
+  });
+
   group('AdminVenueVerifyPolicy', () {
-    test('decodes scope, cost and usage signals from the admin listing', () {
+    test('decodes per-venue allowlist, estimate and reserved-call signals', () {
       final v = AdminVenueVerifyPolicy.fromJson({
         'venueId': 'v1',
         'name': 'สนามทดสอบ',
         'status': 'approved',
-        'verifyScope': 'whitelist',
+        'globalScope': 'whitelist',
+        'isAllowlisted': true,
+        'isAutoVerifyAllowed': true,
         'costBearer': 'owner',
         'monthlyQuota': 500,
         'verifyTimeoutMinutes': 30,
         'hasEvidencePolicy': true,
-        'enabledProviderCount': 1,
-        'usedThisMonth': 12,
-        'costThisMonth': 18.5,
-        'lastUsageAt': '2026-10-11T10:00:00Z',
+        'configuredProviderCount': 1,
+        'callsThisMonth': 12,
+        'pendingCallsThisMonth': 2,
+        'costEstimateThisMonth': 18.5,
+        'lastCallAt': '2026-10-11T10:00:00Z',
       });
       expect(v.venueId, 'v1');
-      expect(v.verifyScope, 'whitelist');
+      expect(v.globalScope, 'whitelist');
+      expect(v.isAllowlisted, isTrue);
       expect(v.costBearer, 'owner');
       expect(v.monthlyQuota, 500);
       expect(v.isScopeEnabled, isTrue);
       expect(v.isVerifyReady, isTrue);
       expect(v.isQuotaExhausted, isFalse);
-      expect(v.usedThisMonth, 12);
-      expect(v.costThisMonth, 18.5);
-      expect(v.lastUsageAt, DateTime.utc(2026, 10, 11, 10));
+      expect(v.callsThisMonth, 12);
+      expect(v.pendingCallsThisMonth, 2);
+      expect(v.costEstimateThisMonth, 18.5);
+      expect(v.lastCallAt, DateTime.utc(2026, 10, 11, 10));
     });
 
     test('defaults to disabled without providers or quota', () {
@@ -200,7 +224,8 @@ void main() {
         'venueId': 'v2',
         'name': 'สนามใหม่',
       });
-      expect(v.verifyScope, 'disabled');
+      expect(v.globalScope, 'disabled');
+      expect(v.isAllowlisted, isFalse);
       expect(v.costBearer, 'platform');
       expect(v.monthlyQuota, isNull);
       expect(v.isScopeEnabled, isFalse);
@@ -208,28 +233,100 @@ void main() {
       expect(v.isQuotaExhausted, isFalse);
     });
 
-    test('scope on without an enabled provider is not verify-ready', () {
-      final v = AdminVenueVerifyPolicy.fromJson({
+    test('whitelist needs both global scope and per-venue allowlisting', () {
+      final blocked = AdminVenueVerifyPolicy.fromJson({
         'venueId': 'v3',
-        'name': 'สนามไร้ผู้ให้บริการ',
-        'verifyScope': 'whitelist',
-        'enabledProviderCount': 0,
+        'name': 'สนามนอก allowlist',
+        'globalScope': 'whitelist',
+        'isAllowlisted': false,
+        'configuredProviderCount': 1,
       });
-      expect(v.isScopeEnabled, isTrue);
-      expect(v.isVerifyReady, isFalse);
+      expect(blocked.isScopeEnabled, isFalse);
+      expect(blocked.isVerifyReady, isFalse);
+      final allowed = AdminVenueVerifyPolicy.fromJson({
+        'venueId': 'v4',
+        'name': 'สนามใน allowlist',
+        'globalScope': 'whitelist',
+        'isAllowlisted': true,
+        'configuredProviderCount': 1,
+        'isAutoVerifyAllowed': true,
+      });
+      expect(allowed.isScopeEnabled, isTrue);
+      expect(allowed.isVerifyReady, isTrue);
     });
 
-    test('quota exhaustion follows the monthly usage count', () {
+    test('quota exhaustion follows reserved provider attempts', () {
       final v = AdminVenueVerifyPolicy.fromJson({
-        'venueId': 'v4',
+        'venueId': 'v5',
         'name': 'สนามโควตาหมด',
-        'verifyScope': 'all',
+        'globalScope': 'all',
         'monthlyQuota': 10,
-        'usedThisMonth': 10,
-        'enabledProviderCount': 2,
+        'callsThisMonth': 10,
+        'configuredProviderCount': 2,
+        'isAutoVerifyAllowed': true,
       });
       expect(v.isQuotaExhausted, isTrue);
       expect(v.isVerifyReady, isTrue);
+    });
+  });
+
+  group('OwnerEvidenceQueue', () {
+    test('parses defer state, cursor pagination and bulk helpers', () {
+      final q = OwnerEvidenceQueue.fromJson({
+        'serverNow': '2026-10-14T10:00:00Z',
+        'hasMore': true,
+        'nextCursor': {
+          'due': '2026-10-20T03:00:00Z',
+          'created': '2026-10-14T01:00:00Z',
+          'id': 'g1',
+        },
+        'deferredCount': 2,
+        'groups': [
+          {
+            'id': 'g1',
+            'venueId': 'v1',
+            'status': 'awaiting_evidence',
+            'stage': 'payment',
+            'approvalMode': 'instant',
+            'bookerName': 'สมชาย',
+            'deferredUntil': '2026-10-14T12:00:00Z',
+            'firstStartsAt': '2026-10-20T03:00:00Z',
+            'hasPendingSlip': true,
+          },
+        ],
+      });
+      expect(q.hasMore, isTrue);
+      expect(q.nextCursor?.id, 'g1');
+      expect(q.nextCursor?.due, '2026-10-20T03:00:00Z');
+      expect(q.deferredCount, 2);
+      final g = q.groups.single;
+      expect(g.deferredUntil, DateTime.utc(2026, 10, 14, 12));
+      expect(g.firstStartsAt, DateTime.utc(2026, 10, 20, 3));
+      expect(g.hasPendingSlip, isTrue);
+      expect(g.isAwaitingEvidence, isTrue);
+    });
+
+    test('defaults to a first page without cursor', () {
+      final q = OwnerEvidenceQueue.fromJson({'groups': []});
+      expect(q.hasMore, isFalse);
+      expect(q.nextCursor, isNull);
+      expect(q.deferredCount, 0);
+    });
+  });
+
+  group('OwnerQueueBulkResult', () {
+    test('decodes per-group results and errors', () {
+      final ok = OwnerQueueBulkResult.fromJson({
+        'groupId': 'g1',
+        'result': 'rejected',
+      });
+      final failed = OwnerQueueBulkResult.fromJson({
+        'groupId': 'g2',
+        'error': 'GROUP_NOT_OPEN',
+      });
+      expect(ok.ok, isTrue);
+      expect(failed.ok, isFalse);
+      expect(failed.error, 'GROUP_NOT_OPEN');
     });
   });
 

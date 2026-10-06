@@ -20,10 +20,13 @@ class _FakeBookCourtRepository extends BookCourtRepository {
 
   List<AdminVenueVerifyPolicy> policies = const [];
   List<SlipVerificationProvider> providers = const [];
+  GlobalSlipVerificationPolicy globalPolicy =
+      const GlobalSlipVerificationPolicy();
 
   String? savedVenueId;
   String? savedScope;
   String? savedBearer;
+  bool? savedAllowlisted;
   int? savedQuota;
   int? savedTimeout;
   bool? savedClearQuota;
@@ -47,15 +50,34 @@ class _FakeBookCourtRepository extends BookCourtRepository {
   ) async => providers;
 
   @override
+  Future<GlobalSlipVerificationPolicy> adminGetGlobalVerifyPolicy(
+    String adminId,
+  ) async => globalPolicy;
+
+  @override
+  Future<void> adminSetGlobalVerifyScope({
+    required String adminId,
+    required String scope,
+  }) async {
+    savedScope = scope;
+    globalPolicy = GlobalSlipVerificationPolicy(
+      scope: scope,
+      approvedVenueCount: globalPolicy.approvedVenueCount,
+      allowlistedVenueCount: globalPolicy.allowlistedVenueCount,
+      configuredProviderCount: globalPolicy.configuredProviderCount,
+    );
+  }
+
+  @override
   Future<List<AdminVenueVerifyPolicy>> adminListVenueVerifyPolicies(
     String adminId,
   ) async => policies;
 
   @override
-  Future<void> adminSetVenueVerifyPolicy({
+  Future<void> adminSetVenueVerifyControls({
     required String adminId,
     required String venueId,
-    String? verifyScope,
+    required bool isAllowlisted,
     String? costBearer,
     int? monthlyQuota,
     int? verifyTimeoutMinutes,
@@ -63,13 +85,14 @@ class _FakeBookCourtRepository extends BookCourtRepository {
     bool clearTimeout = false,
   }) async {
     savedVenueId = venueId;
-    savedScope = verifyScope;
+    savedAllowlisted = isAllowlisted;
     savedBearer = costBearer;
     savedQuota = monthlyQuota;
     savedTimeout = verifyTimeoutMinutes;
     savedClearQuota = clearQuota;
     savedClearTimeout = clearTimeout;
   }
+
 }
 
 UserModel _adminUser() => UserModel(
@@ -108,68 +131,105 @@ void main() {
     await AuthService.instance.logout();
   });
 
+  testWidgets('global scope requires confirmation and saves separately', (
+    tester,
+  ) async {
+    final repo = _FakeBookCourtRepository()
+      ..globalPolicy = const GlobalSlipVerificationPolicy(
+        approvedVenueCount: 4,
+        allowlistedVenueCount: 2,
+        configuredProviderCount: 1,
+      );
+    await _pumpPanel(tester, repo);
+
+    await tester.tap(find.byKey(const ValueKey('admin-global-verify-scope')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เฉพาะสถานที่ใน allowlist').last);
+    await tester.pumpAndSettle();
+    expect(find.text('ยืนยันขอบเขตตรวจสลิป'), findsOneWidget);
+    await tester.tap(find.text('ยืนยัน'));
+    await tester.pumpAndSettle();
+
+    expect(repo.savedScope, 'whitelist');
+    expect(repo.globalPolicy.scope, 'whitelist');
+    await PresenceService.instance.stop();
+  });
+
   testWidgets('lists venues with scope and warns when no provider is on', (
     tester,
   ) async {
     final repo = _FakeBookCourtRepository()
+      ..globalPolicy = const GlobalSlipVerificationPolicy(
+        scope: 'whitelist',
+        approvedVenueCount: 2,
+        allowlistedVenueCount: 1,
+        configuredProviderCount: 0,
+      )
       ..policies = const [
         AdminVenueVerifyPolicy(
           venueId: 'v1',
           name: 'สนาม ก',
           status: 'approved',
-          verifyScope: 'whitelist',
+          globalScope: 'whitelist',
+          isAllowlisted: true,
           costBearer: 'platform',
           hasEvidencePolicy: true,
-          enabledProviderCount: 0,
+          configuredProviderCount: 0,
         ),
         AdminVenueVerifyPolicy(
           venueId: 'v2',
           name: 'สนาม ข',
           status: 'approved',
-          verifyScope: 'disabled',
+          globalScope: 'whitelist',
           costBearer: 'owner',
           monthlyQuota: 500,
           verifyTimeoutMinutes: 30,
           hasEvidencePolicy: true,
-          enabledProviderCount: 1,
-          usedThisMonth: 10,
+          configuredProviderCount: 1,
+          callsThisMonth: 10,
         ),
       ];
     await _pumpPanel(tester, repo);
 
     expect(find.text('สนาม ก'), findsOneWidget);
     expect(find.text('สนาม ข'), findsOneWidget);
-    expect(find.text('เปิดเฉพาะสถานที่นี้'), findsOneWidget);
-    expect(find.text('ปิดการตรวจอัตโนมัติ'), findsOneWidget);
+    expect(find.text('เฉพาะสถานที่ใน allowlist'), findsOneWidget);
+    expect(find.text('อยู่ใน allowlist'), findsOneWidget);
+    expect(find.text('ไม่อยู่ใน allowlist'), findsOneWidget);
     expect(
-      find.text('ยังไม่มีผู้ให้บริการที่เปิดใช้งาน — สลิปจะตกไปให้เจ้าของตรวจแทน'),
+      find.text(
+        'ยังไม่มี provider ที่เปิดและตั้ง endpoint/secret reference ครบ — สลิปจะตกไปให้เจ้าของตรวจแทน',
+      ),
       findsOneWidget,
     );
-    expect(find.textContaining('ใช้ 10/500 ครั้งเดือนนี้'), findsOneWidget);
+    expect(find.textContaining('ใช้/จอง 10/500 ครั้งเดือนนี้'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('admin-verify-allowlist-v2')),
+    );
+    await tester.pumpAndSettle();
+    expect(repo.savedAllowlisted, isTrue);
     // The heartbeat timer is created inside the test's async zone; stop it
     // here or the binding reports a pending timer.
     await PresenceService.instance.stop();
   });
 
-  testWidgets('saving the dialog forwards scope, bearer, quota and timeout', (
+  testWidgets('saving venue cost controls forwards bearer, quota and timeout', (
     tester,
   ) async {
     final repo = _FakeBookCourtRepository()
+      ..globalPolicy = const GlobalSlipVerificationPolicy(scope: 'whitelist')
       ..policies = const [
         AdminVenueVerifyPolicy(
           venueId: 'v3',
           name: 'สนาม ค',
           status: 'approved',
+          globalScope: 'whitelist',
+          isAllowlisted: true,
         ),
       ];
     await _pumpPanel(tester, repo);
 
-    await tester.tap(find.text('ตั้งค่า'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('admin-verify-scope')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('เปิดเฉพาะสถานที่นี้').last);
+    await tester.tap(find.text('ตั้งค่าค่าใช้จ่าย'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('admin-verify-bearer')));
@@ -189,7 +249,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.savedVenueId, 'v3');
-    expect(repo.savedScope, 'whitelist');
+    expect(repo.savedAllowlisted, isTrue);
     expect(repo.savedBearer, 'owner');
     expect(repo.savedQuota, 300);
     expect(repo.savedTimeout, 45);
@@ -202,20 +262,22 @@ void main() {
     tester,
   ) async {
     final repo = _FakeBookCourtRepository()
+      ..globalPolicy = const GlobalSlipVerificationPolicy(scope: 'whitelist')
       ..policies = const [
         AdminVenueVerifyPolicy(
           venueId: 'v4',
           name: 'สนาม ง',
           status: 'approved',
-          verifyScope: 'whitelist',
+          globalScope: 'whitelist',
+          isAllowlisted: true,
           monthlyQuota: 500,
           verifyTimeoutMinutes: 30,
-          enabledProviderCount: 1,
+          configuredProviderCount: 1,
         ),
       ];
     await _pumpPanel(tester, repo);
 
-    await tester.tap(find.text('ตั้งค่า'));
+    await tester.tap(find.text('ตั้งค่าค่าใช้จ่าย'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byKey(const ValueKey('admin-verify-quota')), '');

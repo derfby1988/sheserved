@@ -1475,6 +1475,28 @@ class GroupRefundCase {
   );
 }
 
+/// One-time server-issued upload grant for a private evidence object.
+/// The token is redeemed once at the Node upload gateway; the storage
+/// path is pre-assigned — the client never chooses it.
+class EvidenceUploadGrant {
+  final String token;
+  final String path;
+  final DateTime? expiresAt;
+
+  const EvidenceUploadGrant({
+    required this.token,
+    required this.path,
+    this.expiresAt,
+  });
+
+  factory EvidenceUploadGrant.fromJson(Map<String, dynamic> j) =>
+      EvidenceUploadGrant(
+        token: j['token']?.toString() ?? '',
+        path: j['path']?.toString() ?? '',
+        expiresAt: DateTime.tryParse(j['expiresAt']?.toString() ?? ''),
+      );
+}
+
 /// One booking group as listed for the booker.
 class VenueBookingGroup {
   final String id;
@@ -1647,6 +1669,13 @@ class OwnerQueueGroup extends VenueBookingGroup {
   final String? bookerName;
   final String? bookerUserId;
 
+  /// This manager's personal snooze — never changes deadlines or status.
+  final DateTime? deferredUntil;
+
+  /// Earliest child start; used for date grouping in the queue UI.
+  final DateTime? firstStartsAt;
+  final bool hasPendingSlip;
+
   const OwnerQueueGroup({
     required super.id,
     required super.venueId,
@@ -1668,6 +1697,9 @@ class OwnerQueueGroup extends VenueBookingGroup {
     super.createdAt,
     this.bookerName,
     this.bookerUserId,
+    this.deferredUntil,
+    this.firstStartsAt,
+    this.hasPendingSlip = false,
   });
 
   factory OwnerQueueGroup.fromJson(Map<String, dynamic> j) => OwnerQueueGroup(
@@ -1718,7 +1750,46 @@ class OwnerQueueGroup extends VenueBookingGroup {
     createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
     bookerName: j['bookerName']?.toString(),
     bookerUserId: j['userId']?.toString(),
+    deferredUntil: DateTime.tryParse(j['deferredUntil']?.toString() ?? ''),
+    firstStartsAt: DateTime.tryParse(j['firstStartsAt']?.toString() ?? ''),
+    hasPendingSlip: j['hasPendingSlip'] == true,
   );
+}
+
+/// Keyset cursor returned by the queue RPC — pass the values back verbatim.
+class OwnerQueueCursor {
+  final String? due;
+  final String? created;
+  final String? id;
+
+  const OwnerQueueCursor({this.due, this.created, this.id});
+
+  factory OwnerQueueCursor.fromJson(Map<String, dynamic> j) =>
+      OwnerQueueCursor(
+        due: j['due']?.toString(),
+        created: j['created']?.toString(),
+        id: j['id']?.toString(),
+      );
+}
+
+/// Per-group outcome of a bulk reject — `result` is the decision outcome
+/// ('rejected'), `error` carries the server error code for groups that
+/// could not be rejected (e.g. already decided).
+class OwnerQueueBulkResult {
+  final String groupId;
+  final String? result;
+  final String? error;
+
+  const OwnerQueueBulkResult({required this.groupId, this.result, this.error});
+
+  bool get ok => result != null && error == null;
+
+  factory OwnerQueueBulkResult.fromJson(Map<String, dynamic> j) =>
+      OwnerQueueBulkResult(
+        groupId: j['groupId']?.toString() ?? '',
+        result: j['result']?.toString(),
+        error: j['error']?.toString(),
+      );
 }
 
 /// Owner evidence queue payload: attention groups + open claims + active
@@ -1728,17 +1799,30 @@ class OwnerEvidenceQueue {
   final List<OwnerQueueGroup> groups;
   final List<GroupPaymentClaim> claims;
   final List<GroupRefundCase> refundCases;
+  final bool hasMore;
+  final OwnerQueueCursor? nextCursor;
+  final int deferredCount;
 
   const OwnerEvidenceQueue({
     this.serverNow,
     this.groups = const [],
     this.claims = const [],
     this.refundCases = const [],
+    this.hasMore = false,
+    this.nextCursor,
+    this.deferredCount = 0,
   });
 
   factory OwnerEvidenceQueue.fromJson(Map<String, dynamic> j) =>
       OwnerEvidenceQueue(
         serverNow: DateTime.tryParse(j['serverNow']?.toString() ?? ''),
+        hasMore: j['hasMore'] == true,
+        nextCursor: j['nextCursor'] == null
+            ? null
+            : OwnerQueueCursor.fromJson(
+                Map<String, dynamic>.from(j['nextCursor'] as Map),
+              ),
+        deferredCount: (j['deferredCount'] as num?)?.toInt() ?? 0,
         groups:
             (j['groups'] as List?)
                 ?.map(
@@ -1818,65 +1902,96 @@ class SlipVerificationProvider {
       );
 }
 
-/// One venue row of the admin-only slip-verification cost policy (Phase
-/// 21.7.21.6): the scope/cost settings the admin owns plus the signals that
-/// decide whether `auto_verify` is usable for this venue.
+/// Platform-wide switch and rollout mode for automatic slip verification.
+class GlobalSlipVerificationPolicy {
+  final String scope; // disabled | whitelist | all
+  final int approvedVenueCount;
+  final int allowlistedVenueCount;
+  final int configuredProviderCount;
+
+  const GlobalSlipVerificationPolicy({
+    this.scope = 'disabled',
+    this.approvedVenueCount = 0,
+    this.allowlistedVenueCount = 0,
+    this.configuredProviderCount = 0,
+  });
+
+  factory GlobalSlipVerificationPolicy.fromJson(Map<String, dynamic> j) =>
+      GlobalSlipVerificationPolicy(
+        scope: j['scope']?.toString() ?? 'disabled',
+        approvedVenueCount: (j['approvedVenueCount'] as num?)?.toInt() ?? 0,
+        allowlistedVenueCount:
+            (j['allowlistedVenueCount'] as num?)?.toInt() ?? 0,
+        configuredProviderCount:
+            (j['configuredProviderCount'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// One venue row of admin-only verification controls and usage estimates.
 class AdminVenueVerifyPolicy {
   final String venueId;
   final String name;
   final String status;
+  final String globalScope;
+  final bool isAllowlisted;
+  final bool isAutoVerifyAllowed;
 
-  /// 'disabled' | 'whitelist' | 'all' — `disabled` hides `auto_verify` from
-  /// the owner and makes the server reject it.
-  final String verifyScope;
-
-  /// 'platform' | 'owner' — who carries the provider cost.
+  /// 'platform' | 'owner' — who carries the configured provider cost.
   final String costBearer;
   final int? monthlyQuota;
   final int? verifyTimeoutMinutes;
   final bool hasEvidencePolicy;
-  final int enabledProviderCount;
-  final int usedThisMonth;
-  final double costThisMonth;
-  final DateTime? lastUsageAt;
+  final int configuredProviderCount;
+  final int callsThisMonth;
+  final int pendingCallsThisMonth;
+  final double costEstimateThisMonth;
+  final DateTime? lastCallAt;
 
   const AdminVenueVerifyPolicy({
     required this.venueId,
     required this.name,
     this.status = '',
-    this.verifyScope = 'disabled',
+    this.globalScope = 'disabled',
+    this.isAllowlisted = false,
+    this.isAutoVerifyAllowed = false,
     this.costBearer = 'platform',
     this.monthlyQuota,
     this.verifyTimeoutMinutes,
     this.hasEvidencePolicy = false,
-    this.enabledProviderCount = 0,
-    this.usedThisMonth = 0,
-    this.costThisMonth = 0,
-    this.lastUsageAt,
+    this.configuredProviderCount = 0,
+    this.callsThisMonth = 0,
+    this.pendingCallsThisMonth = 0,
+    this.costEstimateThisMonth = 0,
+    this.lastCallAt,
   });
 
-  bool get isScopeEnabled => verifyScope != 'disabled';
+  bool get isScopeEnabled =>
+      globalScope == 'all' || (globalScope == 'whitelist' && isAllowlisted);
 
-  /// Scope is on and a provider is enabled — otherwise slips fall through to
-  /// the owner queue instead of being verified automatically.
-  bool get isVerifyReady => isScopeEnabled && enabledProviderCount > 0;
+  bool get isVerifyReady => isAutoVerifyAllowed;
 
   bool get isQuotaExhausted =>
-      monthlyQuota != null && usedThisMonth >= monthlyQuota!;
+      monthlyQuota != null && callsThisMonth >= monthlyQuota!;
 
   factory AdminVenueVerifyPolicy.fromJson(Map<String, dynamic> j) =>
       AdminVenueVerifyPolicy(
         venueId: j['venueId']?.toString() ?? '',
         name: j['name']?.toString() ?? '',
         status: j['status']?.toString() ?? '',
-        verifyScope: j['verifyScope']?.toString() ?? 'disabled',
+        globalScope: j['globalScope']?.toString() ?? 'disabled',
+        isAllowlisted: j['isAllowlisted'] == true,
+        isAutoVerifyAllowed: j['isAutoVerifyAllowed'] == true,
         costBearer: j['costBearer']?.toString() ?? 'platform',
         monthlyQuota: (j['monthlyQuota'] as num?)?.toInt(),
         verifyTimeoutMinutes: (j['verifyTimeoutMinutes'] as num?)?.toInt(),
         hasEvidencePolicy: j['hasEvidencePolicy'] == true,
-        enabledProviderCount: (j['enabledProviderCount'] as num?)?.toInt() ?? 0,
-        usedThisMonth: (j['usedThisMonth'] as num?)?.toInt() ?? 0,
-        costThisMonth: (j['costThisMonth'] as num?)?.toDouble() ?? 0,
-        lastUsageAt: DateTime.tryParse(j['lastUsageAt']?.toString() ?? ''),
+        configuredProviderCount:
+            (j['configuredProviderCount'] as num?)?.toInt() ?? 0,
+        callsThisMonth: (j['callsThisMonth'] as num?)?.toInt() ?? 0,
+        pendingCallsThisMonth:
+            (j['pendingCallsThisMonth'] as num?)?.toInt() ?? 0,
+        costEstimateThisMonth:
+            (j['costEstimateThisMonth'] as num?)?.toDouble() ?? 0,
+        lastCallAt: DateTime.tryParse(j['lastCallAt']?.toString() ?? ''),
       );
 }

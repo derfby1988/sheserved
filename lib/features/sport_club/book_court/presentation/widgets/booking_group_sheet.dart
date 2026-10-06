@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 
 import 'package:sheserved/core/utils/file_ops.dart';
 import 'package:sheserved/shared/widgets/glass/glass_confirm_dialog.dart';
@@ -30,6 +28,10 @@ class BookingGroupSheet {
     required String userId,
     required VenueBookingGroup group,
     required DateTime? serverNow,
+
+    /// When non-null the sheet offers a "เลือกเวลาใหม่" CTA on adverse
+    /// terminal states. Invoked after the sheet has closed.
+    Future<void> Function()? onRebook,
   }) {
     return GlassDialog.show<void>(
       context: context,
@@ -43,6 +45,7 @@ class BookingGroupSheet {
         userId: userId,
         initialGroup: group,
         initialServerNow: serverNow,
+        onRebook: onRebook,
       ),
     );
   }
@@ -53,12 +56,14 @@ class _BookingGroupSheetBody extends StatefulWidget {
   final String userId;
   final VenueBookingGroup initialGroup;
   final DateTime? initialServerNow;
+  final Future<void> Function()? onRebook;
 
   const _BookingGroupSheetBody({
     required this.repo,
     required this.userId,
     required this.initialGroup,
     required this.initialServerNow,
+    this.onRebook,
   });
 
   @override
@@ -138,9 +143,9 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
 
   // =============== Evidence upload =====================================
 
-  /// Pick → compress → upload to the private bucket → submit the revision
-  /// through the RPC. The storage path follows the server-enforced prefix
-  /// `groups/<groupId>/<requirementKey>/<uuid>.jpg`.
+  /// Pick → compress for bandwidth → grant → Node gateway (magic-byte
+  /// check + EXIF/GPS strip) → submit the pre-assigned revision path
+  /// through the RPC. Direct bucket writes are rejected server-side.
   Future<void> _uploadEvidence(EvidenceRequirement req) async {
     if (_busy) return;
     final picked = await ImagePicker().pickImage(
@@ -160,28 +165,25 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
         quality: 80,
         maxDimension: 1600,
       );
-      const ext = 'jpg';
-      final path =
-          'groups/${_group.id}/${req.key}/${const Uuid().v4()}.$ext';
-      await Supabase.instance.client.storage
-          .from('booking-evidence')
-          .uploadBinary(
-            path,
-            bytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: false,
-            ),
-          );
+      final grant = await widget.repo.createEvidenceUploadGrant(
+        userId: widget.userId,
+        groupId: _group.id,
+        purpose: 'evidence',
+        requirementKey: req.key,
+      );
+      final uploaded = await widget.repo.uploadEvidenceViaGateway(
+        grant: grant,
+        bytes: bytes,
+      );
       await widget.repo.submitGroupEvidence(
         userId: widget.userId,
         groupId: _group.id,
         items: [
           (
             requirementKey: req.key,
-            storagePath: path,
-            mime: 'image/jpeg',
-            sizeBytes: bytes.length,
+            storagePath: grant.path,
+            mime: uploaded.mime,
+            sizeBytes: uploaded.sizeBytes,
           ),
         ],
       );
@@ -248,51 +250,99 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
           : _money(_group.totalAmount!),
     );
     final refController = TextEditingController();
+    XFile? slipFile;
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('แจ้งว่าโอนเงินแล้ว'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'ถ้าคุณโอนเงินจริงแล้วแต่ระบบยังไม่ยืนยัน '
-              'ให้แจ้งยอดและเลขอ้างอิง เจ้าของจะตรวจสอบยอดเข้าจริง',
-              style: TextStyle(fontSize: 13),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('แจ้งว่าโอนเงินแล้ว'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'ถ้าคุณโอนเงินจริงแล้วแต่ระบบยังไม่ยืนยัน '
+                'ให้แจ้งยอดและเลขอ้างอิง เจ้าของจะตรวจสอบยอดเข้าจริง',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'ยอดที่โอน (บาท)',
+                ),
+              ),
+              TextField(
+                controller: refController,
+                decoration: const InputDecoration(
+                  labelText: 'เลขอ้างอิง/เวลาโอน (ถ้ามี)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final picked = await ImagePicker().pickImage(
+                      source: ImageSource.gallery,
+                      maxWidth: 2048,
+                      imageQuality: 90,
+                    );
+                    if (picked != null) {
+                      setDialogState(() => slipFile = picked);
+                    }
+                  },
+                  icon: const Icon(Icons.attach_file_rounded, size: 16),
+                  label: Text(
+                    slipFile == null
+                        ? 'แนบสลิป (ไม่บังคับ)'
+                        : 'แนบแล้ว: ${slipFile!.name}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('ยกเลิก'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'ยอดที่โอน (บาท)',
-              ),
-            ),
-            TextField(
-              controller: refController,
-              decoration: const InputDecoration(
-                labelText: 'เลขอ้างอิง/เวลาโอน (ถ้ามี)',
-              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ส่งแจ้ง'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('ส่งแจ้ง'),
-          ),
-        ],
       ),
     );
     if (submitted != true || !mounted) return;
     setState(() => _busy = true);
     try {
+      // Optional claim slip goes through the same grant+gateway pipeline
+      // as evidence — server assigns the `groups/<id>/claim/` path.
+      String? evidencePath;
+      final slip = slipFile;
+      if (slip != null) {
+        final bytes = await compressImageToBytes(
+          slip,
+          quality: 80,
+          maxDimension: 1600,
+        );
+        final grant = await widget.repo.createEvidenceUploadGrant(
+          userId: widget.userId,
+          groupId: _group.id,
+          purpose: 'claim',
+        );
+        await widget.repo.uploadEvidenceViaGateway(
+          grant: grant,
+          bytes: bytes,
+        );
+        evidencePath = grant.path;
+      }
       await widget.repo.reportGroupPaymentClaim(
         userId: widget.userId,
         groupId: _group.id,
@@ -300,6 +350,7 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
         transferReference: refController.text.trim().isEmpty
             ? null
             : refController.text.trim(),
+        evidencePath: evidencePath,
       );
       if (!mounted) return;
       setState(() {
@@ -318,6 +369,15 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
     }
   }
 
+  /// Rebook CTA — close this sheet first so the venue detail sheet opens
+  /// on the page navigator underneath, then hand control to the caller.
+  Future<void> _rebook() async {
+    final onRebook = widget.onRebook;
+    if (onRebook == null) return;
+    Navigator.of(context).pop();
+    await onRebook();
+  }
+
   String _mapError(Object e) {
     final raw = e.toString();
     if (raw.contains('EVIDENCE_STAGE_NOT_OPEN')) {
@@ -332,6 +392,9 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
     }
     if (raw.contains('CLAIM_ALREADY_OPEN')) {
       return 'มีการแจ้งยอดโอนที่รอตรวจสอบอยู่แล้ว';
+    }
+    if (raw.contains('GROUP_CLAIM_NOT_ALLOWED')) {
+      return 'ยังแจ้งยอดโอนไม่ได้ในสถานะนี้';
     }
     if (raw.contains('TOO_MANY_HOLDS')) {
       return 'คุณมีการจองที่รอหลักฐานเกินกำหนดของสถานที่';
@@ -419,20 +482,20 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
       _group.paymentDestination?.isNotEmpty == true;
 
   /// Payment claims are meaningful once money could have moved: after a
-  /// failed verification, forfeit, or an adverse owner decision.
-  bool get _canReportPayment {
-    if (_group.status == BookingGroupStatus.forfeited ||
-        _group.status == BookingGroupStatus.rejected) {
-      return true;
-    }
-    final slipFailed = _group.evidence.any(
-      (e) =>
-          e.kind == 'payment_slip' &&
-          (e.verificationStatus == GroupEvidenceVerification.failed ||
-              e.verificationStatus == GroupEvidenceVerification.rejected),
-    );
-    return slipFailed || _group.status == BookingGroupStatus.awaitingEvidence;
-  }
+  /// failed verification, forfeit, or an adverse owner decision. The RPC
+  /// rejects claims while the group is still open (pending/awaiting), so
+  /// the button must mirror that gate instead of dead-ending on
+  /// GROUP_CLAIM_NOT_ALLOWED.
+  bool get _canReportPayment => !_group.isOpen;
+
+  /// Adverse terminal states where the held slots were lost — the rebook
+  /// CTA sends the booker back to the venue's court sheet.
+  bool get _canRebook =>
+      widget.onRebook != null &&
+      (_group.status == BookingGroupStatus.forfeited ||
+          _group.status == BookingGroupStatus.rejected ||
+          _group.status == BookingGroupStatus.expired ||
+          _group.status == BookingGroupStatus.cancelled);
 
   bool get _hasOpenClaim =>
       _group.claims.any((c) => c.status == 'submitted');
@@ -669,6 +732,13 @@ class _BookingGroupSheetBodyState extends State<_BookingGroupSheetBody> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (_canRebook)
+                    _pillButton(
+                      label: 'เลือกเวลาใหม่',
+                      icon: Icons.event_available_rounded,
+                      color: Colors.green.shade300,
+                      onTap: _busy ? null : _rebook,
+                    ),
                   if (_canReportPayment &&
                       !_hasOpenClaim &&
                       _group.requirements.any((r) => r.isPaymentSlip))

@@ -139,13 +139,8 @@ class _CourtOwnerVenueManagePageState extends State<CourtOwnerVenueManagePage>
     });
   }
 
-  /// Admin-controlled provider scope — auto_verify is only offered in the
-  /// editor when the venue is whitelisted/allow-all (the server still
-  /// re-validates an enabled provider exists).
-  bool get _allowAutoVerify {
-    final scope = _venueMap['verify_scope']?.toString();
-    return scope == 'whitelist' || scope == 'all';
-  }
+  /// Server-computed global scope + allowlist + configured-provider gate.
+  bool get _allowAutoVerify => _venueMap['auto_verify_allowed'] == true;
 
   bool get _venueHasReleaseRule {
     final v = _venueMap;

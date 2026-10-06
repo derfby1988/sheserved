@@ -20,7 +20,16 @@ import '../widgets/court_usage_terms_dialog.dart';
 class CourtMyBookingsPage extends StatefulWidget {
   final BookCourtRepository repo;
 
-  const CourtMyBookingsPage({super.key, required this.repo});
+  /// When provided, forfeited/rejected groups offer a "เลือกเวลาใหม่"
+  /// CTA that reopens the venue's court sheet through the caller's
+  /// booking flow. Null on entry points without one (e.g. deep links).
+  final Future<void> Function(VenueSummary venue)? onRebookVenue;
+
+  const CourtMyBookingsPage({
+    super.key,
+    required this.repo,
+    this.onRebookVenue,
+  });
 
   @override
   State<CourtMyBookingsPage> createState() => _CourtMyBookingsPageState();
@@ -240,6 +249,24 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Resolve the group's venue to a public summary and hand it to the
+  /// caller's booking flow. The group sheet has already closed.
+  Future<void> _rebookGroup(VenueBookingGroup g) async {
+    final onRebookVenue = widget.onRebookVenue;
+    if (onRebookVenue == null) return;
+    try {
+      final venue = await widget.repo.getPublicVenue(g.venueId);
+      if (!mounted) return;
+      if (venue == null) {
+        _toast('ไม่พบสถานที่นี้แล้ว อาจถูกปิดรับจอง');
+        return;
+      }
+      await onRebookVenue(venue);
+    } catch (_) {
+      _toast('เปิดสถานที่ไม่สำเร็จ กรุณาลองใหม่');
+    }
   }
 
   /// Group children render inside their group card, never as loose rows.
@@ -591,6 +618,10 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
             userId: userId,
             group: g,
             serverNow: _groupsServerNow,
+            onRebook:
+                widget.onRebookVenue == null
+                    ? null
+                    : () => _rebookGroup(g),
           );
           await _load();
         },

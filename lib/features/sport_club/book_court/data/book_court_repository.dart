@@ -1,5 +1,11 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:sheserved/config/app_config.dart';
 import 'package:sheserved/services/auth_service.dart';
 import 'package:sheserved/services/websocket_service.dart';
 import 'book_court_models.dart';
@@ -73,6 +79,21 @@ class BookCourtRepository {
           .toList();
     }
     return venues;
+  }
+
+  /// One public venue by id, hydrated for the detail sheet. Returns null
+  /// when the venue is gone or no longer publicly visible.
+  Future<VenueSummary?> getPublicVenue(String venueId) async {
+    final res = await _client
+        .from('sports_venues_public')
+        .select()
+        .eq('id', venueId)
+        .maybeSingle();
+    if (res == null) return null;
+    final hydrated = await hydrateVenueCards([
+      VenueSummary.fromJson(Map<String, dynamic>.from(res)),
+    ]);
+    return hydrated.isEmpty ? null : hydrated.first;
   }
 
   /// Hydrates ratings/amenities/photos/court counts for venue cards.
@@ -1118,6 +1139,7 @@ class BookCourtRepository {
     required String decision,
     String? reason,
     String? requirementKey,
+    String? reasonCode,
   }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
@@ -1128,10 +1150,66 @@ class BookCourtRepository {
         'p_decision': decision,
         'p_reason': reason,
         'p_requirement_key': requirementKey,
+        'p_reason_code': reasonCode,
       },
     );
     _notifyVenueBooking(groupId);
     return res.toString();
+  }
+
+  /// Bulk reject open groups in one venue. Each group is decided in its
+  /// own savepoint server-side, so the result list always has one entry
+  /// per requested id — `error` carries the failure code for groups that
+  /// could not be rejected. Reject-only by design.
+  Future<List<OwnerQueueBulkResult>> bulkRejectBookingGroups({
+    required String userId,
+    required String venueId,
+    required List<String> groupIds,
+    String? reason,
+    String? reasonCode,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'decide_sports_venue_booking_groups_bulk',
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_group_ids': groupIds,
+        'p_reason': reason,
+        'p_reason_code': reasonCode,
+      },
+    );
+    for (final id in groupIds) {
+      _notifyVenueBooking(id);
+    }
+    return (res as List? ?? const [])
+        .map(
+          (e) =>
+              OwnerQueueBulkResult.fromJson(Map<String, dynamic>.from(e)),
+        )
+        .toList();
+  }
+
+  /// Personal queue snooze for this manager — never touches the booking
+  /// status or deadlines. Pass `minutes: null` to return the group to the
+  /// queue immediately. Returns the effective `deferred_until`.
+  Future<DateTime?> deferQueueItem({
+    required String userId,
+    required String groupId,
+    int? minutes,
+    String? reason,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'defer_sports_venue_queue_item',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_minutes': minutes,
+        'p_reason': reason,
+      },
+    );
+    return DateTime.tryParse(res?.toString() ?? '');
   }
 
   /// Booker moves pending (pre-hold) group children to new slots.
@@ -1205,15 +1283,27 @@ class BookCourtRepository {
   }
 
   /// Owner/manager queue: attention groups, open payment claims, active
-  /// refund cases.
+  /// refund cases. [filter] is one of all|due_soon|overdue|payment|
+  /// document|deferred; [cursor] pages deterministically by due time.
   Future<OwnerEvidenceQueue> listEvidenceQueue(
     String userId,
-    String venueId,
-  ) async {
+    String venueId, {
+    String filter = 'all',
+    int limit = 50,
+    OwnerQueueCursor? cursor,
+  }) async {
     _assertCurrentUser(userId);
     final res = await _client.rpc(
       'list_sports_venue_evidence_queue',
-      params: {'p_user_id': userId, 'p_venue_id': venueId},
+      params: {
+        'p_user_id': userId,
+        'p_venue_id': venueId,
+        'p_filter': filter,
+        'p_limit': limit,
+        'p_cursor_due': cursor?.due,
+        'p_cursor_created': cursor?.created,
+        'p_cursor_id': cursor?.id,
+      },
     );
     return OwnerEvidenceQueue.fromJson(
       Map<String, dynamic>.from(res as Map),
@@ -1269,9 +1359,77 @@ class BookCourtRepository {
     );
   }
 
+  /// Mint a one-time upload grant binding this user/group/purpose (and
+  /// requirement for evidence) to a pre-assigned private path.
+  /// [purpose] is 'evidence' or 'claim'.
+  Future<EvidenceUploadGrant> createEvidenceUploadGrant({
+    required String userId,
+    required String groupId,
+    required String purpose,
+    String? requirementKey,
+  }) async {
+    _assertCurrentUser(userId);
+    final res = await _client.rpc(
+      'create_sports_venue_evidence_upload_grant',
+      params: {
+        'p_user_id': userId,
+        'p_booking_group_id': groupId,
+        'p_purpose': purpose,
+        'p_requirement_key': requirementKey,
+      },
+    );
+    return EvidenceUploadGrant.fromJson(Map<String, dynamic>.from(res as Map));
+  }
+
+  /// Redeem [grant] at the Node gateway: magic-byte check, decode +
+  /// re-encode (EXIF/GPS stripped server-side), then service-role write
+  /// to the private bucket. Fail-closed — never fall back to a direct
+  /// storage upload.
+  Future<({String mime, int sizeBytes})> uploadEvidenceViaGateway({
+    required EvidenceUploadGrant grant,
+    required Uint8List bytes,
+  }) async {
+    final baseUrl = AppConfig.backendApiUrl;
+    if (baseUrl.isEmpty) {
+      throw StateError('EVIDENCE_UPLOAD_UNAVAILABLE');
+    }
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/sports/evidence/upload'),
+    );
+    request.headers['x-app-version'] = AppConfig.appVersion;
+    request.fields['token'] = grant.token;
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: 'evidence.jpg',
+        contentType: MediaType.parse('image/jpeg'),
+      ),
+    );
+    final streamed = await request.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 200) {
+      String code = 'EVIDENCE_UPLOAD_FAILED';
+      try {
+        code =
+            (jsonDecode(body) as Map<String, dynamic>)['error']
+                ?.toString() ??
+            code;
+      } catch (_) {}
+      throw StateError('$code:${streamed.statusCode}');
+    }
+    final map = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      mime: map['mime']?.toString() ?? 'image/jpeg',
+      sizeBytes:
+          (map['sizeBytes'] as num?)?.toInt() ?? bytes.length,
+    );
+  }
+
   /// Mints a short-lived read token for one private evidence path. The
   /// Node backend redeems it and streams the object — the bucket stays
-  /// INSERT-only with no public URL.
+  /// private with no public URL.
   Future<String> mintEvidenceReadToken(
     String userId,
     String storagePath,
@@ -1327,9 +1485,60 @@ class BookCourtRepository {
 
   // =============== Admin provider controls (Phase 21.7.21.6) ===========
 
-  /// Admin-only venue verify policy: scope ('disabled'|'whitelist'|'all'),
-  /// cost bearer, monthly quota and worker timeout.
+  Future<GlobalSlipVerificationPolicy> adminGetGlobalVerifyPolicy(
+    String adminId,
+  ) async {
+    _assertCurrentUser(adminId);
+    final res = await _client.rpc(
+      'admin_get_sports_venue_verify_global_policy',
+      params: {'p_admin_id': adminId},
+    );
+    return GlobalSlipVerificationPolicy.fromJson(
+      Map<String, dynamic>.from(res as Map),
+    );
+  }
+
+  Future<void> adminSetGlobalVerifyScope({
+    required String adminId,
+    required String scope,
+  }) async {
+    _assertCurrentUser(adminId);
+    await _client.rpc(
+      'admin_set_sports_venue_verify_global_scope',
+      params: {'p_admin_id': adminId, 'p_scope': scope},
+    );
+  }
+
+  Future<void> adminSetVenueVerifyControls({
+    required String adminId,
+    required String venueId,
+    required bool isAllowlisted,
+    String? costBearer,
+    int? monthlyQuota,
+    int? verifyTimeoutMinutes,
+    bool clearQuota = false,
+    bool clearTimeout = false,
+  }) async {
+    _assertCurrentUser(adminId);
+    await _client.rpc(
+      'admin_set_sports_venue_verify_controls',
+      params: {
+        'p_admin_id': adminId,
+        'p_venue_id': venueId,
+        'p_allowlisted': isAllowlisted,
+        'p_verify_cost_bearer': costBearer,
+        'p_verify_monthly_quota': monthlyQuota,
+        'p_verify_timeout_minutes': verifyTimeoutMinutes,
+        'p_clear_quota': clearQuota,
+        'p_clear_timeout': clearTimeout,
+      },
+    );
+  }
+
+  /// Legacy adapter; new admin surfaces must use the platform scope and
+  /// per-venue allowlist controls separately.
   Future<void> adminSetVenueVerifyPolicy({
+
     required String adminId,
     required String venueId,
     String? verifyScope,

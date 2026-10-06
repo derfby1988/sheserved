@@ -54,6 +54,9 @@ class _AdminCourtOwnerReviewPanelState
   List<VenueSummary> _venues = [];
   List<SlipVerificationProvider> _providers = [];
   List<AdminVenueVerifyPolicy> _verifyPolicies = [];
+  GlobalSlipVerificationPolicy? _globalVerifyPolicy;
+  bool _globalPolicyLoading = true;
+  bool _savingGlobalPolicy = false;
   bool _loading = true;
 
   /// Lazily loaded readiness details per venue id.
@@ -109,9 +112,23 @@ class _AdminCourtOwnerReviewPanelState
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
-    // Additive: the verify-policy read RPC ships after the review lists, so
-    // a missing function must never blank the page.
-    await _loadVerifyPolicies();
+    // Additive: verification controls must not blank the owner-review lists
+    // when their migrations have not reached the target database yet.
+    await Future.wait([_loadVerifyPolicies(), _loadGlobalVerifyPolicy()]);
+  }
+
+  Future<void> _loadGlobalVerifyPolicy() async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    setState(() => _globalPolicyLoading = true);
+    try {
+      final policy = await widget.repo.adminGetGlobalVerifyPolicy(adminId);
+      if (mounted) setState(() => _globalVerifyPolicy = policy);
+    } catch (_) {
+      if (mounted) setState(() => _globalVerifyPolicy = null);
+    } finally {
+      if (mounted) setState(() => _globalPolicyLoading = false);
+    }
   }
 
   Future<void> _loadVerifyPolicies() async {
@@ -227,8 +244,10 @@ class _AdminCourtOwnerReviewPanelState
                   _empty('ยังไม่มีผู้ให้บริการ')
                 else
                   for (final p in _providers) _buildProviderCard(p),
+                _sectionHeader('ขอบเขตระบบตรวจสลิปอัตโนมัติ'),
+                _buildGlobalVerifyPolicyCard(),
                 _sectionHeader(
-                  'ตรวจสลิปอัตโนมัติรายสถานที่ (${_verifyPolicies.length})',
+                  'นโยบายตรวจสลิปและค่าใช้จ่ายรายสถานที่ (${_verifyPolicies.length})',
                 ),
                 if (_verifyPolicies.isEmpty)
                   _empty('ยังไม่มีสถานที่ให้ตั้งค่า')
@@ -623,10 +642,10 @@ class _AdminCourtOwnerReviewPanelState
     );
   }
 
-  static const _scopeLabels = {
+  static const _globalScopeLabels = {
     'disabled': 'ปิดการตรวจอัตโนมัติ',
-    'whitelist': 'เปิดเฉพาะสถานที่นี้',
-    'all': 'เปิดทุกสถานที่',
+    'whitelist': 'เฉพาะสถานที่ใน allowlist',
+    'all': 'ทุกสถานที่ที่อนุมัติ',
   };
 
   static const _bearerLabels = {
@@ -634,13 +653,159 @@ class _AdminCourtOwnerReviewPanelState
     'owner': 'เจ้าของรับภาระ',
   };
 
-  /// Admin-only per-venue provider policy. Enabling the scope is what makes
-  /// `auto_verify` selectable for the owner, so the card also surfaces
-  /// whether a provider is actually enabled and how much quota is spent.
+  Future<void> _setGlobalVerifyScope(String scope) async {
+    final adminId = _adminId;
+    final current = _globalVerifyPolicy;
+    if (adminId == null || current == null || _savingGlobalPolicy) return;
+    if (scope == current.scope) return;
+    if (scope != 'disabled') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('ยืนยันขอบเขตตรวจสลิป'),
+          content: Text(
+            scope == 'all'
+                ? 'จะอนุญาตให้ทุกสถานที่ที่อนุมัติและเปิด auto_verify ใช้ผู้ให้บริการที่เปิดอยู่ '
+                      'ขณะนี้มี ${current.approvedVenueCount} สถานที่ที่อนุมัติ '
+                      'และผู้ให้บริการที่ตั้งค่า ${current.configuredProviderCount} รายการ '
+                      'อาจเกิดค่าใช้จ่ายตาม quota ของแต่ละสถานที่'
+                : 'จะอนุญาตเฉพาะสถานที่ที่เปิด allowlist และเจ้าของเลือก auto_verify '
+                      'ขณะนี้มี ${current.allowlistedVenueCount} สถานที่ใน allowlist '
+                      'และผู้ให้บริการที่ตั้งค่า ${current.configuredProviderCount} รายการ',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('ยกเลิก'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ยืนยัน'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    setState(() => _savingGlobalPolicy = true);
+    try {
+      await widget.repo.adminSetGlobalVerifyScope(
+        adminId: adminId,
+        scope: scope,
+      );
+      _toast('บันทึกขอบเขตตรวจสลิปแล้ว');
+      await Future.wait([_loadGlobalVerifyPolicy(), _loadVerifyPolicies()]);
+    } catch (e) {
+      _toast(_mapError(e));
+    } finally {
+      if (mounted) setState(() => _savingGlobalPolicy = false);
+    }
+  }
+
+  Widget _buildGlobalVerifyPolicyCard() {
+    final policy = _globalVerifyPolicy;
+    return NeumorphicContainer(
+      key: const ValueKey('admin-global-verify-policy'),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: _globalPolicyLoading
+          ? const Center(child: CircularProgressIndicator())
+          : policy == null
+          ? Row(
+              children: [
+                const Expanded(child: Text('โหลดการตั้งค่าระบบไม่สำเร็จ')),
+                TextButton(
+                  onPressed: _loadGlobalVerifyPolicy,
+                  child: const Text('ลองใหม่'),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('admin-global-verify-scope'),
+                  initialValue: policy.scope,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'ขอบเขตทั่วระบบ',
+                    helperText:
+                        'ปิดเป็นค่าเริ่มต้น; allowlist และ quota รายสถานที่ยังมีผล',
+                  ),
+                  items: [
+                    for (final entry in _globalScopeLabels.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: _savingGlobalPolicy
+                      ? null
+                      : (value) {
+                          if (value != null) _setGlobalVerifyScope(value);
+                        },
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${policy.approvedVenueCount} สถานที่อนุมัติ · '
+                  '${policy.allowlistedVenueCount} ใน allowlist · '
+                  '${policy.configuredProviderCount} provider พร้อม config',
+                  style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+                ),
+                if (policy.configuredProviderCount == 0 &&
+                    policy.scope != 'disabled')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'ยังไม่มี provider ที่ตั้ง endpoint และ secret reference ครบ — ระบบจะส่งให้เจ้าของตรวจแทน',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Future<void> _setVenueAllowlist(
+    AdminVenueVerifyPolicy venue,
+    bool allowlisted,
+  ) async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    try {
+      await widget.repo.adminSetVenueVerifyControls(
+        adminId: adminId,
+        venueId: venue.venueId,
+        isAllowlisted: allowlisted,
+      );
+      _toast(
+        allowlisted
+            ? 'เพิ่ม ${venue.name} ใน allowlist แล้ว'
+            : 'นำ ${venue.name} ออกจาก allowlist แล้ว',
+      );
+      await _loadVerifyPolicies();
+      await _loadGlobalVerifyPolicy();
+    } catch (e) {
+      _toast(_mapError(e));
+    }
+  }
+
+  /// Admin-only per-venue allowlist and cost policy.
   Widget _buildVerifyPolicyCard(AdminVenueVerifyPolicy v) {
     final quotaLabel = v.monthlyQuota == null
         ? 'ไม่จำกัดโควตา'
-        : 'ใช้ ${v.usedThisMonth}/${v.monthlyQuota} ครั้งเดือนนี้';
+        : 'ใช้/จอง ${v.callsThisMonth}/${v.monthlyQuota} ครั้งเดือนนี้';
+    final scopeLabel = switch (v.globalScope) {
+      'all' => v.status == 'approved' ? 'อยู่ใน scope ทั่วระบบ' : 'รออนุมัติสถานที่',
+      'whitelist' => v.isAllowlisted ? 'อยู่ใน allowlist' : 'ไม่อยู่ใน allowlist',
+      _ => 'ปิดทั่วระบบ',
+    };
     return NeumorphicContainer(
       key: ValueKey('admin-verify-policy-${v.venueId}'),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -668,17 +833,17 @@ class _AdminCourtOwnerReviewPanelState
                   vertical: 2,
                 ),
                 decoration: BoxDecoration(
-                  color: v.isScopeEnabled
+                  color: v.isAutoVerifyAllowed
                       ? Colors.green.shade50
                       : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  _scopeLabels[v.verifyScope] ?? v.verifyScope,
+                  v.isAutoVerifyAllowed ? 'ตรวจอัตโนมัติได้' : scopeLabel,
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
-                    color: v.isScopeEnabled
+                    color: v.isAutoVerifyAllowed
                         ? Colors.green.shade800
                         : Colors.grey.shade700,
                   ),
@@ -686,7 +851,20 @@ class _AdminCourtOwnerReviewPanelState
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          SwitchListTile.adaptive(
+            key: ValueKey('admin-verify-allowlist-${v.venueId}'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('อนุญาต venue นี้ใน allowlist'),
+            subtitle: Text(
+              v.globalScope == 'all'
+                  ? 'ขณะนี้ scope เปิดทุกสถานที่ที่อนุมัติ; ค่านี้ใช้เมื่อเปลี่ยนเป็น allowlist'
+                  : 'มีผลเมื่อขอบเขตทั่วระบบเป็น allowlist',
+              style: const TextStyle(fontSize: 11.5),
+            ),
+            value: v.isAllowlisted,
+            onChanged: (value) => _setVenueAllowlist(v, value),
+          ),
           Text(
             [
               _bearerLabels[v.costBearer] ?? v.costBearer,
@@ -697,16 +875,16 @@ class _AdminCourtOwnerReviewPanelState
             ].join(' · '),
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
           ),
-          if (v.costThisMonth > 0)
-            Text(
-              'ค่าใช้จ่ายเดือนนี้ ฿${v.costThisMonth.toStringAsFixed(2)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          if (v.isScopeEnabled && v.enabledProviderCount == 0)
+          Text(
+            'ประมาณการค่าใช้จ่ายเดือนนี้ ฿${v.costEstimateThisMonth.toStringAsFixed(2)}'
+            '${v.pendingCallsThisMonth > 0 ? ' · ${v.pendingCallsThisMonth} รายการกำลังตรวจ' : ''}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          if (v.isScopeEnabled && v.configuredProviderCount == 0)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                'ยังไม่มีผู้ให้บริการที่เปิดใช้งาน — สลิปจะตกไปให้เจ้าของตรวจแทน',
+                'ยังไม่มี provider ที่เปิดและตั้ง endpoint/secret reference ครบ — สลิปจะตกไปให้เจ้าของตรวจแทน',
                 style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
               ),
             )
@@ -730,7 +908,7 @@ class _AdminCourtOwnerReviewPanelState
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () => _editVenueVerifyPolicy(v),
-              child: const Text('ตั้งค่า'),
+              child: const Text('ตั้งค่าค่าใช้จ่าย'),
             ),
           ),
         ],
@@ -741,7 +919,6 @@ class _AdminCourtOwnerReviewPanelState
   Future<void> _editVenueVerifyPolicy(AdminVenueVerifyPolicy v) async {
     final adminId = _adminId;
     if (adminId == null) return;
-    var scope = v.verifyScope;
     var bearer = v.costBearer;
     final quota = TextEditingController(
       text: v.monthlyQuota?.toString() ?? '',
@@ -758,25 +935,11 @@ class _AdminCourtOwnerReviewPanelState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  key: const ValueKey('admin-verify-scope'),
-                  initialValue: scope,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'ขอบเขตการตรวจอัตโนมัติ',
-                    helperText: 'เปิดแล้วเจ้าของจึงเลือกได้',
-                  ),
-                  items: [
-                    for (final entry in _scopeLabels.entries)
-                      DropdownMenuItem(
-                        value: entry.key,
-                        child: Text(entry.value),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => scope = value);
-                  },
+                Text(
+                  'การเปิดตรวจอัตโนมัติควบคุมที่ระดับระบบและ allowlist แยกจากค่าใช้จ่ายของสถานที่นี้',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   key: const ValueKey('admin-verify-bearer'),
                   initialValue: bearer,
@@ -843,10 +1006,10 @@ class _AdminCourtOwnerReviewPanelState
       return;
     }
     try {
-      await widget.repo.adminSetVenueVerifyPolicy(
+      await widget.repo.adminSetVenueVerifyControls(
         adminId: adminId,
         venueId: v.venueId,
-        verifyScope: scope,
+        isAllowlisted: v.isAllowlisted,
         costBearer: bearer,
         monthlyQuota: quotaValue,
         verifyTimeoutMinutes: timeoutValue,

@@ -88,6 +88,7 @@ const { archiveChatMessages } = require('./services/chat-archive-service');
 const { notificationsRoutes, professionChangeRoute } = require('./routes/notifications');
 const { sportsRoutes } = require('./routes/sports');
 const { sportsEvidenceRoutes } = require('./routes/sports-evidence');
+const evidenceOrphanSweeper = require('./jobs/evidence-orphan-sweeper');
 const slipVerificationWorker = require('./services/slip-verification-worker');
 const { chatApiRoutes } = require('./routes/chat-api');
 const { healthRoutes } = require('./routes/health');
@@ -1983,6 +1984,10 @@ server.listen(PORT, '0.0.0.0', () => {
   // through claim/apply RPCs; no-op unless the admin enables a provider
   // and the env flag stays on.
   slipVerificationWorker.start();
+
+  // 🧹 Booking-evidence orphan sweeper — removes unreferenced objects the
+  // DB names (uploaded-but-never-committed files) on a slow interval.
+  evidenceOrphanSweeper.start({ supabaseForSync });
 
   // � เริ่ม Inventory Alert Checker (scheduled job ทุก 24 ชั่วโมง)
   inventoryAlertChecker.start();

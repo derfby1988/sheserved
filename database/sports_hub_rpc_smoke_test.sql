@@ -103,6 +103,9 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261010100000_sports_hub_booking_evidence.sql
 \ir ../supabase/migrations/20261011100000_sports_hub_booking_evidence_client.sql
 \ir ../supabase/migrations/20261012100000_sports_hub_venue_verify_policy_admin.sql
+\ir ../supabase/migrations/20261013100000_sports_hub_booking_verify_global_policy.sql
+\ir ../supabase/migrations/20261014100000_sports_hub_evidence_queue_defer.sql
+\ir ../supabase/migrations/20261015100000_sports_hub_evidence_upload_grants.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -2365,6 +2368,7 @@ DECLARE
   v_avail JSONB;
   v_decision TEXT;
   v_housekeep JSONB;
+  v_queue JSONB;
 BEGIN
   SELECT id INTO v_sport
   FROM public.sports
@@ -2522,28 +2526,58 @@ BEGIN
       %L, %L, 'all')$s$, v_owner, v_venue),
     'NOT_ADMIN');
   PERFORM pg_temp.expect_raise(
+    'non-admin cannot change the global verify scope',
+    format($s$SELECT public.admin_set_sports_venue_verify_global_scope(
+      %L, 'all')$s$, v_owner),
+    'NOT_ADMIN');
+  PERFORM pg_temp.expect_raise(
     'non-admin cannot register a slip provider',
     format($s$SELECT public.admin_upsert_slip_verification_provider(
       %L, 'smoke_slip', 'Smoke Slip', NULL, NULL, NULL, NULL, NULL,
       true, NULL, NULL)$s$, v_owner),
     'NOT_ADMIN');
   PERFORM public.admin_set_sports_venue_verify_policy(
-    v_admin, v_venue, 'all', 'owner', 100, 30);
+    v_admin, v_venue, 'whitelist', 'owner', 100, 30);
   PERFORM public.admin_upsert_slip_verification_provider(
-    v_admin, 'smoke_slip', 'Smoke Slip', NULL, NULL, 1.5, 15,
-    NULL, true, 10, NULL);
-  PERFORM pg_temp.expect((SELECT verify_scope
-      FROM public.sports_venues WHERE id = v_venue) = 'all'
+    v_admin, 'smoke_slip', 'Smoke Slip',
+    'https://provider.example/verify', 'SMOKE_SLIP_KEY', 1.5, 15,
+    NULL, true, 100, NULL);
+  PERFORM pg_temp.expect_raise(
+    'allowlisted venue still cannot verify while global scope is disabled',
+    format($s$SELECT public.set_sports_venue_evidence_policy(
+      %L, %L, %L::jsonb)$s$, v_owner, v_venue,
+      jsonb_set(v_policy, '{requirements}',
+        jsonb_build_array(jsonb_build_object(
+          'key', 'payment', 'label', 'Payment slip',
+          'kind', 'payment_slip', 'stage', 'payment',
+          'review_mode', 'auto_verify', 'required', true)))),
+    'VERIFY_NOT_ENABLED');
+  PERFORM public.admin_set_sports_venue_verify_global_scope(
+    v_admin, 'whitelist');
+  PERFORM pg_temp.expect(
+    (SELECT scope FROM public.sports_venue_slip_verification_settings
+      WHERE singleton_key = 1) = 'whitelist'
+    AND (SELECT verify_allowlisted FROM public.sports_venues
+      WHERE id = v_venue)
     AND (SELECT is_enabled FROM public.slip_verification_providers
       WHERE code = 'smoke_slip'),
-    'admin verify policy and provider registry are stored');
+    'global whitelist, venue allowlist and provider config are stored');
+  PERFORM public.admin_set_sports_venue_verify_global_scope(
+    v_admin, 'all');
+  PERFORM pg_temp.expect(
+    public.sports_venue_verify_scope_allows(v_venue2),
+    'global all scope enables every venue independently of allowlist');
+  PERFORM public.admin_set_sports_venue_verify_global_scope(
+    v_admin, 'whitelist');
+  PERFORM pg_temp.expect(
+    NOT public.sports_venue_verify_scope_allows(v_venue2),
+    'global whitelist blocks venues outside the per-venue allowlist');
   PERFORM public.set_sports_venue_evidence_policy(v_owner, v_venue, v_policy);
   PERFORM pg_temp.expect(
     public.sports_venue_court_evidence_policy(v_court)->>'source' = 'venue'
       AND public.sports_venue_court_evidence_policy(v_court)
           ->>'payment_destination' = 'PromptPay 081-234-5678',
     'court inherits the venue evidence policy');
-
   -- -- Atomic group creation (instant -> awaiting_evidence hold) ----
   PERFORM pg_temp.expect_raise(
     'the legacy booking RPC refuses an evidence-gated court',
@@ -2917,8 +2951,31 @@ BEGIN
     'an unverifiable slip forfeits the hold instead of failing open');
 
   -- -- Payment claim on a forfeited group ---------------------------
+  PERFORM pg_temp.expect_raise(
+    'claim evidence must live under the group claim prefix',
+    format($s$SELECT public.report_sports_venue_booking_payment_claim(
+      %L, %L, 100, 'REF-X', %L)$s$, v_customer, v_group3,
+      'groups/' || v_group3 || '/payment/s.jpg'),
+    'INVALID_STORAGE_PATH');
   v_claim := public.report_sports_venue_booking_payment_claim(
-    v_customer, v_group3, 100, 'REF-999', NULL);
+    v_customer, v_group3, 100, 'REF-999',
+    'groups/' || v_group3 || '/claim/slip.jpg');
+  PERFORM pg_temp.expect(
+    (SELECT evidence_path
+     FROM public.sports_venue_booking_payment_claims WHERE id = v_claim)
+      = 'groups/' || v_group3 || '/claim/slip.jpg',
+    'the claim slip path is stored on the claim');
+  PERFORM pg_temp.expect(
+    (public.mint_sports_venue_evidence_read_token(
+       v_owner, 'groups/' || v_group3 || '/claim/slip.jpg')->>'token')
+      IS NOT NULL,
+    'the venue owner can mint a read token for claim evidence');
+  PERFORM pg_temp.expect_raise(
+    'a stranger cannot mint a read token for claim evidence',
+    format($s$SELECT public.mint_sports_venue_evidence_read_token(
+      %L, %L)$s$, v_customer2,
+      'groups/' || v_group3 || '/claim/slip.jpg'),
+    'NOT_AUTHORIZED');
   PERFORM pg_temp.expect_raise(
     'only one open payment claim per group',
     format($s$SELECT public.report_sports_venue_booking_payment_claim(
@@ -2946,6 +3003,11 @@ BEGIN
       'starts_at', pg_temp.bkk_ts(6, '12:00'),
       'ends_at', pg_temp.bkk_ts(6, '13:00'))),
     v_terms, 'evidence-group-expire');
+  PERFORM pg_temp.expect_raise(
+    'a payment claim is rejected while the group is still open',
+    format($s$SELECT public.report_sports_venue_booking_payment_claim(
+      %L, %L, 100)$s$, v_customer2, v_group3),
+    'GROUP_CLAIM_NOT_ALLOWED');
   UPDATE public.sports_venue_booking_groups
   SET evidence_due_at = now() - interval '1 minute'
   WHERE id = v_group3;
@@ -2968,6 +3030,190 @@ BEGIN
   PERFORM pg_temp.expect(
     public.list_sports_venue_evidence_queue(v_owner, v_venue) IS NOT NULL,
     'owner evidence queue returns a payload');
+
+  -- -- Personal defer: per-manager snooze, deadlines unchanged -------
+  v_group2 := public.create_sports_venue_booking_group(
+    v_customer2,
+    jsonb_build_array(jsonb_build_object('court_id', v_court,
+      'starts_at', pg_temp.bkk_ts(7, '10:00'),
+      'ends_at', pg_temp.bkk_ts(7, '11:00'))),
+    v_terms, 'evidence-group-queue-a');
+  v_group3 := public.create_sports_venue_booking_group(
+    v_customer2,
+    jsonb_build_array(jsonb_build_object('court_id', v_court2,
+      'starts_at', pg_temp.bkk_ts(7, '14:00'),
+      'ends_at', pg_temp.bkk_ts(7, '15:00'))),
+    v_terms, 'evidence-group-queue-b');
+
+  PERFORM pg_temp.expect(
+    public.defer_sports_venue_queue_item(v_manager, v_group2, 60) > now(),
+    'a manager can personally defer an open group');
+  v_queue := public.list_sports_venue_evidence_queue(v_manager, v_venue);
+  PERFORM pg_temp.expect(
+    NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2)
+    AND (v_queue->>'deferredCount')::INT = 1,
+    'defer hides the group from the manager''s default queue');
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_manager, v_venue, 'deferred');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2
+        AND e.value->>'deferredUntil' IS NOT NULL),
+    'the deferred filter lists the snoozed group with its deadline');
+  v_queue := public.list_sports_venue_evidence_queue(v_owner, v_venue);
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'personal defer never hides the item from other managers');
+  PERFORM public.defer_sports_venue_queue_item(v_manager, v_group2, NULL);
+  v_queue := public.list_sports_venue_evidence_queue(v_manager, v_venue);
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'clearing the defer returns the group to the queue');
+  PERFORM pg_temp.expect_raise(
+    'a non-manager cannot defer queue items',
+    format($s$SELECT public.defer_sports_venue_queue_item(
+      %L, %L, 60)$s$, v_customer, v_group2),
+    'NOT_VENUE_MANAGER');
+  PERFORM pg_temp.expect_raise(
+    'a terminal group cannot be deferred',
+    format($s$SELECT public.defer_sports_venue_queue_item(
+      %L, %L, 60)$s$, v_owner, v_group),
+    'GROUP_NOT_OPEN');
+
+  -- -- Queue filters + keyset pagination ------------------------------
+  -- Submit every required item so `missing` stays empty while the test
+  -- moves the deadlines — housekeeping forfeits only unresolved groups.
+  PERFORM public.submit_sports_venue_booking_evidence(
+    v_customer2, v_group2, jsonb_build_array(
+      jsonb_build_object(
+        'requirement_key', 'id_doc',
+        'storage_path', 'groups/' || v_group2 || '/id_doc/a.jpg'),
+      jsonb_build_object(
+        'requirement_key', 'payment',
+        'storage_path', 'groups/' || v_group2 || '/payment/s.jpg')));
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'payment');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'the payment filter surfaces the group with a pending slip');
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'document');
+  PERFORM pg_temp.expect(
+    NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'the document filter excludes slip-only groups');
+
+  -- due_soon / overdue: move the dues without tripping housekeeping.
+  UPDATE public.sports_venue_booking_groups
+  SET evidence_due_at = now() + interval '30 minutes',
+      owner_decision_due_at = now() + interval '2 days'
+  WHERE id = v_group2;
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'due_soon');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'the due_soon filter catches groups inside the warning window');
+  UPDATE public.sports_venue_booking_groups
+  SET evidence_due_at = now() - interval '1 minute'
+  WHERE id = v_group2;
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'overdue');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue->'groups') e
+      WHERE (e.value->>'id')::UUID = v_group2),
+    'the overdue filter catches groups past an unresolved deadline');
+  UPDATE public.sports_venue_booking_groups
+  SET evidence_due_at = now() + interval '2 days'
+  WHERE id = v_group2;
+
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'all', 1);
+  PERFORM pg_temp.expect(
+    (v_queue->>'hasMore')::BOOLEAN
+    AND v_queue->'nextCursor'->>'id' IS NOT NULL,
+    'the queue paginates with a keyset cursor');
+  v_queue := public.list_sports_venue_evidence_queue(
+    v_owner, v_venue, 'all', 50,
+    (v_queue->'nextCursor'->>'due')::TIMESTAMPTZ,
+    (v_queue->'nextCursor'->>'created')::TIMESTAMPTZ,
+    (v_queue->'nextCursor'->>'id')::UUID);
+  PERFORM pg_temp.expect(
+    jsonb_array_length(v_queue->'groups') >= 1,
+    'the cursor page returns the remaining groups');
+
+  -- -- Reason codes ----------------------------------------------------
+  v_decision := public.decide_sports_venue_booking_group(
+    v_owner, v_group2, 'reject', NULL, 'payment', 'slip_unreadable');
+  PERFORM pg_temp.expect(
+    v_decision = 'evidence_rejected'
+    AND (SELECT e.decision_reason_code
+         FROM public.sports_venue_booking_evidence e
+         WHERE e.booking_group_id = v_group2 AND e.is_current
+           AND e.requirement_key = 'payment')
+        = 'slip_unreadable'
+    AND (SELECT status FROM public.sports_venue_booking_groups
+         WHERE id = v_group2) = 'awaiting_evidence',
+    'evidence rejection stores a structured reason code');
+  PERFORM pg_temp.expect_raise(
+    'an invalid reason code is rejected',
+    format($s$SELECT public.decide_sports_venue_booking_group(
+      %L, %L, 'reject', NULL, 'payment', 'BAD CODE!')$s$,
+      v_owner, v_group2),
+    'INVALID_REASON_CODE');
+
+  -- -- Bulk reject: per-group atomicity, idempotent results -----------
+  PERFORM pg_temp.expect_raise(
+    'bulk reject requires a reason or code',
+    format($s$SELECT public.decide_sports_venue_booking_groups_bulk(
+      %L, %L, ARRAY[%L]::UUID[])$s$, v_owner, v_venue, v_group2),
+    'REASON_REQUIRED');
+  PERFORM pg_temp.expect_raise(
+    'bulk reject is manager-scoped',
+    format($s$SELECT public.decide_sports_venue_booking_groups_bulk(
+      %L, %L, ARRAY[%L]::UUID[], 'x')$s$, v_customer,
+      v_venue, v_group2),
+    'NOT_VENUE_MANAGER');
+  v_queue := public.decide_sports_venue_booking_groups_bulk(
+    v_owner, v_venue, ARRAY[v_group2, v_group3, v_group]::UUID[],
+    NULL, 'slot_unavailable');
+  PERFORM pg_temp.expect(
+    jsonb_array_length(v_queue) = 3
+    AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue) e
+      WHERE (e.value->>'groupId')::UUID = v_group2
+        AND e.value->>'result' = 'rejected')
+    AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue) e
+      WHERE (e.value->>'groupId')::UUID = v_group3
+        AND e.value->>'result' = 'rejected')
+    AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue) e
+      WHERE (e.value->>'groupId')::UUID = v_group
+        AND e.value->>'error' LIKE '%GROUP_NOT_OPEN%')
+    AND (SELECT rejection_reason_code
+         FROM public.sports_venue_booking_groups WHERE id = v_group2)
+        = 'slot_unavailable',
+    'bulk reject decides each open group and reports failures inline');
+  v_queue := public.decide_sports_venue_booking_groups_bulk(
+    v_owner, v_venue, ARRAY[v_group2]::UUID[], NULL, 'slot_unavailable');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_queue) e
+      WHERE e.value->>'error' LIKE '%GROUP_NOT_OPEN%'),
+    'a bulk rerun is safe — decided groups report instead of throwing');
 END $evidence$;
 
 -- ============================================================
@@ -3257,14 +3503,16 @@ BEGIN
   PERFORM pg_temp.expect(
     (SELECT count(*) = 1 FROM jsonb_array_elements(v_list) e
      WHERE e.value->>'venueId' = v_venue::text
-       AND e.value->>'verifyScope' = 'whitelist'
+       AND e.value->>'globalScope' = 'whitelist'
+       AND (e.value->>'isAllowlisted')::BOOLEAN
        AND e.value->>'costBearer' = 'owner'
        AND (e.value->>'monthlyQuota')::INT = 500
        AND (e.value->>'verifyTimeoutMinutes')::INT = 30
-       AND (e.value->>'enabledProviderCount')::INT >= 1
-       AND (e.value->>'usedThisMonth')::INT >= 1
-       AND e.value ? 'costThisMonth'
-       AND e.value ? 'lastUsageAt'
+       AND (e.value->>'configuredProviderCount')::INT >= 1
+       AND (e.value->>'callsThisMonth')::INT >= 1
+       AND (e.value->>'costEstimateThisMonth')::NUMERIC >= 1.5
+       AND e.value ? 'pendingCallsThisMonth'
+       AND e.value ? 'lastCallAt'
        AND e.value ? 'hasEvidencePolicy'),
     'the admin venue listing carries scope, cost and usage signals');
   PERFORM pg_temp.expect_raise(
@@ -3288,4 +3536,55 @@ BEGIN
       public.list_my_sports_venue_bookings(v_customer)) b
      WHERE b.value->>'bookingGroupId' IS NOT NULL),
     'flat bookings expose their group id for UI merging');
+
+  -- -- Evidence upload grants (Node-mediated uploads) ----------------
+  -- v_group2 ('client-group-5') is still awaiting_evidence at this point.
+  v_token := public.create_sports_venue_evidence_upload_grant(
+    v_customer, v_group2, 'evidence', 'payment');
+  PERFORM pg_temp.expect(
+    v_token->>'path' LIKE 'groups/' || v_group2 || '/payment/%.jpg'
+      AND length(v_token->>'token') = 64
+      AND (v_token->>'expiresAt')::TIMESTAMPTZ > now(),
+    'an evidence grant binds a pre-assigned group-scoped path');
+  v_claim := v_token;  -- keep the raw grant; consume into another var
+  v_token := public.consume_sports_venue_evidence_upload_grant(
+    md5(v_claim->>'token'));
+  PERFORM pg_temp.expect(
+    v_token->>'purpose' = 'evidence'
+      AND v_token->>'requirementKey' = 'payment',
+    'the gateway consume redeems the grant once');
+  PERFORM pg_temp.expect(
+    public.consume_sports_venue_evidence_upload_grant(
+      md5(v_claim->>'token')) IS NULL,
+    'a consumed grant cannot be replayed');
+  PERFORM pg_temp.expect_raise(
+    'a grant minted by a stranger is refused',
+    format($s$SELECT public.create_sports_venue_evidence_upload_grant(
+      %L, %L, 'evidence', 'payment')$s$, v_stranger, v_group2),
+    'NOT_AUTHORIZED');
+  PERFORM pg_temp.expect_raise(
+    'an unknown requirement key is refused',
+    format($s$SELECT public.create_sports_venue_evidence_upload_grant(
+      %L, %L, 'evidence', 'nope')$s$, v_customer, v_group2),
+    'REQUIREMENT_NOT_FOUND');
+  PERFORM pg_temp.expect_raise(
+    'a claim grant is refused while the group is still open',
+    format($s$SELECT public.create_sports_venue_evidence_upload_grant(
+      %L, %L, 'claim')$s$, v_customer, v_group2),
+    'GROUP_CLAIM_NOT_ALLOWED');
+  PERFORM pg_temp.expect(
+    NOT has_function_privilege(
+      'authenticated',
+      'public.consume_sports_venue_evidence_upload_grant(varchar)',
+      'execute')
+    AND NOT has_function_privilege(
+      'authenticated',
+      'public.cleanup_sports_venue_evidence_orphans(interval)',
+      'execute'),
+    'grant consume and orphan cleanup are service-role only');
+  PERFORM pg_temp.expect(
+    public.cleanup_sports_venue_evidence_orphans() ? 'paths'
+      AND public.cleanup_sports_venue_evidence_orphans()
+          ? 'intentsPurged',
+    'orphan cleanup returns its sweep report');
 END $client$;

@@ -546,11 +546,28 @@ class _BookCourtPageState extends State<BookCourtPage> {
         userId: userId,
         group: group,
         serverNow: res.serverNow,
+        onRebook: () => _rebookGroup(group),
       );
     } catch (_) {
       if (mounted) {
         _toast('สร้างการจองแล้ว — ดูรายละเอียดในหน้าการจองของฉัน');
       }
+    }
+  }
+
+  /// Rebook path from the group sheet: resolve the venue back to a public
+  /// summary and reopen its court sheet through the normal booking flow.
+  Future<void> _rebookGroup(VenueBookingGroup group) async {
+    try {
+      final venue = await _repo.getPublicVenue(group.venueId);
+      if (!mounted) return;
+      if (venue == null) {
+        _toast('ไม่พบสถานที่นี้แล้ว อาจถูกปิดรับจอง');
+        return;
+      }
+      await _openVenue(venue);
+    } catch (_) {
+      if (mounted) _toast('เปิดสถานที่ไม่สำเร็จ กรุณาลองใหม่');
     }
   }
 
@@ -628,7 +645,12 @@ class _BookCourtPageState extends State<BookCourtPage> {
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => CourtMyBookingsPage(repo: _repo)),
+      MaterialPageRoute(
+        builder: (_) => CourtMyBookingsPage(
+          repo: _repo,
+          onRebookVenue: _openVenue,
+        ),
+      ),
     );
   }
 

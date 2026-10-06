@@ -10,10 +10,13 @@ import '../../domain/venue_local_time.dart';
 
 /// Owner/manager queue for evidence-gated booking groups (Phase 21.7.21.5).
 ///
-/// Three sections: groups needing attention (pre-approval decisions +
-/// per-evidence review), open payment claims (owner only), and active
-/// refund cases (owner only). Money decisions are enforced owner-only
-/// server-side; the UI surfaces `OWNER_DECISION_REQUIRED` as a toast.
+/// Server-filtered groups (all / due soon / overdue / slip / document /
+/// deferred) with keyset pagination, grouped by play date. Personal
+/// defer snoozes a group for this manager only — deadlines and status
+/// never change. Bulk actions are reject-only with a confirmation
+/// summary; approve and money decisions stay per-group. Money decisions
+/// are enforced owner-only server-side; the UI surfaces
+/// `OWNER_DECISION_REQUIRED` as a toast.
 class CourtOwnerEvidenceQueue extends StatefulWidget {
   final BookCourtRepository repo;
   final String userId;
@@ -33,12 +36,35 @@ class CourtOwnerEvidenceQueue extends StatefulWidget {
       _CourtOwnerEvidenceQueueState();
 }
 
+/// Structured rejection codes (stored verbatim for audit) with Thai
+/// labels. 'other' requires a free-text note.
+const Map<String, String> kQueueReasonCodes = {
+  'slip_unreadable': 'สลิปอ่านไม่ชัดเจน',
+  'amount_mismatch': 'ยอดเงินไม่ตรง',
+  'duplicate_slip': 'สลิปซ้ำ/ถูกใช้แล้ว',
+  'wrong_destination': 'โอนผิดบัญชี/ช่องทาง',
+  'doc_expired': 'เอกสารหมดอายุ',
+  'doc_mismatch': 'เอกสารไม่ตรงเงื่อนไข',
+  'slot_unavailable': 'ช่วงเวลาไม่ว่างแล้ว',
+  'other': 'อื่น ๆ (ระบุเพิ่มเติม)',
+};
+
 class _CourtOwnerEvidenceQueueState
     extends State<CourtOwnerEvidenceQueue> {
-  OwnerEvidenceQueue? _queue;
+  List<OwnerQueueGroup> _groups = const [];
+  List<GroupPaymentClaim> _claims = const [];
+  List<GroupRefundCase> _refundCases = const [];
+  bool _hasMore = false;
+  OwnerQueueCursor? _nextCursor;
+  int _deferredCount = 0;
+
+  String _filter = 'all';
   bool _loading = true;
+  bool _loadingMore = false;
   bool _busy = false;
   bool _loadFailed = false;
+  bool _selecting = false;
+  final Set<String> _selected = {};
 
   @override
   void initState() {
@@ -48,29 +74,52 @@ class _CourtOwnerEvidenceQueueState
 
   Future<void> reload() => _load();
 
-  Future<void> _load() async {
+  Future<void> _load({bool append = false}) async {
     setState(() {
-      _loading = true;
+      if (append) {
+        _loadingMore = true;
+      } else {
+        _loading = true;
+      }
       _loadFailed = false;
     });
     try {
       final queue = await widget.repo.listEvidenceQueue(
         widget.userId,
         widget.venue.id,
+        filter: _filter,
+        cursor: append ? _nextCursor : null,
       );
       if (!mounted) return;
       setState(() {
-        _queue = queue;
+        _groups = append ? [..._groups, ...queue.groups] : queue.groups;
+        _claims = queue.claims;
+        _refundCases = queue.refundCases;
+        _hasMore = queue.hasMore;
+        _nextCursor = queue.nextCursor;
+        _deferredCount = queue.deferredCount;
         _loading = false;
+        _loadingMore = false;
       });
     } catch (_) {
       if (mounted) {
         setState(() {
           _loading = false;
+          _loadingMore = false;
           _loadFailed = true;
         });
       }
     }
+  }
+
+  void _setFilter(String filter) {
+    if (_filter == filter) return;
+    setState(() {
+      _filter = filter;
+      _selecting = false;
+      _selected.clear();
+    });
+    _load();
   }
 
   String _money(double amount) =>
@@ -126,17 +175,81 @@ class _CourtOwnerEvidenceQueueState
     }
   }
 
+  // =============== Reason picker =======================================
+
+  /// Preset reason code + optional note. The code is required; a note is
+  /// mandatory for 'other'. Returns null when cancelled.
+  Future<({String code, String? note})?> _promptRejectReason(
+    String title,
+  ) async {
+    String code = kQueueReasonCodes.keys.first;
+    final noteController = TextEditingController();
+    final result = await showDialog<({String code, String? note})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: code,
+                decoration: const InputDecoration(labelText: 'เหตุผล'),
+                items: [
+                  for (final entry in kQueueReasonCodes.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                ],
+                onChanged: (v) => setSheet(() => code = v ?? code),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteController,
+                decoration: InputDecoration(
+                  labelText: code == 'other'
+                      ? 'ระบุเหตุผล (จำเป็น)'
+                      : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)',
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ยกเลิก'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final note = noteController.text.trim();
+                if (code == 'other' && note.isEmpty) return;
+                Navigator.pop(
+                  ctx,
+                  (code: code, note: note.isEmpty ? null : note),
+                );
+              },
+              child: const Text('ยืนยัน'),
+            ),
+          ],
+        ),
+      ),
+    );
+    noteController.dispose();
+    return result;
+  }
+
   // =============== Group decisions =====================================
 
   Future<void> _decideGroup(OwnerQueueGroup g, bool approve) async {
     String? reason;
+    String? reasonCode;
     if (!approve) {
-      reason = await GlassTextPromptDialog.show(
-        context,
-        title: 'เหตุผลที่ปฏิเสธการจอง',
-        hint: 'เช่น เอกสารไม่ครบ / เวลาไม่ว่าง',
-      );
-      if (reason == null || reason.trim().isEmpty || !mounted) return;
+      final picked = await _promptRejectReason('เหตุผลที่ปฏิเสธการจอง');
+      if (picked == null || !mounted) return;
+      reasonCode = picked.code;
+      reason = picked.note;
     }
     await _run(
       () => widget.repo.decideBookingGroup(
@@ -144,6 +257,7 @@ class _CourtOwnerEvidenceQueueState
         groupId: g.id,
         decision: approve ? 'approve' : 'reject',
         reason: reason,
+        reasonCode: reasonCode,
       ),
       approve ? 'อนุมัติแล้ว' : 'ปฏิเสธกลุ่มแล้ว',
     );
@@ -155,13 +269,12 @@ class _CourtOwnerEvidenceQueueState
     bool approve,
   ) async {
     String? reason;
+    String? reasonCode;
     if (!approve) {
-      reason = await GlassTextPromptDialog.show(
-        context,
-        title: 'เหตุผลที่ปฏิเสธหลักฐาน',
-        hint: 'เช่น สลิปไม่ชัด / ยอดไม่ตรง',
-      );
-      if (reason == null || reason.trim().isEmpty || !mounted) return;
+      final picked = await _promptRejectReason('เหตุผลที่ปฏิเสธหลักฐาน');
+      if (picked == null || !mounted) return;
+      reasonCode = picked.code;
+      reason = picked.note;
     }
     await _run(
       () => widget.repo.decideBookingGroup(
@@ -169,10 +282,142 @@ class _CourtOwnerEvidenceQueueState
         groupId: g.id,
         decision: approve ? 'approve' : 'reject',
         reason: reason,
+        reasonCode: reasonCode,
         requirementKey: item.requirementKey,
       ),
       approve ? 'อนุมัติหลักฐานแล้ว' : 'ปฏิเสธหลักฐานแล้ว',
     );
+  }
+
+  // =============== Personal defer ======================================
+
+  Future<void> _deferGroup(OwnerQueueGroup g) async {
+    final minutes = await showModalBottomSheet<int>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'เลื่อนออกจากคิวของฉันชั่วคราว',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text('ไม่เปลี่ยนเวลาหรือสถานะการจอง'),
+            ),
+            for (final (mins, label) in [
+              (60, '1 ชั่วโมง'),
+              (240, '4 ชั่วโมง'),
+              (1440, '1 วัน'),
+            ])
+              ListTile(
+                title: Text(label),
+                onTap: () => Navigator.pop(ctx, mins),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (minutes == null || !mounted) return;
+    await _run(
+      () async {
+        await widget.repo.deferQueueItem(
+          userId: widget.userId,
+          groupId: g.id,
+          minutes: minutes,
+        );
+      },
+      'เลื่อนออกจากคิวแล้ว',
+    );
+  }
+
+  Future<void> _undeferGroup(OwnerQueueGroup g) async {
+    await _run(
+      () async {
+        await widget.repo.deferQueueItem(
+          userId: widget.userId,
+          groupId: g.id,
+        );
+      },
+      'คืนเข้าคิวแล้ว',
+    );
+  }
+
+  // =============== Bulk reject =========================================
+
+  void _toggleSelect(OwnerQueueGroup g, bool selected) {
+    setState(() {
+      if (selected) {
+        _selected.add(g.id);
+      } else {
+        _selected.remove(g.id);
+      }
+    });
+  }
+
+  Future<void> _bulkReject() async {
+    final targets = _groups
+        .where((g) => _selected.contains(g.id))
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+    final total = targets.fold<double>(
+      0,
+      (sum, g) => sum + (g.totalAmount ?? 0),
+    );
+    final picked = await _promptRejectReason(
+      'ปฏิเสธ ${targets.length} กลุ่ม (รวม ${_money(total)} บาท)',
+    );
+    if (picked == null || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ยืนยันปฏิเสธกลุ่มที่เลือก'),
+        content: Text(
+          'จะปฏิเสธ ${targets.length} กลุ่ม '
+          '(มูลค่ารวม ${_money(total)} บาท)\n'
+          'เหตุผล: ${kQueueReasonCodes[picked.code]}'
+          '${picked.note != null ? '\n${picked.note}' : ''}\n\n'
+          'ผู้จองแต่ละกลุ่มจะได้รับแจ้งเตือนและช่วงเวลาถูกปล่อย',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+            ),
+            child: const Text('ปฏิเสธทั้งหมด'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _run(
+      () async {
+        final results = await widget.repo.bulkRejectBookingGroups(
+          userId: widget.userId,
+          venueId: widget.venue.id,
+          groupIds: [for (final g in targets) g.id],
+          reason: picked.note,
+          reasonCode: picked.code,
+        );
+        final failed = results.where((r) => !r.ok).length;
+        if (failed > 0 && mounted) {
+          _toast('ปฏิเสธสำเร็จ ${results.length - failed} จาก '
+              '${results.length} กลุ่ม — ที่เหลือถูกตัดสินไปแล้ว');
+        }
+      },
+      'ปฏิเสธกลุ่มที่เลือกแล้ว',
+    );
+    if (mounted) {
+      setState(() {
+        _selecting = false;
+        _selected.clear();
+      });
+    }
   }
 
   /// Private evidence renders through the Node endpoint with a minted
@@ -180,6 +425,10 @@ class _CourtOwnerEvidenceQueueState
   Future<void> _viewEvidence(GroupEvidenceItem item) async {
     final path = item.storagePath;
     if (path == null || path.isEmpty) return;
+    await _viewEvidencePath(path);
+  }
+
+  Future<void> _viewEvidencePath(String path) async {
     try {
       final token = await widget.repo.mintEvidenceReadToken(
         widget.userId,
@@ -363,8 +612,7 @@ class _CourtOwnerEvidenceQueueState
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    final queue = _queue;
-    if (_loadFailed || queue == null) {
+    if (_loadFailed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
@@ -376,28 +624,155 @@ class _CourtOwnerEvidenceQueueState
         ),
       );
     }
-    if (queue.groups.isEmpty &&
-        queue.claims.isEmpty &&
-        queue.refundCases.isEmpty) {
-      return const SizedBox.shrink();
+    if (_groups.isEmpty && _claims.isEmpty && _refundCases.isEmpty) {
+      if (_deferredCount == 0 || _filter == 'deferred') {
+        return const SizedBox.shrink();
+      }
+      // Empty current filter but deferred items exist — still show chips.
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (queue.groups.isNotEmpty) ...[
-          _header('หลักฐานรอตรวจ (${queue.groups.length})'),
-          for (final g in queue.groups) _groupCard(g),
+        _filterBar(),
+        if (_selecting) _selectionBar(),
+        if (_groups.isNotEmpty)
+          for (final section in _dateSections(_groups)) ...[
+            _header(section.key),
+            for (final g in section.value) _groupCard(g),
+          ]
+        else
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              'ไม่มีรายการในตัวกรองนี้',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: NeumorphicTheme.textSecondary,
+              ),
+            ),
+          ),
+        if (_hasMore)
+          Center(
+            child: TextButton.icon(
+              onPressed: _loadingMore ? null : () => _load(append: true),
+              icon: _loadingMore
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.expand_more_rounded, size: 18),
+              label: const Text('โหลดเพิ่ม'),
+            ),
+          ),
+        if (_claims.isNotEmpty) ...[
+          _header('แจ้งโอนเงินรอตรวจ (${_claims.length})'),
+          for (final claim in _claims) _claimCard(claim),
         ],
-        if (queue.claims.isNotEmpty) ...[
-          _header('แจ้งโอนเงินรอตรวจ (${queue.claims.length})'),
-          for (final claim in queue.claims) _claimCard(claim),
-        ],
-        if (queue.refundCases.isNotEmpty) ...[
-          _header('การคืนเงิน (${queue.refundCases.length})'),
-          for (final rc in queue.refundCases) _refundCard(rc),
+        if (_refundCases.isNotEmpty) ...[
+          _header('การคืนเงิน (${_refundCases.length})'),
+          for (final rc in _refundCases) _refundCard(rc),
         ],
       ],
     );
+  }
+
+  Widget _filterBar() {
+    final filters = <(String, String)>[
+      ('all', 'ทั้งหมด'),
+      ('due_soon', 'ใกล้ครบกำหนด'),
+      ('overdue', 'เกินกำหนด'),
+      ('payment', 'สลิปชำระเงิน'),
+      ('document', 'เอกสาร'),
+      ('deferred', 'เลื่อนไว้${_deferredCount > 0 ? ' ($_deferredCount)' : ''}'),
+    ];
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final (value, label) in filters)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(label, style: const TextStyle(fontSize: 12)),
+                selected: _filter == value,
+                onSelected: (_) => _setFilter(value),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              avatar: Icon(
+                _selecting ? Icons.close_rounded : Icons.checklist_rounded,
+                size: 16,
+              ),
+              label: Text(
+                _selecting ? 'ยกเลิกเลือก' : 'เลือกหลายรายการ',
+                style: const TextStyle(fontSize: 12),
+              ),
+              selected: _selecting,
+              onSelected: (on) => setState(() {
+                _selecting = on;
+                if (!on) _selected.clear();
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionBar() {
+    final targets = _groups.where((g) => _selected.contains(g.id));
+    final total = targets.fold<double>(
+      0,
+      (sum, g) => sum + (g.totalAmount ?? 0),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'เลือก ${_selected.length} กลุ่ม · ${_money(total)} บาท',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _selected.isEmpty || _busy ? null : _bulkReject,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 34),
+              backgroundColor: Colors.red.shade700,
+            ),
+            icon: const Icon(Icons.block_rounded, size: 16),
+            label: const Text(
+              'ปฏิเสธที่เลือก',
+              style: TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Groups by play date (venue timezone) keeping the server ordering.
+  List<MapEntry<String, List<OwnerQueueGroup>>> _dateSections(
+    List<OwnerQueueGroup> groups,
+  ) {
+    final sections = <String, List<OwnerQueueGroup>>{};
+    for (final g in groups) {
+      final start = g.firstStartsAt;
+      final key = start == null
+          ? 'ยังไม่ระบุวันเล่น'
+          : 'เล่นวันที่ ${VenueLocalTime.formatInstantWall(start, g.timezone).split(' ').first}';
+      sections.putIfAbsent(key, () => []).add(g);
+    }
+    return sections.entries.toList();
   }
 
   Widget _header(String title) => Padding(
@@ -414,6 +789,7 @@ class _CourtOwnerEvidenceQueueState
 
   Widget _groupCard(OwnerQueueGroup g) {
     final due = g.evidenceDueAt;
+    final open = g.isPending || g.isAwaitingEvidence;
     return NeumorphicContainer(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
@@ -425,6 +801,16 @@ class _CourtOwnerEvidenceQueueState
         children: [
           Row(
             children: [
+              if (_selecting)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Checkbox(
+                    value: _selected.contains(g.id),
+                    onChanged: open
+                        ? (v) => _toggleSelect(g, v ?? false)
+                        : null,
+                  ),
+                ),
               Expanded(
                 child: Text(
                   g.bookerName ?? 'ผู้จอง',
@@ -448,7 +834,7 @@ class _CourtOwnerEvidenceQueueState
                   g.isPending
                       ? 'รออนุมัติเบื้องต้น'
                       : g.isAwaitingEvidence
-                      ? 'รอหลักฐาน'
+                      ? (g.stage == 'payment' ? 'รอสลิปชำระเงิน' : 'รอหลักฐาน')
                       : g.status.name,
                   style: TextStyle(
                     fontSize: 11.5,
@@ -483,31 +869,74 @@ class _CourtOwnerEvidenceQueueState
               'หลักฐานภายใน ${VenueLocalTime.formatInstantWall(due, g.timezone)}',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
-          for (final item in g.evidence) _evidenceRow(g, item),
-          if (g.isPending &&
-              g.approvalMode == BookingApprovalMode.ownerApproval) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : () => _decideGroup(g, false),
-                    child: const Text('ปฏิเสธ'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _busy ? null : () => _decideGroup(g, true),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                    ),
-                    child: const Text('อนุมัติ'),
-                  ),
-                ),
-              ],
+          if (g.deferredUntil != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'เลื่อนไว้ถึง ${VenueLocalTime.formatInstantWall(g.deferredUntil!, g.timezone)}',
+                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+              ),
             ),
-          ],
+          for (final item in g.evidence) _evidenceRow(g, item),
+          if (open && !_selecting)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  if (_filter == 'deferred')
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : () => _undeferGroup(g),
+                        icon: const Icon(Icons.undo_rounded, size: 16),
+                        label: const Text(
+                          'คืนเข้าคิว',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : () => _deferGroup(g),
+                        icon: const Icon(Icons.snooze_rounded, size: 16),
+                        label: const Text(
+                          'เลื่อนไว้ก่อน',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  if (g.isPending &&
+                      g.approvalMode ==
+                          BookingApprovalMode.ownerApproval) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed:
+                            _busy ? null : () => _decideGroup(g, false),
+                        child: const Text(
+                          'ปฏิเสธ',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed:
+                            _busy ? null : () => _decideGroup(g, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                        ),
+                        child: const Text(
+                          'อนุมัติ',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -623,6 +1052,20 @@ class _CourtOwnerEvidenceQueueState
             '${claim.transferReference?.isNotEmpty == true ? ' — อ้างอิง ${claim.transferReference}' : ''}',
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
           ),
+          if (claim.evidencePath?.isNotEmpty == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _viewEvidencePath(claim.evidencePath!),
+                icon: const Icon(Icons.receipt_rounded, size: 16),
+                label: const Text(
+                  'ดูสลิปที่แนบ',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
