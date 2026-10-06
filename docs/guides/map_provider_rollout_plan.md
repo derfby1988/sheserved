@@ -478,33 +478,160 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 - Active Emergency/Rescue คง provider ที่เริ่มไว้จนจบ flow
 - ตรวจ network/CSP/cache/attribution/quota ใน staging ก่อน production
 - automated tests ใช้ fake/local tiles; ห้ามยิง tile server สาธารณะซ้ำใน CI
+- ทุก phase ต้องผ่าน **Phase Completion Review** ใน §10.1 และแนบหลักฐานก่อนทำเครื่องหมายเสร็จ
+
+### 10.1 Phase Completion Review — บังคับทุก phase
+
+ทุก phase (รวม Phase 0 และระบบอนาคตใน Phase 8) ต้องมีบันทึกก่อน/หลังใน PR หรือ release record โดยระบุ `phase`, feature, platform, renderer, tile source, app/config revision, environment, อุปกรณ์/viewport, network และ permission state ที่ใช้ทดสอบ
+
+**ก่อน implement (baseline):**
+
+- เก็บภาพหน้าจอ/วิดีโอของ flow ปัจจุบันในระบบย่อยที่กระทบ; ใช้ข้อมูล fixture ที่ทำซ้ำได้
+- บันทึกผล test เดิม, error/exception, map-ready time, camera/marker behavior และค่าใช้จ่าย/จำนวน request ที่วัดได้
+- กำหนด acceptance threshold ของ phase จาก baseline และ SLO ของระบบก่อนเริ่ม rollout; ห้ามเลือก threshold หลังเห็นผลเพื่อทำให้ผลผ่าน
+
+**หลัง implement (impact assessment):** เปรียบเทียบภายใต้เงื่อนไขเดียวกับ baseline และสรุปอย่างน้อย 8 ด้าน:
+
+1. UI/layout/interaction — ตำแหน่งแผนที่, overlay, hit target, loading/error/empty state
+2. Functional/data — พิกัด, marker, route, camera, form submit และ side effects ที่เกี่ยวข้อง
+3. Platform parity — ความต่าง Web/iOS/Android และความสามารถที่ provider ไม่มี
+4. Accessibility — semantics, keyboard, text scale, contrast และ touch target
+5. Performance/stability — first usable map, frame jank, memory, crash, controller lifecycle
+6. Network/cost — tile requests/egress, Google billable events, routing/search events แยกกัน
+7. Security/privacy/compliance — role, CSP/CORS, attribution, tile terms, location exposure
+8. Integration/operations — websocket, mission/booking workflows, metrics, logging และ rollback
+
+ให้ระบุแต่ละด้านเป็น `ผ่าน`, `ไม่ผ่าน`, `ไม่เกี่ยวข้อง` พร้อมหลักฐาน/เหตุผลและ action owner; `ไม่เกี่ยวข้อง` ต้องมีเหตุผล ไม่ใช้แทนการทดสอบที่ยังไม่ได้ทำ
+
+**Go / No-Go:**
+
+- **No-Go ทันที:** P0/P1 defect, พิกัดหรือ route ผิด, mission/booking state ผิด, unauthorized config write, attribution/security failure, crash, หรือมีค่าใช้จ่ายจาก provider ที่ไม่ได้อนุมัติ
+- **No-Go ตาม threshold:** metric หลังเปลี่ยนเกิน acceptance threshold ที่กำหนดใน baseline (เช่น map-ready time, tile failure, memory, cost) หรือยังวัด impact สำคัญไม่ได้
+- P2/P3 ที่ยอมรับชั่วคราวต้องมีเหตุผล, owner, due date, workaround และห้ามกระทบความปลอดภัย/accessibility; P2 ที่ทำให้ UI ใช้ไม่ได้ถือเป็น No-Go
+- ผ่านเฉพาะเมื่อ test ที่ระบุรันครบ, impact review มีหลักฐาน, ไม่มี P0/P1 ค้าง และ rollback path ใช้ได้จริง
+
+### 10.2 ผลกระทบและ UI verification เฉพาะแต่ละ phase
+
+#### Phase 0 — Baseline + เลือก tile-source profile
+
+- **Impact review:** เป็น decision/baseline phase จึงยังไม่มี code impact; หลังจบต้องมี provider decision record ที่ครอบคลุมราคา/ToS/coverage/privacy/CORS/CSP และระบุ SLO/threshold สำหรับ phase ถัดไป
+- **UI verification:** บันทึก Google baseline ของ Home, Group Create, Rescue, Yield Way และ Emergency บน platform ที่รองรับ; ทำ low-volume smoke กับ candidate OSM source บน Chrome/Caddy และอย่างน้อยหนึ่ง iOS/Android device โดยเก็บ attribution, console/network errors และ provider response
+- **Defect handling:** source ที่ไม่ผ่าน CORS, attribution, cache policy, key restriction หรือ privacy review ให้ตัดออกจาก registry; ห้าม workaround ด้วย wildcard CSP หรือเปลี่ยนไปใช้ OSM public endpoint เป็น production โดยอัตโนมัติ
+- **Exit evidence:** baseline screenshots/video, timing/error snapshot, candidate comparison และ threshold ที่อนุมัติก่อนเริ่ม implement
+
+#### Phase 1 — Settings model + persistence
+
+- **Impact review:** ตรวจ config resolution, admin permission, revision conflict, saved-vs-draft, default เมื่อ config โหลดไม่ได้ และผลต่อ map instance ที่กำลังเปิด; ยังไม่ควรเปลี่ยน renderer ของ production map ใน phase นี้
+- **UI verification:** widget tests ของ loading/error/empty/dirty/saving/saved/conflict/rollback states; test Web compact 320×568 หรือขนาดเล็กสุดที่แอปรองรับ, 393×852, Web 1280×800 และ text scale 1.3; ทดสอบ keyboard navigation, semantics, save/cancel, unsaved guard และ role rejection ด้วย API/integration test
+- **Defect handling:** stale draft, config overwrite, tile source ที่ไม่พร้อมแต่กด save ได้ หรือ unauthorized write เป็น P0/P1; เพิ่ม regression test ให้ fail ก่อนแก้; ถ้า config server ใช้ไม่ได้ต้องเห็น safe default พร้อมข้อความ ไม่แสดง success ปลอม
+- **Exit evidence:** config หลัง reload เท่ากับค่าที่ save, conflict ไม่เขียนทับ, non-admin เขียนไม่ได้, ไม่มี renderer behavior เปลี่ยนโดยไม่ตั้งใจ
+
+#### Phase 2 — Shared adapter + fake tile harness
+
+- **Impact review:** ตรวจ camera semantics, padding, marker/polyline conversion, overlay ordering, gesture handling, platform view behavior, memory และ render timing เทียบ Google baseline
+- **UI verification:** unit tests สำหรับ coordinate/bounds conversion; widget tests ด้วย FakeMapController/FakeTileProvider; golden tests ใช้ tile fixture และ marker fixture คงที่ (ห้ามใช้ภาพจาก live tile server); Google adapter regression บนทุก platform ที่มี Google renderer และ OSM adapter smoke บน Web/iOS/Android
+- **Defect handling:** controller lifecycle/zero-area bounds/map tap/overlay hit-testing ผิด ให้ทำ test ซ้ำได้ก่อนแก้; ห้ามแก้ golden ด้วยการอัปเดตรูปทับโดยไม่อธิบายสาเหตุและตรวจ layout จริง
+- **Exit evidence:** widget tree/semantics ไม่ overflow, camera command ให้ผลเทียบ contract, renderer ปล่อย/dispose controller ถูกต้อง
+
+#### Phase 3 — Group Create Map
+
+- **Impact review:** ตรวจความถูกต้อง `lat/lng` ระหว่าง tap/drag/location/search/fullscreen/restore และการ persist ไป group; ยืนยัน Nominatim/Google Places ไม่เปลี่ยน provider เพียงเพราะเปลี่ยน basemap
+- **UI verification:** widget/golden tests สำหรับ map card และ fullscreen picker; integration/UI flow เลือกจุด → กลับฟอร์ม → save group → reload แล้วพิกัดเดิม; ทดสอบ pin ไม่มีพิกัดเริ่มต้น, location denied, loading/error tiles และจอแคบ; browser + iOS/Android สำหรับ provider ที่เปิดใช้
+- **Defect handling:** พิกัดคลาด, marker ไม่ตรงตำแหน่งแตะ, fullscreen คืนค่าหาย หรือ save พิกัดคนละจุดเป็น P1; เพิ่ม regression test ที่ assert latitude/longitude (ใช้ fixtures ไม่ใช้ GPS จริง)
+- **Rollback:** override `group_create` กลับ Google โดยคงข้อมูลพิกัดใน DB เดิม ไม่ลบ/เขียนทับพิกัดผู้ใช้
+
+#### Phase 4 — Home Map
+
+- **Impact review:** ตรวจ user location, permission denied, nearest emergency selection, camera auto-focus/re-center, event polling, overlay/header layout, battery/network และ location privacy
+- **UI verification:** fake repository/location stream สำหรับ deterministic widget tests; golden screenshots ของ loading/normal/event-focused/permission-denied/error states; integration smoke บน iOS/Android + Web ที่เปิดใช้ โดยทดสอบ resume/app lifecycle และ event เข้ามาระหว่างเปิดหน้า
+- **Defect handling:** auto-focus ผิด event, location marker ไม่ sync, camera move หลัง dispose หรือ overlay บัง control เป็น P1; ใช้ fake clock/stream และ regression test แทนการพึ่ง timing จาก production backend
+- **Rollback:** สลับ `home` override กลับ Google; location/event data flow ต้องคงเดิม
+
+#### Phase 5 — Yield Way Dialog
+
+- **Impact review:** ตรวจการแสดง route/incident/user markers, fit bounds, dialog size, CTA visibility/tap และยืนยันว่า map renderer ไม่มี side effect ต่อการกดช่วย/ปฏิเสธ
+- **UI verification:** widget + golden tests สำหรับ 0/1/2 markers, route ยาว/สั้น, error/loading, จอเล็กและ text scale; integration test ยืนยันปุ่มช่วยทาง/ไม่สะดวกเรียก callback เดิมและ dialog ปิดตาม contract
+- **Defect handling:** เส้นทางหรือจุดเกิดเหตุผิด, CTA ถูกบัง/กดไม่ได้, dialog ล้น หรือเปิด map แล้วส่ง interaction เองเป็น P0/P1; regression tests ต้องยืนยันว่าเปิด/ปิด dialog ไม่สร้าง response ซ้ำ
+- **Rollback:** provider ของ Yield Way ต้องคืนตาม `emergency`; ห้ามปล่อย dialog แยก provider ชั่วคราว
+
+#### Phase 6 — Rescue Map
+
+- **Impact review:** แยกผลของ renderer จาก Google Directions; ตรวจ route polyline, distance/duration, API calls/cost, Web CORS behavior และกรณี route unavailable โดยไม่อ้างว่าการใช้ OSM แก้ routing
+- **UI verification:** fake Directions response สำหรับ success/empty/timeout/HTTP error; widget/golden tests ของ map, route, loading/error และข้อความ Web fallback; integration smoke บน mobile และ Chrome/Caddy เมื่อ route provider รองรับ
+- **Defect handling:** route endpoint error ต้องไม่ทำให้ marker/หน้ากู้ภัยพัง; response ซ้ำ/ค่าเก่า/route สลับจุดให้เพิ่ม regression test; ห้ามเปิด Directions บน Web ผ่าน direct REST หากยังติด CORS
+- **Rollback:** คืน map renderer เป็น Google โดยคง service routing provider เดิมและไม่เรียก API เพิ่มจาก fallback
+
+#### Phase 7 — Emergency Live Map
+
+- **Impact review:** safety review ครอบ responder tracking, websocket update, mission lock, response state, route/marker consistency, camera lifecycle, traffic messaging, data/cost และ privacy; ต้องตรวจการทำงานของ flow ฉุกเฉินครบตั้งแต่เปิดเหตุจนออกจากภารกิจ
+- **UI verification:** ใช้ staging + synthetic incidents/responders เท่านั้น (ห้ามยิงเหตุฉุกเฉินจริง); integration tests สำหรับ websocket/location/mission transitions; widget/golden tests ของ marker/route/traffic-unavailable/empty/error overlays; Maestro/manual device smoke บน platform-provider combinations ที่จะ rollout; Google regression ต้องผ่านก่อน OSM canary
+- **Defect handling:** พิกัด/route ผิด, responder หาย, mission lock หลุด, ปุ่มช่วยทางผิด flow, map interaction ขวาง emergency controls หรือ traffic absence ทำให้เข้าใจผิดเป็น P0 — halt/rollback ทันที; ทุก P0/P1 ต้องมี regression test และผ่าน incident-flow retest ครบก่อนเปิดใหม่
+- **Post-rollout:** canary ทีละ platform/feature; เฝ้า map/tile error, websocket update delay, map-ready time, crash, traffic disclaimer, provider usage/cost; หยุด rollout เมื่อเกิน threshold จาก Phase 0
+- **Rollback:** เปลี่ยน config กลับ provider ที่ผ่าน gate โดยไม่ dispose map กลางภารกิจ; active mission คง provider snapshot จนจบ
+
+#### Phase 8 — Map systems อนาคต
+
+- **Impact review:** ก่อนเพิ่ม map ให้ระบุ data owner, location sensitivity, service dependencies, provider capabilities และสิ่งที่ feature เดิมจะได้รับผล
+- **UI verification:** ใช้ checklist §11 และ test template ของ phase นี้; ต้องกำหนด platform/provider matrix, fixture states, viewport/accessibility, network failure และ feature-specific integration ก่อนเริ่ม implement
+- **Defect handling:** ห้ามใช้ข้อความ "ใช้ shared map" แทนการทดสอบ flow/domain ของ Sport Club, Book Court, Coach หรือ Delivery; bug ของ feature ต้องมี owner และ regression test ใน module เดียวกัน
+- **Exit evidence:** map feature ใหม่ผ่าน Phase Completion Review แยกของตนเอง; ไม่ inherit ว่า phase เก่าผ่านแล้วจึงผ่านอัตโนมัติ
 
 ---
 
-## 11. Test matrix
+## 11. Test matrix และวิธีแก้ defect
 
-### Settings / config
-- resolver เลือก `feature override → platform default → environment default` ถูกต้อง
-- provider/source ที่ไม่ configure ถูก disable + validation; ไม่ fallback เงียบ
-- save แล้วเปิดแอปใหม่/โหลดใหม่ได้ค่าที่บันทึก
-- ผู้ไม่มีสิทธิ์อ่านได้เฉพาะ config ปลอดภัย เขียนไม่ได้
-- concurrent update/revision conflict ไม่เขียนทับ
-- unsaved changes guard ทำงาน; conflict banner แสดง
+ทุก phase ต้องเลือก test ใน matrix ด้านล่างตามขอบเขตที่เปลี่ยน และอ้างหลักฐานกลับไปยัง Phase Completion Review (§10.1–10.2)
 
-### Shared adapters
-- markers, polylines, tap, padding, camera move, fit bounds ตาม contract
-- zero-area bounds, พิกัดเดียว, controller disposed, load failure ไม่ crash
-- attribution ไม่ถูก overlay สำคัญบัง
-- automated test ไม่พึ่ง live tile endpoint
+### 11.1 ระดับการทดสอบ UI ที่ต้องใช้
 
-### ระบบย่อย
-- **Group Create:** tap/drag pin, location denied, fullscreen, search result, submit พิกัด
-- **Home:** permission, event marker, nearest event, auto focus, reset camera
-- **Yield Way:** 1/2 markers, route line, bounds, yield/decline callback
-- **Rescue:** route line, Directions error, Web CORS, distance/duration fallback
-- **Emergency:** responder marker/color, decoded + fallback polylines, live update, traffic-unavailable indicator, mission lock, เปลี่ยนเหตุการณ์
-- **Web:** Chrome ผ่าน Caddy, ตรวจ CSP/CORS ใน devtools, ไม่โหลด Google JS โดยไม่เลือก/อนุมัติ
-- **iOS/Android:** Google และ OSM แยกกันบน simulator/device; memory, overlays, app resume, permission states
+1. **Unit:** config resolution, provider capability, coordinate conversion, bounds, metrics parsing; ไม่เปิด network
+2. **Widget:** Flutter `WidgetTester` + fake map renderer/controller/tile provider; ตรวจ interaction, semantics, loading/error/empty/permission/disabled states
+3. **Golden/visual regression:** ใช้ tile/marker fixtures คงที่และ font ที่โหลดแน่นอน; เปรียบเทียบ layout, overlay, attribution, dialog, clipping; ห้ามอัปเดต golden เพื่อกลบ bug โดยไม่ตรวจ screenshot จริง
+4. **Integration:** repository/backend/config + map widget; ทดสอบ save/reload, route/search, location state และ side effects ด้วย staging/fixtures
+5. **Browser/device smoke:** Web ผ่าน Caddy dev/staging + Chrome DevTools; iOS/Android อย่างน้อย simulator และ physical device ก่อน release ที่แตะ native/real location
+6. **Acceptance automation:** ใช้ Maestro สำหรับ user journeys ที่รองรับ และ manual QA สำหรับ map gestures, native platform view, provider branding/attribution ที่ automation ตรวจได้ไม่ครบ
+
+### 11.2 Coverage matrix โดยไม่สร้าง Cartesian test เกินจำเป็น
+
+- ทุก feature ที่แก้ต้องทดสอบ renderer ที่เลือกใหม่และ regression ของ renderer เดิมบน platform ที่ feature ใช้งานจริง
+- OSM renderer ต้องมี smoke test อย่างน้อย Web, iOS, Android ใน Phase 2; เมื่อ feature ใดเปิด OSM บน platform เพิ่ม ต้องทดสอบ feature-platform นั้นเพิ่ม
+- Google regression ต้องรันบน platform ที่ยังเปิด Google; Google Web ทดสอบเฉพาะกรณี key/budget/config เปิดไว้ ถ้าไม่เปิดให้ assert ว่าไม่มี Google Maps JS request
+- Emergency Phase 7 ต้องครอบทุก combination ที่จะ rollout จริง (feature × platform × provider) พร้อม test synthetic mission; ใช้ pairwise ได้เฉพาะ control ที่ไม่เกี่ยวกับ safety และต้องระบุเหตุผล
+- Real tile provider smoke ทำเฉพาะ staging/QA ที่ควบคุม request; CI ใช้ fake/local tiles เท่านั้น
+- Viewport ขั้นต่ำ: compact phone 320×568 หรือ viewport ต่ำสุดที่รองรับ, phone 393×852, Web 1280×800; ทดสอบ text scale 1.0 และ 1.3, safe area, keyboard และ orientation ที่แอปรองรับ
+
+### 11.3 Defect reproduction และ root-cause fix loop
+
+ใช้ขั้นตอนเดียวกันทุก phase:
+
+1. **Reproduce:** ระบุ build/config revision, platform, feature, provider/source, viewport/device, network, permission, account role และขั้นตอนซ้ำที่แน่นอน
+2. **Capture evidence:** screenshot/recording, Flutter log, browser console/network หรือ device log; redact token, key, user ID และพิกัดจริงก่อนแนบ
+3. **Classify:** แยก config/resolver, renderer/controller, tile/CSP/CORS, data/location, UI/layout/accessibility, service (routing/search/traffic), security/mission; ระบุ P0–P3 และ owner
+4. **Write a failing regression test:** P0/P1/P2 ต้องมี test ที่ reproduce defect ก่อนแก้; สำหรับ visual issue ใช้ fixture + golden หรือ widget assertion ที่เจาะจง
+5. **Fix root cause:** ห้ามแก้เฉพาะ screenshot/ซ่อน error/ลด test coverage; ห้าม fallback ไป provider อื่นเพื่อกลบ error โดยไม่ผ่าน config/policy
+6. **Rerun affected tests:** targeted failing test → unit/widget → integration/acceptance ของ feature → platform/provider regression → UI smoke บน device/browser ที่กระทบ
+7. **Reassess impact:** เทียบ evidence กับ baseline และ threshold; บันทึก defect ที่แก้, residual risk, rollback decision และผล post-implementation ใน PR/release record
+
+**Severity / release policy:**
+
+- **P0:** safety, security, privacy, พิกัด/route ผิด, mission/booking side effect ผิด หรือ crash ใน critical flow — หยุด rollout และ rollback
+- **P1:** core map ใช้ไม่ได้, save พิกัดผิด, responder/marker/route สำคัญหาย, config unauthorized หรือ UI ทำให้ดำเนิน flow หลักไม่ได้ — ห้ามขยาย canary
+- **P2:** visual/accessibility/performance regression ที่เกิน threshold — แก้ก่อน rollout; ยอมรับชั่วคราวได้เฉพาะมี workaround/owner/due date และไม่ลด accessibility/safety
+- **P3:** copy/visual detail ที่ไม่กระทบการใช้งาน — บันทึก issue และกำหนดรอบแก้
+
+### 11.4 Post-implementation Go/No-Go checklist
+
+ก่อน phase complete ผู้รับผิดชอบตอบ `ผ่าน/ไม่ผ่าน/ไม่เกี่ยวข้อง + หลักฐาน` ทุกข้อ:
+
+- [ ] Functional flow และ data invariant เทียบ baseline ผ่าน
+- [ ] UI golden/interaction, semantics, touch/keyboard และ text scale ผ่านตาม scope
+- [ ] Google/OSM provider behavior และ attribution ถูกต้อง
+- [ ] CSP/CORS/network/cache และ external service error behavior ผ่าน
+- [ ] map-ready/error/crash/memory และ cost metrics อยู่ใน threshold ที่ล็อกไว้ก่อนเริ่ม phase
+- [ ] security/privacy/role และ location handling ไม่มี regression
+- [ ] ไม่มี P0/P1 ค้าง; P2/P3 มี owner/due date และได้รับอนุมัติ
+- [ ] rollback/config override ผ่านการทดสอบ
+- [ ] หลักฐานก่อน/หลังและผลกระทบแนบใน PR/release record
 
 ---
 
@@ -545,6 +672,8 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 - routing, search, traffic, map renderer มี config/metrics แยกกัน
 - ไม่ประเมินค่าใช้จ่ายจาก map session count ด้วยราคาเดียวทุก provider
 - Home, Group Create, Rescue, Yield Way, Emergency ผ่าน test gate ของตนเองก่อนเปิดใช้
+- ทุก phase มีผล impact assessment ก่อน/หลังพร้อมหลักฐาน, ผ่าน UI verification ตาม scope และไม่มี P0/P1 defect ค้าง
+- ค่า performance, error rate, provider usage/cost และ rollback threshold ถูกกำหนดก่อน rollout และตรวจผ่านตาม Phase Completion Review (§10.1)
 
 ---
 
