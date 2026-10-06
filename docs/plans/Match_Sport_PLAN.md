@@ -3474,6 +3474,8 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 | 16 | 21.7.17 Court detail upcoming appointments | section "นัดหมายกำลังจะเริ่ม" ใน `CourtDetailSheet` พร้อม cutoff-guarded cancellation |
 | 17 | 21.7.18 Book Court recurring booking release | เลือกวันปล่อยรอบได้หลายวันหรือทุกวันด้วยเวลาเดียวกัน (venue default + court override), window ไม่มีช่องว่างตามช่วงห่างวันปล่อยรอบ, no rule = จองอนาคตได้ไม่จำกัด, server gate ทั้ง instant/owner_approval พร้อม opensAt |
 | 18 | 21.7.19 Book Court two-level unit labels | หน่วยเรียก venue แยกจาก resource, sport-based suggestions/fallback ครบ catalog, contextual owner/booker/admin UI และ booking snapshots |
+| 19 | 21.7.20 Book Court owner availability management | owner/manager ระงับ/ยกเลิกระงับช่วงเวลาเฉพาะครั้งเป็น batch พร้อม atomic overlap/hours guard และ availability refresh |
+| 20 | 21.7.21 Book Court evidence-gated booking + slip verification | หน่วงเวลาส่งหลักฐานต่อ court (hold first-come), forfeit อัตโนมัติ, owner gallery/implicit approve, provider-agnostic slip verification และ cost control ครบ 3 level |
 
 #### เหตุผลของลำดับและการคุมผลกระทบ
 
@@ -3820,6 +3822,83 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - **UI feedback:** หลังบันทึก refresh availability ใน dialog เดิมและแสดงผลสำเร็จ/ผิดพลาด; โหมดจัดการไม่ quote ราคาและไม่ผ่าน terms dialog; `CourtMyBookingsPage` คง flow เปลี่ยนเวลาแบบปกติ
 - **Test/rollout:** widget tests ครอบคลุม batch หลายช่วง, unsuspend เฉพาะ slot ที่ระงับ, mixed selection, owner action; SQL smoke ครอบคลุม owner/manager/admin/non-manager, booking conflict, outside hours, batch suspend, partial unsuspend และการคงช่วงอื่น; apply migration ก่อนปล่อย client
 
+#### 21.7.21 Book Court — หลักฐานยืนยันการจอง (Evidence-Gated Booking) และการตรวจสลิปอัตโนมัติ
+
+- **สถานะ:** planned — ออกแบบและยืนยันมติกับผู้ใช้ครบทุกข้อ (2026-10-05) ยังไม่ implement/migration; migration ต้องมี timestamp หลัง `20261009100000_sports_hub_owner_availability_management.sql` และทุก field ใหม่ default = ปิดฟีเจอร์ เพื่อให้ apply แล้วพฤติกรรมเดิมไม่เปลี่ยนจนกว่า owner จะเปิด
+- **Dependency:** 21.7.16 (`price_total_snapshot` ใช้เทียบยอดสลิป), 21.7.18 (`sports_venue_booking_release_opens_at_for_slot` สำหรับ deadline แบบ `after_release`/`release_day_time` และต้องมี release rule ก่อนเลือกสองโหมดนี้), 21.7.20 (migration ล่าสุด), `20261004110000` housekeeping (cron 1 นาที + lazy expire ที่ต้องขยาย) และ `change_pending_venue_booking_slot`/`decide_sports_venue_booking` นิยามล่าสุด
+- **Requirement (ยืนยันแล้ว):**
+  - court ที่ตั้ง `instant` (อนุมัติอัตโนมัติ) เปิด "หน่วงเวลาส่งหลักฐาน" ได้: ผู้จองต้องแนบหลักฐานตาม checklist ภายในเวลาที่กำหนด ไม่ส่งครบ = สละสิทธิ (forfeit) และคืน slot — ต่างจาก `pending` เดิมที่ **ไม่** กิน slot: โหมดนี้ใช้สถานะกลาง `awaiting_evidence` ที่ **กิน slot** ให้สิทธิคนกดจองก่อนแบบ first-come-first-served
+  - ส่งครบแล้วเจ้าของมี window ตัดสินใจ; เพิกเฉยครบ window = **อนุมัติโดยนัย** (สอดคล้องเจตนาโหมด instant); ปฏิเสธ = คืน slot พร้อมเหตุผลบังคับ
+  - มี release rule → เจ้าของกำหนด deadline ได้ว่า "หลังจากเปิดจองมาแล้วกี่นาที" หรือ "ถึงเวลาใด" ของรอบ; ไม่มี rule → นับถอยหลังต่อการจอง
+  - หลักฐานไม่จำกัดเฉพาะสลิปเงิน — court ฟรีเปิดได้ด้วย (เช่น บัตรสมาชิก/บัตรนักศึกษา) และเจ้าของระบุเองว่าต้องแนบอะไรบ้าง
+  - `owner_approval` ใช้หลักฐานเป็น input ประกอบการตัดสินใจได้ (ไม่มีอนุมัติโดยนัย และ `pending` ยังไม่กิน slot ตามกติกาเดิม) โดย deadline ส่งหลักฐานเป็น toggle ที่เจ้าของเลือก
+  - โหมดตรวจหลักฐาน 3 แบบ: `auto` (ส่งครบ = ผ่าน), `auto_verify` (ตรวจสลิปอัตโนมัติผ่าน provider), `owner_review` (เจ้าของตรวจ) — provider และผู้รับภาระค่าใช้จ่ายเลือกได้จาก UI ครบทุก level
+- **Effective policy (venue default + court override):** `sports_venues` เก็บ policy ชุดเต็ม; `sports_venue_courts.evidence_mode` ∈ `inherit`/`off`/`custom` (pattern เดียวกับ `booking_release_mode`): `inherit` ใช้ venue, `off` ปิดเฉพาะ court, `custom` ใช้ชุดของ court — court `custom` ต้องมี field ครบ, `inherit`/`off` ต้องล้าง field ของตัวเอง (mirror CHECK ของ 21.7.18); policy ที่ "เปิด" ต้องมี `evidence_requirements` ที่มี required item อย่างน้อยหนึ่งรายการ
+- **Config (venue; court `custom` ใช้ชุดเดียวกัน):**
+
+  | field | ค่า/ความหมาย |
+  |---|---|
+  | `evidence_deadline_mode` | `per_booking` / `after_release` / `release_day_time` — สองโหมดหลังต้องมี release rule ที่ resolve ได้; ถ้าถอด rule ภายหลัง RPC บังคับให้เปลี่ยนเป็น `per_booking` ก่อนบันทึก (ไม่ปล่อย policy ค้างที่อ้าง rule ที่ไม่มี) |
+  | `evidence_minutes` | นาทีของ `per_booking` (นับจาก `created_at`) และ `after_release` (นับจาก `opensAt(slot)`) |
+  | `evidence_deadline_time` | เวลาท้องถิ่น venue ของ `release_day_time` (ใช้ local day ของ `opensAt`) |
+  | `evidence_min_grace_minutes` | เวลาขั้นต่ำต่อการจอง: `max(computed, created_at + grace)`; `0` = เข้มตามรอบ |
+  | `owner_decision_minutes` | window ก่อนอนุมัติโดยนัย (default 1440) — clamp ด้วย `starts_at` |
+  | `evidence_requirements` | JSONB checklist `[{key,label,required,note?}]` — key unique, label 1–60, 1–10 รายการ, required ≥ 1 |
+  | `evidence_review_mode` | `auto` / `auto_verify` / `owner_review` (`auto_verify` เลือกได้เฉพาะเมื่อ admin เปิด scope + provider) |
+  | `evidence_max_holds_per_user` | abuse guard — จำนวน `awaiting_evidence` ที่ user หนึ่งกันค้างพร้อมกันได้ต่อ venue (default 1–3, owner ตั้งใน UI) |
+  | `payment_destination` | PromptPay ID/เลขบัญชีสำหรับเทียบสลิป — บังคับเฉพาะ `auto_verify`, โหมดอื่นไม่ต้องใช้ |
+  | `on_verify_unavailable` | `owner_review` (default) / `auto` — พฤติกรรมเมื่อ provider ล่ม/quota หมด/timeout |
+  | `verify_scope` / `verify_cost_bearer` / `verify_monthly_quota` | admin-only ต่อ venue (ดูหัวข้อ Cost control) — owner แก้ไม่ได้ |
+
+- **Deadline computation (server เป็น authority เดียว):**
+  - `computed = per_booking ? created_at + minutes : after_release ? opensAt(slot) + minutes : release_local_day_at_time`
+  - `evidence_due_at = min(max(computed, created_at + grace), starts_at)` — ห้ามเกินเวลาเริ่มเล่น และต้องมากกว่า `now()` เสมอ (สร้าง booking ได้เฉพาะ `ends_at > now()`); ถ้าเหลือเวลาน้อยกว่า grace UI เตือน "เหลือเวลาส่งหลักฐานน้อย" ก่อนยืนยัน
+  - `owner_decision_due_at = min(evidence_submitted_at + owner_decision_minutes, starts_at)`
+  - โหมด `auto` confirm ใน RPC ตอนส่งครบ (ไม่รอ cron) ส่วนโหมดอื่นให้ housekeeping เป็นตัวปิด deadline
+- **Lifecycle:**
+
+  ```text
+  create (instant + policy เปิด) → awaiting_evidence [hold] + evidence_due_at
+    ├─ required ไม่ครบภายใน evidence_due_at → forfeited (คืน slot, แจ้ง booker)
+    └─ required ครบ
+         ├─ auto         → confirmed ทันทีใน RPC (+ แจ้ง manager เป็น FYI)
+         ├─ auto_verify  → verifying → provider pass = confirmed
+         │                            provider fail = evidence rejected → re-upload ได้จนถึง evidence_due_at
+         └─ owner_review → รอ owner; เงียบครบ owner_decision_due_at = confirmed โดยนัย
+                                      owner reject = rejected (คืน slot, เหตุผลบังคับ)
+  ```
+
+  - `verifying` เป็นสถานะย่อยของ evidence row ไม่ใช่ booking status ใหม่ และ **fail ≠ forfeit ทันที** — สลิปเบลอ/ผิดรูปให้ส่งใหม่ได้ภายใน deadline เดิม; การ replace item reset verification
+  - `owner_approval` + evidence: booking ยังเป็น `pending` (ไม่กิน slot, ไม่มีอนุมัติโดยนัย) — ถ้าเปิด deadline และไม่ส่งครบ = `forfeited`; ถ้าปิด deadline แนบได้ตลอดจน owner ตัดสิน
+- **Snapshot:** booking snapshot policy ที่มีผล ณ ตอนสร้าง (`evidence_deadline_mode/minutes/deadline_time/grace/owner_decision_minutes/requirements/review_mode`) และ evidence row snapshot `requirement_key` — แก้ policy ภายหลังไม่เปลี่ยน deadline/เงื่อนไขของ booking ที่ค้างอยู่ (หลักการเดียวกับ terms/price/cutoff/unit-label snapshots) และ `evidence_due_at`/`owner_decision_due_at` คำนวณครั้งเดียวตอนสร้าง/ตอนส่งครบ ไม่คำนวณใหม่จาก config ปัจจุบัน
+- **Schema:**
+  - `sports_venues` + `sports_venue_courts`: field ตามตาราง config และ `evidence_mode` (court)
+  - `sports_venue_bookings`: ขยาย status CHECK เพิ่ม `awaiting_evidence`, `forfeited`; เพิ่ม `evidence_due_at`, `evidence_submitted_at`, `owner_decision_due_at`, `evidence_review_mode_snapshot`, `evidence_policy_snapshot JSONB`, `booking_group_id UUID NULL` (ผูกช่วงที่สร้างจากการยืนยันครั้งเดียวเพื่อให้ UI อัปโหลดครั้งเดียวครอบทุกช่วง)
+  - `sports_venue_booking_evidence`: `id`, `booking_id` FK, `requirement_key`, `storage_path` (private bucket), `mime`, `size_bytes`, `verification_status` ∈ `pending/verifying/verified/failed/skipped`, `provider_code`, `provider_ref`, `verification_meta JSONB`, `uploaded_at`, `replaced_at` — unique `(booking_id, requirement_key)` เก็บรายการล่าสุดต่อข้อ
+  - `slip_verification_providers` (admin): `code`, `display_name`, `endpoint_url`, `api_key_ref`, `cost_per_check`, `capabilities JSONB`, `is_enabled`, `priority`, `notes`
+  - `slip_verification_usage`: `venue_id`, `booking_id`, `evidence_id`, `provider_code`, `cost`, `bearer` ∈ `platform/owner`, `result`, `created_at` — ใช้เป็น ledger ก่อนมี billing จริง
+  - Index: partial `(evidence_due_at) WHERE status='awaiting_evidence'` สำหรับ cron scan; partial `(court_id, starts_at, ends_at) WHERE status IN ('confirmed','awaiting_evidence')` สำหรับ hold counting
+- **Availability:** `get_court_availability` เพิ่ม `held` (จาก `awaiting_evidence`) แยกจาก `booked`; `CourtAvailabilityPicker` แสดง held เป็น chip "รอส่งหลักฐาน" ที่จองไม่ได้ และต้องไม่ให้ status priority ทำให้ booked/blocked ถูกตีความเป็น held; ผู้ถือ hold เห็น countdown ของตัวเอง; เมื่อถึง `evidence_due_at` ให้ refresh อัตโนมัติแบบเดียวกับ `opensAt`/`nextReleaseAt` ที่มีอยู่
+- **Owner UI:**
+  - `OwnerCourtEditorDialog` + editor ระดับ venue (`VenueEvidencePolicyDialog`): toggle เปิด/ปิด, เลือก deadline mode (ปิดตัวเลือก `after_release`/`release_day_time` เมื่อยังไม่มี release rule), กรอกนาที/เวลา, grace, owner window, review mode, checklist editor (เพิ่ม/ลบ/เรียง, required flag), `payment_destination`, `evidence_max_holds_per_user` และ preview ข้อความสรุปภาษาไทยก่อนบันทึก
+  - booking manager/gallery: ตัวกรอง court/วันที่เล่น/สถานะ (`awaiting_evidence`/`submitted`/`verifying`), เปิดดูหลักฐานหลายรายการต่อ booking (zoom ได้), ปัดขวา = อนุมัติ, ปัดซ้าย = ปฏิเสธ, และ **defer "ข้ามไว้ก่อน"** ที่คงไว้ในคิวโดยไม่ตัดสิน; ปุ่มอนุมัติ/ปฏิเสธ + เหตุผลสำเร็จรูป (สลิปไม่ชัด/ยอดไม่ตรง/บัญชีผิด/อื่น ๆ) พร้อมข้อความอิสระ; bulk multi-select ต้องมี confirm dialog
+  - **Grouping:** venue ที่มี release rule จัดกลุ่มตามรอบโดยใช้ `opensAt(slot)` เป็น key (ไม่ต้องมี release ledger); venue ที่ไม่มี rule **default จัดกลุ่มตามวันที่เล่น** และมีตัวกรองให้ owner เลือก grouping (วันที่เล่น/คอร์ท/เวลาที่ส่งหลักฐาน)
+- **Booker UX:**
+  - `CourtBookingDialog` แสดง checklist + deadline ที่คำนวณได้ + checkbox ยอมรับ "ต้องส่งหลักฐานภายใน X นาที" ก่อน confirm (และเตือนเมื่อเวลาที่เหลือน้อยกว่า grace)
+  - `court_my_bookings_page.dart`/`CourtDetailSheet` (section "นัดหมายกำลังจะเริ่ม") เพิ่ม chip "รอส่งหลักฐาน" พร้อม countdown จาก `serverNow` (ไม่ใช่นาฬิกาเครื่อง), CTA อัปโหลด (reuse `ImageUploadField`/`PromptPaySlipUploader` กับ bucket ใหม่), สถานะ "รอตรวจสอบ" สำหรับ `verifying`, แสดงเหตุผล + ปุ่มอัปโหลดใหม่เมื่อ evidence ถูกปฏิเสธ และ refresh อัตโนมัติเมื่อถึง deadline
+  - หลัง forfeit/reject แสดง prompt 2 ทาง: "ปิด" หรือ "เลือกสนาม/เวลาใหม่" → เปิด `CourtDetailSheet` ของ venue เดิม เพื่อเทียบ slot ว่างข้ามคอร์ทและจองใหม่ตาม flow ปกติ (booking ใหม่ผ่าน countdown ใหม่)
+  - `change_pending_venue_booking_slot`: **ห้าม** กับ `awaiting_evidence`; `pending` ของ `owner_approval`+evidence ยังย้ายได้โดยไม่ขยาย deadline และหลักฐานที่ส่งแล้วยกตามไป
+- **Verification (provider-agnostic):** เรียกผ่าน websocket-server endpoint ใหม่ `POST /api/venue-booking/verify-slip` (API key อยู่ฝั่ง server `.env` เท่านั้น) ผ่าน adapter interface เดียว `verifySlip(image, expectedAmount, expectedRecipient)` → normalized result; SlipOk เป็น implementation แรก และรองรับ self-hosted/open-source ที่ตั้ง `endpoint_url` เองได้; ตรวจสองระดับ — ความจริง/ไม่ซ้ำของสลิป (เก็บ trans-ref กันสลิปใบเดียวใช้หลายรอบ) และ amount ≥ `price_total_snapshot` + บัญชีรับตรงกับ `payment_destination`; ตั้ง `verify_timeout_minutes` และทำตาม `on_verify_unavailable` เมื่อล่ม
+- **Cost control (ครบทุก level):** admin เลือก provider (active + fallback chain + priority) และกำหนดต่อ venue — `verify_scope` ∈ `disabled/whitelist/all`, `verify_cost_bearer` ∈ `platform/owner`, `verify_monthly_quota`; usage ledger เก็บทุก call พร้อม provider/cost/bearer เพื่อพร้อมคิดกับ owner ภายหลังโดยไม่ต้องสร้าง billing ใน phase นี้; owner เห็น quota/ยอดสะสมของตนเมื่อ bearer = owner และเห็น `auto_verify` เป็นตัวเลือกเฉพาะเมื่อ venue อยู่ใน scope; booker ไม่เห็นเรื่อง cost/provider เห็นแค่ผล pass/fail
+- **Notifications:** booker — created (awaiting evidence + deadline), เตือนก่อน deadline, forfeited, evidence rejected (ให้อัปโหลดใหม่), confirmed (auto/auto_verify/owner/implicit), rejected โดย owner; manager — มีหลักฐานใหม่เข้า queue, verify ล้มแล้ว fallback, auto-approved FYI; admin — quota ใกล้หมด — ใช้ `sports_hub_notify` แบบ idempotent และ route ไป booking/owner dashboard ตาม pattern เดิม
+- **Housekeeping:** ขยาย `expire_pending_sports_venue_bookings_in_scope`/`housekeep_sports_venue_bookings` ให้ (1) forfeit `awaiting_evidence` ที่ `evidence_due_at <= now()` และ required ไม่ครบ, (2) confirm โดยนัยเมื่อ `owner_decision_due_at <= now()` และครบ required, (3) จัดการ `verifying` ที่ค้างเกิน `verify_timeout_minutes` ตาม `on_verify_unavailable`, (4) เรียงลำดับกับ `expire` ที่ `starts_at` เดิมอย่างชัดเจน; เพิ่ม lazy-expire เวอร์ชันเดียวกันใน list RPC เพื่อไม่ให้ UI เห็น state ค้าง
+- **RPC contract:** `set_sports_venue_evidence_policy` + court upsert params (NULL-means-keep ตามบทเรียน 21.7.18; พารามิเตอร์ใหม่ประกาศ `INT` ไม่ใช่ `SMALLINT` ตามบทเรียน 21.7.19); `submit_sports_venue_booking_evidence(p_user_id, p_booking_id, p_items JSONB)` — เฉพาะเจ้าของ booking, ตรวจ status/deadline/requirement keys, replace ได้จนถึง deadline, reset verification และ confirm ทันทีถ้า mode = `auto`; `decide_sports_venue_booking` ขยายให้รับ `awaiting_evidence` (approve ตรวจ capacity/overlap รวม hold); `list_sports_venue_evidence_queue(...)` คืน queue/gallery พร้อม grouping key; `create_sports_venue_booking`/`change_pending_venue_booking_slot` ปรับ hold counting + deadline snapshot; ยืนยัน PostgREST schema cache reload
+- **Security/abuse:** private bucket `booking-evidence` (ไม่ public เหมือน `donations`), path scope `booking/<booking_id>/<uuid>`, อ่านผ่าน RPC ที่ตรวจ booker/owner/manager เท่านั้น, duplicate trans-ref guard, `evidence_max_holds_per_user`, rate limit การสร้าง hold, retention policy หลังจบการจอง และห้ามส่ง storage path/ข้อมูลส่วนบุคคลเข้า public view
+- **Analytics:** hold → confirmed conversion, forfeit rate, verify pass/fail, cost ต่อ venue/provider — ใช้ตัดสินใจเรื่อง cost bearer/rollout
+- **Deploy/rollout:** additive migration, default off; apply หลัง 21.7.20 พร้อม PostgREST reload; deploy Node verify endpoint + keys ก่อนเปิด `auto_verify`; เริ่ม `verify_scope='whitelist'` (option c) แล้วขยายเมื่อเห็นต้นทุนจริง
+- **ขอบเขตที่ยังไม่ทำ:** billing/เรียกเก็บเงินจริงกับ owner (ledger เท่านั้น), in-app payment/refund/escrow, OCR หรือการตรวจเอกสารที่ไม่ใช่รูป, multi-currency, provider นอกเหนือ adapter interface (เพิ่มทีหลังได้โดยไม่แก้ lifecycle)
+- **Test/exit gate:** SQL smoke ครอบคลุม deadline ทุกโหมดรวม clamp/grace/`release_day_time` ที่ผ่านเวลาแล้ว, hold counting + `HOLD_LIMIT_REACHED`, forfeit, implicit approve, owner reject, mode `auto`, `owner_approval`+evidence (deadline on/off), ห้าม change-slot บน `awaiting_evidence` แต่ย้ายได้บน pending โดย deadline ไม่ขยาย, snapshot policy ไม่เปลี่ยนตาม config, NULL-means-keep, INT params, validation เมื่อถอด release rule, provider fallback/timeout/quota, ledger rows และ authorization; widget tests ครอบคลุม booking dialog consent/deadline, countdown/upload/status/re-upload, owner gallery swipe/defer/bulk/grouping, config editor validation, admin panel และ narrow screens; integration test ของ verify endpoint ด้วย stubbed provider; concurrency test ระหว่าง hold/confirm/forfeit/approve และ device QA
+
 ### 21.8 Test plan และ Acceptance Criteria
 
 #### UI/Widget tests
@@ -3940,6 +4019,7 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - [x] Court detail sheet แสดง section "นัดหมายกำลังจะเริ่ม" ตาม 21.7.17 — booking confirmed ที่ยังไม่สิ้นสุดเวลาของผู้ใช้ทุก venue เรียงใกล้สุดก่อน, ปัดซ้ายยกเลิกผ่าน confirm dialog และ cutoff guard, ไม่มีเปลี่ยนเวลาสำหรับ confirmed, signed-out ไม่แสดง
 - [ ] Recurring booking release ใน 21.7.18 ผ่าน venue default + court weekday override (`inherit`/`always_open`/`custom`), court custom weekdays ใช้ court time/window เฉพาะ booking date ที่ weekday ตรงกันและวันอื่นใช้ venue rule ซึ่งครอบทุกวันผ่านรอบที่ใกล้ที่สุด, legacy day-only RPCs คง singleton behavior, min window 1/5/7 และช่วง 7 วันยังถูกต้อง, create/change-slot gates ทุก candidate start ใช้ resolver เดียวกับ availability, availability คืนเวลาเฉพาะวันที่เลือก, `release.selectedDayOpensAt` และ `nextReleaseAt` สำหรับวันปิดทั้งหมด, owner UI อธิบาย fallback ชัดเจน, `opensAt`/DST/idempotency/pending/NULL-means-keep contracts คงอยู่ (core + migrations `20261006100000`/`20261007100000`/`20261008100000` implement แล้ว; full SQL smoke **272 PASS / 0 FAIL / 0 ERROR** บน local PostgreSQL 15.19 และ migration re-apply ผ่าน, `dart analyze` สะอาด, Book Court tests ผ่าน **183 tests**; `20261006100000` และ `20261007100000` apply บน Supabase แล้ว — เหลือ apply `20261008100000` บน Supabase และ end-to-end/device QA)
 - [ ] หน่วยเรียก venue/resource แยกกันครบตาม 21.7.19: venue override + sport recommendation + “สนาม” fallback, catalog ครอบคลุม sports ทุก row และ future row ได้ fallback, owner/booker/admin/global UI ใช้คำตามบริบท, resource inherited labels ไม่ค้างเมื่อแก้ venue+sport default (ทุก read surface ใน checklist ผ่าน helper เดียว), booking ใหม่คง snapshot ทั้งสองระดับ, legacy booking ที่ไม่มี venue snapshot แสดงคำกลาง และข้อมูลเดิมถูก migrate โดยไม่เปลี่ยนข้อความ resource ที่แสดง (implement เสร็จแล้วใน migration `20261005100000_sports_hub_unit_labels.sql` + Dart models/repo/owner UI/copy sweep; apply บน Supabase จริงแล้วและตรวจ resolved labels ผ่าน; full SQL smoke ผ่านครบ 267 assertions / 0 FAIL / 0 ERROR บน local PostgreSQL 15.19 จริง, `dart analyze` สะอาด และ `flutter test` book_court ผ่าน 182 tests — เหลือยืนยัน flow บนแอปจริง)
+- [ ] Evidence-gated booking และการตรวจสลิปอัตโนมัติใน 21.7.21 ผ่าน exit gate: hold semantics (`awaiting_evidence` กิน slot + `evidence_max_holds_per_user`), deadline ทุกโหมดพร้อม clamp/grace, forfeit/implicit-approve/owner-reject, หลักฐาน checklist หลายรายการที่ owner กำหนดเอง (court ฟรีใช้ได้), `owner_approval`+evidence โดยไม่มีอนุมัติโดยนัย, snapshot policy บน booking, ห้าม change-slot บน `awaiting_evidence`, gallery/queue พร้อม grouping/ตัวกรอง/defer, provider registry + cost bearer/quota/usage ledger และ admin/owner UI ครบทุก level (planned — มติครบ 2026-10-05, ยังไม่ implement)
 - [ ] ผ่าน widget, unit, integration, authorization, accessibility และ device QA บนจอเล็ก (widget/unit ผ่านแล้ว; เหลือ integration/concurrency ฝั่ง server และ device QA)
 
 ### 21.9 ความเสี่ยงและแนวทางป้องกัน
@@ -3960,6 +4040,10 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 | booking เก่าไม่มี venue-label snapshot | แสดง label ปัจจุบันผิดเป็นประวัติว่าเคยใช้ label นี้ | snapshot ใหม่เฉพาะ booking หลัง migration; legacy snapshot คง NULL และแสดงคำกลาง “สถานที่” แทนการ backfill จากค่าปัจจุบัน |
 | stale refresh ทำให้ pagination/scroll หาย | การ์ดกระโดดหรือผู้ใช้เสียตำแหน่งหลังกลับหน้า | keep page state, refresh เฉพาะเมื่อ stale, โหลดช่วง pagination ที่เปิดไว้และเก็บรายการเดิมระหว่างรอ |
 | venue timezone ไม่ชัด | เวลาใน availability, consent และ booking อาจคลาดเคลื่อน | เก็บ IANA timezone ต่อ venue, แสดง local time, resolve เป็น absolute timestamp ที่ server และทดสอบ DST |
+| โหมด evidence กิน slot แต่ผู้จองไม่ส่งหลักฐาน | slot ถูกกันจนหมดเวลา ทำให้รายได้/การใช้งานหาย | deadline สั้น, `evidence_max_holds_per_user`, forfeit อัตโนมัติผ่าน cron 1 นาที + lazy expire และแสดง `held` ชัดเจนว่ากำลังรอหลักฐาน ไม่ใช่จองแล้ว |
+| provider ตรวจสลิปล่ม/quota หมด/ค่าใช้จ่ายพุ่ง | booking ค้างสถานะ verifying หรือ cost เกินควบคุม | provider registry + fallback chain + `on_verify_unavailable` (default `owner_review`), `verify_timeout_minutes`, quota ราย venue, admin kill switch และ usage ledger แยก venue/provider |
+| สลิปซ้ำ/ปลอม หรือยืด hold ด้วยการเปลี่ยน slot | ผู้ใช้ได้สิทธิ์โดยไม่ชำระหรือกัน slot นานเกิน | เก็บ provider trans-ref กันสลิปซ้ำ, เทียบ amount ≥ `price_total_snapshot` + บัญชีรับ, ห้าม change-slot บน `awaiting_evidence`, ทุก decision log ลง `sports_venue_booking_events` |
+| หลักฐานมีข้อมูลส่วนบุคคล (สลิป/บัตร) | รั่วไหลผ่าน public surface | private bucket + RPC-mediated read เฉพาะ booker/owner/manager, ไม่ส่ง path เข้า public view, retention policy และไม่ log เนื้อรูป |
 
 ### 21.10 โครงสร้างไฟล์ปัจจุบันและไฟล์ที่จะเพิ่มตาม phase
 
@@ -3994,3 +4078,10 @@ Payment และ refund ให้เป็น phase ย่อยภายหล
 - `book_court_models.dart`/`book_court_repository.dart`: แยก `venueUnitLabel` กับ `resourceUnitLabel` ใน venue, court, booking และ catalog; public listing, owner detail, booking history/notification คืน labels ระดับที่ถูกต้อง; ส่ง `p_unit_label_override` แบบสามสถานะ (ไม่ส่ง = คงเดิม / NULL = inherit / ข้อความ = override) และส่ง reference เฉพาะผ่าน `set_sports_venue_sports`/update venue; ห้าม client คาดเดาจากชื่อกีฬา
 - owner UI: venue create เพิ่ม “ตามประเภทกีฬา/กำหนดเอง” แบบ generic (ยังไม่มีกีฬา/reference) ส่วนการเลือก sport อ้างอิงอยู่ใน `VenueSportsEditorDialog` และ card ของ manage page; update global dashboard, registration, setup progress, admin review, venue detail, search/filter, resource cards, availability, booking/terms/review/error copy ให้ venue-specific ใช้ venue label และ multi-venue/multi-resource ใช้คำกลาง; resource/sport editor ยังคงแก้หน่วยระดับ resource
 - tests: coverage query/assertion กับ sports ทุก row และเพิ่ม unknown sport, single/multiple/no reference sport, override/clear, reference auto-heal, `INVALID_UNIT_LABEL_REFERENCE` (create + non-member), locale fallback (`'th'` คงที่), mixed-venue copy, role/authorization, catalog ที่ไม่ approved มองไม่เห็นจาก anon, resource inheritance migration, no unintended data loss และ immutable venue/resource booking snapshots; widget tests ครอบคลุม owner/booker/admin surfaces และ accessibility/narrow screens
+
+#### Planned: 21.7.21 Book Court evidence-gated booking + slip verification
+
+- migration ต่อจาก `20261009100000_sports_hub_owner_availability_management.sql`: เพิ่ม policy fields ทั้ง `sports_venues`/`sports_venue_courts` (+`evidence_mode`) พร้อม CHECK mirror 21.7.18, status `awaiting_evidence`/`forfeited` และ deadline/verification columns ใน `sports_venue_bookings`, ตาราง `sports_venue_booking_evidence`, `slip_verification_providers`, `slip_verification_usage` และ admin scope fields (`verify_scope`/`verify_cost_bearer`/`verify_monthly_quota`) พร้อม partial indexes สำหรับ hold counting/due scan; ขยาย housekeeping (forfeit/implicit confirm/stuck verifying) และ list RPC lazy-expire; พารามิเตอร์ใหม่ประกาศ `INT` ไม่ใช่ `SMALLINT` และ NULL-means-keep ตามบทเรียน 21.7.18/21.7.19
+- `book_court/`: domain model policy/deadline (คำนวณ/แสดงผลเท่านั้น — server เป็น authority), repository RPC ใหม่ (submit evidence, evidence queue, policy upsert), `court_booking_dialog` แสดง checklist/deadline/consent, `court_my_bookings_page`/`court_detail_sheet` เพิ่ม chip รอส่งหลักฐาน + countdown + upload (reuse `ImageUploadField`/`PromptPaySlipUploader` กับ bucket ใหม่), `court_owner_bookings_page` เป็น gallery/queue พร้อม swipe/bulk/defer/grouping, owner editors + admin panel สำหรับ provider/cost control
+- websocket-server: endpoint `POST /api/venue-booking/verify-slip` + provider adapter interface (SlipOk เป็น implementation แรก รองรับ self-hosted/open-source endpoint ผ่าน config) โดย API key อยู่ฝั่ง server เท่านั้น
+- tests: SQL smoke deadline modes/clamp/grace/hold/forfeit/implicit/verify fallback/ledger/authorization, widget tests booker+owner+admin surfaces, integration ของ verify endpoint ด้วย stubbed provider
