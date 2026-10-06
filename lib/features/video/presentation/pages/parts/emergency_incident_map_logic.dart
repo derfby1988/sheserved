@@ -33,6 +33,11 @@ class IncidentMapSession {
   int? lastFetchedZoom;
   IncidentMapBounds? lastFetchedBounds;
 
+  /// camera ล่าสุด — บันทึกทุก settle (ไม่ใช่เฉพาะตอน refetch) เพื่อคืน
+  /// ตำแหน่ง/ซูมเดิมเมื่อกลับเข้าโหมดแผนที่ (§22.11 fix 2)
+  IncidentMapBounds? lastCameraBounds;
+  double? lastCameraZoom;
+
   IncidentMapSession({required this.categoryId, required this.categoryName});
 }
 
@@ -110,8 +115,12 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
   }
 
   void _refreshIncidentMapFromPill() {
+    final session = _incidentMapSession;
     setState(() => _incidentMapNewCount = 0);
-    _fetchIncidentMapData();
+    _fetchIncidentMapData(
+      bounds: session?.lastCameraBounds,
+      zoom: session?.lastCameraZoom?.toInt(),
+    );
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -271,6 +280,8 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     if (session == null || _surfaceMode != EmergencySurfaceMode.incidentMap) {
       return;
     }
+    session.lastCameraBounds = bounds;
+    session.lastCameraZoom = zoom;
     final lastZoom = session.lastFetchedZoom;
     final lastBounds = session.lastFetchedBounds;
     final zoomChanged = lastZoom == null || zoom.toInt() != lastZoom;
@@ -361,7 +372,8 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
           else ...[
             IncidentMapSurface(
               availability: availability,
-              initialBounds: IncidentMapBounds.thailand,
+              initialBounds:
+                  session.lastCameraBounds ?? IncidentMapBounds.thailand,
               items: _incidentMapData?.items ?? const [],
               highlightedBucket: _incidentMapHighlightedBucket,
               onPointTap: _selectIncidentFromMap,
@@ -393,8 +405,10 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                 onAction: () => _fetchIncidentMapData(),
               ),
             // Legend (§22.3.4) — แตะช่วง = เน้น/หรี่ client-side
+            // right:16 บังคับ Wrap ตัดบรรทัด (§22.11 fix 1 — เดิมล้นจอ)
             Positioned(
               left: 16,
+              right: 16,
               bottom: MediaQuery.of(context).padding.bottom + 16,
               child: _incidentMapData != null
                   ? IncidentMapLegendBar(

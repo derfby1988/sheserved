@@ -385,70 +385,39 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                                   return Stack(
                                                     fit: StackFit.expand,
                                                     children: [
-                                                      widget.canViewUnblurred
-                                                          ? CachedNetworkImage(
-                                                              imageUrl:
-                                                                  overlayImageUrl,
-                                                              fit: BoxFit
-                                                                  .contain,
-                                                              placeholder:
-                                                                  (
-                                                                    context,
-                                                                    url,
-                                                                  ) => const Center(
-                                                                    child: CircularProgressIndicator(
-                                                                      color: Colors
-                                                                          .pinkAccent,
-                                                                    ),
-                                                                  ),
-                                                              errorWidget:
-                                                                  (
-                                                                    context,
-                                                                    url,
-                                                                    error,
-                                                                  ) => const Icon(
-                                                                    Icons
-                                                                        .broken_image,
-                                                                    color: Colors
-                                                                        .white,
-                                                                    size: 50,
-                                                                  ),
-                                                            )
-                                                          : ImageFiltered(
-                                                              imageFilter:
-                                                                  ui.ImageFilter.blur(
-                                                                    sigmaX: 10,
-                                                                    sigmaY: 10,
-                                                                  ),
-                                                              child: CachedNetworkImage(
-                                                                imageUrl:
-                                                                    overlayImageUrl,
-                                                                fit: BoxFit
-                                                                    .cover,
-                                                                placeholder:
-                                                                    (
-                                                                      context,
-                                                                      url,
-                                                                    ) => const Center(
-                                                                      child: CircularProgressIndicator(
-                                                                        color: Colors
-                                                                            .pinkAccent,
-                                                                      ),
-                                                                    ),
-                                                                errorWidget:
-                                                                    (
-                                                                      context,
-                                                                      url,
-                                                                      error,
-                                                                    ) => const Icon(
-                                                                      Icons
-                                                                          .broken_image,
-                                                                      color: Colors
-                                                                          .white,
-                                                                      size: 50,
-                                                                    ),
+                                                      // ✅ §22.11 policy C:
+                                                      // photo_url ที่ผ่านมาเป็น
+                                                      // ไฟล์เบลอหน้าฝั่ง server
+                                                      // (blur_status='completed')
+                                                      // อยู่แล้ว — ไม่เบลอซ้ำที่
+                                                      // client ตาม lightbox เดิม
+                                                      CachedNetworkImage(
+                                                        imageUrl:
+                                                            overlayImageUrl,
+                                                        fit: BoxFit.contain,
+                                                        placeholder:
+                                                            (
+                                                              context,
+                                                              url,
+                                                            ) => const Center(
+                                                              child: CircularProgressIndicator(
+                                                                color: Colors
+                                                                    .pinkAccent,
                                                               ),
                                                             ),
+                                                        errorWidget:
+                                                            (
+                                                              context,
+                                                              url,
+                                                              error,
+                                                            ) => const Icon(
+                                                              Icons
+                                                                  .broken_image,
+                                                              color: Colors
+                                                                  .white,
+                                                              size: 50,
+                                                            ),
+                                                      ),
                                                       Positioned(
                                                         top: 16,
                                                         right: 16,

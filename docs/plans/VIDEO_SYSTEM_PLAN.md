@@ -6260,3 +6260,26 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
 
 **ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่, ตรวจ metric `map_load_emergency_overview` ระหว่าง canary และ cluster tap zoom-in animation (ปัจจุบัน cluster tap ยังไม่ขยับกล้อง — ทำผ่าน renderer controller ในขั้นถัดไป)
+
+### 22.11 Device verification รอบ 1 + มติแก้บั๊ก (2026-10-06, Android SM X135G / Google renderer)
+
+**ยืนยันผ่านจากหลักฐานหน้าจอ + log (ไม่มี `recreating_view`, ไม่มี `[IncidentMap]` error):**
+- Gate เปิดใน Platform Settings → ปุ่ม "แผนที่เกิดเหตุ" โผล่ใต้ทุกหมวดใน sheet
+- แผนที่ fit ประเทศไทย, cluster + donut แยก bucket, จุดสีตรง legend, chip "ตัดออก N"
+- Photo cards วางไม่ทับกัน/ไม่ทับหมุดบนจอจริง (collision layout)
+- "เปลี่ยนประเภทเหตุ" สลับหมวดโหลดชุดใหม่ถูก; แตะหมุด → การ์ดเล่น + pinned "จากแผนที่" + "เลือกเหตุการณ์อื่น" แทนปุ่มตัวกรอง
+
+**บั๊กที่พบระหว่าง verify (อนุมัติแก้ในรอบเดียวกัน):**
+1. **Legend ล้นจอ** — `Positioned` ของ `IncidentMapLegendBar` มีแค่ `left: 16` ไม่มี `right` → `Wrap` ได้ความกว้างไม่จำกัด ไม่ตัดบรรทัด chip ล้นขอบขวา → แก้ด้วย `right: 16`
+2. **"เลือกเหตุการณ์อื่น" ไม่คืน camera/zoom** — `initialBounds` ฝึก `IncidentMapBounds.thailand` เสมอ → เพิ่ม `session.lastCameraBounds/lastCameraZoom` บันทึก**ทุก** camera settle (ไม่ใช่เฉพาะตอน refetch — ผู้ใช้ลากเล็กน้อยจะหลุด) แล้วส่งเข้า surface; pill "มีเหตุใหม่" เดิม refetch ด้วย bounds ประเทศไทยแม้ซูมอยู่ → เปลี่ยนมาใช้ `lastCamera*` ด้วย
+3. **Overlay photo เบลอซ้ำ (มติ: นโยบาย C)** — `thai_mhung_photos.photo_url` ที่ `blur_status='completed'` คือไฟล์ `_anon` เบลอหน้า+watermark ฝั่ง server แล้ว (ต้นฉบับถูกลบ); lightbox เดิมตั้งใจ "ไม่เบลอซ้ำที่ client ไม่ว่าจะมีสิทธิ์หรือไม่ก็ตาม" (comment ใน `thai_mhung_ruler_gallery_widget.dart`) → เอา branch `canViewUnblurred` + `ImageFiltered sigma 10` ออกจาก overlay ภาพให้ตรงนโยบายเดียวกัน; **ไม่**แตะ video-frame blur ของ `canViewUnblurred` (ประเด็นแยก ยังไม่ตัดสิน)
+   - Edge ที่มีอยู่ก่อนแล้ว (ไม่ใช่ regression): ภาพ `blur_status='failed'` อาจชี้ไฟล์ต้นฉบับ — lightbox เดิมก็แสดงตรง ๆ เช่นกัน; gallery blocks เฉพาะ `'blurring'` ตอนแตะ
+
+**ยังค้าง verify ตามลำดับ:**
+1. Re-verify 3 fixes บนเครื่องเดิม (legend ตัดบรรทัด, camera restore, overlay แสดงชัดเท่า server-blur)
+2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; "เลือกเหตุการณ์อื่น" → camera/zoom เดิม
+3. รอบ OSM renderer (admin สลับ Emergency → OSM + tile source) ทำ checklist §22.8 เดิมทั้งชุด
+4. iOS — เข้า-ออกโหมดแผนที่ ~10 รอบ เฝ้า `PlatformException(recreating_view)`
+5. realtime pill "มีเหตุใหม่" (แจ้งจากเครื่องอื่น), mission suspend, Web (CSP/attribution)
+6. Load test ข้อมูลขนาดใหญ่ + เฝ้า metric `map_load_emergency_overview` ระหว่าง canary
+7. Cluster tap zoom-in animation (v1 ยังไม่ขยับกล้อง — จดพฤติกรรมจริงไว้)
