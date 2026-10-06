@@ -122,7 +122,7 @@ class _TrendingCategoryFilterSheetState
   @override
   Widget build(BuildContext context) {
     return NeumorphicSheetShell(
-      title: 'คัดกรองเหตุ และแผนที่',
+      title: 'คัดกรอง และแผนที่',
       icon: Icons.filter_list_rounded,
       heightFactor: 0.6,
       onClose: _applying ? null : () => Navigator.of(context).pop(),
@@ -166,7 +166,7 @@ class _TrendingCategoryFilterSheetState
       children: [
         Text(
           _draft.isEmpty
-              ? 'เลือกแสดงแผนที่ เพื่อประเมินสถานการณ์'
+              ? 'เลือกเพื่อประเมินสถานการณ์ (เฉพาะเหตุ)'
               : 'เลือก ${_draft.length} ประเภท',
           style: const TextStyle(
             fontSize: 12.5,

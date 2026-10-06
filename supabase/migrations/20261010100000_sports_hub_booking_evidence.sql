@@ -767,6 +767,8 @@ BEGIN
     v_selected_window := v_venue_window;
   END IF;
 
+  -- The release that governs the selected date. Its own date may be earlier
+  -- than the booking date, so the UI can name it instead of guessing a weekday.
   IF v_effective_days IS NOT NULL THEN
     SELECT max(o.opens_at)
       INTO v_selected_opens_at
@@ -1531,13 +1533,12 @@ BEGIN
       UPDATE public.sports_venue_bookings
       SET status = p_child_status, updated_at = now()
       WHERE id = v_booking.id;
-      INSERT INTO public.sports_venue_booking_events (
-        booking_id, actor_id, previous_status, new_status, meta
-      ) VALUES (
-        v_booking.id, p_actor, v_booking.status, p_child_status,
-        JSONB_BUILD_OBJECT('group_id', p_group_id,
-                           'group_status', p_new_status,
-                           'reason', p_reason)
+      PERFORM public.log_sports_venue_booking_event(
+        v_booking.id,
+        'group_' || p_new_status,
+        p_actor, v_booking.status, p_child_status, p_reason,
+        p_meta := JSONB_BUILD_OBJECT(
+          'group_id', p_group_id, 'group_status', p_new_status)
           || COALESCE(p_meta, '{}'::jsonb));
     END IF;
   END LOOP;
@@ -1574,13 +1575,10 @@ DECLARE
   v_policy JSONB;
   v_policy_prev JSONB;
   v_approval_mode VARCHAR;
-  v_mode VARCHAR;
   v_hold_count INT;
   v_total NUMERIC := 0;
-  v_price NUMERIC;
-  v_breakdown JSONB;
-  v_version VARCHAR;
-  v_expected_version VARCHAR;
+  v_price JSONB;
+  v_expected_version BIGINT;
   v_opens_at TIMESTAMPTZ;
   v_slots JSONB := '[]'::jsonb;
   v_due TIMESTAMPTZ;
@@ -1592,6 +1590,9 @@ DECLARE
   v_court_id UUID;
   v_starts TIMESTAMPTZ;
   v_ends TIMESTAMPTZ;
+  v_terms_version INT;
+  v_terms_text TEXT;
+  v_cutoff INT;
 BEGIN
   IF p_user_id IS NULL
      OR NOT EXISTS (SELECT 1 FROM public.users WHERE id = p_user_id) THEN
@@ -1620,7 +1621,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
     END;
-    IF v_court_id IS NULL OR v_ends <= v_starts OR v_starts <= now() THEN
+    IF v_court_id IS NULL OR v_ends <= v_starts OR v_ends <= now() THEN
       RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
     END IF;
   END LOOP;
@@ -1640,14 +1641,15 @@ BEGIN
     RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
   END IF;
 
-  SELECT array_agg(DISTINCT (i->>'court_id')::UUID
-                   ORDER BY (i->>'court_id')::UUID)
-    INTO v_court_ids
-  FROM jsonb_array_elements(p_items) i;
+  SELECT array_agg(cid) INTO v_court_ids FROM (
+    SELECT DISTINCT (i->>'court_id')::UUID AS cid
+    FROM jsonb_array_elements(p_items) i
+    ORDER BY cid
+  ) ids;
 
   -- Lock every involved court in a stable order before checks/inserts.
   FOR v_court IN
-    SELECT c.id, c.venue_id, c.capacity, c.is_active,
+    SELECT c.id, c.venue_id, c.sport_id, c.capacity, c.is_active,
            c.booking_approval_mode,
            c.booking_release_mode, c.booking_release_days,
            c.booking_release_day_of_week, c.booking_release_time,
@@ -1682,7 +1684,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  SELECT v.id, v.status, v.timezone,
+  SELECT v.id, v.status, v.timezone, v.name,
          v.booking_release_days, v.booking_release_day_of_week,
          v.booking_release_time, v.booking_release_window_days,
          v.payment_destination
@@ -1699,8 +1701,20 @@ BEGIN
     RAISE EXCEPTION 'SELF_BOOKING_BLOCKED';
   END IF;
 
-  v_terms := public.sports_venue_current_terms(v_venue.id);
-  IF v_terms.id IS NOT NULL AND v_terms.version <> p_terms_version THEN
+  SELECT t.version, t.terms_text, t.cancellation_cutoff_minutes
+  INTO v_terms
+  FROM public.sports_venue_terms t
+  WHERE t.venue_id = v_venue.id AND t.status = 'active';
+  IF v_terms.version IS NULL THEN
+    v_terms_version := 0;
+    v_terms_text := 'เงื่อนไขการใช้สนามมาตรฐานของแพลตฟอร์ม';
+    v_cutoff := 60;
+  ELSE
+    v_terms_version := v_terms.version;
+    v_terms_text := v_terms.terms_text;
+    v_cutoff := v_terms.cancellation_cutoff_minutes;
+  END IF;
+  IF COALESCE(p_terms_version, -1) <> v_terms_version THEN
     RAISE EXCEPTION 'TERMS_VERSION_CHANGED';
   END IF;
 
@@ -1715,14 +1729,26 @@ BEGIN
     v_court_id := (v_item->>'court_id')::UUID;
     v_starts := (v_item->>'starts_at')::TIMESTAMPTZ;
     v_ends := (v_item->>'ends_at')::TIMESTAMPTZ;
-    v_expected_version := NULLIF(v_item->>'expected_price_schedule_version', '');
+    BEGIN
+      v_expected_version :=
+        NULLIF(v_item->>'expected_price_schedule_version', '')::BIGINT;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
+    END;
 
     SELECT c.booking_release_mode, c.booking_release_days,
            c.booking_release_day_of_week, c.booking_release_time,
-           c.booking_release_window_days, c.capacity
+           c.booking_release_window_days, c.capacity, c.sport_id,
+           c.price_amount, c.pricing_unit, c.unit_label
     INTO v_court
     FROM public.sports_venue_courts c
     WHERE c.id = v_court_id;
+
+    PERFORM public.assert_sports_venue_booking_release(
+      v_court_id, v_starts, v_ends);
+    IF public.sports_venue_slot_blocked(v_court_id, v_starts, v_ends) THEN
+      RAISE EXCEPTION 'SLOT_UNAVAILABLE';
+    END IF;
 
     v_opens_at := public.sports_venue_booking_release_opens_at_for_slot(
       v_timezone,
@@ -1736,48 +1762,53 @@ BEGIN
              ELSE ARRAY[v_venue.booking_release_day_of_week] END),
       v_venue.booking_release_time, v_venue.booking_release_window_days,
       v_starts);
-    IF v_opens_at IS NOT NULL AND v_opens_at > now() THEN
-      RAISE EXCEPTION 'NOT_OPEN_YET';
-    END IF;
-    IF public.sports_venue_slot_is_blocked(v_court_id, v_starts, v_ends) THEN
-      RAISE EXCEPTION 'SLOT_UNAVAILABLE';
-    END IF;
 
-    v_breakdown := public.sports_venue_price_quote(v_court_id, v_starts, v_ends);
-    v_price := NULLIF(v_breakdown->>'total', '')::NUMERIC;
-    v_version := NULLIF(v_breakdown->>'schedule_version', '');
-    IF v_version IS NOT NULL
-       AND v_expected_version IS NOT NULL
-       AND v_expected_version <> v_version THEN
+    v_price := public.sports_venue_court_price_quote_internal(
+      v_court_id, v_starts, v_ends);
+    IF v_price->>'price_error' IS NOT NULL THEN
+      RAISE EXCEPTION '%', v_price->>'price_error';
+    END IF;
+    IF (v_price->>'has_time_pricing')::BOOLEAN
+       AND v_expected_version IS NULL THEN
+      RAISE EXCEPTION 'PRICE_VERSION_REQUIRED';
+    END IF;
+    IF v_expected_version IS NOT NULL
+       AND v_expected_version
+           <> (v_price->>'price_schedule_version')::BIGINT THEN
       RAISE EXCEPTION 'PRICE_CHANGED';
     END IF;
-    IF v_price IS NULL THEN
+
+    IF v_price->>'total_amount' IS NULL THEN
       v_all_priced := false;
     ELSE
-      v_total := v_total + v_price;
+      v_total := v_total + (v_price->>'total_amount')::NUMERIC;
     END IF;
 
     v_slots := v_slots || JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT(
       'court_id', v_court_id,
+      'sport_id', v_court.sport_id,
       'starts_at', v_starts,
       'ends_at', v_ends,
       'opens_at', v_opens_at,
-      'price', v_price,
-      'breakdown', v_breakdown,
-      'schedule_version', v_version,
-      'capacity', v_court.capacity));
+      'capacity', v_court.capacity,
+      'court_name', v_court.unit_label,
+      'price_amount', v_price->>'price_amount',
+      'pricing_unit', v_price->>'pricing_unit',
+      'total_amount', v_price->>'total_amount',
+      'breakdown', v_price->'breakdown',
+      'schedule_version', v_price->>'price_schedule_version'));
   END LOOP;
 
   IF v_needs_payment AND (NOT v_all_priced OR v_total <= 0) THEN
     RAISE EXCEPTION 'GROUP_PRICE_REQUIRED';
   END IF;
-  IF v_needs_payment AND v_venue.payment_destination IS NULL
-     AND NULLIF(v_policy->>'payment_destination', '') IS NULL THEN
+  IF v_needs_payment
+     AND NULLIF(v_policy->>'payment_destination', '') IS NULL
+     AND v_venue.payment_destination IS NULL THEN
     RAISE EXCEPTION 'PAYMENT_DESTINATION_REQUIRED';
   END IF;
 
   v_stage_start := now();
-  v_due := NULL;
   SELECT min(public.sports_venue_evidence_slot_deadline(
     v_policy->>'deadline_mode',
     NULLIF(v_policy->>'minutes', '')::INT,
@@ -1795,13 +1826,11 @@ BEGIN
 
   IF v_approval_mode = 'instant' THEN
     -- Hold-abuse limit counts evidence groups, not child bookings.
-    v_hold_count := (v_policy->>'max_holds_per_user')::INT;
-    PERFORM 1
+    SELECT count(*) INTO v_hold_count
     FROM public.sports_venue_booking_groups g
     WHERE g.venue_id = v_venue.id AND g.user_id = p_user_id
-      AND g.status = 'awaiting_evidence'
-    HAVING count(*) >= v_hold_count;
-    IF FOUND THEN
+      AND g.status = 'awaiting_evidence';
+    IF v_hold_count >= (v_policy->>'max_holds_per_user')::INT THEN
       RAISE EXCEPTION 'HOLD_LIMIT_REACHED';
     END IF;
 
@@ -1833,7 +1862,7 @@ BEGIN
     CASE WHEN v_all_priced THEN v_total END,
     v_policy,
     CASE WHEN v_approval_mode = 'instant'
-      THEN COALESCE(v_policy->>'payment_destination',
+      THEN COALESCE(NULLIF(v_policy->>'payment_destination', ''),
                     v_venue.payment_destination)
       ELSE NULL END,
     CASE WHEN v_approval_mode = 'instant'
@@ -1847,35 +1876,65 @@ BEGIN
 
   FOR v_item IN SELECT value FROM jsonb_array_elements(v_slots) LOOP
     INSERT INTO public.sports_venue_bookings (
-      venue_id, court_id, user_id, starts_at, ends_at, status,
-      terms_version, terms_id, booking_group_id,
+      court_id, venue_id, sport_id, user_id, starts_at, ends_at, status,
+      booking_approval_mode_snapshot, price_amount_snapshot,
+      pricing_unit_snapshot, unit_label_snapshot,
+      accepted_terms_version, terms_text_snapshot,
+      cancellation_cutoff_minutes_snapshot, terms_accepted_at,
+      booking_group_id,
       price_total_snapshot, price_breakdown_snapshot,
       price_schedule_version_snapshot
     ) VALUES (
-      v_venue.id,
       (v_item->>'court_id')::UUID,
+      v_venue.id,
+      (v_item->>'sport_id')::UUID,
       p_user_id,
       (v_item->>'starts_at')::TIMESTAMPTZ,
       (v_item->>'ends_at')::TIMESTAMPTZ,
       CASE WHEN v_approval_mode = 'instant'
         THEN 'awaiting_evidence' ELSE 'pending' END,
-      p_terms_version,
-      v_terms.id,
+      v_approval_mode,
+      NULLIF(v_item->>'price_amount', '')::NUMERIC,
+      v_item->>'pricing_unit',
+      NULL, -- unit label resolved per court below
+      v_terms_version, v_terms_text, v_cutoff, now(),
       v_group_id,
-      NULLIF(v_item->>'price', '')::NUMERIC,
-      v_item->'breakdown',
-      NULLIF(v_item->>'schedule_version', '')
+      NULLIF(v_item->>'total_amount', '')::NUMERIC,
+      COALESCE(v_item->'breakdown', '[]'::jsonb),
+      NULLIF(v_item->>'schedule_version', '')::BIGINT
     )
     RETURNING id INTO v_booking_id;
 
-    INSERT INTO public.sports_venue_booking_events (
-      booking_id, actor_id, previous_status, new_status, meta
-    ) VALUES (
-      v_booking_id, p_user_id, NULL,
+    UPDATE public.sports_venue_bookings b
+    SET unit_label_snapshot = c.unit_label
+    FROM public.sports_venue_courts c
+    WHERE b.id = v_booking_id
+      AND c.id = (v_item->>'court_id')::UUID;
+
+    PERFORM public.log_sports_venue_booking_event(
+      v_booking_id,
+      CASE WHEN v_approval_mode = 'instant'
+        THEN 'group_hold_created' ELSE 'group_request_created' END,
+      p_user_id, NULL,
       CASE WHEN v_approval_mode = 'instant'
         THEN 'awaiting_evidence' ELSE 'pending' END,
-      JSONB_BUILD_OBJECT('group_id', v_group_id, 'group_created', true));
+      p_new_starts_at := (v_item->>'starts_at')::TIMESTAMPTZ,
+      p_new_ends_at := (v_item->>'ends_at')::TIMESTAMPTZ,
+      p_meta := JSONB_BUILD_OBJECT('group_id', v_group_id));
   END LOOP;
+
+  -- Notify managers of the new evidence-gated group.
+  PERFORM public.notify_sports_venue_managers(
+    v_venue.id,
+    CASE WHEN v_approval_mode = 'instant'
+      THEN 'venue_booking.group_hold' ELSE 'venue_booking.group_request' END,
+    CASE WHEN v_approval_mode = 'instant'
+      THEN 'มีกลุ่มการจองรอหลักฐาน' ELSE 'มีกลุ่มคำขอจองรออนุมัติ' END,
+    FORMAT('%s — %s ช่วง', v_venue.name,
+           jsonb_array_length(v_slots)::text),
+    JSONB_BUILD_OBJECT(
+      'route', '/community/sports/courts/owner/dashboard',
+      'groupId', v_group_id, 'venueId', v_venue.id));
 
   RETURN v_group_id;
 END;
@@ -1884,3 +1943,2097 @@ $$;
 GRANT EXECUTE ON FUNCTION public.create_sports_venue_booking_group(
   UUID, JSONB, INT, VARCHAR
 ) TO anon, authenticated;
+
+-- Submit evidence for a group. p_items:
+--   [{requirement_key, storage_path, mime, size_bytes}]
+-- Each call creates a new revision per requirement and marks it current.
+-- Slips are only accepted once the group holds the slots
+-- (status = 'awaiting_evidence'); generic documents may be submitted
+-- earlier while the group is pending pre-approval.
+CREATE OR REPLACE FUNCTION public.submit_sports_venue_booking_evidence(
+  p_user_id UUID,
+  p_booking_group_id UUID,
+  p_items JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_item JSONB;
+  v_req JSONB;
+  v_rev INT;
+  v_evidence_id UUID;
+  v_initial_status VARCHAR;
+  v_state JSONB;
+  v_decision_due TIMESTAMPTZ;
+  v_first_start TIMESTAMPTZ;
+  v_result JSONB := '[]'::jsonb;
+  v_submitted_keys VARCHAR[] := '{}'::VARCHAR[];
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array'
+     OR jsonb_array_length(p_items) NOT BETWEEN 1 AND 20 THEN
+    RAISE EXCEPTION 'INVALID_EVIDENCE_ITEMS';
+  END IF;
+
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = p_booking_group_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_NOT_FOUND';
+  END IF;
+  IF v_group.user_id <> p_user_id THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+  IF v_group.status NOT IN ('pending', 'awaiting_evidence') THEN
+    RAISE EXCEPTION 'GROUP_NOT_OPEN';
+  END IF;
+  IF v_group.evidence_due_at IS NOT NULL
+     AND v_group.evidence_due_at <= now() THEN
+    RAISE EXCEPTION 'EVIDENCE_DEADLINE_PASSED';
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+    v_req := NULL;
+    SELECT r.value INTO v_req
+    FROM jsonb_array_elements(
+           v_group.evidence_policy_snapshot->'requirements') r
+    WHERE r.value->>'key' = v_item->>'requirement_key';
+    IF v_req IS NULL THEN
+      RAISE EXCEPTION 'INVALID_REQUIREMENT_KEY';
+    END IF;
+    IF v_item->>'requirement_key' = ANY(v_submitted_keys) THEN
+      RAISE EXCEPTION 'INVALID_EVIDENCE_ITEMS';
+    END IF;
+    v_submitted_keys := v_submitted_keys || (v_item->>'requirement_key');
+
+    -- Stage gate: payment slips require a live hold.
+    IF v_req->>'kind' = 'payment_slip'
+       AND v_group.status <> 'awaiting_evidence' THEN
+      RAISE EXCEPTION 'EVIDENCE_STAGE_NOT_OPEN';
+    END IF;
+    IF v_req->>'kind' = 'document'
+       AND v_req->>'stage' = 'preapproval'
+       AND v_group.status <> 'pending' THEN
+      RAISE EXCEPTION 'EVIDENCE_STAGE_CLOSED';
+    END IF;
+    IF v_req->>'kind' = 'document'
+       AND v_req->>'stage' = 'booking'
+       AND v_group.status NOT IN ('pending', 'awaiting_evidence') THEN
+      RAISE EXCEPTION 'EVIDENCE_STAGE_CLOSED';
+    END IF;
+
+    -- Private-bucket path convention: groups/<group>/<key>/<uuid>.<ext>
+    IF NULLIF(v_item->>'storage_path', '') IS NULL
+       OR (v_item->>'storage_path')
+          NOT LIKE ('groups/' || v_group.id::text || '/%') THEN
+      RAISE EXCEPTION 'INVALID_STORAGE_PATH';
+    END IF;
+    IF COALESCE((v_item->>'size_bytes')::BIGINT, 0) < 0 THEN
+      RAISE EXCEPTION 'INVALID_EVIDENCE_ITEMS';
+    END IF;
+
+    SELECT COALESCE(max(e.revision), 0) + 1 INTO v_rev
+    FROM public.sports_venue_booking_evidence e
+    WHERE e.booking_group_id = v_group.id
+      AND e.requirement_key = v_req->>'key';
+
+    UPDATE public.sports_venue_booking_evidence
+    SET is_current = false, updated_at = now()
+    WHERE booking_group_id = v_group.id
+      AND requirement_key = v_req->>'key'
+      AND is_current;
+
+    v_initial_status := CASE v_req->>'review_mode'
+      WHEN 'auto' THEN 'verified'
+      WHEN 'auto_verify' THEN 'verifying'
+      ELSE 'pending' END;
+
+    INSERT INTO public.sports_venue_booking_evidence (
+      booking_group_id, requirement_key, kind, stage, storage_path,
+      mime, size_bytes, revision, is_current, verification_status,
+      submitted_by
+    ) VALUES (
+      v_group.id, v_req->>'key', v_req->>'kind', v_req->>'stage',
+      v_item->>'storage_path',
+      NULLIF(v_item->>'mime', ''), NULLIF(v_item->>'size_bytes', '')::BIGINT,
+      v_rev, true, v_initial_status, p_user_id
+    )
+    RETURNING id INTO v_evidence_id;
+
+    -- Durable outbox row for the provider worker (one per revision; the
+    -- attempt id makes retries idempotent).
+    IF v_req->>'review_mode' = 'auto_verify' THEN
+      INSERT INTO public.slip_verification_usage (
+        attempt_id, venue_id, booking_group_id, evidence_id,
+        cost_bearer
+      ) VALUES (
+        'submit:' || v_evidence_id::text,
+        v_group.venue_id, v_group.id, v_evidence_id,
+        (SELECT v.verify_cost_bearer FROM public.sports_venues v
+         WHERE v.id = v_group.venue_id)
+      )
+      ON CONFLICT (attempt_id) DO NOTHING;
+    END IF;
+
+    v_result := v_result || JSONB_BUILD_OBJECT(
+      'requirement_key', v_req->>'key',
+      'evidence_id', v_evidence_id,
+      'revision', v_rev,
+      'verification_status', v_initial_status);
+  END LOOP;
+
+  -- Owner decision window starts when something is waiting on review.
+  IF EXISTS (
+    SELECT 1 FROM public.sports_venue_booking_evidence e
+    WHERE e.booking_group_id = v_group.id AND e.is_current
+      AND e.verification_status IN ('pending', 'verifying')
+  ) THEN
+    SELECT min(b.starts_at) INTO v_first_start
+    FROM public.sports_venue_bookings b
+    WHERE b.booking_group_id = v_group.id;
+    v_decision_due := least(
+      now() + (v_group.evidence_policy_snapshot
+               ->>'owner_decision_minutes')::INT * INTERVAL '1 minute',
+      v_first_start);
+    UPDATE public.sports_venue_booking_groups
+    SET owner_decision_due_at = COALESCE(owner_decision_due_at, v_decision_due),
+        updated_at = now()
+    WHERE id = v_group.id;
+  END IF;
+
+  -- All required items satisfied -> confirm the whole group atomically.
+  v_state := public.sports_venue_booking_group_requirements_state(v_group.id);
+  IF v_group.status = 'awaiting_evidence'
+     AND (v_state->>'satisfied')::BOOLEAN THEN
+    PERFORM public.sports_venue_booking_group_transition(
+      v_group.id, 'confirmed', 'confirmed', p_user_id,
+      p_meta := JSONB_BUILD_OBJECT('auto_confirmed', true));
+    UPDATE public.sports_venue_booking_groups
+    SET decided_at = now(),
+        payment_received_status = CASE
+          WHEN (v_state->>'hasPaymentSlip')::BOOLEAN
+            THEN 'received' ELSE payment_received_status END,
+        payment_received_amount = CASE
+          WHEN (v_state->>'hasPaymentSlip')::BOOLEAN
+            THEN total_amount_snapshot ELSE payment_received_amount END
+    WHERE id = v_group.id;
+    PERFORM public.notify_sports_venue_managers(
+      v_group.venue_id, 'venue_booking.group_confirmed',
+      'กลุ่มการจองยืนยันหลักฐานครบแล้ว',
+      'ระบบยืนยันการจองอัตโนมัติ',
+      JSONB_BUILD_OBJECT('groupId', v_group.id,
+                         'venueId', v_group.venue_id));
+  END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+-- Owner/manager decision on a pending group (pre-approval) or a pending
+-- evidence requirement. Group decisions:
+--   pending 'approve' -> atomic recheck + hold (payment stage) or confirm
+--   'reject'          -> rejected (release holds if any)
+-- Evidence decisions (p_requirement_key set, group awaiting_evidence):
+--   approve/reject the current revision; payment-slip approval is a money
+--   decision restricted to the venue owner.
+CREATE OR REPLACE FUNCTION public.decide_sports_venue_booking_group(
+  p_user_id UUID,
+  p_booking_group_id UUID,
+  p_decision VARCHAR,
+  p_reason VARCHAR DEFAULT NULL,
+  p_requirement_key VARCHAR DEFAULT NULL
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_evidence RECORD;
+  v_court RECORD;
+  v_conflict BOOLEAN := false;
+  v_state JSONB;
+  v_due TIMESTAMPTZ;
+  v_destination VARCHAR;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_decision NOT IN ('approve', 'reject') THEN
+    RAISE EXCEPTION 'INVALID_DECISION';
+  END IF;
+
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = p_booking_group_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_NOT_FOUND';
+  END IF;
+  IF NOT public.is_sports_venue_manager(v_group.venue_id, p_user_id) THEN
+    RAISE EXCEPTION 'NOT_VENUE_MANAGER';
+  END IF;
+
+  -- Per-requirement evidence decision.
+  IF p_requirement_key IS NOT NULL THEN
+    SELECT e.*, r.value AS requirement INTO v_evidence
+    FROM public.sports_venue_booking_evidence e
+    JOIN LATERAL (
+      SELECT r2.value
+      FROM jsonb_array_elements(
+        v_group.evidence_policy_snapshot->'requirements') r2
+      WHERE r2.value->>'key' = p_requirement_key
+    ) r ON true
+    WHERE e.booking_group_id = v_group.id
+      AND e.requirement_key = p_requirement_key
+      AND e.is_current
+    FOR UPDATE OF e;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'EVIDENCE_NOT_FOUND';
+    END IF;
+    IF v_evidence.verification_status NOT IN ('pending', 'verifying') THEN
+      RAISE EXCEPTION 'EVIDENCE_NOT_PENDING';
+    END IF;
+    -- Money decisions are owner-only.
+    IF v_evidence.kind = 'payment_slip'
+       AND NOT public.is_sports_venue_owner(v_group.venue_id, p_user_id) THEN
+      RAISE EXCEPTION 'OWNER_DECISION_REQUIRED';
+    END IF;
+    IF p_decision = 'reject'
+       AND length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+      RAISE EXCEPTION 'REASON_REQUIRED';
+    END IF;
+
+    UPDATE public.sports_venue_booking_evidence
+    SET verification_status = CASE WHEN p_decision = 'approve'
+                                   THEN 'approved' ELSE 'rejected' END,
+        reviewed_by = p_user_id, reviewed_at = now(), updated_at = now()
+    WHERE id = v_evidence.id;
+
+    PERFORM public.log_sports_venue_booking_event(
+      (SELECT b.id FROM public.sports_venue_bookings b
+       WHERE b.booking_group_id = v_group.id LIMIT 1),
+      'evidence_' || p_decision || 'd', p_user_id,
+      NULL, NULL, p_reason,
+      p_meta := JSONB_BUILD_OBJECT(
+        'group_id', v_group.id, 'requirement_key', p_requirement_key,
+        'evidence_id', v_evidence.id));
+
+    IF p_decision = 'approve' THEN
+      IF v_evidence.kind = 'payment_slip' THEN
+        UPDATE public.sports_venue_booking_groups
+        SET payment_received_status = 'received',
+            payment_received_amount = total_amount_snapshot,
+            updated_at = now()
+        WHERE id = v_group.id;
+      END IF;
+      v_state := public.sports_venue_booking_group_requirements_state(
+        v_group.id);
+      IF v_group.status = 'awaiting_evidence'
+         AND (v_state->>'satisfied')::BOOLEAN THEN
+        PERFORM public.sports_venue_booking_group_transition(
+          v_group.id, 'confirmed', 'confirmed', p_user_id);
+        UPDATE public.sports_venue_booking_groups
+        SET decided_by = p_user_id, decided_at = now()
+        WHERE id = v_group.id;
+        PERFORM public.sports_hub_notify(
+          v_group.user_id, 'venue_booking', 'venue_booking.confirmed',
+          'กลุ่มการจองยืนยันแล้ว',
+          'เจ้าของสนามอนุมัติหลักฐานครบแล้ว',
+          JSONB_BUILD_OBJECT('groupId', v_group.id,
+                             'venueId', v_group.venue_id));
+        RETURN 'confirmed';
+      END IF;
+      RETURN 'evidence_approved';
+    END IF;
+    RETURN 'evidence_rejected';
+  END IF;
+
+  -- Group-level decisions.
+  IF p_decision = 'reject' THEN
+    IF length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+      RAISE EXCEPTION 'REASON_REQUIRED';
+    END IF;
+    IF v_group.status NOT IN ('pending', 'awaiting_evidence') THEN
+      RAISE EXCEPTION 'GROUP_NOT_OPEN';
+    END IF;
+    PERFORM public.sports_venue_booking_group_transition(
+      v_group.id, 'rejected', 'rejected', p_user_id, p_reason);
+    UPDATE public.sports_venue_booking_groups
+    SET decided_by = p_user_id, decided_at = now(),
+        rejection_reason = p_reason
+    WHERE id = v_group.id;
+    PERFORM public.sports_hub_notify(
+      v_group.user_id, 'venue_booking', 'venue_booking.group_rejected',
+      'กลุ่มการจองถูกปฏิเสธ',
+      FORMAT('เหตุผล: %s', p_reason),
+      JSONB_BUILD_OBJECT('groupId', v_group.id,
+                         'venueId', v_group.venue_id));
+    RETURN 'rejected';
+  END IF;
+
+  -- Approve.
+  IF v_group.status = 'pending' THEN
+    -- Atomic availability recheck across all children before any hold.
+    FOR v_court IN
+      SELECT c.id
+      FROM public.sports_venue_courts c
+      WHERE c.id IN (
+        SELECT DISTINCT b.court_id FROM public.sports_venue_bookings b
+        WHERE b.booking_group_id = v_group.id)
+      ORDER BY c.id
+      FOR UPDATE
+    LOOP
+    END LOOP;
+
+    SELECT bool_or(
+      public.sports_venue_slot_blocked(b.court_id, b.starts_at, b.ends_at)
+      OR public.sports_venue_confirmed_overlap_count(
+           b.court_id, b.starts_at, b.ends_at, b.id) >= c.capacity
+    ) INTO v_conflict
+    FROM public.sports_venue_bookings b
+    JOIN public.sports_venue_courts c ON c.id = b.court_id
+    WHERE b.booking_group_id = v_group.id
+      AND b.status = 'pending';
+
+    IF v_conflict THEN
+      PERFORM public.log_sports_venue_booking_event(
+        (SELECT b.id FROM public.sports_venue_bookings b
+         WHERE b.booking_group_id = v_group.id LIMIT 1),
+        'group_approve_conflict', p_user_id, 'pending', 'pending');
+      PERFORM public.sports_hub_notify(
+        v_group.user_id, 'venue_booking', 'venue_booking.slot_conflict',
+        'ช่วงเวลาที่ขอถูกใช้แล้ว',
+        'กรุณาเปลี่ยนเวลาหรือยกเลิกกลุ่มคำขอ',
+        JSONB_BUILD_OBJECT('groupId', v_group.id,
+                           'venueId', v_group.venue_id));
+      RETURN 'conflict';
+    END IF;
+
+    -- Payment requirements -> atomic hold at the payment stage; otherwise
+    -- docs-only groups confirm immediately on approval.
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        v_group.evidence_policy_snapshot->'requirements') r
+      WHERE r.value->>'kind' = 'payment_slip'
+        AND (r.value->>'required')::boolean
+    ) THEN
+      v_destination := COALESCE(
+        v_group.payment_destination_snapshot,
+        (SELECT v.payment_destination FROM public.sports_venues v
+         WHERE v.id = v_group.venue_id));
+      IF v_destination IS NULL THEN
+        RAISE EXCEPTION 'PAYMENT_DESTINATION_REQUIRED';
+      END IF;
+      SELECT min(public.sports_venue_evidence_slot_deadline(
+        v_group.evidence_policy_snapshot->>'deadline_mode',
+        NULLIF(v_group.evidence_policy_snapshot->>'minutes', '')::INT,
+        NULLIF(v_group.evidence_policy_snapshot->>'deadline_time', '')::TIME,
+        (v_group.evidence_policy_snapshot->>'min_grace_minutes')::INT,
+        now(),
+        public.sports_venue_booking_release_opens_at_for_slot(
+          v.timezone,
+          c.booking_release_mode,
+          COALESCE(c.booking_release_days,
+            CASE WHEN c.booking_release_day_of_week IS NULL THEN NULL
+                 ELSE ARRAY[c.booking_release_day_of_week] END),
+          c.booking_release_time, c.booking_release_window_days,
+          COALESCE(v.booking_release_days,
+            CASE WHEN v.booking_release_day_of_week IS NULL THEN NULL
+                 ELSE ARRAY[v.booking_release_day_of_week] END),
+          v.booking_release_time, v.booking_release_window_days,
+          b.starts_at),
+        b.starts_at,
+        v.timezone))
+      INTO v_due
+      FROM public.sports_venue_bookings b
+      JOIN public.sports_venue_courts c ON c.id = b.court_id
+      JOIN public.sports_venues v ON v.id = c.venue_id
+      WHERE b.booking_group_id = v_group.id;
+
+      PERFORM public.sports_venue_booking_group_transition(
+        v_group.id, 'awaiting_evidence', 'awaiting_evidence', p_user_id,
+        p_meta := JSONB_BUILD_OBJECT('stage', 'payment'));
+      UPDATE public.sports_venue_booking_groups
+      SET stage = 'payment',
+          stage_started_at = now(),
+          evidence_due_at = v_due,
+          payment_destination_snapshot = v_destination,
+          updated_at = now()
+      WHERE id = v_group.id;
+      PERFORM public.sports_hub_notify(
+        v_group.user_id, 'venue_booking',
+        'venue_booking.group_preapproved',
+        'คำขออนุมัติแล้ว กรุณาแนบสลิป',
+        'ช่องเวลาถูก hold แล้ว โปรดชำระและแนบสลิปภายในเวลาที่กำหนด',
+        JSONB_BUILD_OBJECT('groupId', v_group.id,
+                           'venueId', v_group.venue_id));
+      RETURN 'awaiting_evidence';
+    END IF;
+
+    PERFORM public.sports_venue_booking_group_transition(
+      v_group.id, 'confirmed', 'confirmed', p_user_id);
+    UPDATE public.sports_venue_booking_groups
+    SET decided_by = p_user_id, decided_at = now()
+    WHERE id = v_group.id;
+    PERFORM public.sports_hub_notify(
+      v_group.user_id, 'venue_booking', 'venue_booking.confirmed',
+      'กลุ่มการจองได้รับการอนุมัติ',
+      'เจ้าของสนามอนุมัติคำขอแล้ว',
+      JSONB_BUILD_OBJECT('groupId', v_group.id,
+                         'venueId', v_group.venue_id));
+    RETURN 'confirmed';
+  END IF;
+
+  IF v_group.status = 'awaiting_evidence' THEN
+    -- Owner approves the whole group despite pending items.
+    v_state := public.sports_venue_booking_group_requirements_state(
+      v_group.id);
+    IF NOT (v_state->>'satisfied')::BOOLEAN
+       AND (v_state->>'awaitingSlip')::BOOLEAN
+       AND NOT public.is_sports_venue_owner(v_group.venue_id, p_user_id) THEN
+      RAISE EXCEPTION 'OWNER_DECISION_REQUIRED';
+    END IF;
+    PERFORM public.sports_venue_booking_group_transition(
+      v_group.id, 'confirmed', 'confirmed', p_user_id);
+    UPDATE public.sports_venue_booking_groups
+    SET decided_by = p_user_id, decided_at = now(),
+        payment_received_status = CASE
+          WHEN (v_state->>'hasPaymentSlip')::BOOLEAN
+            THEN 'received' ELSE payment_received_status END,
+        payment_received_amount = CASE
+          WHEN (v_state->>'hasPaymentSlip')::BOOLEAN
+            THEN COALESCE(payment_received_amount, total_amount_snapshot)
+            ELSE payment_received_amount END
+    WHERE id = v_group.id;
+    RETURN 'confirmed';
+  END IF;
+
+  RAISE EXCEPTION 'GROUP_NOT_OPEN';
+END;
+$$;
+
+-- Booker or manager cancels a whole group while it is not yet confirmed.
+CREATE OR REPLACE FUNCTION public.cancel_sports_venue_booking_group(
+  p_user_id UUID,
+  p_booking_group_id UUID,
+  p_reason VARCHAR DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_is_booker BOOLEAN;
+  v_is_manager BOOLEAN;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = p_booking_group_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_NOT_FOUND';
+  END IF;
+
+  v_is_booker := v_group.user_id = p_user_id;
+  v_is_manager := public.is_sports_venue_manager(v_group.venue_id, p_user_id);
+  IF NOT v_is_booker AND NOT v_is_manager THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+  IF v_is_manager AND NOT v_is_booker
+     AND length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+    RAISE EXCEPTION 'REASON_REQUIRED';
+  END IF;
+  IF v_group.status NOT IN ('pending', 'awaiting_evidence') THEN
+    RAISE EXCEPTION 'GROUP_NOT_CANCELLABLE';
+  END IF;
+
+  PERFORM public.sports_venue_booking_group_transition(
+    v_group.id, 'cancelled', 'cancelled', p_user_id, p_reason);
+  UPDATE public.sports_venue_booking_groups
+  SET cancelled_by = p_user_id, cancelled_at = now(),
+      cancellation_reason = p_reason
+  WHERE id = v_group.id;
+
+  IF v_is_booker THEN
+    PERFORM public.notify_sports_venue_managers(
+      v_group.venue_id, 'venue_booking.group_cancelled',
+      'ผู้จองยกเลิกกลุ่มการจอง',
+      'กลุ่มการจองถูกยกเลิกแล้ว',
+      JSONB_BUILD_OBJECT('groupId', v_group.id,
+                         'venueId', v_group.venue_id));
+  ELSE
+    PERFORM public.sports_hub_notify(
+      v_group.user_id, 'venue_booking', 'venue_booking.group_cancelled',
+      'กลุ่มการจองถูกยกเลิกโดยสนาม',
+      FORMAT('เหตุผล: %s', COALESCE(p_reason, 'ไม่ระบุ')),
+      JSONB_BUILD_OBJECT('groupId', v_group.id,
+                         'venueId', v_group.venue_id));
+  END IF;
+END;
+$$;
+
+-- Group-aware pending slot change (owner_approval pre-hold only).
+-- p_items: [{booking_id, starts_at, ends_at}] must cover each pending
+-- child exactly once; the court stays the same per child. Revalidates
+-- release/blocked/price atomically and recomputes the group total. The
+-- deadline does not move.
+CREATE OR REPLACE FUNCTION public.change_sports_venue_booking_group_slots(
+  p_user_id UUID,
+  p_booking_group_id UUID,
+  p_items JSONB
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_item JSONB;
+  v_booking RECORD;
+  v_price JSONB;
+  v_total NUMERIC := 0;
+  v_seen UUID[] := '{}'::UUID[];
+  v_child_count INT;
+  v_all_priced BOOLEAN := true;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = p_booking_group_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_NOT_FOUND';
+  END IF;
+  IF v_group.user_id <> p_user_id THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+  IF v_group.status <> 'pending' THEN
+    RAISE EXCEPTION 'GROUP_NOT_PENDING';
+  END IF;
+
+  SELECT count(*) INTO v_child_count
+  FROM public.sports_venue_bookings b
+  WHERE b.booking_group_id = v_group.id AND b.status = 'pending';
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array'
+     OR jsonb_array_length(p_items) <> v_child_count THEN
+    RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+    SELECT b.* INTO v_booking
+    FROM public.sports_venue_bookings b
+    WHERE b.id = (v_item->>'booking_id')::UUID
+      AND b.booking_group_id = v_group.id
+      AND b.status = 'pending'
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
+    END IF;
+    IF v_booking.id = ANY(v_seen) THEN
+      RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
+    END IF;
+    v_seen := v_seen || v_booking.id;
+
+    PERFORM public.assert_sports_venue_booking_release(
+      v_booking.court_id,
+      (v_item->>'starts_at')::TIMESTAMPTZ,
+      (v_item->>'ends_at')::TIMESTAMPTZ);
+    IF public.sports_venue_slot_blocked(
+         v_booking.court_id,
+         (v_item->>'starts_at')::TIMESTAMPTZ,
+         (v_item->>'ends_at')::TIMESTAMPTZ) THEN
+      RAISE EXCEPTION 'SLOT_UNAVAILABLE';
+    END IF;
+    IF (v_item->>'ends_at')::TIMESTAMPTZ
+       <= (v_item->>'starts_at')::TIMESTAMPTZ
+       OR (v_item->>'ends_at')::TIMESTAMPTZ <= now() THEN
+      RAISE EXCEPTION 'INVALID_GROUP_ITEMS';
+    END IF;
+
+    v_price := public.sports_venue_court_price_quote_internal(
+      v_booking.court_id,
+      (v_item->>'starts_at')::TIMESTAMPTZ,
+      (v_item->>'ends_at')::TIMESTAMPTZ);
+    IF v_price->>'price_error' IS NOT NULL THEN
+      RAISE EXCEPTION '%', v_price->>'price_error';
+    END IF;
+    IF v_price->>'total_amount' IS NOT NULL THEN
+      v_total := v_total + (v_price->>'total_amount')::NUMERIC;
+    ELSE
+      v_all_priced := false;
+    END IF;
+
+    PERFORM public.log_sports_venue_booking_event(
+      v_booking.id, 'group_slot_changed', p_user_id,
+      'pending', 'pending', NULL,
+      v_booking.starts_at, v_booking.ends_at,
+      (v_item->>'starts_at')::TIMESTAMPTZ,
+      (v_item->>'ends_at')::TIMESTAMPTZ,
+      JSONB_BUILD_OBJECT('group_id', v_group.id));
+
+    UPDATE public.sports_venue_bookings
+    SET starts_at = (v_item->>'starts_at')::TIMESTAMPTZ,
+        ends_at = (v_item->>'ends_at')::TIMESTAMPTZ,
+        price_amount_snapshot =
+          NULLIF(v_price->>'price_amount', '')::NUMERIC,
+        pricing_unit_snapshot = v_price->>'pricing_unit',
+        price_total_snapshot =
+          NULLIF(v_price->>'total_amount', '')::NUMERIC,
+        price_breakdown_snapshot =
+          COALESCE(v_price->'breakdown', '[]'::jsonb),
+        price_schedule_version_snapshot =
+          NULLIF(v_price->>'price_schedule_version', '')::BIGINT,
+        updated_at = now()
+    WHERE id = v_booking.id;
+  END LOOP;
+
+  UPDATE public.sports_venue_booking_groups
+  SET total_amount_snapshot =
+        CASE WHEN v_all_priced THEN v_total ELSE NULL END,
+      updated_at = now()
+  WHERE id = v_group.id;
+END;
+$$;
+
+-- ===============
+-- Booker payment claim (after forfeit/provider failure the booker may
+-- still report an actual transfer; the owner decides whether money
+-- arrived and how much was received)
+-- ===============
+CREATE OR REPLACE FUNCTION public.report_sports_venue_booking_payment_claim(
+  p_user_id UUID,
+  p_booking_group_id UUID,
+  p_reported_amount NUMERIC DEFAULT NULL,
+  p_transfer_reference VARCHAR DEFAULT NULL,
+  p_evidence_path VARCHAR DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_claim_id UUID;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = p_booking_group_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_NOT_FOUND';
+  END IF;
+  IF v_group.user_id <> p_user_id THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+  IF v_group.status NOT IN (
+    'forfeited', 'rejected', 'cancelled', 'expired', 'confirmed',
+    'partially_cancelled', 'completed') THEN
+    RAISE EXCEPTION 'GROUP_CLAIM_NOT_ALLOWED';
+  END IF;
+  IF p_reported_amount IS NOT NULL
+     AND (p_reported_amount < 0 OR p_reported_amount > 99999999.99) THEN
+    RAISE EXCEPTION 'INVALID_CLAIM_AMOUNT';
+  END IF;
+
+  INSERT INTO public.sports_venue_booking_payment_claims (
+    booking_group_id, user_id, reported_amount, transfer_reference,
+    evidence_path
+  ) VALUES (
+    v_group.id, p_user_id, p_reported_amount,
+    NULLIF(p_transfer_reference, ''), NULLIF(p_evidence_path, '')
+  )
+  RETURNING id INTO v_claim_id;
+
+  PERFORM public.notify_sports_venue_managers(
+    v_group.venue_id, 'venue_booking.payment_claim',
+    'ผู้จองรายงานการชำระเงิน',
+    'มีการรายงานยอดชำระที่ต้องตรวจสอบ',
+    JSONB_BUILD_OBJECT('groupId', v_group.id,
+                       'claimId', v_claim_id,
+                       'venueId', v_group.venue_id));
+  RETURN v_claim_id;
+END;
+$$;
+
+-- Owner-only claim decision. 'received' requires the actual amount
+-- received; it updates the group money ledger under a group lock.
+CREATE OR REPLACE FUNCTION public.decide_sports_venue_booking_payment_claim(
+  p_user_id UUID,
+  p_claim_id UUID,
+  p_decision VARCHAR,
+  p_received_amount NUMERIC DEFAULT NULL,
+  p_note VARCHAR DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_claim RECORD;
+  v_group_id UUID;
+  v_venue_id UUID;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  SELECT c.* INTO v_claim
+  FROM public.sports_venue_booking_payment_claims c
+  WHERE c.id = p_claim_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CLAIM_NOT_FOUND';
+  END IF;
+  IF v_claim.status <> 'submitted' THEN
+    RAISE EXCEPTION 'CLAIM_ALREADY_DECIDED';
+  END IF;
+
+  v_group_id := v_claim.booking_group_id;
+  SELECT g.venue_id INTO v_venue_id
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = v_group_id;
+  IF NOT public.is_sports_venue_owner(v_venue_id, p_user_id) THEN
+    RAISE EXCEPTION 'OWNER_DECISION_REQUIRED';
+  END IF;
+  IF p_decision NOT IN ('received', 'not_received') THEN
+    RAISE EXCEPTION 'INVALID_DECISION';
+  END IF;
+  IF p_decision = 'received'
+     AND (p_received_amount IS NULL OR p_received_amount < 0
+          OR p_received_amount > 99999999.99) THEN
+    RAISE EXCEPTION 'INVALID_CLAIM_AMOUNT';
+  END IF;
+
+  UPDATE public.sports_venue_booking_payment_claims
+  SET status = p_decision,
+      decided_by = p_user_id,
+      decided_at = now(),
+      decision_note = NULLIF(p_note, ''),
+      updated_at = now()
+  WHERE id = p_claim_id;
+
+  -- Serialize on the group row for money-ledger updates.
+  PERFORM g.id FROM public.sports_venue_booking_groups g
+  WHERE g.id = v_group_id FOR UPDATE;
+  UPDATE public.sports_venue_booking_groups g
+  SET payment_received_status = CASE
+        WHEN p_decision = 'received' THEN 'received'
+        WHEN g.payment_received_status = 'unknown' THEN 'not_received'
+        ELSE g.payment_received_status END,
+      payment_received_amount = CASE
+        WHEN p_decision = 'received'
+          THEN p_received_amount ELSE g.payment_received_amount END,
+      updated_at = now()
+  WHERE g.id = v_group_id;
+
+  PERFORM public.sports_hub_notify(
+    v_claim.user_id, 'venue_booking',
+    'venue_booking.payment_claim_decided',
+    CASE WHEN p_decision = 'received'
+      THEN 'ยืนยันได้รับชำระเงินแล้ว'
+      ELSE 'ไม่พบยอดชำระที่รายงาน' END,
+    FORMAT('เคสกลุ่ม %s', v_group_id::text),
+    JSONB_BUILD_OBJECT('groupId', v_group_id, 'claimId', p_claim_id,
+                       'decision', p_decision));
+END;
+$$;
+
+-- ===============
+-- Refund cases — owner-only, capped by the net received amount
+-- ===============
+CREATE OR REPLACE FUNCTION public.decide_sports_venue_booking_refund_case(
+  p_user_id UUID,
+  p_case_id UUID,
+  p_action VARCHAR,
+  p_refund_amount NUMERIC DEFAULT NULL,
+  p_reason VARCHAR DEFAULT NULL,
+  p_external_ref VARCHAR DEFAULT NULL,
+  p_receipt_path VARCHAR DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_case RECORD;
+  v_group RECORD;
+  v_available NUMERIC;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_action NOT IN ('approve', 'complete', 'fail', 'not_refundable') THEN
+    RAISE EXCEPTION 'INVALID_REFUND_ACTION';
+  END IF;
+
+  SELECT rc.* INTO v_case
+  FROM public.sports_venue_booking_refund_cases rc
+  WHERE rc.id = p_case_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REFUND_CASE_NOT_FOUND';
+  END IF;
+
+  SELECT g.* INTO v_group
+  FROM public.sports_venue_booking_groups g
+  WHERE g.id = v_case.booking_group_id
+  FOR UPDATE;
+  IF NOT public.is_sports_venue_owner(v_group.venue_id, p_user_id) THEN
+    RAISE EXCEPTION 'OWNER_DECISION_REQUIRED';
+  END IF;
+
+  IF p_action = 'approve' THEN
+    IF v_case.status <> 'open' THEN
+      RAISE EXCEPTION 'REFUND_CASE_NOT_OPEN';
+    END IF;
+    IF p_refund_amount IS NULL OR p_refund_amount <= 0 THEN
+      RAISE EXCEPTION 'INVALID_REFUND_AMOUNT';
+    END IF;
+    v_available := COALESCE(v_group.payment_received_amount, 0)
+      - v_group.total_refunded_amount
+      - v_group.total_refund_reserved_amount;
+    IF p_refund_amount > v_available THEN
+      RAISE EXCEPTION 'REFUND_EXCEEDS_RECEIVED';
+    END IF;
+    UPDATE public.sports_venue_booking_refund_cases
+    SET status = 'approved', refund_amount = p_refund_amount,
+        reason = NULLIF(p_reason, ''), decided_by = p_user_id,
+        decided_at = now(), updated_at = now()
+    WHERE id = p_case_id;
+    UPDATE public.sports_venue_booking_groups
+    SET total_refund_reserved_amount =
+          total_refund_reserved_amount + p_refund_amount,
+        updated_at = now()
+    WHERE id = v_group.id;
+    RETURN;
+  END IF;
+
+  IF p_action = 'complete' THEN
+    IF v_case.status NOT IN ('approved', 'processing') THEN
+      RAISE EXCEPTION 'REFUND_CASE_NOT_APPROVED';
+    END IF;
+    UPDATE public.sports_venue_booking_refund_cases
+    SET status = 'completed', external_ref = NULLIF(p_external_ref, ''),
+        receipt_path = NULLIF(p_receipt_path, ''),
+        decided_by = p_user_id, decided_at = now(), updated_at = now()
+    WHERE id = p_case_id;
+    UPDATE public.sports_venue_booking_groups
+    SET total_refund_reserved_amount =
+          total_refund_reserved_amount - COALESCE(v_case.refund_amount, 0),
+        total_refunded_amount =
+          total_refunded_amount + COALESCE(v_case.refund_amount, 0),
+        updated_at = now()
+    WHERE id = v_group.id;
+    RETURN;
+  END IF;
+
+  IF p_action = 'fail' THEN
+    IF v_case.status NOT IN ('approved', 'processing') THEN
+      RAISE EXCEPTION 'REFUND_CASE_NOT_APPROVED';
+    END IF;
+    UPDATE public.sports_venue_booking_refund_cases
+    SET status = 'failed', reason = NULLIF(p_reason, ''),
+        decided_by = p_user_id, decided_at = now(), updated_at = now()
+    WHERE id = p_case_id;
+    UPDATE public.sports_venue_booking_groups
+    SET total_refund_reserved_amount =
+          total_refund_reserved_amount - COALESCE(v_case.refund_amount, 0),
+        updated_at = now()
+    WHERE id = v_group.id;
+    RETURN;
+  END IF;
+
+  -- not_refundable: only from open, requires a reason.
+  IF v_case.status <> 'open' THEN
+    RAISE EXCEPTION 'REFUND_CASE_NOT_OPEN';
+  END IF;
+  IF length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+    RAISE EXCEPTION 'REASON_REQUIRED';
+  END IF;
+  UPDATE public.sports_venue_booking_refund_cases
+  SET status = 'not_refundable', reason = p_reason,
+      decided_by = p_user_id, decided_at = now(), updated_at = now()
+  WHERE id = p_case_id;
+END;
+$$;
+
+-- Owner/manager queue: groups needing attention plus open claims and
+-- refund cases for the venue.
+CREATE OR REPLACE FUNCTION public.list_sports_venue_evidence_queue(
+  p_user_id UUID,
+  p_venue_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.is_sports_venue_manager(p_venue_id, p_user_id) THEN
+    RAISE EXCEPTION 'NOT_VENUE_MANAGER';
+  END IF;
+  PERFORM public.housekeep_sports_venue_booking_groups_in_scope(
+    NULL, p_venue_id);
+  RETURN JSONB_BUILD_OBJECT(
+    'serverNow', now(),
+    'groups', COALESCE((
+      SELECT jsonb_agg(row ORDER BY row->>'evidenceDueAt' ASC NULLS LAST)
+      FROM (
+        SELECT JSONB_BUILD_OBJECT(
+          'id', g.id, 'userId', g.user_id,
+          'bookerName', NULLIF(btrim(
+            CONCAT_WS(' ', u.first_name, u.last_name)), ''),
+          'status', g.status, 'stage', g.stage,
+          'approvalMode', g.booking_approval_mode_snapshot,
+          'totalAmount', g.total_amount_snapshot,
+          'currency', g.currency,
+          'evidenceDueAt', g.evidence_due_at,
+          'ownerDecisionDueAt', g.owner_decision_due_at,
+          'paymentReceivedStatus', g.payment_received_status,
+          'paymentReceivedAmount', g.payment_received_amount,
+          'paymentDestination', g.payment_destination_snapshot,
+          'createdAt', g.created_at,
+          'bookings', COALESCE((
+            SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+              'id', b.id, 'courtId', b.court_id, 'courtName', c.name,
+              'startsAt', b.starts_at, 'endsAt', b.ends_at,
+              'status', b.status,
+              'priceTotal', b.price_total_snapshot)
+              ORDER BY b.starts_at)
+            FROM public.sports_venue_bookings b
+            JOIN public.sports_venue_courts c ON c.id = b.court_id
+            WHERE b.booking_group_id = g.id), '[]'::jsonb),
+          'evidence', COALESCE((
+            SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+              'id', e.id, 'requirementKey', e.requirement_key,
+              'kind', e.kind, 'stage', e.stage,
+              'revision', e.revision,
+              'storagePath', e.storage_path,
+              'mime', e.mime, 'sizeBytes', e.size_bytes,
+              'verificationStatus', e.verification_status,
+              'submittedBy', e.submitted_by,
+              'createdAt', e.created_at)
+              ORDER BY e.requirement_key)
+            FROM public.sports_venue_booking_evidence e
+            WHERE e.booking_group_id = g.id AND e.is_current),
+            '[]'::jsonb)
+        ) AS row
+        FROM public.sports_venue_booking_groups g
+        LEFT JOIN public.users u ON u.id = g.user_id
+        WHERE g.venue_id = p_venue_id
+          AND (g.status IN ('pending', 'awaiting_evidence')
+               OR EXISTS (
+                 SELECT 1
+                 FROM public.sports_venue_booking_evidence e
+                 WHERE e.booking_group_id = g.id
+                   AND e.verification_status IN ('pending', 'verifying')))
+        ORDER BY g.evidence_due_at ASC NULLS LAST, g.created_at
+        LIMIT 200
+      ) rows), '[]'::jsonb),
+    'claims', COALESCE((
+      SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+        'id', cl.id, 'groupId', cl.booking_group_id,
+        'reportedAmount', cl.reported_amount,
+        'transferReference', cl.transfer_reference,
+        'evidencePath', cl.evidence_path,
+        'status', cl.status, 'createdAt', cl.created_at)
+        ORDER BY cl.created_at)
+      FROM public.sports_venue_booking_payment_claims cl
+      JOIN public.sports_venue_booking_groups g
+        ON g.id = cl.booking_group_id
+      WHERE g.venue_id = p_venue_id AND cl.status = 'submitted'),
+      '[]'::jsonb),
+    'refundCases', COALESCE((
+      SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+        'id', rc.id, 'groupId', rc.booking_group_id,
+        'bookingId', rc.booking_id,
+        'allocatedAmount', rc.allocated_amount_snapshot,
+        'refundAmount', rc.refund_amount,
+        'reason', rc.reason, 'status', rc.status,
+        'externalRef', rc.external_ref, 'createdAt', rc.created_at)
+        ORDER BY rc.created_at)
+      FROM public.sports_venue_booking_refund_cases rc
+      JOIN public.sports_venue_booking_groups g
+        ON g.id = rc.booking_group_id
+      WHERE g.venue_id = p_venue_id
+        AND rc.status IN ('open', 'approved', 'processing')),
+      '[]'::jsonb));
+END;
+$$;
+
+-- Booker view: own groups with countdown fields and sanitized state.
+CREATE OR REPLACE FUNCTION public.list_my_sports_venue_booking_groups(
+  p_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  PERFORM public.housekeep_sports_venue_booking_groups_in_scope(
+    p_user_id, NULL);
+  RETURN JSONB_BUILD_OBJECT(
+    'serverNow', now(),
+    'groups', COALESCE((
+      SELECT jsonb_agg(row ORDER BY row->>'createdAt' DESC) FROM (
+        SELECT JSONB_BUILD_OBJECT(
+          'id', g.id, 'venueId', g.venue_id, 'venueName', v.name,
+          'timezone', v.timezone, 'status', g.status, 'stage', g.stage,
+          'approvalMode', g.booking_approval_mode_snapshot,
+          'totalAmount', g.total_amount_snapshot,
+          'currency', g.currency,
+          'evidenceDueAt', g.evidence_due_at,
+          'paymentDestination', CASE
+            WHEN g.status = 'awaiting_evidence'
+              THEN g.payment_destination_snapshot ELSE NULL END,
+          'requirements', g.evidence_policy_snapshot->'requirements',
+          'evidence', COALESCE((
+            SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+              'requirementKey', e.requirement_key,
+              'verificationStatus', e.verification_status,
+              'revision', e.revision))
+            FROM public.sports_venue_booking_evidence e
+            WHERE e.booking_group_id = g.id AND e.is_current),
+            '[]'::jsonb),
+          'bookings', COALESCE((
+            SELECT jsonb_agg(JSONB_BUILD_OBJECT(
+              'id', b.id, 'courtId', b.court_id, 'courtName', c.name,
+              'startsAt', b.starts_at, 'endsAt', b.ends_at,
+              'status', b.status,
+              'priceTotal', b.price_total_snapshot)
+              ORDER BY b.starts_at)
+            FROM public.sports_venue_bookings b
+            JOIN public.sports_venue_courts c ON c.id = b.court_id
+            WHERE b.booking_group_id = g.id), '[]'::jsonb),
+          'createdAt', g.created_at
+        ) AS row
+        FROM public.sports_venue_booking_groups g
+        JOIN public.sports_venues v ON v.id = g.venue_id
+        WHERE g.user_id = p_user_id
+        ORDER BY g.created_at DESC
+        LIMIT 100
+      ) rows), '[]'::jsonb));
+END;
+$$;
+
+-- ===============
+-- Group housekeeping (lazy, scope-limited) — runs the same transition
+-- helper as the RPC paths so states never diverge:
+--   * pending (owner_approval pre-hold) groups expire at the first child
+--     start, or at the preapproval deadline when the toggle is on
+--   * awaiting_evidence groups forfeit when the evidence deadline passes
+--     with required evidence missing/failed
+--   * payment-slip groups that outlive the final owner decision deadline
+--     are released and an owner-attention reconciliation flag is raised
+--     via a group event (refund case opens when a payment claim confirms
+--     money actually moved)
+--   * pending-review *documents* on instant groups may be implicitly
+--     approved at the owner decision deadline — payment slips are never
+--     implicitly approved
+-- ===============
+CREATE OR REPLACE FUNCTION public.housekeep_sports_venue_booking_groups_in_scope(
+  p_user_id UUID DEFAULT NULL,
+  p_venue_id UUID DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_group RECORD;
+  v_state JSONB;
+  v_expired INT := 0;
+  v_forfeited INT := 0;
+  v_confirmed INT := 0;
+  v_e RECORD;
+  v_earliest TIMESTAMPTZ;
+BEGIN
+  FOR v_group IN
+    SELECT g.id, g.user_id, g.venue_id, g.status, g.stage,
+           g.evidence_due_at, g.owner_decision_due_at,
+           g.booking_approval_mode_snapshot, g.evidence_policy_snapshot
+    FROM public.sports_venue_booking_groups g
+    WHERE g.status IN ('pending', 'awaiting_evidence')
+      AND (p_user_id IS NULL OR g.user_id = p_user_id)
+      AND (p_venue_id IS NULL OR g.venue_id = p_venue_id)
+    ORDER BY g.created_at
+    FOR UPDATE OF g SKIP LOCKED
+  LOOP
+    SELECT min(b.starts_at) INTO v_earliest
+    FROM public.sports_venue_bookings b
+    WHERE b.booking_group_id = v_group.id;
+
+    -- Past the first slot start without confirmation -> expired/forfeited.
+    IF v_earliest IS NOT NULL AND v_earliest <= now() THEN
+      IF v_group.status = 'awaiting_evidence' THEN
+        PERFORM public.sports_venue_booking_group_transition(
+          v_group.id, 'forfeited', 'forfeited', NULL,
+          'deadline_passed');
+        v_forfeited := v_forfeited + 1;
+      ELSE
+        PERFORM public.sports_venue_booking_group_transition(
+          v_group.id, 'expired', 'expired', NULL, 'starts_at_passed');
+        v_expired := v_expired + 1;
+      END IF;
+      PERFORM public.sports_hub_notify(
+        v_group.user_id, 'venue_booking', 'venue_booking.group_expired',
+        'กลุ่มการจองหมดเวลา',
+        'กลุ่มการจองหมดเวลาก่อนกระบวนการเสร็จสิ้น',
+        JSONB_BUILD_OBJECT('groupId', v_group.id,
+                           'venueId', v_group.venue_id));
+      CONTINUE;
+    END IF;
+
+    IF v_group.status = 'pending' THEN
+      -- Preapproval document deadline (only when enabled by policy).
+      IF v_group.evidence_due_at IS NOT NULL
+         AND v_group.evidence_due_at <= now() THEN
+        v_state := public.sports_venue_booking_group_requirements_state(
+          v_group.id);
+        IF jsonb_array_length(
+             COALESCE(v_state->'missing', '[]'::jsonb)) > 0 THEN
+          PERFORM public.sports_venue_booking_group_transition(
+            v_group.id, 'expired', 'expired', NULL,
+            'evidence_deadline_passed');
+          v_expired := v_expired + 1;
+          PERFORM public.sports_hub_notify(
+            v_group.user_id, 'venue_booking',
+            'venue_booking.group_expired',
+            'หมดเวลาแนบหลักฐาน',
+            'คำขอจองหมดเวลาเพราะยังไม่ได้แนบหลักฐานครบ',
+            JSONB_BUILD_OBJECT('groupId', v_group.id,
+                               'venueId', v_group.venue_id));
+        END IF;
+      END IF;
+      CONTINUE;
+    END IF;
+
+    -- awaiting_evidence
+    v_state := public.sports_venue_booking_group_requirements_state(
+      v_group.id);
+
+    IF v_group.evidence_due_at IS NOT NULL
+       AND v_group.evidence_due_at <= now()
+       AND jsonb_array_length(COALESCE(v_state->'missing', '[]'::jsonb)) > 0
+    THEN
+      PERFORM public.sports_venue_booking_group_transition(
+        v_group.id, 'forfeited', 'forfeited', NULL,
+        'evidence_deadline_passed');
+      v_forfeited := v_forfeited + 1;
+      PERFORM public.sports_hub_notify(
+        v_group.user_id, 'venue_booking',
+        'venue_booking.group_forfeited',
+        'กลุ่มการจองถูกปล่อยคืน',
+        'ไม่ได้ส่งหลักฐานครบภายในเวลาที่กำหนด',
+        JSONB_BUILD_OBJECT('groupId', v_group.id,
+                           'venueId', v_group.venue_id));
+      CONTINUE;
+    END IF;
+
+    -- Owner decision deadline reached with everything submitted.
+    IF v_group.owner_decision_due_at IS NOT NULL
+       AND v_group.owner_decision_due_at <= now()
+       AND jsonb_array_length(
+             COALESCE(v_state->'missing', '[]'::jsonb)) = 0 THEN
+      -- Implicit approval is allowed only for instant-mode *documents*.
+      -- Slips must keep an explicit owner decision; a group still waiting
+      -- on a slip past the deadline forfeits and is left for
+      -- reconciliation (payment claim -> refund case).
+      IF (v_state->>'awaitingSlip')::BOOLEAN THEN
+        PERFORM public.sports_venue_booking_group_transition(
+          v_group.id, 'forfeited', 'forfeited', NULL,
+          'owner_decision_deadline_passed');
+        v_forfeited := v_forfeited + 1;
+        PERFORM public.notify_sports_venue_managers(
+          v_group.venue_id, 'venue_booking.group_forfeited',
+          'กลุ่มการจองถูกปล่อยคืน (รอชี้แจงยอดชำระ)',
+          'ผู้จองสามารถรายงานยอดชำระได้หากโอนแล้วจริง',
+          JSONB_BUILD_OBJECT('groupId', v_group.id,
+                             'venueId', v_group.venue_id));
+        CONTINUE;
+      END IF;
+      IF (v_state->>'awaitingDocs')::BOOLEAN
+         AND v_group.booking_approval_mode_snapshot = 'instant' THEN
+        FOR v_e IN
+          SELECT e.id
+          FROM public.sports_venue_booking_evidence e
+          WHERE e.booking_group_id = v_group.id
+            AND e.is_current AND e.verification_status = 'pending'
+            AND e.kind = 'document'
+        LOOP
+          UPDATE public.sports_venue_booking_evidence
+          SET verification_status = 'approved',
+              verification_meta = verification_meta
+                || '{"implicit": true}'::jsonb,
+              reviewed_at = now(), updated_at = now()
+          WHERE id = v_e.id;
+        END LOOP;
+      END IF;
+      v_state := public.sports_venue_booking_group_requirements_state(
+        v_group.id);
+      IF (v_state->>'satisfied')::BOOLEAN THEN
+        PERFORM public.sports_venue_booking_group_transition(
+          v_group.id, 'confirmed', 'confirmed', NULL,
+          'owner_decision_deadline_implicit');
+        v_confirmed := v_confirmed + 1;
+        PERFORM public.sports_hub_notify(
+          v_group.user_id, 'venue_booking', 'venue_booking.confirmed',
+          'กลุ่มการจองยืนยันแล้ว',
+          'ยืนยันอัตโนมัติเมื่อครบกำหนดตรวจหลักฐาน',
+          JSONB_BUILD_OBJECT('groupId', v_group.id,
+                             'venueId', v_group.venue_id));
+        CONTINUE;
+      END IF;
+      -- Still unresolved (e.g. rejected revision awaiting resubmit or a
+      -- slip the owner never touched) -> release the hold.
+      PERFORM public.sports_venue_booking_group_transition(
+        v_group.id, 'forfeited', 'forfeited', NULL,
+        'owner_decision_deadline_passed');
+      v_forfeited := v_forfeited + 1;
+      PERFORM public.sports_hub_notify(
+        v_group.user_id, 'venue_booking',
+        'venue_booking.group_forfeited',
+        'กลุ่มการจองถูกปล่อยคืน',
+        'หลักฐานไม่ครบหรือไม่ผ่านการตรวจสอบภายในเวลาที่กำหนด',
+        JSONB_BUILD_OBJECT('groupId', v_group.id,
+                           'venueId', v_group.venue_id));
+    END IF;
+  END LOOP;
+
+  RETURN JSONB_BUILD_OBJECT(
+    'expired', v_expired,
+    'forfeited', v_forfeited,
+    'confirmed', v_confirmed);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.housekeep_sports_venue_booking_groups_in_scope(
+  UUID, UUID
+) FROM PUBLIC, anon, authenticated;
+
+-- Extend the scheduled/lazy housekeeping entry point.
+CREATE OR REPLACE FUNCTION public.housekeep_sports_venue_bookings()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_expired INT;
+  v_completed INT;
+  v_groups JSONB;
+BEGIN
+  v_expired := public.expire_pending_sports_venue_bookings();
+  v_completed := public.complete_sports_venue_bookings();
+  v_groups := public.housekeep_sports_venue_booking_groups_in_scope();
+  RETURN JSONB_BUILD_OBJECT(
+    'expiredPending', v_expired,
+    'completedBookings', v_completed,
+    'groups', v_groups);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.housekeep_sports_venue_bookings()
+  FROM PUBLIC, anon, authenticated;
+
+-- ===============
+-- Legacy single-booking RPC guards
+-- ===============
+-- A court with an enabled evidence policy must go through the group RPC;
+-- grouped children must use group-aware RPCs. Legacy per-slot behaviour is
+-- unchanged while the policy is off.
+CREATE OR REPLACE FUNCTION public.create_sports_venue_booking(
+  p_user_id UUID,
+  p_court_id UUID,
+  p_starts_at TIMESTAMPTZ,
+  p_ends_at TIMESTAMPTZ,
+  p_terms_version INT,
+  p_idempotency_key VARCHAR DEFAULT NULL,
+  p_expected_price_schedule_version BIGINT DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_court RECORD;
+  v_price JSONB;
+  v_booking_id UUID;
+  v_venue_label VARCHAR;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_starts_at IS NULL OR p_ends_at IS NULL OR p_ends_at <= p_starts_at THEN
+    RAISE EXCEPTION 'INVALID_SLOT';
+  END IF;
+  IF p_ends_at <= now() THEN
+    RAISE EXCEPTION 'SLOT_IN_PAST';
+  END IF;
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT b.id INTO v_booking_id
+    FROM public.sports_venue_bookings b
+    WHERE b.user_id = p_user_id AND b.idempotency_key = p_idempotency_key;
+    IF v_booking_id IS NOT NULL THEN
+      RETURN v_booking_id;
+    END IF;
+  END IF;
+
+  SELECT c.id, c.venue_id INTO v_court
+  FROM public.sports_venue_courts c
+  WHERE c.id = p_court_id
+  FOR UPDATE;
+  IF v_court.id IS NULL THEN
+    RAISE EXCEPTION 'COURT_NOT_FOUND';
+  END IF;
+  IF p_idempotency_key IS NOT NULL THEN
+    SELECT b.id INTO v_booking_id
+    FROM public.sports_venue_bookings b
+    WHERE b.user_id = p_user_id AND b.idempotency_key = p_idempotency_key;
+    IF v_booking_id IS NOT NULL THEN
+      RETURN v_booking_id;
+    END IF;
+  END IF;
+
+  -- Evidence-gated courts always go through the atomic group RPC.
+  IF public.sports_venue_court_evidence_policy(p_court_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'USE_BOOKING_GROUP';
+  END IF;
+
+  PERFORM public.assert_sports_venue_booking_release(
+    p_court_id, p_starts_at, p_ends_at);
+
+  v_price := public.sports_venue_court_price_quote_internal(
+    p_court_id, p_starts_at, p_ends_at
+  );
+  IF v_price->>'price_error' IS NOT NULL THEN
+    RAISE EXCEPTION '%', v_price->>'price_error';
+  END IF;
+  IF (v_price->>'has_time_pricing')::BOOLEAN
+     AND p_expected_price_schedule_version IS NULL THEN
+    RAISE EXCEPTION 'PRICE_VERSION_REQUIRED';
+  END IF;
+  IF p_expected_price_schedule_version IS NOT NULL
+     AND p_expected_price_schedule_version <>
+         (v_price->>'price_schedule_version')::BIGINT THEN
+    RAISE EXCEPTION 'PRICE_CHANGED';
+  END IF;
+
+  v_booking_id := public.create_sports_venue_booking_legacy(
+    p_user_id, p_court_id, p_starts_at, p_ends_at,
+    p_terms_version, p_idempotency_key
+  );
+  v_venue_label := public.sports_venue_unit_label(v_court.venue_id);
+  UPDATE public.sports_venue_bookings
+  SET price_amount_snapshot = NULLIF(v_price->>'price_amount', '')::NUMERIC,
+      pricing_unit_snapshot = v_price->>'pricing_unit',
+      price_total_snapshot = NULLIF(v_price->>'total_amount', '')::NUMERIC,
+      price_breakdown_snapshot = COALESCE(v_price->'breakdown', '[]'::jsonb),
+      price_schedule_version_snapshot =
+        (v_price->>'price_schedule_version')::BIGINT,
+      unit_label_snapshot = public.sports_venue_court_unit_label(p_court_id),
+      venue_unit_label_snapshot = v_venue_label
+  WHERE id = v_booking_id AND user_id = p_user_id;
+
+  -- New notification rows refer to the venue by its own label; rows for
+  -- earlier bookings keep their persisted wording.
+  UPDATE public.app_notifications n
+  SET title = replace(n.title, 'สนาม', v_venue_label)
+  WHERE n.category = 'venue_booking'
+    AND n.payload->>'bookingId' = v_booking_id::text
+    AND n.title LIKE '%สนาม%';
+  RETURN v_booking_id;
+END;
+$$;
+
+-- Grouped bookings are decided/cancelled/changed at group level only.
+CREATE OR REPLACE FUNCTION public.decide_sports_venue_booking(
+  p_user_id UUID,
+  p_booking_id UUID,
+  p_decision VARCHAR,
+  p_reason VARCHAR DEFAULT NULL
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_court_id UUID;
+  v_court RECORD;
+  v_booking RECORD;
+BEGIN
+  SELECT b.court_id INTO v_court_id
+  FROM public.sports_venue_bookings b
+  WHERE b.id = p_booking_id;
+  IF v_court_id IS NULL THEN
+    RAISE EXCEPTION 'BOOKING_NOT_FOUND';
+  END IF;
+
+  SELECT c.id INTO v_court
+  FROM public.sports_venue_courts c
+  WHERE c.id = v_court_id
+  FOR UPDATE;
+  IF v_court.id IS NULL THEN
+    RAISE EXCEPTION 'COURT_NOT_FOUND';
+  END IF;
+
+  SELECT b.*, c.capacity, c.name AS court_name, v.name AS venue_name
+  INTO v_booking
+  FROM public.sports_venue_bookings b
+  JOIN public.sports_venue_courts c ON c.id = b.court_id
+  JOIN public.sports_venues v ON v.id = b.venue_id
+  WHERE b.id = p_booking_id
+  FOR UPDATE OF b;
+
+  IF v_booking.id IS NULL THEN
+    RAISE EXCEPTION 'BOOKING_NOT_FOUND';
+  END IF;
+  IF v_booking.booking_group_id IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_DECISION_REQUIRED';
+  END IF;
+  IF NOT public.is_sports_venue_manager(v_booking.venue_id, p_user_id) THEN
+    RAISE EXCEPTION 'NOT_VENUE_MANAGER';
+  END IF;
+  IF v_booking.status = 'expired' THEN
+    RETURN 'expired';
+  END IF;
+  IF v_booking.status <> 'pending' THEN
+    RAISE EXCEPTION 'BOOKING_NOT_PENDING';
+  END IF;
+  IF p_decision NOT IN ('approve','reject') THEN
+    RAISE EXCEPTION 'INVALID_DECISION';
+  END IF;
+
+  IF v_booking.starts_at <= now() THEN
+    PERFORM public.expire_pending_sports_venue_bookings_in_scope(
+      v_booking.user_id, v_booking.venue_id);
+    RETURN 'expired';
+  END IF;
+
+  IF p_decision = 'reject' THEN
+    IF length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+      RAISE EXCEPTION 'REASON_REQUIRED';
+    END IF;
+    UPDATE public.sports_venue_bookings
+    SET status = 'rejected', decided_by = p_user_id, decided_at = now(),
+        rejection_reason = p_reason, updated_at = now()
+    WHERE id = p_booking_id;
+
+    PERFORM public.log_sports_venue_booking_event(
+      p_booking_id, 'rejected', p_user_id, 'pending', 'rejected',
+      p_reason := p_reason);
+    PERFORM public.sports_hub_notify(
+      v_booking.user_id, 'venue_booking', 'venue_booking.rejected',
+      'คำขอจองถูกปฏิเสธ',
+      FORMAT('%s — %s เหตุผล: %s', v_booking.venue_name,
+             v_booking.court_name, p_reason),
+      JSONB_BUILD_OBJECT('bookingId', p_booking_id,
+                         'venueId', v_booking.venue_id));
+    RETURN 'rejected';
+  END IF;
+
+  IF public.sports_venue_slot_blocked(
+       v_booking.court_id, v_booking.starts_at, v_booking.ends_at)
+     OR public.sports_venue_confirmed_overlap_count(
+          v_booking.court_id, v_booking.starts_at, v_booking.ends_at,
+          p_booking_id) >= v_booking.capacity THEN
+    PERFORM public.log_sports_venue_booking_event(
+      p_booking_id, 'approve_conflict', p_user_id, 'pending', 'pending');
+    PERFORM public.sports_hub_notify(
+      v_booking.user_id, 'venue_booking', 'venue_booking.slot_conflict',
+      'ช่วงเวลาที่ขอถูกใช้แล้ว',
+      FORMAT('%s — %s กรุณาเลือกเวลาใหม่หรือยกเลิกคำขอ',
+             v_booking.venue_name, v_booking.court_name),
+      JSONB_BUILD_OBJECT('bookingId', p_booking_id,
+                         'venueId', v_booking.venue_id,
+                         'action', 'change_slot_or_cancel'));
+    RETURN 'conflict';
+  END IF;
+
+  UPDATE public.sports_venue_bookings
+  SET status = 'confirmed', decided_by = p_user_id, decided_at = now(),
+      updated_at = now()
+  WHERE id = p_booking_id;
+
+  PERFORM public.log_sports_venue_booking_event(
+    p_booking_id, 'approved', p_user_id, 'pending', 'confirmed');
+  PERFORM public.sports_hub_notify(
+    v_booking.user_id, 'venue_booking', 'venue_booking.confirmed',
+    'คำขอจองได้รับการอนุมัติ',
+    FORMAT('%s — %s', v_booking.venue_name, v_booking.court_name),
+    JSONB_BUILD_OBJECT('bookingId', p_booking_id,
+                       'venueId', v_booking.venue_id));
+  RETURN 'confirmed';
+END;
+$$;
+
+
+-- Cancellation: grouped pending/held children go through the group cancel
+-- RPC; a confirmed child of a group may still be cancelled individually
+-- (subject to the normal cutoff) and opens a refund case when the group
+-- already recorded money received.
+CREATE OR REPLACE FUNCTION public.cancel_sports_venue_booking(
+  p_user_id UUID,
+  p_booking_id UUID,
+  p_reason VARCHAR DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_booking RECORD;
+  v_group RECORD;
+  v_is_booker BOOLEAN;
+  v_is_manager BOOLEAN;
+  v_cutoff_at TIMESTAMPTZ;
+  v_venue_name TEXT;
+  v_active_children INT;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+
+  SELECT b.*, v.name AS venue_name, c.name AS court_name
+  INTO v_booking
+  FROM public.sports_venue_bookings b
+  JOIN public.sports_venues v ON v.id = b.venue_id
+  JOIN public.sports_venue_courts c ON c.id = b.court_id
+  WHERE b.id = p_booking_id
+  FOR UPDATE OF b;
+
+  IF v_booking.id IS NULL THEN
+    RAISE EXCEPTION 'BOOKING_NOT_FOUND';
+  END IF;
+  IF v_booking.status NOT IN ('pending','confirmed') THEN
+    RAISE EXCEPTION 'BOOKING_NOT_CANCELLABLE';
+  END IF;
+
+  v_is_booker := v_booking.user_id = p_user_id;
+  v_is_manager := public.is_sports_venue_manager(v_booking.venue_id, p_user_id);
+  v_venue_name := v_booking.venue_name;
+
+  IF NOT v_is_booker AND NOT v_is_manager THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+
+  IF v_booking.booking_group_id IS NOT NULL THEN
+    SELECT g.* INTO v_group
+    FROM public.sports_venue_booking_groups g
+    WHERE g.id = v_booking.booking_group_id
+    FOR UPDATE;
+    -- Pre-confirmation the group is atomic: cancel it as a whole.
+    IF v_group.status IN ('pending', 'awaiting_evidence') THEN
+      RAISE EXCEPTION 'GROUP_CANCEL_REQUIRED';
+    END IF;
+  END IF;
+
+  IF v_is_booker AND NOT v_is_manager THEN
+    v_cutoff_at := v_booking.starts_at
+      - make_interval(mins => v_booking.cancellation_cutoff_minutes_snapshot);
+    IF now() >= v_cutoff_at THEN
+      RAISE EXCEPTION 'CUTOFF_PASSED';
+    END IF;
+  ELSE
+    -- Manager/owner cancellation always requires a reason.
+    IF length(btrim(COALESCE(p_reason, ''))) = 0 THEN
+      RAISE EXCEPTION 'REASON_REQUIRED';
+    END IF;
+  END IF;
+
+  UPDATE public.sports_venue_bookings
+  SET status = 'cancelled',
+      cancelled_by = p_user_id,
+      cancellation_reason = p_reason,
+      cancelled_at = now(),
+      updated_at = now()
+  WHERE id = p_booking_id;
+
+  PERFORM public.log_sports_venue_booking_event(
+    p_booking_id, 'cancelled', p_user_id, v_booking.status, 'cancelled',
+    p_reason := p_reason);
+
+  -- Group-aware follow-up for confirmed groups: reflect partial state and
+  -- open a refund case when money was already received.
+  IF v_booking.booking_group_id IS NOT NULL
+     AND v_group.status IN ('confirmed', 'partially_cancelled',
+                            'completed') THEN
+    SELECT count(*) INTO v_active_children
+    FROM public.sports_venue_bookings b
+    WHERE b.booking_group_id = v_group.id
+      AND b.status IN ('confirmed', 'completed');
+    UPDATE public.sports_venue_booking_groups
+    SET status = CASE WHEN v_active_children = 0 THEN 'cancelled'
+                      ELSE 'partially_cancelled' END,
+        updated_at = now()
+    WHERE id = v_group.id;
+    IF v_group.payment_received_status = 'received' THEN
+      INSERT INTO public.sports_venue_booking_refund_cases (
+        booking_group_id, booking_id, allocated_amount_snapshot,
+        reason, status
+      ) VALUES (
+        v_group.id, v_booking.id, v_booking.price_total_snapshot,
+        COALESCE(NULLIF(p_reason, ''), 'booking_cancelled'), 'open');
+    END IF;
+  END IF;
+
+  -- Notify the counterparty.
+  IF v_is_booker THEN
+    PERFORM public.notify_sports_venue_managers(
+      v_booking.venue_id, 'venue_booking.cancelled',
+      'ผู้จองยกเลิกการจอง',
+      FORMAT('%s — %s', v_venue_name, v_booking.court_name),
+      JSONB_BUILD_OBJECT('bookingId', p_booking_id,
+                         'venueId', v_booking.venue_id));
+  ELSE
+    PERFORM public.sports_hub_notify(
+      v_booking.user_id, 'venue_booking', 'venue_booking.cancelled',
+      'การจองของคุณถูกยกเลิกโดยสนาม',
+      FORMAT('%s — %s เหตุผล: %s', v_venue_name, v_booking.court_name,
+             COALESCE(p_reason, 'ไม่ระบุ')),
+      JSONB_BUILD_OBJECT('bookingId', p_booking_id,
+                         'venueId', v_booking.venue_id));
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.change_pending_venue_booking_slot(
+  p_user_id UUID,
+  p_booking_id UUID,
+  p_starts_at TIMESTAMPTZ,
+  p_ends_at TIMESTAMPTZ,
+  p_terms_version INT DEFAULT NULL,
+  p_expected_price_schedule_version BIGINT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_court_id UUID;
+  v_group_id UUID;
+  v_court RECORD;
+  v_booking RECORD;
+  v_price JSONB;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_starts_at IS NULL OR p_ends_at IS NULL OR p_ends_at <= p_starts_at
+     OR p_ends_at <= now() THEN
+    RAISE EXCEPTION 'INVALID_SLOT';
+  END IF;
+  SELECT b.court_id, b.booking_group_id INTO v_court_id, v_group_id
+  FROM public.sports_venue_bookings b
+  WHERE b.id = p_booking_id;
+  IF v_court_id IS NULL THEN
+    RAISE EXCEPTION 'BOOKING_NOT_FOUND';
+  END IF;
+  IF v_group_id IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_CHANGE_REQUIRED';
+  END IF;
+
+  SELECT c.id INTO v_court
+  FROM public.sports_venue_courts c
+  WHERE c.id = v_court_id
+  FOR UPDATE;
+  IF v_court.id IS NULL THEN
+    RAISE EXCEPTION 'COURT_NOT_FOUND';
+  END IF;
+
+  SELECT b.* INTO v_booking
+  FROM public.sports_venue_bookings b
+  WHERE b.id = p_booking_id
+  FOR UPDATE;
+  IF v_booking.id IS NULL THEN
+    RAISE EXCEPTION 'BOOKING_NOT_FOUND';
+  END IF;
+  IF v_booking.user_id <> p_user_id THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED';
+  END IF;
+  IF v_booking.status = 'expired' THEN
+    RETURN;
+  END IF;
+  IF v_booking.status <> 'pending' THEN
+    RAISE EXCEPTION 'BOOKING_NOT_PENDING';
+  END IF;
+  IF v_booking.starts_at <= now() THEN
+    PERFORM public.expire_pending_sports_venue_bookings_in_scope(
+      p_user_id, v_booking.venue_id);
+    RETURN;
+  END IF;
+
+  PERFORM public.assert_sports_venue_booking_release(
+    v_court_id, p_starts_at, p_ends_at);
+
+  v_price := public.sports_venue_court_price_quote_internal(
+    v_court_id, p_starts_at, p_ends_at
+  );
+  IF v_price->>'price_error' IS NOT NULL THEN
+    RAISE EXCEPTION '%', v_price->>'price_error';
+  END IF;
+  IF (v_price->>'has_time_pricing')::BOOLEAN
+     AND p_expected_price_schedule_version IS NULL THEN
+    RAISE EXCEPTION 'PRICE_VERSION_REQUIRED';
+  END IF;
+  IF p_expected_price_schedule_version IS NOT NULL
+     AND p_expected_price_schedule_version <>
+         (v_price->>'price_schedule_version')::BIGINT THEN
+    RAISE EXCEPTION 'PRICE_CHANGED';
+  END IF;
+
+  PERFORM public.change_pending_venue_booking_slot_legacy(
+    p_user_id, p_booking_id, p_starts_at, p_ends_at, p_terms_version
+  );
+  UPDATE public.sports_venue_bookings
+  SET price_amount_snapshot = NULLIF(v_price->>'price_amount', '')::NUMERIC,
+      pricing_unit_snapshot = v_price->>'pricing_unit',
+      price_total_snapshot = NULLIF(v_price->>'total_amount', '')::NUMERIC,
+      price_breakdown_snapshot = COALESCE(v_price->'breakdown', '[]'::jsonb),
+      price_schedule_version_snapshot =
+        (v_price->>'price_schedule_version')::BIGINT
+  WHERE id = p_booking_id AND user_id = p_user_id;
+END;
+$$;
+
+-- Ungrouped pending children keep the legacy per-booking expiry; grouped
+-- children expire only via the atomic group transition.
+CREATE OR REPLACE FUNCTION public.expire_pending_sports_venue_bookings_in_scope(
+  p_user_id UUID DEFAULT NULL,
+  p_venue_id UUID DEFAULT NULL
+)
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  r RECORD;
+  v_count INT := 0;
+BEGIN
+  FOR r IN
+    UPDATE public.sports_venue_bookings
+    SET status = 'expired', updated_at = now()
+    WHERE status = 'pending'
+      AND starts_at <= now()
+      AND booking_group_id IS NULL
+      AND (p_user_id IS NULL OR user_id = p_user_id)
+      AND (p_venue_id IS NULL OR venue_id = p_venue_id)
+    RETURNING id, user_id, venue_id
+  LOOP
+    PERFORM public.log_sports_venue_booking_event(
+      r.id, 'expired', NULL, 'pending', 'expired');
+    PERFORM public.sports_hub_notify(
+      r.user_id, 'venue_booking', 'venue_booking.expired',
+      'คำขอจองหมดอายุ',
+      'คำขอจองของคุณหมดอายุเนื่องจากถึงเวลาเริ่มแล้ว',
+      JSONB_BUILD_OBJECT('bookingId', r.id, 'venueId', r.venue_id));
+    v_count := v_count + 1;
+  END LOOP;
+  RETURN v_count;
+END;
+$$;
+
+-- Held (awaiting_evidence) slots must also block owner suspension.
+CREATE OR REPLACE FUNCTION public.manage_sports_venue_availability(
+  p_user_id UUID,
+  p_court_id UUID,
+  p_action TEXT,
+  p_ranges JSONB
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_venue_id UUID;
+  v_timezone TEXT;
+  v_count INT;
+  v_item JSONB;
+  v_starts TIMESTAMPTZ[] := ARRAY[]::TIMESTAMPTZ[];
+  v_ends TIMESTAMPTZ[] := ARRAY[]::TIMESTAMPTZ[];
+  v_start TIMESTAMPTZ;
+  v_end TIMESTAMPTZ;
+  v_local_start TIMESTAMP;
+  v_local_end TIMESTAMP;
+  v_selection_date DATE;
+  v_now TIMESTAMPTZ := now();
+  v_i INT;
+  v_j INT;
+  v_cursor TIMESTAMPTZ;
+  v_cut_start TIMESTAMPTZ;
+  v_cut_end TIMESTAMPTZ;
+  v_block RECORD;
+BEGIN
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_action IS NULL OR p_action NOT IN ('suspend', 'unsuspend') THEN
+    RAISE EXCEPTION 'INVALID_AVAILABILITY_ACTION';
+  END IF;
+  IF p_ranges IS NULL OR jsonb_typeof(p_ranges) <> 'array' THEN
+    RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGES';
+  END IF;
+  v_count := jsonb_array_length(p_ranges);
+  IF v_count < 1 OR v_count > 24 THEN
+    RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGES';
+  END IF;
+
+  SELECT c.venue_id, v.timezone
+    INTO v_venue_id, v_timezone
+  FROM public.sports_venue_courts c
+  JOIN public.sports_venues v ON v.id = c.venue_id
+  WHERE c.id = p_court_id
+    AND c.is_active
+    AND v.status = 'approved'
+  FOR UPDATE OF c;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COURT_NOT_FOUND';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.sports_venue_owner_profiles op
+    JOIN public.sports_venues v ON v.owner_profile_id = op.id
+    WHERE v.id = v_venue_id AND op.user_id = p_user_id
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM public.sports_venue_owner_members m
+    WHERE m.venue_id = v_venue_id
+      AND m.user_id = p_user_id
+      AND m.is_active
+      AND m.role IN ('owner', 'manager')
+  ) THEN
+    RAISE EXCEPTION 'NOT_VENUE_MANAGER';
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_ranges)
+  LOOP
+    BEGIN
+      v_start := NULLIF(v_item->>'starts_at', '')::TIMESTAMPTZ;
+      v_end := NULLIF(v_item->>'ends_at', '')::TIMESTAMPTZ;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGE';
+    END;
+
+    IF v_start IS NULL OR v_end IS NULL OR v_end <= v_start
+       OR v_start < v_now THEN
+      RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGE';
+    END IF;
+
+    v_local_start := v_start AT TIME ZONE v_timezone;
+    v_local_end := v_end AT TIME ZONE v_timezone;
+    IF EXTRACT(MINUTE FROM v_local_start) <> 0
+       OR EXTRACT(SECOND FROM v_local_start) <> 0
+       OR EXTRACT(MINUTE FROM v_local_end) <> 0
+       OR EXTRACT(SECOND FROM v_local_end) <> 0
+       OR v_local_end <= v_local_start
+       OR v_local_end::DATE <> v_local_start::DATE
+       OR EXTRACT(EPOCH FROM (v_local_end - v_local_start))::BIGINT % 3600 <> 0
+       OR EXTRACT(EPOCH FROM (v_local_end - v_local_start)) > 86400 THEN
+      RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGE';
+    END IF;
+    IF v_selection_date IS NULL THEN
+      v_selection_date := v_local_start::DATE;
+    ELSIF v_selection_date <> v_local_start::DATE THEN
+      RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGES';
+    END IF;
+
+    v_starts := array_append(v_starts, v_start);
+    v_ends := array_append(v_ends, v_end);
+  END LOOP;
+
+  FOR v_i IN 2..v_count LOOP
+    IF v_starts[v_i] < v_starts[v_i - 1] THEN
+      RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGES';
+    END IF;
+  END LOOP;
+
+  FOR v_i IN 1..v_count LOOP
+    FOR v_j IN (v_i + 1)..v_count LOOP
+      IF v_starts[v_i] < v_ends[v_j]
+         AND v_ends[v_i] > v_starts[v_j] THEN
+        RAISE EXCEPTION 'INVALID_AVAILABILITY_RANGES';
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  IF p_action = 'suspend' THEN
+    FOR v_i IN 1..v_count LOOP
+      IF EXISTS (
+        SELECT 1
+        FROM public.sports_venue_bookings b
+        WHERE b.court_id = p_court_id
+          AND b.status IN ('pending', 'awaiting_evidence', 'confirmed')
+          AND b.starts_at < v_ends[v_i]
+          AND b.ends_at > v_starts[v_i]
+      ) THEN
+        RAISE EXCEPTION 'AVAILABILITY_RANGE_HAS_BOOKING';
+      END IF;
+      IF EXISTS (
+        SELECT 1
+        FROM public.sports_venue_availability a
+        WHERE a.court_id = p_court_id
+          AND a.kind = 'blocked'
+          AND a.starts_at < v_ends[v_i]
+          AND a.ends_at > v_starts[v_i]
+      ) THEN
+        RAISE EXCEPTION 'AVAILABILITY_ALREADY_SUSPENDED';
+      END IF;
+      IF public.sports_venue_slot_blocked(
+        p_court_id, v_starts[v_i], v_ends[v_i]
+      ) THEN
+        RAISE EXCEPTION 'AVAILABILITY_OUTSIDE_OPERATING_HOURS';
+      END IF;
+    END LOOP;
+
+    FOR v_i IN 1..v_count LOOP
+      INSERT INTO public.sports_venue_availability (
+        court_id, starts_at, ends_at, kind
+      ) VALUES (
+        p_court_id, v_starts[v_i], v_ends[v_i], 'blocked'
+      );
+    END LOOP;
+    RETURN;
+  END IF;
+
+  FOR v_i IN 1..v_count LOOP
+    PERFORM 1
+    FROM public.sports_venue_availability a
+    WHERE a.court_id = p_court_id
+      AND a.kind = 'blocked'
+      AND a.starts_at < v_ends[v_i]
+      AND a.ends_at > v_starts[v_i]
+    FOR UPDATE;
+
+    v_cursor := v_starts[v_i];
+    WHILE v_cursor < v_ends[v_i] LOOP
+      v_cut_end := LEAST(v_cursor + interval '1 hour', v_ends[v_i]);
+      IF NOT EXISTS (
+        SELECT 1
+        FROM public.sports_venue_availability a
+        WHERE a.court_id = p_court_id
+          AND a.kind = 'blocked'
+          AND a.starts_at < v_cut_end
+          AND a.ends_at > v_cursor
+      ) THEN
+        RAISE EXCEPTION 'AVAILABILITY_NOT_SUSPENDED';
+      END IF;
+      v_cursor := v_cut_end;
+    END LOOP;
+  END LOOP;
+
+  FOR v_block IN
+    SELECT a.id, a.starts_at, a.ends_at, a.note
+    FROM public.sports_venue_availability a
+    WHERE a.court_id = p_court_id
+      AND a.kind = 'blocked'
+      AND EXISTS (
+        SELECT 1
+        FROM generate_subscripts(v_starts, 1) i
+        WHERE a.starts_at < v_ends[i]
+          AND a.ends_at > v_starts[i]
+      )
+    FOR UPDATE
+  LOOP
+    v_cursor := v_block.starts_at;
+    FOR v_i IN 1..v_count LOOP
+      IF v_starts[v_i] < v_block.ends_at
+         AND v_ends[v_i] > v_block.starts_at THEN
+        v_cut_start := GREATEST(v_starts[v_i], v_block.starts_at);
+        v_cut_end := LEAST(v_ends[v_i], v_block.ends_at);
+        IF v_cut_start > v_cursor THEN
+          INSERT INTO public.sports_venue_availability (
+            court_id, starts_at, ends_at, kind, note
+          ) VALUES (
+            p_court_id, v_cursor, v_cut_start, 'blocked', v_block.note
+          );
+        END IF;
+        v_cursor := GREATEST(v_cursor, v_cut_end);
+      END IF;
+    END LOOP;
+    IF v_cursor < v_block.ends_at THEN
+      INSERT INTO public.sports_venue_availability (
+        court_id, starts_at, ends_at, kind, note
+      ) VALUES (
+        p_court_id, v_cursor, v_block.ends_at, 'blocked', v_block.note
+      );
+    END IF;
+    DELETE FROM public.sports_venue_availability WHERE id = v_block.id;
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.manage_sports_venue_availability(
+  UUID, UUID, TEXT, JSONB
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.manage_sports_venue_availability(
+  UUID, UUID, TEXT, JSONB
+) TO anon, authenticated;
+
+-- ===============
+-- Grants for lifecycle RPCs
+-- ===============
+GRANT EXECUTE ON FUNCTION public.submit_sports_venue_booking_evidence(
+  UUID, UUID, JSONB
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.decide_sports_venue_booking_group(
+  UUID, UUID, VARCHAR, VARCHAR, VARCHAR
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_sports_venue_booking_group(
+  UUID, UUID, VARCHAR
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.change_sports_venue_booking_group_slots(
+  UUID, UUID, JSONB
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.report_sports_venue_booking_payment_claim(
+  UUID, UUID, NUMERIC, VARCHAR, VARCHAR
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.decide_sports_venue_booking_payment_claim(
+  UUID, UUID, VARCHAR, NUMERIC, VARCHAR
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.decide_sports_venue_booking_refund_case(
+  UUID, UUID, VARCHAR, NUMERIC, VARCHAR, VARCHAR, VARCHAR
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_sports_venue_evidence_queue(
+  UUID, UUID
+) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_my_sports_venue_booking_groups(
+  UUID
+) TO anon, authenticated;
+
+NOTIFY pgrst, 'reload schema';

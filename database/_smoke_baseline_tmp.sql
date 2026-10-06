@@ -100,7 +100,6 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261007100000_sports_hub_booking_release_weekday_overrides.sql
 \ir ../supabase/migrations/20261008100000_sports_hub_booking_release_venue_fallback_all_days.sql
 \ir ../supabase/migrations/20261009100000_sports_hub_owner_availability_management.sql
-\ir ../supabase/migrations/20261010100000_sports_hub_booking_evidence.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$

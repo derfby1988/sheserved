@@ -221,41 +221,33 @@ void main() {
     expect(find.text('โหลดใหม่'), findsOneWidget);
   });
 
-  testWidgets('compact web 320x568 + text scale 1.3 renders without overflow', (tester) async {
-    final backend = _FakeBackend();
-    await tester.binding.setSurfaceSize(const Size(320, 568));
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
-          child: Scaffold(
-            body: SingleChildScrollView(
-              child: MapProviderSettingsSection(service: _service(backend)),
+  for (final (size, scale, name) in [
+    (const Size(320, 568), 1.3, 'compact web 320x568 + text scale 1.3'),
+    (const Size(393, 852), 1.0, 'mobile web 393x852'),
+    (const Size(1280, 800), 1.0, 'desktop web 1280x800'),
+  ]) {
+    testWidgets('$name renders without overflow', (tester) async {
+      final backend = _FakeBackend();
+      await tester.binding.setSurfaceSize(size);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: Scaffold(
+              body: SingleChildScrollView(
+                child: MapProviderSettingsSection(service: _service(backend)),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('ผู้ให้บริการแผนที่ (Map Provider)'), findsOneWidget);
-    final exception = tester.takeException();
-    if (exception != null) {
-      if (exception is FlutterError) {
-        for (final d in exception.diagnostics) {
-          final desc = d.toDescription();
-          if (desc.contains('widget was') ||
-              desc.contains('Row') ||
-              desc.contains('creator') ||
-              desc.contains('cross axis')) {
-            debugPrint('DIAG: $desc');
-          }
-        }
-      }
-      throw exception;
-    }
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('ผู้ให้บริการแผนที่ (Map Provider)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('422 shows server validation errors inline and keeps draft', (tester) async {
     final backend = _FakeBackend(putStatus: 422);

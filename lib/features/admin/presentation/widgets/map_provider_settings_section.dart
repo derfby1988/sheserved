@@ -713,7 +713,9 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Places fallback', style: TextStyle(fontSize: 12)),
+                const Flexible(
+                  child: Text('Places fallback', style: TextStyle(fontSize: 12)),
+                ),
                 Switch.adaptive(
                   value: s.searchFallbackEnabled,
                   onChanged: _saving
