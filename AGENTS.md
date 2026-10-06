@@ -35,6 +35,31 @@ source — `backendApiUrl`/`localApiUrl`/`websocketUrl` are aliases), update
 `curl http://<new-ip>:8080/api/videos/emergency/list` from another device and
 run `flutter test test/core/app_config_test.dart`.
 
+## Secondary machine — run & Google sign-in
+
+Minimal run on the secondary machine (legacy Supabase auth, no backend needed):
+
+```
+flutter run -d <device-id>
+```
+
+No dart-defines required for Google sign-in (`USE_BACKEND_AUTH` defaults to
+`false` → `_handleSocialLogin` hits Supabase `users` directly by
+`social_provider`/`social_id`). If sign-in throws `ApiException: 10`, the APK's
+SHA-1 is not registered as an Android OAuth client in GCP — **always read the
+SHA-1 from the built APK**, not from `~/.android/debug.keystore`, because builds
+run inside Devin use a separate keystore at `~/.devin_config/.android/`
+(different fingerprint):
+
+```
+~/Library/Android/sdk/build-tools/*/apksigner verify --print-certs \
+  build/app/outputs/flutter-apk/app-debug.apk | grep 'SHA-1'
+```
+
+Register every keystore's SHA-1 as its own Android OAuth client (additive, safe
+for other machines). Full diagnosis/fix steps: "🔐 Runbook: Google Sign-In
+`ApiException: 10`" in `docs/plans/VIDEO_SYSTEM_PLAN.md`.
+
 ## iOS / CocoaPods
 
 The iOS project uses CocoaPods with the CDN trunk source. The local CDN specs

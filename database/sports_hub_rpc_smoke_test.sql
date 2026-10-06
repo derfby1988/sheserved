@@ -102,6 +102,7 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261009100000_sports_hub_owner_availability_management.sql
 \ir ../supabase/migrations/20261010100000_sports_hub_booking_evidence.sql
 \ir ../supabase/migrations/20261011100000_sports_hub_booking_evidence_client.sql
+\ir ../supabase/migrations/20261012100000_sports_hub_venue_verify_policy_admin.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -3248,6 +3249,29 @@ BEGIN
          FROM public.sports_venue_booking_evidence e
          WHERE e.id = v_evidence) = 'pending',
     'the admin kill switch routes queued slips to owner review');
+
+  -- -- Admin venue verify-policy listing ------------------------------
+  PERFORM public.admin_set_sports_venue_verify_policy(
+    v_admin, v_venue, 'whitelist', 'owner', 500, 30);
+  v_list := public.admin_list_sports_venue_verify_policies(v_admin);
+  PERFORM pg_temp.expect(
+    (SELECT count(*) = 1 FROM jsonb_array_elements(v_list) e
+     WHERE e.value->>'venueId' = v_venue::text
+       AND e.value->>'verifyScope' = 'whitelist'
+       AND e.value->>'costBearer' = 'owner'
+       AND (e.value->>'monthlyQuota')::INT = 500
+       AND (e.value->>'verifyTimeoutMinutes')::INT = 30
+       AND (e.value->>'enabledProviderCount')::INT >= 1
+       AND (e.value->>'usedThisMonth')::INT >= 1
+       AND e.value ? 'costThisMonth'
+       AND e.value ? 'lastUsageAt'
+       AND e.value ? 'hasEvidencePolicy'),
+    'the admin venue listing carries scope, cost and usage signals');
+  PERFORM pg_temp.expect_raise(
+    'a non-admin cannot read the venue verify policy listing',
+    format($s$SELECT public.admin_list_sports_venue_verify_policies(%L)$s$,
+      v_customer),
+    'NOT_ADMIN');
 
   -- -- Listing surface extensions ----------------------------------
   v_list := public.list_my_sports_venue_booking_groups(v_customer);

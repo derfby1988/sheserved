@@ -167,6 +167,72 @@ void main() {
     });
   });
 
+  group('AdminVenueVerifyPolicy', () {
+    test('decodes scope, cost and usage signals from the admin listing', () {
+      final v = AdminVenueVerifyPolicy.fromJson({
+        'venueId': 'v1',
+        'name': 'สนามทดสอบ',
+        'status': 'approved',
+        'verifyScope': 'whitelist',
+        'costBearer': 'owner',
+        'monthlyQuota': 500,
+        'verifyTimeoutMinutes': 30,
+        'hasEvidencePolicy': true,
+        'enabledProviderCount': 1,
+        'usedThisMonth': 12,
+        'costThisMonth': 18.5,
+        'lastUsageAt': '2026-10-11T10:00:00Z',
+      });
+      expect(v.venueId, 'v1');
+      expect(v.verifyScope, 'whitelist');
+      expect(v.costBearer, 'owner');
+      expect(v.monthlyQuota, 500);
+      expect(v.isScopeEnabled, isTrue);
+      expect(v.isVerifyReady, isTrue);
+      expect(v.isQuotaExhausted, isFalse);
+      expect(v.usedThisMonth, 12);
+      expect(v.costThisMonth, 18.5);
+      expect(v.lastUsageAt, DateTime.utc(2026, 10, 11, 10));
+    });
+
+    test('defaults to disabled without providers or quota', () {
+      final v = AdminVenueVerifyPolicy.fromJson({
+        'venueId': 'v2',
+        'name': 'สนามใหม่',
+      });
+      expect(v.verifyScope, 'disabled');
+      expect(v.costBearer, 'platform');
+      expect(v.monthlyQuota, isNull);
+      expect(v.isScopeEnabled, isFalse);
+      expect(v.isVerifyReady, isFalse);
+      expect(v.isQuotaExhausted, isFalse);
+    });
+
+    test('scope on without an enabled provider is not verify-ready', () {
+      final v = AdminVenueVerifyPolicy.fromJson({
+        'venueId': 'v3',
+        'name': 'สนามไร้ผู้ให้บริการ',
+        'verifyScope': 'whitelist',
+        'enabledProviderCount': 0,
+      });
+      expect(v.isScopeEnabled, isTrue);
+      expect(v.isVerifyReady, isFalse);
+    });
+
+    test('quota exhaustion follows the monthly usage count', () {
+      final v = AdminVenueVerifyPolicy.fromJson({
+        'venueId': 'v4',
+        'name': 'สนามโควตาหมด',
+        'verifyScope': 'all',
+        'monthlyQuota': 10,
+        'usedThisMonth': 10,
+        'enabledProviderCount': 2,
+      });
+      expect(v.isQuotaExhausted, isTrue);
+      expect(v.isVerifyReady, isTrue);
+    });
+  });
+
   group('status enums', () {
     test('new statuses decode from server strings', () {
       expect(

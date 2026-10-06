@@ -1355,6 +1355,25 @@ class BookCourtRepository {
     );
   }
 
+  /// Admin-only read half of the venue verify policy — every venue with its
+  /// current scope/bearer/quota/timeout plus provider and usage signals.
+  Future<List<AdminVenueVerifyPolicy>> adminListVenueVerifyPolicies(
+    String adminId,
+  ) async {
+    _assertCurrentUser(adminId);
+    final res = await _client.rpc(
+      'admin_list_sports_venue_verify_policies',
+      params: {'p_admin_id': adminId},
+    );
+    return (res as List)
+        .map(
+          (e) => AdminVenueVerifyPolicy.fromJson(
+            Map<String, dynamic>.from(e),
+          ),
+        )
+        .toList();
+  }
+
   Future<List<SlipVerificationProvider>> adminListSlipProviders(
     String adminId,
   ) async {

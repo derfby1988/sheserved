@@ -53,6 +53,7 @@ class _AdminCourtOwnerReviewPanelState
   List<VenueOwnerProfile> _applications = [];
   List<VenueSummary> _venues = [];
   List<SlipVerificationProvider> _providers = [];
+  List<AdminVenueVerifyPolicy> _verifyPolicies = [];
   bool _loading = true;
 
   /// Lazily loaded readiness details per venue id.
@@ -107,6 +108,20 @@ class _AdminCourtOwnerReviewPanelState
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+    // Additive: the verify-policy read RPC ships after the review lists, so
+    // a missing function must never blank the page.
+    await _loadVerifyPolicies();
+  }
+
+  Future<void> _loadVerifyPolicies() async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    try {
+      final policies = await widget.repo.adminListVenueVerifyPolicies(adminId);
+      if (mounted) setState(() => _verifyPolicies = policies);
+    } catch (_) {
+      if (mounted) setState(() => _verifyPolicies = const []);
     }
   }
 
@@ -212,6 +227,14 @@ class _AdminCourtOwnerReviewPanelState
                   _empty('ยังไม่มีผู้ให้บริการ')
                 else
                   for (final p in _providers) _buildProviderCard(p),
+                _sectionHeader(
+                  'ตรวจสลิปอัตโนมัติรายสถานที่ (${_verifyPolicies.length})',
+                ),
+                if (_verifyPolicies.isEmpty)
+                  _empty('ยังไม่มีสถานที่ให้ตั้งค่า')
+                else
+                  for (final v in _verifyPolicies)
+                    _buildVerifyPolicyCard(v),
               ],
             ),
           );
@@ -600,6 +623,243 @@ class _AdminCourtOwnerReviewPanelState
     );
   }
 
+  static const _scopeLabels = {
+    'disabled': 'ปิดการตรวจอัตโนมัติ',
+    'whitelist': 'เปิดเฉพาะสถานที่นี้',
+    'all': 'เปิดทุกสถานที่',
+  };
+
+  static const _bearerLabels = {
+    'platform': 'แพลตฟอร์มรับภาระ',
+    'owner': 'เจ้าของรับภาระ',
+  };
+
+  /// Admin-only per-venue provider policy. Enabling the scope is what makes
+  /// `auto_verify` selectable for the owner, so the card also surfaces
+  /// whether a provider is actually enabled and how much quota is spent.
+  Widget _buildVerifyPolicyCard(AdminVenueVerifyPolicy v) {
+    final quotaLabel = v.monthlyQuota == null
+        ? 'ไม่จำกัดโควตา'
+        : 'ใช้ ${v.usedThisMonth}/${v.monthlyQuota} ครั้งเดือนนี้';
+    return NeumorphicContainer(
+      key: ValueKey('admin-verify-policy-${v.venueId}'),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      depth: 4,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  v.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: v.isScopeEnabled
+                      ? Colors.green.shade50
+                      : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _scopeLabels[v.verifyScope] ?? v.verifyScope,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: v.isScopeEnabled
+                        ? Colors.green.shade800
+                        : Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              _bearerLabels[v.costBearer] ?? v.costBearer,
+              quotaLabel,
+              v.verifyTimeoutMinutes == null
+                  ? 'timeout ตามผู้ให้บริการ'
+                  : 'timeout ${v.verifyTimeoutMinutes} นาที',
+            ].join(' · '),
+            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+          ),
+          if (v.costThisMonth > 0)
+            Text(
+              'ค่าใช้จ่ายเดือนนี้ ฿${v.costThisMonth.toStringAsFixed(2)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          if (v.isScopeEnabled && v.enabledProviderCount == 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'ยังไม่มีผู้ให้บริการที่เปิดใช้งาน — สลิปจะตกไปให้เจ้าของตรวจแทน',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+              ),
+            )
+          else if (v.isQuotaExhausted)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'โควตาเดือนนี้ใช้ครบแล้ว — สลิปจะตกไปให้เจ้าของตรวจแทน',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+              ),
+            )
+          else if (v.isScopeEnabled && !v.hasEvidencePolicy)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'สถานที่นี้ยังไม่เปิดนโยบายหลักฐาน — เจ้าของต้องตั้งค่าก่อนจึงใช้ได้',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => _editVenueVerifyPolicy(v),
+              child: const Text('ตั้งค่า'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editVenueVerifyPolicy(AdminVenueVerifyPolicy v) async {
+    final adminId = _adminId;
+    if (adminId == null) return;
+    var scope = v.verifyScope;
+    var bearer = v.costBearer;
+    final quota = TextEditingController(
+      text: v.monthlyQuota?.toString() ?? '',
+    );
+    final timeout = TextEditingController(
+      text: v.verifyTimeoutMinutes?.toString() ?? '',
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('ตรวจสลิปอัตโนมัติ — ${v.name}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('admin-verify-scope'),
+                  initialValue: scope,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'ขอบเขตการตรวจอัตโนมัติ',
+                    helperText: 'เปิดแล้วเจ้าของจึงเลือกได้',
+                  ),
+                  items: [
+                    for (final entry in _scopeLabels.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => scope = value);
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('admin-verify-bearer'),
+                  initialValue: bearer,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'ผู้รับภาระค่าใช้จ่าย',
+                  ),
+                  items: [
+                    for (final entry in _bearerLabels.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => bearer = value);
+                  },
+                ),
+                TextField(
+                  key: const ValueKey('admin-verify-quota'),
+                  controller: quota,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'โควตาต่อเดือน (ครั้ง)',
+                    helperText: 'เว้นว่าง = ไม่จำกัด',
+                  ),
+                ),
+                TextField(
+                  key: const ValueKey('admin-verify-timeout'),
+                  controller: timeout,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'หมดเวลาเรียกผู้ให้บริการ (นาที)',
+                    helperText: 'เว้นว่าง = ใช้ค่าของผู้ให้บริการ',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('ยกเลิก'),
+            ),
+            FilledButton(
+              key: const ValueKey('admin-verify-save'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('บันทึก'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+    final quotaText = quota.text.trim();
+    final timeoutText = timeout.text.trim();
+    final quotaValue = quotaText.isEmpty ? null : int.tryParse(quotaText);
+    final timeoutValue = timeoutText.isEmpty
+        ? null
+        : int.tryParse(timeoutText);
+    if ((quotaText.isNotEmpty && quotaValue == null) ||
+        (timeoutText.isNotEmpty && timeoutValue == null)) {
+      _toast('โควตาและเวลาหมดต้องเป็นตัวเลข');
+      return;
+    }
+    try {
+      await widget.repo.adminSetVenueVerifyPolicy(
+        adminId: adminId,
+        venueId: v.venueId,
+        verifyScope: scope,
+        costBearer: bearer,
+        monthlyQuota: quotaValue,
+        verifyTimeoutMinutes: timeoutValue,
+        clearQuota: quotaText.isEmpty,
+        clearTimeout: timeoutText.isEmpty,
+      );
+      _toast('บันทึกนโยบายตรวจสลิปของ ${v.name} แล้ว');
+      await _load();
+    } catch (e) {
+      _toast(_mapError(e));
+    }
+  }
+
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Text(
@@ -632,6 +892,9 @@ class _AdminCourtOwnerReviewPanelState
     if (raw.contains('INVALID_PROVIDER') ||
         raw.contains('INVALID_VERIFY_POLICY')) {
       return 'ค่าที่ตั้งไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง';
+    }
+    if (raw.contains('VENUE_NOT_FOUND')) {
+      return 'ไม่พบสถานที่นี้ กรุณารีเฟรช';
     }
     return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
   }

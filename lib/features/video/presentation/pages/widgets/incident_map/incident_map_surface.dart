@@ -74,7 +74,6 @@ class IncidentMapSurface extends StatefulWidget {
   final IncidentAgeBucket? highlightedBucket;
 
   final void Function(IncidentMapPointItem point)? onPointTap;
-  final void Function(IncidentMapClusterItem cluster)? onClusterTap;
   final void Function(IncidentMapPointItem point, IncidentMapPhoto photo)?
   onPhotoTap;
 
@@ -88,7 +87,6 @@ class IncidentMapSurface extends StatefulWidget {
     required this.items,
     this.highlightedBucket,
     this.onPointTap,
-    this.onClusterTap,
     this.onPhotoTap,
     this.onCameraSettled,
   });
@@ -266,6 +264,60 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
     );
   }
 
+  void _zoomToCluster(IncidentMapClusterItem cluster) {
+    final targetZoom = IncidentMapZoomPolicy.zoomAfterClusterTap(
+      _camera?.zoom ?? 5.5,
+    );
+    final bounds = cluster.gridBounds;
+    final currentBounds = _camera?.bounds;
+    final canFitBounds = currentBounds != null &&
+        bounds.north > bounds.south &&
+        bounds.east > bounds.west &&
+        bounds.north - bounds.south < currentBounds.north - currentBounds.south &&
+        bounds.east - bounds.west < currentBounds.east - currentBounds.west;
+
+    if (widget.availability.renderer == MapRendererKind.osm) {
+      final controller = _osmController;
+      if (controller == null) return;
+      if (canFitBounds) {
+        try {
+          controller.fitCamera(
+            fm.CameraFit.bounds(
+              bounds: fm.LatLngBounds(
+                ll.LatLng(bounds.south, bounds.west),
+                ll.LatLng(bounds.north, bounds.east),
+              ),
+              padding: const EdgeInsets.all(48),
+            ),
+          );
+          return;
+        } catch (_) {}
+      }
+      controller.move(ll.LatLng(cluster.lat, cluster.lng), targetZoom);
+      return;
+    }
+
+    final controller = _googleController;
+    if (controller == null) return;
+    final cameraUpdate = canFitBounds
+        ? CameraUpdate.newLatLngBounds(
+            LatLngBounds(
+              southwest: LatLng(bounds.south, bounds.west),
+              northeast: LatLng(bounds.north, bounds.east),
+            ),
+            48,
+          )
+        : CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: LatLng(cluster.lat, cluster.lng),
+              zoom: targetZoom,
+            ),
+          );
+    unawaited(
+      controller.animateCamera(cameraUpdate).catchError((_) {}),
+    );
+  }
+
   Future<BitmapDescriptor?> _googleIconFor(IncidentMapItem item) async {
     final String key;
     if (item is IncidentMapClusterItem) {
@@ -340,7 +392,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
             if (item is IncidentMapPointItem) {
               widget.onPointTap?.call(item);
             } else if (item is IncidentMapClusterItem) {
-              widget.onClusterTap?.call(item);
+              _zoomToCluster(item);
             }
           },
         ),
@@ -410,7 +462,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
                   final IncidentMapClusterItem cluster => _OsmClusterMarker(
                     cluster: cluster,
                     dimmed: _isDimmedCluster(cluster),
-                    onTap: () => widget.onClusterTap?.call(cluster),
+                    onTap: () => _zoomToCluster(cluster),
                   ),
                   final IncidentMapPointItem point => _OsmPointMarker(
                     point: point,

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/features/video/data/repositories/video_repository.dart';
 import 'package:sheserved/features/video/models/incident_map_models.dart';
 
 void main() {
@@ -162,6 +163,10 @@ void main() {
 
       final cluster = response.items.single as IncidentMapClusterItem;
       expect(cluster.count, 6);
+      expect(cluster.zoom, 5);
+      expect(cluster.gridBounds.south, 11.25);
+      expect(cluster.gridBounds.west, 95.625);
+      expect(cluster.gridBounds.contains(15.0, 101.0), isTrue);
       expect(cluster.byBucket[IncidentAgeBucket.orange], 1);
       expect(cluster.byBucket[IncidentAgeBucket.gold], 2);
       expect(cluster.byBucket[IncidentAgeBucket.gray], 3);
@@ -186,6 +191,64 @@ void main() {
         ],
       });
       expect(response.items, isEmpty);
+    });
+  });
+
+  group('IncidentMapZoomPolicy', () {
+    test('cluster taps zoom in and stop at the point threshold', () {
+      expect(IncidentMapZoomPolicy.zoomAfterClusterTap(5.5), 7.5);
+      expect(IncidentMapZoomPolicy.zoomAfterClusterTap(11), 12);
+      expect(IncidentMapZoomPolicy.zoomAfterClusterTap(12), 12);
+    });
+  });
+
+  group('gallery photo page resolution', () {
+    test('finds the photo and absolute index within a bounded page scan', () async {
+      final requestedPages = <int>[];
+      final result = await VideoRepository.resolveThaiMhungGalleryPhotoPages(
+        photoId: 'p4',
+        limit: 3,
+        loadPage: (page, limit) async {
+          requestedPages.add(page);
+          if (page == 1) {
+            return List.generate(
+              limit,
+              (index) => <String, dynamic>{'id': 'p${index + 1}'},
+            );
+          }
+          return [<String, dynamic>{'id': 'p4'}];
+        },
+      );
+
+      expect(result.found, isTrue);
+      expect(result.page, 2);
+      expect(result.index, 3);
+      expect(result.pagesFetched, 2);
+      expect(result.photos.last['id'], 'p4');
+      expect(requestedPages, [1, 2]);
+    });
+
+    test('stops at maxPages when the target cannot be resolved', () async {
+      final requestedPages = <int>[];
+      final result = await VideoRepository.resolveThaiMhungGalleryPhotoPages(
+        photoId: 'missing',
+        limit: 2,
+        maxPages: 2,
+        loadPage: (page, limit) async {
+          requestedPages.add(page);
+          return List.generate(
+            limit,
+            (index) => <String, dynamic>{'id': '$page-$index'},
+          );
+        },
+      );
+
+      expect(result.found, isFalse);
+      expect(result.index, isNull);
+      expect(result.pagesFetched, 2);
+      expect(result.photos, hasLength(4));
+      expect(result.hasMore, isTrue);
+      expect(requestedPages, [1, 2]);
     });
   });
 

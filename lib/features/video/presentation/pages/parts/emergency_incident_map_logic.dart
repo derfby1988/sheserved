@@ -23,6 +23,7 @@ class IncidentMapSession {
   /// ภาพที่รอเปิด overlay หลังสลับการ์ดเสร็จ (§22.3 ข้อ 5)
   String? pendingOverlayPhotoId;
   String? pendingOverlayPhotoUrl;
+  int photoHandoffGeneration = 0;
 
   /// สถานะ playback ก่อนเข้าโหมดแผนที่ — resume เฉพาะเมื่อก่อนหน้าเล่นอยู่
   bool wasPlayingBeforeMap = false;
@@ -198,6 +199,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     final session = _incidentMapSession;
     if (session == null) return;
     session.pinnedVideoId = point.id;
+    session.photoHandoffGeneration++;
     session.pendingOverlayPhotoId = null;
     session.pendingOverlayPhotoUrl = null;
     setState(() => _surfaceMode = EmergencySurfaceMode.live);
@@ -310,31 +312,47 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
   ) {
     final session = _incidentMapSession;
     if (session == null) return;
+    final handoffGeneration = ++session.photoHandoffGeneration;
     session.pinnedVideoId = point.id;
     session.pendingOverlayPhotoId = photo.id;
     session.pendingOverlayPhotoUrl = photo.url;
     setState(() => _surfaceMode = EmergencySurfaceMode.live);
     if (_currentVideoId == point.id) {
       // การ์ดเดียวกันอยู่แล้ว — เปิด overlay ได้ทันที
-      _consumePendingOverlayPhoto();
+      _consumePendingOverlayPhoto(handoffGeneration);
     } else {
       _switchVideo(point.id, refreshTrending: false);
       // overlay ต้องตั้งหลัง frame ที่ LiveViewWidget ได้ videoId ใหม่แล้ว
       // (didUpdateWidget ของ overlay จะเคลียร์ overlay เมื่อ videoId เปลี่ยน)
-      _consumePendingOverlayPhoto();
+      _consumePendingOverlayPhoto(handoffGeneration);
     }
   }
 
   /// เรียกหลังการ์ดโหลด — ส่งภาพที่แตะเข้า overlay ของ LiveViewWidget
-  void _consumePendingOverlayPhoto() {
+  void _consumePendingOverlayPhoto(int handoffGeneration) {
     final session = _incidentMapSession;
+    final photoId = session?.pendingOverlayPhotoId;
     final url = session?.pendingOverlayPhotoUrl;
-    if (session == null || url == null) return;
+    if (session == null ||
+        photoId == null ||
+        url == null ||
+        handoffGeneration != session.photoHandoffGeneration) {
+      return;
+    }
     session.pendingOverlayPhotoId = null;
     session.pendingOverlayPhotoUrl = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _liveViewKey.currentState?.showOverlayPhoto(photoUrl: url);
+      if (!mounted ||
+          !identical(_incidentMapSession, session) ||
+          _surfaceMode != EmergencySurfaceMode.live ||
+          handoffGeneration != session.photoHandoffGeneration ||
+          _currentVideoId != session.pinnedVideoId) {
+        return;
+      }
+      _liveViewKey.currentState?.showOverlayPhoto(
+        photoId: photoId,
+        photoUrl: url,
+      );
     });
   }
 
@@ -377,7 +395,6 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
               items: _incidentMapData?.items ?? const [],
               highlightedBucket: _incidentMapHighlightedBucket,
               onPointTap: _selectIncidentFromMap,
-              onClusterTap: _zoomToCluster,
               onPhotoTap: _openIncidentPhotoFromMap,
               onCameraSettled: _onIncidentMapCameraSettled,
             ),
@@ -486,11 +503,4 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     );
   }
 
-  /// cluster tap = zoom เข้า bounds ของ cluster (§22.3.4) — ไม่เปิดการ์ด
-  void _zoomToCluster(IncidentMapClusterItem cluster) {
-    // Renderer-specific camera control lives behind the surface; v1 ใช้
-    // onCameraSettled loop: ขยายด้วยการขอ bounds ใหม่ผ่าน repository แทน
-    // (cluster tap จะ zoom-in โดย renderer เองในขั้นถัดไป) — คง behavior
-    // "ไม่เปิดการ์ด" ไว้ก่อน
-  }
 }

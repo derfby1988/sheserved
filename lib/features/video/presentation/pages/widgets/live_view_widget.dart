@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:sheserved/features/donation/models/donation_models.dart';
 import '../../../../../services/service_locator.dart';
@@ -124,6 +125,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
   // สำหรับระบบ Overlay ภาพจากแกลลอรี่ลงบนวิดีโอ
   String? _selectedOverlayPhotoUrl;
   int? _selectedOverlayPhotoIndex;
+  int _overlayPhotoGeneration = 0;
   final GlobalKey<ThaiMhungRulerGalleryWidgetState> _galleryKey =
       GlobalKey<ThaiMhungRulerGalleryWidgetState>();
 
@@ -149,6 +151,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
   void didUpdateWidget(LiveViewWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentVideoId != widget.currentVideoId) {
+      _overlayPhotoGeneration++;
       if (_selectedOverlayPhotoUrl != null) {
         setState(() {
           _selectedOverlayPhotoUrl = null;
@@ -173,8 +176,10 @@ class LiveViewWidgetState extends State<LiveViewWidget>
   /// ✅ Phase 22 (§22.3 ข้อ 5): เปิด overlay ภาพบนการ์ดจากแผนที่เกิดเหตุ —
   /// การ์ดต้อง **หยุด** อยู่เบื้องหลังจริง (ปัจจุบัน overlay เดิมไม่ pause
   /// ตอนเปิด) และปิด overlay แล้วจึงเล่นต่อตาม flow เดิม
-  void showOverlayPhoto({required String photoUrl}) {
+  void showOverlayPhoto({required String photoId, required String photoUrl}) {
     if (!mounted) return;
+    final generation = ++_overlayPhotoGeneration;
+    final videoId = widget.currentVideoId;
     try {
       widget.chewieController?.videoPlayerController.pause();
     } catch (_) {}
@@ -185,6 +190,48 @@ class LiveViewWidgetState extends State<LiveViewWidget>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onOverlayChanged?.call(true);
     });
+    unawaited(
+      _resolveMapPhotoOverlay(
+        photoId: photoId,
+        videoId: videoId,
+        generation: generation,
+      ),
+    );
+  }
+
+  Future<void> _resolveMapPhotoOverlay({
+    required String photoId,
+    required String? videoId,
+    required int generation,
+  }) async {
+    final focus = await _galleryKey.currentState?.focusPhotoById(photoId);
+    if (!mounted ||
+        generation != _overlayPhotoGeneration ||
+        widget.currentVideoId != videoId ||
+        _selectedOverlayPhotoUrl == null) {
+      return;
+    }
+    if (focus == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('แสดงภาพตัวอย่างที่แตะ แต่ไม่สามารถเลื่อนดูแกลเลอรีได้'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _selectedOverlayPhotoUrl = focus.photoUrl;
+      _selectedOverlayPhotoIndex = focus.index;
+    });
+    if (!focus.exact) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ไม่พบตำแหน่งภาพใน 5 หน้า — แสดงภาพไทยมุงล่าสุดแทน'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   /// pause ตอนเปิด overlay จาก Ruler gallery เองด้วย (fix เดียวกัน)
@@ -533,6 +580,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                     videoHeight, // ความสูงเท่ากับ Video Player พอดี
                                 canViewUnblurred: widget.canViewUnblurred,
                                 onPhotoTap: (index, photoUrl) {
+                                  _overlayPhotoGeneration++;
                                   _pauseVideoForOverlay(); // ✅ §22.2: การ์ดหยุดขณะ overlay เปิด
                                   setState(() {
                                     _selectedOverlayPhotoUrl = photoUrl;
@@ -543,6 +591,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                 onPhotoChanged: (index, photoUrl) {
                                   // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
                                   if (_selectedOverlayPhotoUrl != null) {
+                                    _overlayPhotoGeneration++;
                                     setState(() {
                                       _selectedOverlayPhotoUrl = photoUrl;
                                       _selectedOverlayPhotoIndex = index;

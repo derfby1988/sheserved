@@ -142,14 +142,32 @@ sealed class IncidentMapItem {
 
 class IncidentMapClusterItem extends IncidentMapItem {
   final int count;
+  final int zoom;
   final Map<IncidentAgeBucket, int> byBucket;
 
   const IncidentMapClusterItem({
     required super.lat,
     required super.lng,
     required this.count,
+    required this.zoom,
     required this.byBucket,
   });
+
+  IncidentMapBounds get gridBounds {
+    const maxMercatorLatitude = 85.05112878;
+    final safeZoom = zoom.clamp(0, 22).toInt();
+    final cellSize = 180 / (1 << safeZoom);
+    final south = (lat / cellSize).floor() * cellSize;
+    final west = (lng / cellSize).floor() * cellSize;
+    return IncidentMapBounds(
+      south: south.clamp(-maxMercatorLatitude, maxMercatorLatitude).toDouble(),
+      west: west.clamp(-180.0, 180.0).toDouble(),
+      north: (south + cellSize)
+          .clamp(-maxMercatorLatitude, maxMercatorLatitude)
+          .toDouble(),
+      east: (west + cellSize).clamp(-180.0, 180.0).toDouble(),
+    );
+  }
 }
 
 class IncidentMapPointItem extends IncidentMapItem {
@@ -233,6 +251,16 @@ class IncidentMapExcluded {
 
 enum IncidentMapMode { points, clusters }
 
+class IncidentMapZoomPolicy {
+  static const double pointsThreshold = 12;
+  static const double clusterTapStep = 2;
+
+  static double zoomAfterClusterTap(double currentZoom) {
+    final safeZoom = currentZoom.isFinite ? currentZoom : 5.5;
+    return (safeZoom + clusterTapStep).clamp(0.0, pointsThreshold).toDouble();
+  }
+}
+
 class IncidentMapResponse {
   final IncidentMapMode mode;
   final int zoom;
@@ -253,12 +281,16 @@ class IncidentMapResponse {
   });
 
   factory IncidentMapResponse.fromJson(Map<String, dynamic> json) {
+    final zoom = (json['zoom'] is num) ? (json['zoom'] as num).toInt() : 0;
     final items = <IncidentMapItem>[];
     final rawItems = json['items'];
     if (rawItems is List) {
       for (final raw in rawItems) {
         if (raw is! Map) continue;
-        final item = _parseItem(Map<String, dynamic>.from(raw));
+        final item = _parseItem(
+          Map<String, dynamic>.from(raw),
+          responseZoom: zoom,
+        );
         if (item != null) items.add(item);
       }
     }
@@ -266,7 +298,7 @@ class IncidentMapResponse {
       mode: json['mode'] == 'clusters'
           ? IncidentMapMode.clusters
           : IncidentMapMode.points,
-      zoom: (json['zoom'] is num) ? (json['zoom'] as num).toInt() : 0,
+      zoom: zoom,
       truncated: json['truncated'] == true,
       legend: IncidentMapLegend.fromJson(
         json['legend'] is Map
@@ -285,10 +317,22 @@ class IncidentMapResponse {
 
   /// Rows that cannot be placed are dropped by the server — never painted at
   /// (0,0) or with a wrong bucket (§22.1 note).
-  static IncidentMapItem? _parseItem(Map<String, dynamic> json) {
+  static IncidentMapItem? _parseItem(
+    Map<String, dynamic> json, {
+    required int responseZoom,
+  }) {
     final lat = _toDouble(json['lat']);
     final lng = _toDouble(json['lng']);
-    if (lat == null || lng == null) return null;
+    if (lat == null ||
+        lng == null ||
+        !lat.isFinite ||
+        !lng.isFinite ||
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180) {
+      return null;
+    }
     if (json['kind'] == 'cluster') {
       final byBucket = <IncidentAgeBucket, int>{};
       final raw = json['byBucket'];
@@ -304,6 +348,7 @@ class IncidentMapResponse {
         lat: lat,
         lng: lng,
         count: (json['count'] is num) ? (json['count'] as num).toInt() : 0,
+        zoom: responseZoom,
         byBucket: byBucket,
       );
     }

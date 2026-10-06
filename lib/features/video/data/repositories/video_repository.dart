@@ -34,6 +34,15 @@ class RescueStatusUpdateResult {
   bool get isNotFound => errorCode == 'NOT_FOUND';
 }
 
+typedef ThaiMhungGalleryPhotoResolution = ({
+  List<Map<String, dynamic>> photos,
+  int? index,
+  int page,
+  int pagesFetched,
+  bool found,
+  bool hasMore,
+});
+
 /// Repository สำหรับจัดการข้อมูลวิดีโอ
 class VideoRepository {
   final SupabaseClient _client;
@@ -169,6 +178,7 @@ class VideoRepository {
               .select()
               .eq('video_id', videoId)
               .order('created_at', ascending: false)
+              .order('id', ascending: false)
               .range(offset, offset + limit - 1);
 
           final results1 = List<Map<String, dynamic>>.from(response1 as List);
@@ -198,6 +208,69 @@ class VideoRepository {
       return [];
     }
   }
+
+  static Future<ThaiMhungGalleryPhotoResolution> resolveThaiMhungGalleryPhotoPages({
+    required String photoId,
+    required Future<List<Map<String, dynamic>>> Function(int page, int limit)
+    loadPage,
+    int limit = 20,
+    int maxPages = 5,
+  }) async {
+    final photos = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+    if (photoId.isEmpty || limit < 1 || maxPages < 1) {
+      return (photos: photos, index: null, page: 0, pagesFetched: 0, found: false, hasMore: false);
+    }
+
+    var pagesFetched = 0;
+    var lastPageCount = 0;
+    for (var page = 1; page <= maxPages; page++) {
+      final pagePhotos = await loadPage(page, limit);
+      pagesFetched = page;
+      lastPageCount = pagePhotos.length;
+      for (final photo in pagePhotos) {
+        final id = photo['id']?.toString() ?? '';
+        if (id.isEmpty || !seenIds.add(id)) continue;
+        photos.add(photo);
+        if (id == photoId) {
+          return (
+            photos: photos,
+            index: photos.length - 1,
+            page: page,
+            pagesFetched: pagesFetched,
+            found: true,
+            hasMore: pagePhotos.length == limit,
+          );
+        }
+      }
+      if (pagePhotos.length < limit) break;
+    }
+
+    return (
+      photos: photos,
+      index: null,
+      page: pagesFetched,
+      pagesFetched: pagesFetched,
+      found: false,
+      hasMore: lastPageCount == limit,
+    );
+  }
+
+  Future<ThaiMhungGalleryPhotoResolution> resolveThaiMhungGalleryPhoto(
+    String videoId,
+    String photoId, {
+    int limit = 20,
+    int maxPages = 5,
+  }) => resolveThaiMhungGalleryPhotoPages(
+    photoId: photoId,
+    limit: limit,
+    maxPages: maxPages,
+    loadPage: (page, pageLimit) => getThaiMhungGalleryPhotos(
+      videoId,
+      page: page,
+      limit: pageLimit,
+    ),
+  );
 
   Future<List<Video>> getEmergencyVideos({
     int page = 1,

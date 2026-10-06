@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../../services/service_locator.dart';
 import '../../../../../services/websocket_service.dart';
+import '../../../data/repositories/video_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../../config/app_config.dart';
 class ThaiMhungRulerPhoto {
@@ -61,6 +62,18 @@ class ThaiMhungRulerGalleryWidget extends StatefulWidget {
   State<ThaiMhungRulerGalleryWidget> createState() => ThaiMhungRulerGalleryWidgetState();
 }
 
+class ThaiMhungPhotoFocusResult {
+  final int index;
+  final String photoUrl;
+  final bool exact;
+
+  const ThaiMhungPhotoFocusResult({
+    required this.index,
+    required this.photoUrl,
+    required this.exact,
+  });
+}
+
 class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget> {
   final List<ThaiMhungRulerPhoto> _photos = [];
   bool _isLoading = true;
@@ -75,11 +88,14 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
   final FixedExtentScrollController _scrollController = FixedExtentScrollController();
   
   final Set<String> _newItemIds = {};
+  Future<void> _initialLoad = Future<void>.value();
+  int _galleryGeneration = 0;
+  int _focusGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchPhotos();
+    _initialLoad = _fetchPhotos();
     _subscribeToNewPhotos();
     _subscribeToWebSocketPhotos();
     _subscribeToBlurComplete();
@@ -102,10 +118,17 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
 
   Future<void> _pollForNewPhotos() async {
     if (!mounted) return;
+    final videoId = widget.videoId;
+    final generation = _galleryGeneration;
     try {
       final repo = ServiceLocator.instance.videoRepository;
       // For polling new photos, we only fetch the first page
-      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: 1, limit: 20);
+      final results = await repo.getThaiMhungGalleryPhotos(videoId, page: 1, limit: 20);
+      if (!mounted ||
+          videoId != widget.videoId ||
+          generation != _galleryGeneration) {
+        return;
+      }
       final newPhotos = results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList();
       
       if (newPhotos.isNotEmpty && mounted) {
@@ -234,20 +257,28 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
   }
 
   Future<void> _fetchPhotos() async {
+    final generation = ++_galleryGeneration;
+    final videoId = widget.videoId;
     try {
       _currentPage = 1;
       _hasMore = true;
       final repo = ServiceLocator.instance.videoRepository;
-      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: _currentPage, limit: 20);
+      final results = await repo.getThaiMhungGalleryPhotos(
+        videoId,
+        page: _currentPage,
+        limit: 20,
+      );
 
-      if (mounted) {
+      if (mounted &&
+          generation == _galleryGeneration &&
+          videoId == widget.videoId) {
         setState(() {
           _photos.clear();
           _photos.addAll(results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList());
           _isLoading = false;
           if (results.length < 20) _hasMore = false;
         });
-        
+
         if (_photos.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_scrollController.hasClients) {
@@ -257,27 +288,42 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
         }
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && generation == _galleryGeneration) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _fetchMorePhotos() async {
     if (!_hasMore || _isLoadingMore) return;
+    final videoId = widget.videoId;
+    final generation = _galleryGeneration;
+    final page = _currentPage + 1;
     if (mounted) setState(() => _isLoadingMore = true);
     try {
-      _currentPage++;
       final repo = ServiceLocator.instance.videoRepository;
-      final results = await repo.getThaiMhungGalleryPhotos(widget.videoId, page: _currentPage, limit: 20);
+      final results = await repo.getThaiMhungGalleryPhotos(
+        videoId,
+        page: page,
+        limit: 20,
+      );
 
-      if (mounted) {
+      if (mounted &&
+          generation == _galleryGeneration &&
+          videoId == widget.videoId) {
         setState(() {
+          _currentPage = page;
           _photos.addAll(results.map((e) => ThaiMhungRulerPhoto.fromJson(e)).toList());
           _isLoadingMore = false;
           if (results.length < 20) _hasMore = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingMore = false);
+      if (mounted &&
+          generation == _galleryGeneration &&
+          videoId == widget.videoId) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -334,12 +380,19 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
   void didUpdateWidget(ThaiMhungRulerGalleryWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
+      _focusGeneration++;
+      _photos.clear();
+      _isLoading = true;
+      _currentIndex = 0;
+      _currentPage = 1;
+      _hasMore = true;
+      _isLoadingMore = false;
       if (_subscription != null) {
         Supabase.instance.client.removeChannel(_subscription!);
       }
       _wsPhotoSub?.cancel();
       _pollTimer?.cancel();
-      _fetchPhotos();
+      _initialLoad = _fetchPhotos();
       _subscribeToNewPhotos();
       _subscribeToWebSocketPhotos();
       _startPolling();
@@ -356,6 +409,144 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
     _pollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<ThaiMhungPhotoFocusResult?> focusPhotoById(String photoId) async {
+    if (!mounted || photoId.isEmpty) return null;
+    final videoId = widget.videoId;
+    final focusGeneration = ++_focusGeneration;
+    await _initialLoad;
+    if (!mounted ||
+        widget.videoId != videoId ||
+        focusGeneration != _focusGeneration) {
+      return null;
+    }
+
+    final currentIndex = _photos.indexWhere(
+      (photo) =>
+          photo.id == photoId &&
+          photo.blurStatus == 'completed' &&
+          photo.photoUrl.isNotEmpty,
+    );
+    if (currentIndex >= 0) {
+      _scrollToPhotoIndex(currentIndex);
+      final photo = _photos[currentIndex];
+      return ThaiMhungPhotoFocusResult(
+        index: currentIndex,
+        photoUrl: photo.photoUrl,
+        exact: true,
+      );
+    }
+
+    final galleryGeneration = _galleryGeneration;
+    late final ThaiMhungGalleryPhotoResolution resolution;
+    try {
+      resolution = await ServiceLocator.instance.videoRepository
+          .resolveThaiMhungGalleryPhoto(
+            videoId,
+            photoId,
+            limit: 20,
+            maxPages: 5,
+          );
+    } catch (_) {
+      if (!mounted ||
+          widget.videoId != videoId ||
+          focusGeneration != _focusGeneration ||
+          galleryGeneration != _galleryGeneration) {
+        return null;
+      }
+      return _focusLatestCompletedPhoto();
+    }
+
+    if (!mounted ||
+        widget.videoId != videoId ||
+        focusGeneration != _focusGeneration ||
+        galleryGeneration != _galleryGeneration) {
+      return null;
+    }
+
+    final resolvedPhotos = resolution.photos
+        .map((photo) => ThaiMhungRulerPhoto.fromJson(photo))
+        .where((photo) => photo.id.isNotEmpty)
+        .toList();
+    if (resolvedPhotos.isEmpty) return _focusLatestCompletedPhoto();
+
+    final resolvedIds = resolvedPhotos.map((photo) => photo.id).toSet();
+    final localBlurring = _photos
+        .where(
+          (photo) =>
+              photo.blurStatus == 'blurring' &&
+              !resolvedIds.contains(photo.id),
+        )
+        .toList();
+    final loadedPhotos = [...localBlurring, ...resolvedPhotos];
+    final resolvedIndex = resolution.index == null
+        ? null
+        : localBlurring.length + resolution.index!;
+    final exact = resolution.found &&
+        resolvedIndex != null &&
+        resolvedIndex >= 0 &&
+        resolvedIndex < loadedPhotos.length &&
+        loadedPhotos[resolvedIndex].id == photoId &&
+        loadedPhotos[resolvedIndex].blurStatus == 'completed' &&
+        loadedPhotos[resolvedIndex].photoUrl.isNotEmpty;
+    final selectedIndex = exact
+        ? resolvedIndex
+        : loadedPhotos.indexWhere(
+            (photo) =>
+                photo.blurStatus == 'completed' && photo.photoUrl.isNotEmpty,
+          );
+
+    _galleryGeneration++;
+    setState(() {
+      _photos
+        ..clear()
+        ..addAll(loadedPhotos);
+      _isLoading = false;
+      _currentPage = resolution.pagesFetched;
+      _hasMore = resolution.hasMore;
+      _isLoadingMore = false;
+      _currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    });
+    if (selectedIndex < 0) return null;
+    _scrollToPhotoIndex(selectedIndex);
+    final photo = loadedPhotos[selectedIndex];
+    return ThaiMhungPhotoFocusResult(
+      index: selectedIndex,
+      photoUrl: photo.photoUrl,
+      exact: exact,
+    );
+  }
+
+  ThaiMhungPhotoFocusResult? _focusLatestCompletedPhoto() {
+    final index = _photos.indexWhere(
+      (photo) =>
+          photo.blurStatus == 'completed' && photo.photoUrl.isNotEmpty,
+    );
+    if (index < 0) return null;
+    _scrollToPhotoIndex(index);
+    final photo = _photos[index];
+    return ThaiMhungPhotoFocusResult(
+      index: index,
+      photoUrl: photo.photoUrl,
+      exact: false,
+    );
+  }
+
+  void _scrollToPhotoIndex(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          index < 0 ||
+          index >= _photos.length) {
+        return;
+      }
+      _scrollController.animateToItem(
+        index,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   void animateToIndex(int index) {

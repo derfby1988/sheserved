@@ -1167,7 +1167,7 @@ module.exports = (pool, supabase = null) => {
                     `SELECT id, photo_url, created_at, user_id, blur_status, latitude, longitude
                      FROM thai_mhung_photos
                      WHERE video_id = $1
-                     ORDER BY created_at DESC
+                     ORDER BY created_at DESC, id DESC
                      LIMIT $2 OFFSET $3`,
                     [id, limit, offset]
                 );

@@ -1817,3 +1817,66 @@ class SlipVerificationProvider {
         updatedAt: DateTime.tryParse(j['updatedAt']?.toString() ?? ''),
       );
 }
+
+/// One venue row of the admin-only slip-verification cost policy (Phase
+/// 21.7.21.6): the scope/cost settings the admin owns plus the signals that
+/// decide whether `auto_verify` is usable for this venue.
+class AdminVenueVerifyPolicy {
+  final String venueId;
+  final String name;
+  final String status;
+
+  /// 'disabled' | 'whitelist' | 'all' — `disabled` hides `auto_verify` from
+  /// the owner and makes the server reject it.
+  final String verifyScope;
+
+  /// 'platform' | 'owner' — who carries the provider cost.
+  final String costBearer;
+  final int? monthlyQuota;
+  final int? verifyTimeoutMinutes;
+  final bool hasEvidencePolicy;
+  final int enabledProviderCount;
+  final int usedThisMonth;
+  final double costThisMonth;
+  final DateTime? lastUsageAt;
+
+  const AdminVenueVerifyPolicy({
+    required this.venueId,
+    required this.name,
+    this.status = '',
+    this.verifyScope = 'disabled',
+    this.costBearer = 'platform',
+    this.monthlyQuota,
+    this.verifyTimeoutMinutes,
+    this.hasEvidencePolicy = false,
+    this.enabledProviderCount = 0,
+    this.usedThisMonth = 0,
+    this.costThisMonth = 0,
+    this.lastUsageAt,
+  });
+
+  bool get isScopeEnabled => verifyScope != 'disabled';
+
+  /// Scope is on and a provider is enabled — otherwise slips fall through to
+  /// the owner queue instead of being verified automatically.
+  bool get isVerifyReady => isScopeEnabled && enabledProviderCount > 0;
+
+  bool get isQuotaExhausted =>
+      monthlyQuota != null && usedThisMonth >= monthlyQuota!;
+
+  factory AdminVenueVerifyPolicy.fromJson(Map<String, dynamic> j) =>
+      AdminVenueVerifyPolicy(
+        venueId: j['venueId']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        status: j['status']?.toString() ?? '',
+        verifyScope: j['verifyScope']?.toString() ?? 'disabled',
+        costBearer: j['costBearer']?.toString() ?? 'platform',
+        monthlyQuota: (j['monthlyQuota'] as num?)?.toInt(),
+        verifyTimeoutMinutes: (j['verifyTimeoutMinutes'] as num?)?.toInt(),
+        hasEvidencePolicy: j['hasEvidencePolicy'] == true,
+        enabledProviderCount: (j['enabledProviderCount'] as num?)?.toInt() ?? 0,
+        usedThisMonth: (j['usedThisMonth'] as num?)?.toInt() ?? 0,
+        costThisMonth: (j['costThisMonth'] as num?)?.toDouble() ?? 0,
+        lastUsageAt: DateTime.tryParse(j['lastUsageAt']?.toString() ?? ''),
+      );
+}

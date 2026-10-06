@@ -384,3 +384,25 @@ test('route: fail-closed 500 when both paths fail; 400 on bad params', async () 
 
   await server.close();
 });
+
+test('gallery route: pagination sorts equal timestamps by photo id', async () => {
+  let galleryQuery = '';
+  const { app } = setupRouter({
+    poolBehavior: (text) => {
+      galleryQuery = String(text);
+      return { rows: [] };
+    },
+  });
+
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const port = server.address().port;
+  const res = await fetch(
+    `http://127.0.0.1:${port}/api/videos/${UUID_A}/gallery?page=1&limit=20`,
+  );
+  await server.close();
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), []);
+  assert.match(galleryQuery, /ORDER BY created_at DESC, id DESC/i);
+});

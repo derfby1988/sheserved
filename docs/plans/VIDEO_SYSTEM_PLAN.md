@@ -394,7 +394,7 @@ flutter run \
 | WebSocket `Authentication failed: invalid or expired token` ซ้ำหลัง `token refresh result=refreshed` | `socket_io_client` อาจ reuse `auth` snapshot แรก แม้สร้างใหม่ด้วย token ใหม่; ใช้ `enableForceNew`, เก็บ token ที่ผูกกับ socket, จำกัด recovery และตรวจ reason code ตาม `docs/guides/websocket_realtime_auth_recovery_guide.md` — ห้ามปิด JWT verification หรือ fallback ไป legacy identity |
 | Social login 401 "Invalid provider token" | `serverClientId` (dart-define) ไม่ตรง `GOOGLE_CLIENT_ID` ใน `.env` — ต้องเป็น **Web client** ตัวเดียวกัน ไม่ใช่ Android/iOS client |
 | ไม่ได้ `idToken` จาก Google เลย | `serverClientId` ว่าง → ลืม `--dart-define=GOOGLE_SERVER_CLIENT_ID` |
-| Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) |
+| Google picker ไม่เด้ง (Android) | Android OAuth client ใน GCP ยังไม่ผูก package+SHA-1 ของ keystore ปัจจุบัน (เครื่องใหม่ = SHA-1 ใหม่ → ต้องเพิ่ม Android client/แก้ SHA-1) — ⚠️ เช็ค SHA-1 จาก APK จริงด้วย `apksigner` ไม่ใช่ `~/.android/debug.keystore` อย่างเดียว: build จาก Devin ใช้ `~/.devin_config/.android/debug.keystore` คนละ SHA-1 — ดู "🔐 Runbook: Google Sign-In `ApiException: 10`" ด้านล่าง |
 | Login ขึ้น "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" ทั้งที่รหัสถูก (incident 2026-10-02) | ลืม `--dart-define=USE_BACKEND_AUTH=true` → แอปใช้ legacy path เทียบ `sha256(pw)` กับ `users.password_hash` ตรงๆ แต่ account ถูก migrate เป็น Argon2id/bcrypt แล้ว (register ผ่าน backend หรือ lazy rehash ตอน backend login) → match ไม่ได้ถาวร — เช็คด้วย `SELECT username, password_algo FROM users WHERE username='...'` ถ้า algo ≠ `sha256` ต้อง login ผ่าน backend เท่านั้น |
 | อัปโหลดวิดีโอสำเร็จแต่กล่องยอดนิยมว่างบนเครื่องรอง | upload ใช้ `backendApiUrl` ส่วน Trending list เคยใช้ `localApiUrl` ที่แยกประกอบจาก `mainMachineIp`; เมื่อ override `BACKEND_API_URL` เป็น IP ใหม่แต่ `localApiUrl` ยังเป็น IP เก่า การอ่านจะไปผิดเครื่องและ fallback Supabase อาจยังไม่มีแถวที่บันทึกใน Local PostgreSQL. แก้โดยให้ `backendApiUrl` เป็นค่าเดียว และให้ `localApiUrl`/`websocketUrl` เป็น alias; ทดสอบ list endpoint จากเครื่องรองด้วย IP/port เดียวกัน |
 > **แนวทางลดปัญหาระยะยาว:** ตั้ง **DHCP reservation** บน router ให้เครื่องหลักได้ IP เดิมทุกครั้ง — จะไม่ต้องแก้ `mainMachineIp`/`LOCAL_API_URL` เลยเมื่ออยู่เครือข่ายเดิม; ต่างเครือข่ายจริง ๆ ค่อยทำ checklist นี้
@@ -415,6 +415,41 @@ flutter run \
 > **ไม่ต้องแก้**: DB records เก่า — `_normalizeLocalUrl()` ใน Flutter จัดการแก้ URL ที่ดึงมาจาก DB ให้ชี้ไป IP ปัจจุบันได้
 > 
 > **แต่**: `_normalizeLocalUrl()` เป็น **fallback ชั่วคราว** สำหรับข้อมูลเก่าเท่านั้น — ถ้า backend ยัง generate URL ใหม่ด้วย IP เก่า (เพราะ `LOCAL_API_URL` ผิด) ข้อมูลใหม่ที่ upload จะมี URL ผิดถาวร
+
+---
+
+### 🔐 Runbook: Google Sign-In `ApiException: 10` บนเครื่องรอง/เครื่องใหม่ (จากอุบัติการณ์จริง 2026-10-06)
+
+**อาการ**: กดปุ่ม Google sign-in → `SignInHubActivity` เปิดแป๊บเดียวแล้วปิด → log ขึ้น `PlatformException(sign_in_failed, com.google.android.gms.common.api.ApiException: 10: , null, null)` — คือ SHA-1 ของใบเซ็นที่ sign APK ยังไม่ได้ลงทะเบียนเป็น Android OAuth client (package `com.sheserved.app`) ใน GCP
+
+**⚠️ กับดักที่เจอจริง — มี debug keystore 2 ตัวบนเครื่องเดียว**: เครื่องรองมี keystore ทั้ง `~/.android/debug.keystore` (terminal ปกติใช้) และ `~/.devin_config/.android/debug.keystore` (process ที่รันใน environment ของ Devin ใช้ HOME แยก) — SHA-1 ต่างกัน; ลงทะเบียนตัว `~/.android` ไปแล้วแต่ APK ที่ build จาก Devin ถูก sign ด้วย keystore ของ Devin → error เหมือนเดิมทั้งที่ "เพิ่ม SHA-1 แล้ว"
+
+**Diagnose — เช็ค SHA-1 ของ APK ที่ sign จริงเสมอ (อย่าเชื่อ keystore เดียว)**:
+
+```bash
+# SHA-1 ของ APK ที่ build ล่าสุด (source of truth)
+~/Library/Android/sdk/build-tools/*/apksigner verify --print-certs \
+  build/app/outputs/flutter-apk/app-debug.apk | grep 'SHA-1'
+
+# หา debug.keystore ทั้งหมดบนเครื่อง (อย่าลืม HOME ย่อยของ tool อื่น)
+find ~ -maxdepth 4 -name 'debug.keystore'
+
+# SHA-1 ของ keystore แต่ละตัว
+keytool -list -v -keystore <path> -alias androiddebugkey \
+  -storepass android -keypass android | grep SHA1
+```
+
+**Fix — เลือกอย่างใดอย่างหนึ่ง** (ทั้งคู่เป็น additive ไม่กระทบเครื่องอื่น):
+
+1. **เพิ่ม Android OAuth client ใน GCP** (แนะนำเมื่อเข้าถึงเครื่องหลักไม่ได้/ใช้หลาย environment): GCP Console → project ที่มี OAuth clients ของแอป → APIs & Services → Credentials → Create Credentials → OAuth client ID → **Android** → package `com.sheserved.app` + SHA-1 ที่ได้จาก `apksigner` → รอ propagate 5-10 นาที → กด sign-in ใหม่ได้เลยไม่ต้อง rebuild. GCP รับ Android client หลายตัวภายใต้ package เดียวกัน — **ลงทะเบียนทุก keystore ที่ build ได้** (`~/.android` + `~/.devin_config/.android`) จะครอบคลุมทั้ง terminal ปกติและ Devin
+2. **คัดลอก keystore ที่ลงทะเบียนแล้วมาใช้**: เอา `~/.android/debug.keystore` จากเครื่องหลักมาทับ (AirDrop ได้โดยไม่ต้องรู้ IP — หรือ `scp user@<ip>:~/.android/debug.keystore ~/.android/debug.keystore`) แล้ว `flutter clean && flutter run` — ถ้า build จาก Devin ให้ทับที่ `~/.devin_config/.android/debug.keystore` ด้วย
+
+**หมายเหตุเพิ่มเติมจาก incident เดียวกัน**:
+
+- Consent screen อยู่โหมด Testing → บัญชี Google ที่ sign-in ต้องอยู่ใน Test users (`APIs & Services → OAuth consent screen`) ไม่งั้นจะโดนบล็อกระหว่าง flow
+- Login username/password บนเครื่องรองขึ้น "รหัสผ่านไม่ถูกต้อง" ทั้งที่ถูก = บัญชีถูก migrate เป็น Argon2id/bcrypt แล้ว legacy path (`USE_BACKEND_AUTH=false`) เทียบ `sha256` ไม่ได้ → ใช้ Google sign-in หรือเปิด backend stack ที่เครื่องหลักแล้วส่ง `USE_BACKEND_AUTH=true` + `BACKEND_API_URL` (ดู checklist ด้านบน)
+- **เครื่องรอง + Google login เท่านั้นไม่ต้องเปิด backend**: `USE_BACKEND_AUTH=false` (default) → `_handleSocialLogin` หา/สร้าง user ใน Supabase `users` ด้วย `social_provider`+`social_id` ตรงๆ — แต่ถ้า `social_id` ยังไม่มีใน Supabase (ยังไม่ sync) จะสร้าง account ใหม่เงียบๆ
+- คำสั่ง run ขั้นต่ำบนเครื่องรอง: `flutter run -d <device-id>` — ไม่ต้องส่ง dart-define ใดๆ สำหรับ legacy Google login
 
 ---
 
@@ -6018,7 +6053,7 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 
 ## 22. Phase — แผนที่เกิดเหตุ (Category-specific Incident Overview Map — Implemented v1)
 
-**สถานะ:** Implemented v1 (2026-10-06) — backend contract + Local/Supabase + renderer adapter (Google/OSM) + page mode + sheet entry + collision photo layout + realtime pill; รอ device verification/canary ตาม §22.8 ที่ยังไม่ได้ติ๊ก
+**สถานะ:** Implemented v1 (2026-10-06, ปรับ 2026-10-12) — backend contract + Local/Supabase + renderer adapter (Google/OSM) + page mode + sheet entry + collision photo layout + realtime pill + cluster tap zoom (fit grid cell, fallback centroid +2 จนถึง point threshold 12) + gallery photo-ID resolution (deterministic `created_at DESC, id DESC`, scan ≤5 หน้า, fallback ภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้); รอ device verification/canary ตาม §22.8 ที่ยังไม่ได้ติ๊ก
 
 **เป้าหมาย:** เปิดแผนที่ภาพรวมทั่วประเทศไทยสำหรับเหตุการณ์หนึ่งหมวดจาก `EmergencyLivePage`; ผู้ใช้เลือกเหตุจากหมุดหรือภาพใน gallery แล้วสลับกลับมาดูการ์ด/ภาพของเหตุเดียวกันได้ โดยไม่ทำให้ตัวกรองหลายหมวดของ Phase 20 เปลี่ยนค่า
 
@@ -6053,8 +6088,8 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 - ต้องรักษา constraints จาก Phase 20 (mission/reporter suspension และ filter state) และ Phase 21.3 (gallery polling เพิ่ม traffic): ห้ามสร้าง gallery widget/polling timer แยกต่อหมุด
 - log อุปกรณ์ iOS จริงพบ `PlatformException(recreating_view, ... view id: '0'/'1')` ตอน push หน้า emergency — Google map เป็น platform view; การมีสองพื้นผิวแผนที่พร้อมกันหรือ dispose/สร้างใหม่เร็ว ๆ จะทำให้เกิดซ้ำ จึงต้องมี single-surface rule + lifecycle guard (§22.5)
 - `PlatformService.logMapLoad(pageName:)` นับ metric `map_load_*` และ System Monitor คูณ $7/1,000 ต่อ metric (`map_provider_rollout_plan.md §2.4`) — พื้นผิวแผนที่ใหม่เพิ่ม metric และต้นทุน tile/dynamic load จึงต้องมี page key เฉพาะและทบทวนสมมติฐานต้นทุนก่อนเปิดกว้าง
-- `GET /api/videos/:id/gallery` เรียง `created_at DESC` โดยไม่มี tie-break (`routes/video.js:1130`) — การเปิดภาพที่แตะจากแผนที่ต้องพึ่งลำดับที่นิ่ง จึงต้องเพิ่ม tie-break และวิธี resolve หน้า (§22.4 ข้อ 9)
-- overlay ภาพบนการ์ดปัจจุบัน (`_selectedOverlayPhotoUrl` + `onOverlayChanged` → `_isOverlayVisible`) **ไม่ pause วิดีโอตอนเปิด** (เรียก `play()` เฉพาะตอนปิด) และถูกเคลียร์ทันทีเมื่อ `currentVideoId` เปลี่ยน (`live_view_widget.dart:144-157`) — flow "แตะรูป → การ์ดหยุดอยู่เบื้องหลัง" ต้อง pause จริงและส่งต่อภาพหลังสลับการ์ดเสร็จ
+- `GET /api/videos/:id/gallery` เดิมเรียง `created_at DESC` โดยไม่มี tie-break — ตอนนี้เพิ่ม `id DESC` แล้วทั้ง Local (`routes/video.js`) และ Supabase fallback ใน `VideoRepository.getThaiMhungGalleryPhotos` พร้อม bounded photo-id resolution ≤5 หน้า (§22.4 ข้อ 9)
+- overlay ภาพบนการ์ดเดิม (`_selectedOverlayPhotoUrl` + `onOverlayChanged` → `_isOverlayVisible`) เคย**ไม่ pause วิดีโอตอนเปิด** — ตอนนี้ `showOverlayPhoto()` pause ก่อนเปิดและ resume ตอนปิดแล้ว พร้อม handoff `photoId` + `photoHandoffGeneration` เพื่อส่งต่อภาพหลังสลับการ์ดเสร็จโดยไม่ให้ผล async เก่าปน (`live_view_widget.dart`, `emergency_incident_map_logic.dart`)
 - `EmergencyUiOverlay` เป็น `Positioned.fill` + `IgnorePointer`/tap-toggle UI (Layer 2) และแถวปุ่ม (Layer 3) อยู่เหนือมัน — โหมดแผนที่ต้องแทรกชั้นใหม่ระหว่างสองชั้นนี้ และโหมดแผนที่ต้องปิด tap-toggle/แชท/แท็บของ overlay เพื่อไม่ให้ UI เดิมซ้อนทับแผนที่
 
 ### 22.3 State machine และ UI invariants
@@ -6116,6 +6151,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - **หมุด:** แตะแล้วมี pressed state และ guard กัน double-tap; ถ้าเป็นเหตุที่กำลังเล่นอยู่ให้แค่ปิดโหมดแผนที่; ถ้าโหลดการ์ดล้มเหลว → คงอยู่บนแผนที่ + SnackBar + mark unavailable (§22.1)
 - **ภาพตัวอย่าง:** แตะ → สลับการ์ดของเหตุนั้น (pause) → เปิด overlay ภาพที่แตะ (resume เมื่อปิด) → ระหว่าง overlay แสดงปุ่ม "เลือกเหตุการณ์อื่น"; ภาพที่ `blurring/failed` ไม่ถูกแสดงบนแผนที่ตั้งแต่ต้น
 - **cluster:** แตะ = zoom เข้า bounds ของ cluster (animated) ไม่เปิดการ์ด; ถ้า cluster มีเหตุเดียวให้ถือเป็นหมุด
+  - สถานะ v1: surface fit grid cell ของ cluster ผ่าน renderer controller แล้ว (Google `animateCamera` / OSM `fitCamera`, fallback centroid +2 จนถึง zoom 12) แต่ **cluster `count=1` ยังซูมเข้า cell ไม่เปิดการ์ด** เพราะ payload ไม่มี incident id — ต้องตัดสินใจเพิ่ม field ใน response หรือปรับ spec (จดไว้ใน §22.11)
 - **legend chip:** เน้น/หรี่เฉพาะ marker ฝั่ง client, ไม่เปลี่ยน camera, ไม่ยิง request, ไม่กระทบ committed filter
 - **ปุ่ม "เลือกเหตุการณ์อื่น":** ใช้ได้ทั้งระหว่างเล่นการ์ดและระหว่าง overlay ภาพ; ถ้ากดระหว่าง overlay ต้องปิด overlay อย่างถูกต้องก่อนกลับแผนที่ (ไม่ทิ้ง `_isOverlayVisible = true` ค้าง)
 
@@ -6149,9 +6185,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 4. พิกัดต้องมาจากแหล่ง canonical เดียวกับ emergency list (จุดแรกของ `video_gps_tracks` ตามเวลา offset พร้อม tie-break ที่แน่นอน); กรอง null, non-finite, latitude/longitude นอกช่วง และ sentinel `(0,0)`. ไม่คำนวณพิกัดจากที่อยู่และไม่ใช้พิกัดของภาพแทนจุดเกิดเหตุโดยเงียบ ๆ
 5. ทำ query plan/load test กับข้อมูลจริงก่อนเลือก index/materialized location strategy; query ต้อง filter category + viewport และมี spatial/coordinate access path ที่ไม่ scan GPS history ทั้งตารางทุกครั้ง. ห้ามเพิ่ม PostGIS/extension หรือ migration ด้านพิกัดโดยไม่มีหลักฐานจาก `EXPLAIN (ANALYZE, BUFFERS)` และแผน rollout/rollback
 6. ทำ Supabase fallback หรือ view/RPC ให้คืน schema, canonical coordinates, cluster semantics และ ordering เทียบเท่า Local API; หาก response กรอง category/viewport ไม่ได้หรือพิกัดไม่ครบ ให้แสดง retry/failure อย่าง fail-closed ห้ามแสดงเหตุทุกหมวดแทน
-7. Thumbnail โหลดแบบ batch สำหรับ incident ids ใน viewport/zoom ที่เหมาะสม (ห้าม N+1 ต่อหมุด); จำกัดขนาด/จำนวนภาพ preview ต่อ response, เรียงตาม gallery ปัจจุบัน (`created_at DESC`), ให้ full gallery ใช้ pagination เมื่อแตะภาพ. Cache key หากมีต้องมี category + quantized bounds + zoom/cursor, TTL จำกัดและ invalidate เมื่อ incident/photo เปลี่ยน; ห้ามสร้าง cache key จาก raw/unbounded coordinate precision
+7. Thumbnail โหลดแบบ batch สำหรับ incident ids ใน viewport/zoom ที่เหมาะสม (ห้าม N+1 ต่อหมุด); จำกัดขนาด/จำนวนภาพ preview ต่อ response, เรียงตาม gallery ปัจจุบัน (`created_at DESC, id DESC`), ให้ full gallery ใช้ pagination เมื่อแตะภาพ. Cache key หากมีต้องมี category + quantized bounds + zoom/cursor, TTL จำกัดและ invalidate เมื่อ incident/photo เปลี่ยน; ห้ามสร้าง cache key จาก raw/unbounded coordinate precision
 8. **Authorization:** endpoint แผนที่ต้องใช้ authentication เดียวกับ emergency list (Bearer + compat `x-user-id` จนกว่าจะตัด) และต้องไม่ถูก cache แบบสาธารณะ; payload ห้ามมี user id/ชื่อ/token และต้องมี rate limit ต่อ IP/user เทียบเท่า endpoint อื่นในระบบ
 9. **Photo page resolution:** เพื่อเปิดภาพที่แตะให้ตรงตำแหน่ง ต้องเพิ่ม tie-break `created_at DESC, id DESC` ใน `GET /:id/gallery` (และ parity ฝั่ง Supabase) แล้วให้ payload ของแผนที่ส่ง key เรียงลำดับของภาพ (created_at + id) หรือให้ gallery endpoint resolve `photo_id` → หน้า/หน้าต่างที่มีภาพนั้น; ถ้า resolve ไม่ได้ภายในจำนวนหน้าที่จำกัด (เช่น ≤5 หน้า) ให้เปิดที่ภาพล่าสุดพร้อมข้อความแจ้ง ไม่ค้างและไม่เปิดภาพของเหตุอื่น
+   - สถานะ v1: implement ฝั่ง client ผ่าน `VideoRepository.resolveThaiMhungGalleryPhoto` (scan ≤5 หน้า × 20, dedupe ด้วย id, คืน page/index/hasMore) + `focusPhotoById` ใน ruler gallery — merge ภาพ `blurring` ที่โหลดค้างไว้, เลื่อนไป index จริง, fallback = ภาพ `completed` ล่าสุด + SnackBar "ไม่พบตำแหน่งภาพใน 5 หน้า"; handoff ผ่าน `IncidentMapSession.photoHandoffGeneration` + overlay/focus/gallery generation guards กัน stale async ทับ selection
 10. **Telemetry/ต้นทุน:** log การเปิดพื้นผิวแผนที่ด้วย page key เฉพาะ (เช่น `emergency_overview`) แยกจาก `emergency` และนับ tile/dynamic map load; ต้องทบทวนสมมติฐานต้นทุน `$7/1,000` ใน `map_provider_rollout_plan.md §2.4` ก่อนเปิดกว้าง เพราะจำนวน "map load" ไม่เท่ากับ billable requests
 
 ### 22.5 Map renderer, clusters และ gallery thumbnails
@@ -6245,21 +6282,23 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - `routes/video.js` — `GET /api/videos/emergency/map` (auth parity กับ /emergency/list: guest-readable + ipLimiter), cacheAside key `video:emergency:map:v1:{cat}:{zoom}:{bounds 4dp}:{cursor}:{limit}` TTL.MAP=120s; invalidate `video:emergency:map:*` ที่จุดเดียวกับ emergency list (video ใหม่/emergency_photo ใหม่)
 - `migrations/incident_map_indexes.sql` — btree: `video_gps_tracks(video_id, timestamp_offset)`, `videos(category_id, type, created_at DESC)`, `thai_mhung_photos(video_id, blur_status, created_at DESC, id DESC)` (EXPLAIN ก่อน/หลัง: videos เปลี่ยนเป็น Bitmap Index Scan; tracks ยัง seq scan เพราะตารางเล็ก 4 หน้า — planner จะสลับเองเมื่อโต)
 - Supabase: `supabase/migrations/20261010120000_incident_map_rpc.sql` — RPC `get_emergency_incident_map` (mirror เดียวกัน, SECURITY INVOKER) + เพิ่มคอลัมน์ `thai_mhung_photos.blur_status` ฝั่ง cloud (default 'completed') ให้ schema ตรงกับ local — apply แล้วและ smoke test ผ่านทั้งสอง path
-- Tests: `test/incident-map.test.js` (13 เคส — policy boundaries, validation, cursor, cluster, photo cap, route contract, Supabase fallback, fail-closed) + `test/map-config.test.js` (+3 เคส features gate) — npm test 41/41 ผ่าน
+- Tests: `test/incident-map.test.js` (14 เคส — policy boundaries, validation, cursor, cluster, photo cap, route contract, Supabase fallback, fail-closed, gallery `created_at DESC, id DESC` tie-break) + `test/map-config.test.js` (+3 เคส features gate) — npm test 51/51 ผ่าน
 
 **Flutter**
 - `models/incident_map_models.dart` — `IncidentAgeBucket` (สี/ป้ายไทย/relative age), `IncidentAgeBucketPolicy`, `IncidentMapBounds.thailand`, DTO point/cluster/legend/excluded/response + parse แบบ fail-safe
 - `data/repositories/incident_map_repository.dart` — Local API → Supabase RPC fallback, 4xx fail-closed ไม่ fallback, normalize URL ภาพ
-- `widgets/incident_map/incident_map_surface.dart` — พื้นผิวเดียวสอง renderer (GoogleMap marker bitmap จาก canvas / flutter_map widget markers), camera state ชุดเดียว + projector (Web Mercator สำหรับ Google, `projectAtZoom` สำหรับ OSM), photo overlay ตาม zoom ≥ 13, legend bar, state card
+- `data/repositories/video_repository.dart` + `thai_mhung_ruler_gallery_widget.dart` — gallery เรียง `created_at DESC, id DESC` ทั้ง Local/Supabase และ resolve photo ID ภายในไม่เกิน 5 หน้าเพื่อโฟกัสรูปใน overlay; หากหาไม่พบเลือกภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้
+- `widgets/incident_map/incident_map_surface.dart` — พื้นผิวเดียวสอง renderer (GoogleMap marker bitmap จาก canvas / flutter_map widget markers), camera state ชุดเดียว + projector (Web Mercator สำหรับ Google, `projectAtZoom` สำหรับ OSM), cluster tap fit grid bounds ผ่าน renderer controller (fallback zoom เข้า centroid), photo overlay ตาม zoom ≥ 13, legend bar, state card
 - `widgets/incident_map/incident_map_photo_layout.dart` — collision layout pure function (ไม่ทับกัน/ไม่ทับหมุดเหตุอื่น/ไม่ล้นจอ, recency priority, cap 3/เหตุ)
 - `parts/emergency_incident_map_logic.dart` — `EmergencySurfaceMode` + `IncidentMapSession` + transition ตาม §22.3.1 (เข้า/แตะหมุด/ย้อนกลับ/เปลี่ยนหมวด/กลับจาก "เลือกเหตุการณ์อื่น"/pause-resume), gate จาก `MapConfigService.resolveTarget(MapFeature.emergency)`, realtime pill กรองตาม `categoryId`
 - `emergency_live_page.dart` — layer 2.5 ระหว่าง UI overlay กับแถวปุ่ม, PopScope (hardware back = ออกโหมดแผนที่), top bar (โหมดแผนที่: ซ่อนเครื่องมือ/ตัวกรอง + "เปลี่ยนประเภทเหตุ"; โหมดปกติมี session: "เลือกเหตุการณ์อื่น"), pinned card + ป้าย "จากแผนที่" (fullscreen ได้การ์ดที่ปักเพราะ `_trendingVideosForPanel()` ปักให้)
 - `trending_category_filter_sheet.dart` — ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด (disable ขณะ `_applying`, ไม่แตะ draft)
 - `emergency_top_bar.dart` — `trailingLabel`/`onTrailingTap` แทนปุ่มตัวกรองชั่วคราว
-- `live_view_widget.dart` — state เป็น public + `showOverlayPhoto()` + **pause ตอนเปิด overlay** (fix ตาม §22.2)
+- `live_view_widget.dart` — state เป็น public + `showOverlayPhoto(photoId, photoUrl)` + **pause ตอนเปิด overlay** (fix ตาม §22.2) + `_overlayPhotoGeneration` guard กัน resolve ค้างทับภาพที่ผู้ใช้เลือกเอง
 - Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
+- Tests (Flutter): `incident_map_models_test.dart` เพิ่ม `IncidentMapZoomPolicy` (zoom +2 จนถึง 12), `gridBounds` จาก response zoom และ bounded page-resolution (found/missing/maxPages); targeted tests ผ่าน 23/23 และ `dart analyze` ไฟล์ที่แตะไม่มี error ใหม่ (เหลือ warning/info เดิมของ repo)
 
-**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่, ตรวจ metric `map_load_emergency_overview` ระหว่าง canary และ cluster tap zoom-in animation (ปัจจุบัน cluster tap ยังไม่ขยับกล้อง — ทำผ่าน renderer controller ในขั้นถัดไป)
+**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่ และตรวจ metric `map_load_emergency_overview` ระหว่าง canary; cluster tap และ photo page resolution implement แล้ว รอ device verification ตามรายการด้านล่าง. **Implementation gap ที่เหลือ:** cluster `count=1` ยังซูมเข้า cell แทนที่จะ "ถือเป็นหมุด" ตาม §22.3.4 — payload cluster ไม่มี incident id จึงต้องตัดสินใจว่าจะขยาย contract หรือปรับ spec
 
 ### 22.11 Device verification รอบ 1 + มติแก้บั๊ก (2026-10-06, Android SM X135G / Google renderer)
 
@@ -6282,4 +6321,6 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 4. iOS — เข้า-ออกโหมดแผนที่ ~10 รอบ เฝ้า `PlatformException(recreating_view)`
 5. realtime pill "มีเหตุใหม่" (แจ้งจากเครื่องอื่น), mission suspend, Web (CSP/attribution)
 6. Load test ข้อมูลขนาดใหญ่ + เฝ้า metric `map_load_emergency_overview` ระหว่าง canary
-7. Cluster tap zoom-in animation (v1 ยังไม่ขยับกล้อง — จดพฤติกรรมจริงไว้)
+7. ตรวจ cluster tap ซูมผ่าน controller บน Google/OSM และยืนยัน viewport refetch หลังกล้อง settle (implement แล้ว — fit grid cell / fallback centroid +2 จนถึง zoom 12)
+8. แตะภาพจากแผนที่ → overlay เปิดภาพตรง photo ID; ทดสอบ fallback ภาพ completed ล่าสุดเมื่อหาไม่พบใน 5 หน้าและข้อความแจ้ง (implement แล้ว — resolver ผ่าน unit test, รอเช็กบนเครื่อง)
+9. ตัดสินใจ cluster `count=1` ตาม §22.3.4 ("ถือเป็นหมุด") — ปัจจุบันซูมเข้า cell เพราะ payload ไม่มี incident id; เลือกระหว่างขยาย response field หรือปรับ spec ให้ตรง v1
