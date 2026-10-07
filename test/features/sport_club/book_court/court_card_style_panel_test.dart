@@ -68,4 +68,52 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('3D icon toggle switches between 3D voxels and custom image presets', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 5200);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    // Start with 3D style
+    CourtCardStyleService.instance.style.value = CourtCardStyle.painter3d;
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CourtCardStylePanel())),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Toggle should be present and ON by default
+    final toggleFinder = find.byKey(const ValueKey('court-card-3d-icon-toggle'));
+    expect(toggleFinder, findsOneWidget);
+
+    // Switch OFF the 3D icon
+    await tester.ensureVisible(toggleFinder);
+    await tester.pump();
+    await tester.tap(toggleFinder);
+    await tester.pumpAndSettle();
+
+    // Now replacement image section should appear with presets
+    expect(find.text('เลือกรูปภาพแทนไอคอน 3 มิติ'), findsOneWidget);
+    expect(find.byKey(const ValueKey('preset-chip-preset:tennis')), findsOneWidget);
+    expect(find.byKey(const ValueKey('preset-chip-preset:badminton')), findsOneWidget);
+
+    // Tap badminton preset chip
+    final badmintonChip = find.byKey(const ValueKey('preset-chip-preset:badminton'));
+    await tester.tap(badmintonChip);
+    await tester.pumpAndSettle();
+
+    // Save button should be visible when params are dirty
+    final saveButton = find.byKey(const ValueKey('court-card-save-3d-params-button'));
+    expect(saveButton, findsOneWidget);
+
+    // Tap save
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(CourtCardStyleService.instance.params3d.value.show3dIcon, isFalse);
+    expect(CourtCardStyleService.instance.params3d.value.customImageUrl, 'preset:badminton');
+  });
 }

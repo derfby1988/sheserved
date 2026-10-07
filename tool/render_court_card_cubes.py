@@ -30,7 +30,8 @@ HALF_H = 24.0  # cube height
 ROWS_DEF = [[-3, -1, 1, 3], [-2, 0, 2], [-1, 1], [0]]
 
 IOR = 1.5
-TINT = np.array([0.96, 0.50, 0.55])  # red glass absorption per surface
+TINT = np.array([0.97, 0.34, 0.40])  # red glass absorption per surface
+EMISSIVE = np.array([0.68, 0.03, 0.08])  # internal red glow per unit length
 
 
 def build_boxes():
@@ -90,13 +91,13 @@ def env_color(dirs):
     warm = 0.5 + 0.5 * np.clip((y + 0.4) / 1.4, 0, 1)
     cold = 1.0 - warm
     base = np.stack(
-        [0.55 * warm + 0.16 * cold, 0.48 * warm + 0.14 * cold, 0.42 * warm + 0.20 * cold],
+        [0.80 * warm + 0.24 * cold, 0.70 * warm + 0.20 * cold, 0.62 * warm + 0.28 * cold],
         axis=1,
     )
     light = np.array([0.55, 0.62, 0.60])
     light /= np.linalg.norm(light)
     spec = np.maximum(np.sum(dirs * light, axis=1), 0.0) ** 48
-    return base + spec[:, None] * np.array([0.85, 0.80, 0.72])
+    return base + spec[:, None] * np.array([0.95, 0.90, 0.82])
 
 
 def slab(box, ro, rd):
@@ -199,6 +200,16 @@ def trace_chunk(ro, rd):
         origin = s_ro + s_rd * s_tex[:, None] + new_dir * eps
         new_w = s_w * (1.0 - fresnel)
         new_tint = s_tint * TINT  # absorption whenever light crosses glass
+
+        # Emissive glass: the segment of ray inside the cube adds a red glow,
+        # so the stack reads as lit from within instead of dark transmission.
+        segment = np.clip((s_tex - s_te) / 30.0, 0.0, 1.2)
+        acc_rgb[stay] += (
+            s_w[:, None] * (1.0 - fresnel)[:, None] * segment[:, None] * EMISSIVE
+        )
+        # Interior opacity follows the in-glass path length so the cubes read
+        # as solid red glass while their edges stay glassy.
+        acc_a[stay] += s_w * (1.0 - fresnel) * np.clip(segment * 1.4, 0.0, 0.9)
 
         ro[stay] = origin
         rd[stay] = new_dir

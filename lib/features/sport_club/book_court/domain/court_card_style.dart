@@ -12,18 +12,18 @@ enum CourtCardStyle {
   ),
   painter3d(
     'painter_3d',
-    '3D วาดเอง (CustomPainter)',
-    'การ์ดแก้วเอียงพร้อมก้อนลูกบาศก์วาดด้วย CustomPainter — ไม่ต้องโหลด asset',
+    '3D เรนเดอร์แก้ว',
+    'เรนเดอร์กระจกโปร่งแสงด้วย ray tracer (เฟรมนิ่ง) — ทับซ้อนจริง ไม่โหลด runtime',
   ),
   shaderGlass(
     'shader_glass',
     '3D แก้วหักเห (Shader)',
-    'พื้นผิวแก้วและแสงขอบคำนวณด้วย fragment shader — ใกล้ภาพต้นฉบับที่สุด',
+    'พื้นผิวแก้วและแสงขอบคำนวณด้วย fragment shader ทับภาพเรนเดอร์ — ใกล้ภาพต้นฉบับที่สุด',
   ),
   lottieCubes(
     'lottie_cubes',
-    '3D อนิเมชัน (Lottie)',
-    'ก้อนลูกบาศก์อนิเมชันจากไฟล์ Lottie — ขยับได้ แต่ต้องโหลด asset',
+    '3D อนิเมชันเรนเดอร์',
+    'ก้อนลูกบาศก์อนิเมชันจาก sprite sheet ที่เรนเดอร์ด้วย ray tracer — ขยับเบา ๆ',
   );
 
   const CourtCardStyle(this.wireValue, this.label, this.description);

@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lottie/lottie.dart';
 import 'package:sheserved/features/sport_club/book_court/application/court_card_style_service.dart';
 import 'package:sheserved/features/sport_club/book_court/domain/court_card_style.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card_art.dart';
@@ -37,12 +36,22 @@ void main() {
   });
 
   group('court card assets', () {
-    test('the Lottie cube stack parses into a real composition', () async {
-      final bytes = await File(CourtCardCubeArt.lottieAsset).readAsBytes();
-      final composition = await LottieComposition.fromBytes(bytes);
-
-      expect(composition.layers, isNotEmpty);
-      expect(composition.duration.inMilliseconds, greaterThan(0));
+    test('the rendered cube sprite sheet is a valid PNG grid', () async {
+      final bytes = await File(CourtCardCubeArt.cubeSheetAsset).readAsBytes();
+      // PNG signature.
+      expect(
+        bytes.sublist(0, 8),
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+      );
+      // IHDR width/height at fixed offsets (big-endian).
+      final width = bytes.buffer.asByteData().getUint32(16);
+      final height = bytes.buffer.asByteData().getUint32(20);
+      expect(width, greaterThan(0));
+      expect(height, greaterThan(0));
+      // A 4x4 grid of square frames.
+      expect(width, height);
+      expect(width % 4, 0);
+      expect(height % 4, 0);
     });
 
     test('the glass shader source is bundled', () {

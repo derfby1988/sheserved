@@ -156,12 +156,15 @@ The venue card chrome is admin-selectable: **จัดการกีฬา → 
   `CourtCard` listens to the service, so a change repaints the feed immediately.
 - `CourtCard.styleOverride` renders one specific style — that is how the admin
   tab previews all styles side by side.
-- The shader and Lottie variants must never render blank: `CourtCardCubeArt`
-  falls back to the CustomPainter art when `FragmentProgram.fromAsset` or
-  `Lottie.asset` fails (which is exactly what happens inside widget tests).
+- The 3D styles must never render blank: `CourtCardCubeArt` falls back to the
+  CustomPainter art when the sprite sheet or `FragmentProgram.fromAsset` fails
+  (which is exactly what happens inside widget tests).
 - Assets: `shaders/court_card_glass.frag` (registered under `flutter: shaders:`)
-  and `assets/lottie/court_card_cubes.json` (registered under `flutter: assets:`).
-  Regenerate the Lottie stack with `python3 tool/gen_court_card_lottie.py`.
+  and `assets/cubes/court_card_cubes_sheet.png` — a 4x4 sprite sheet of 16
+  256px frames rendered by the glass ray tracer in
+  `tool/render_court_card_cubes.py` (numpy + Pillow only, no Blender needed).
+  Regenerate it with `python3 tool/render_court_card_cubes.py`; frame 0 is the
+  hero still used by `painter_3d`/`shader_glass`.
 - `flutter test` cannot compile shaders, so validate shader edits with
   `flutter build bundle` (it runs impellerc) and check
   `build/flutter_assets/shaders/court_card_glass.frag` exists.

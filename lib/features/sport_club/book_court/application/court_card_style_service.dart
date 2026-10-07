@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../domain/court_card_3d_params.dart';
 import '../domain/court_card_style.dart';
 
 /// Reads/writes the shared Book Court card style.
@@ -23,6 +24,9 @@ class CourtCardStyleService {
     CourtCardStyle.fallback,
   );
 
+  final ValueNotifier<CourtCard3DParams> params3d =
+      ValueNotifier<CourtCard3DParams>(CourtCard3DParams.defaults);
+
   bool _loaded = false;
 
   bool get isLoaded => _loaded;
@@ -32,7 +36,10 @@ class CourtCardStyleService {
     if (_loaded && !force) return;
     _loaded = true;
     final stored = await _read(client);
-    if (stored != null) style.value = stored;
+    if (stored != null) {
+      style.value = stored.$1;
+      params3d.value = stored.$2;
+    }
   }
 
   /// Applies [next] immediately and persists it for every device.
@@ -41,12 +48,28 @@ class CourtCardStyleService {
   /// the card style changed on this device only.
   Future<bool> select(CourtCardStyle next, {SupabaseClient? client}) async {
     style.value = next;
+    return _persist(client);
+  }
+
+  /// Updates only the 3D parameters (locally + persist).
+  Future<bool> update3DParams(
+    CourtCard3DParams next, {
+    SupabaseClient? client,
+  }) async {
+    params3d.value = next;
+    return _persist(client);
+  }
+
+  Future<bool> _persist(SupabaseClient? client) async {
     try {
       await _client(client)
           .from('app_settings')
           .upsert({
             'key': preferenceKey,
-            'value': {'style': next.wireValue},
+            'value': {
+              'style': style.value.wireValue,
+              'params3d': params3d.value.toJson(),
+            },
             'description': 'Book Court venue card style (21.7.22)',
           })
           .timeout(const Duration(seconds: 8));
@@ -56,7 +79,9 @@ class CourtCardStyleService {
     }
   }
 
-  Future<CourtCardStyle?> _read(SupabaseClient? client) async {
+  Future<(CourtCardStyle, CourtCard3DParams)?> _read(
+    SupabaseClient? client,
+  ) async {
     try {
       final row = await _client(client)
           .from('app_settings')
@@ -64,7 +89,7 @@ class CourtCardStyleService {
           .eq('key', preferenceKey)
           .maybeSingle()
           .timeout(const Duration(seconds: 6));
-      return parseSettingsValue(row?['value']);
+      return parseSettingsWithParams(row?['value']);
     } catch (_) {
       return null;
     }
@@ -77,12 +102,26 @@ class CourtCardStyleService {
   static CourtCardStyle? parseSettingsValue(Object? value) {
     if (value is Map) {
       final wire = value['style']?.toString();
-      if (wire != null) return CourtCardStyle.fromWire(wire);
+      if (wire != null) {
+        return CourtCardStyle.fromWire(wire);
+      }
       return null;
     }
     if (value is String && value.isNotEmpty) {
       return CourtCardStyle.fromWire(value);
     }
     return null;
+  }
+
+  /// Parses both style and 3D params from stored JSONB.
+  static (CourtCardStyle, CourtCard3DParams)? parseSettingsWithParams(
+    Object? value,
+  ) {
+    final style = parseSettingsValue(value);
+    if (style == null) return null;
+    final p3d = value is Map
+        ? CourtCard3DParams.fromJson(value['params3d'])
+        : CourtCard3DParams.defaults;
+    return (style, p3d);
   }
 }

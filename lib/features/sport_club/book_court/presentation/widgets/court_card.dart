@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:sheserved/core/constants/app_colors.dart';
 
 import '../../application/court_card_style_service.dart';
 import '../../data/book_court_models.dart';
+import '../../domain/court_card_3d_params.dart';
 import '../../domain/court_card_style.dart';
 import 'court_card_art.dart';
+import 'court_card_slab.dart';
 
 /// Venue card for the Book Court discovery feed.
 ///
@@ -22,6 +27,9 @@ class CourtCard extends StatefulWidget {
   /// "รูปแบบการ์ด" previews, which show every style at once.
   final CourtCardStyle? styleOverride;
 
+  /// Overrides the admin 3D params — used by the style panel preview.
+  final CourtCard3DParams? params3dOverride;
+
   const CourtCard({
     super.key,
     required this.venue,
@@ -29,6 +37,7 @@ class CourtCard extends StatefulWidget {
     this.onTap,
     this.upcomingBookings = const [],
     this.styleOverride,
+    this.params3dOverride,
   });
 
   @override
@@ -135,16 +144,34 @@ class _CourtCardState extends State<CourtCard> {
               '${_countdownLabel(upcomingBooking.startsAt, now)}';
 
     final override = widget.styleOverride;
-    if (override != null) return _buildStyle(override, appointmentLabel);
+    if (override != null) {
+      return _buildStyle(
+        override,
+        appointmentLabel,
+        widget.params3dOverride ?? CourtCardStyleService.instance.params3d.value,
+      );
+    }
+    final svc = CourtCardStyleService.instance;
     return ValueListenableBuilder<CourtCardStyle>(
-      valueListenable: CourtCardStyleService.instance.style,
-      builder: (context, style, _) => _buildStyle(style, appointmentLabel),
+      valueListenable: svc.style,
+      builder: (context, style, _) => ValueListenableBuilder<CourtCard3DParams>(
+        valueListenable: svc.params3d,
+        builder: (context, p3d, _) => _buildStyle(
+          style,
+          appointmentLabel,
+          widget.params3dOverride ?? p3d,
+        ),
+      ),
     );
   }
 
-  Widget _buildStyle(CourtCardStyle style, String? appointmentLabel) =>
+  Widget _buildStyle(
+    CourtCardStyle style,
+    String? appointmentLabel,
+    CourtCard3DParams p3d,
+  ) =>
       style.isThreeDimensional
-      ? _buildThreeDimensional(style, appointmentLabel)
+      ? _buildThreeDimensional(style, appointmentLabel, p3d)
       : _buildClassic(appointmentLabel);
 
   // =============== Classic (flat) chrome ================================
@@ -333,6 +360,7 @@ class _CourtCardState extends State<CourtCard> {
   Widget _buildThreeDimensional(
     CourtCardStyle style,
     String? appointmentLabel,
+    CourtCard3DParams p3d,
   ) {
     final venue = widget.venue;
     final score = _score(venue);
@@ -345,187 +373,249 @@ class _CourtCardState extends State<CourtCard> {
     ].whereType<String>().join(', ');
     final distanceKm = widget.distanceKm;
 
+    // Compute light angle sheen alignment from the admin parameter
+    final sheenBeginX = -math.cos(p3d.lightAngle);
+    final sheenBeginY = -math.sin(p3d.lightAngle);
+    final sheenEndX = math.cos(p3d.lightAngle);
+    final sheenEndY = math.sin(p3d.lightAngle);
+
     return Transform(
       alignment: Alignment.center,
       transform: Matrix4.identity()
         ..setEntry(3, 2, 0.0012)
-        ..rotateX(0.10)
-        ..rotateY(-0.13),
+        ..rotateX(p3d.rotateX)
+        ..rotateY(p3d.rotateY),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.96),
-              Colors.white.withValues(alpha: 0.72),
-              const Color(0xFFF3D9DC).withValues(alpha: 0.80),
-            ],
-            stops: const [0, 0.55, 1],
-          ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.9),
-            width: 1.4,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 20,
-              offset: const Offset(0, 12),
-            ),
-            BoxShadow(
-              color: Colors.white.withValues(alpha: 0.55),
-              blurRadius: 8,
-              offset: const Offset(-4, -4),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(18),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: CourtCardSlab(
+          level: score.level,
+          thickness: p3d.thickness,
+          opacity: p3d.opacity,
+          sheenBegin: Alignment(sheenBeginX, sheenBeginY),
+          sheenEnd: Alignment(sheenEndX, sheenEndY),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(22),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          venue.name,
-                          style: const TextStyle(
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1E2330),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.place_outlined,
-                              size: 13,
-                              color: Color(0xFF6B7280),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                distanceKm == null
-                                    ? location
-                                    : '$location · '
-                                          '${distanceKm.toStringAsFixed(1)} กม.',
+                        // Left column: Venue details & bold score
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                venue.name,
                                 style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF6B7280),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF161A26),
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            if (venue.averageRating != null) ...[
-                              const Icon(
-                                Icons.star_rounded,
-                                size: 15,
-                                color: AppColors.alertGold,
+                              const SizedBox(height: 6),
+                              // Big Score display
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Text(
+                                    score.value,
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      height: 1.05,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF111827),
+                                      letterSpacing: -0.6,
+                                    ),
+                                  ),
+                                  if (score.suffix != null)
+                                    Text(
+                                      score.suffix!,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF4B5563),
+                                      ),
+                                    ),
+                                ],
                               ),
-                              const SizedBox(width: 2),
-                              Text(
-                                venue.averageRating!.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1E2330),
-                                ),
+                              const SizedBox(height: 4),
+                              // Subtitle with red dot badge (matching prototype ● Individual)
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Color(0xFFD91E28),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Color(0x66D91E28),
+                                          blurRadius: 5,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    score.label,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFFD91E28),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                ' (${venue.reviewCount})',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: Color(0xFF6B7280),
-                                ),
+                              const SizedBox(height: 8),
+                              // Location and Rating Detail Row
+                              Row(
+                                children: [
+                                  if (venue.averageRating != null) ...[
+                                    const Icon(
+                                      Icons.star_rounded,
+                                      size: 14,
+                                      color: AppColors.alertGold,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      venue.averageRating!.toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1E2330),
+                                      ),
+                                    ),
+                                    Text(
+                                      ' (${venue.reviewCount})',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  const Icon(
+                                    Icons.place_outlined,
+                                    size: 12,
+                                    color: Color(0xFF374151),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Expanded(
+                                    child: Text(
+                                      distanceKm == null
+                                          ? location
+                                          : '$location · ${distanceKm.toStringAsFixed(1)} กม.',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF374151),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                            ],
-                            Icon(
-                              Icons.sports_tennis_rounded,
-                              size: 13,
-                              color: Colors.grey.shade600,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${venue.courtCount} รายการ',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF6B7280),
+                              const SizedBox(height: 4),
+                              // Court count and amenities
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.sports_tennis_rounded,
+                                    size: 13,
+                                    color: Color(0xFF374151),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${venue.courtCount} รายการ',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF374151),
+                                    ),
+                                  ),
+                                  if (venue.amenityIds.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    for (final key in venue.amenityIds.take(3))
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 4,
+                                        ),
+                                        child: Icon(
+                                          _amenityIcon(key),
+                                          size: 13,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                  ],
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
-                        if (venue.amenityIds.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              for (final key in venue.amenityIds.take(4))
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 6),
-                                  child: Icon(
-                                    _amenityIcon(key),
-                                    size: 15,
-                                    color: Colors.grey.shade600,
+                              if (startingPriceText != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'ราคาเริ่มต้นที่ $startingPriceText บ.',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primaryDark,
                                   ),
                                 ),
+                              ],
                             ],
                           ),
-                        ],
-                        if (startingPriceText != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'ราคาเริ่มต้นที่ $startingPriceText บ.',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryDark,
-                            ),
+                        ),
+                        // Right column: Prominent 3D cube stack art OR custom replacement image
+                        if (p3d.show3dIcon) ...[
+                          const SizedBox(width: 6),
+                          CourtCardCubeArt(
+                            style: style,
+                            level: score.level,
+                            size: 96,
                           ),
-                        ],
-                        if (appointmentLabel != null) ...[
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                appointmentLabel,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFFC2185B),
-                                ),
-                              ),
-                            ),
-                          ),
+                        ] else if (p3d.customImageUrl != null &&
+                            p3d.customImageUrl!.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          _buildCustomCardArt(p3d.customImageUrl!, 96),
                         ],
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  _scoreBlock(style, score),
-                ],
+                    if (appointmentLabel != null) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            appointmentLabel,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFC2185B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    // Horizontal Stepper Track from prototype
+                    _buildStepperTrack(score.level, score.suffix == '/5'),
+                  ],
+                ),
               ),
             ),
           ),
@@ -534,75 +624,134 @@ class _CourtCardState extends State<CourtCard> {
     );
   }
 
-  Widget _scoreBlock(
-    CourtCardStyle style,
-    ({String value, String? suffix, String label, int level}) score,
-  ) {
-    return SizedBox(
-      width: 108,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+  /// Horizontal stepper track with 5 levels, matching the prototype design:
+  /// numbers 1-5, continuous track line with glowing active node, and descriptive labels.
+  Widget _buildStepperTrack(int activeLevel, bool isRating) {
+    final labels = isRating
+        ? const ['1 ดาว', '2 ดาว', '3 ดาว', '4 ดาว', '5 ดาว']
+        : const [
+            '1–2 คอร์ท',
+            '3–5 คอร์ท',
+            '6–9 คอร์ท',
+            '10–14 คอร์ท',
+            '15+ คอร์ท',
+          ];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 2),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth / 5;
+          return Column(
+            children: [
+              // Numbers 1 to 5
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    score.value,
-                    style: const TextStyle(
-                      fontSize: 30,
-                      height: 1,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1E2330),
-                    ),
-                  ),
-                  if (score.suffix != null)
-                    Text(
-                      score.suffix!,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B7280),
+                  for (var i = 1; i <= 5; i++)
+                    SizedBox(
+                      width: itemWidth,
+                      child: Text(
+                        '$i',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: i == activeLevel
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: i == activeLevel
+                              ? const Color(0xFFD91E28)
+                              : const Color(0xFF374151),
+                        ),
                       ),
                     ),
                 ],
               ),
-            ),
-          ),
-          Text(
-            score.label,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFB01B25),
-            ),
-          ),
-          const SizedBox(height: 4),
-          CourtCardCubeArt(style: style, level: score.level, size: 86),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              for (var step = 1; step <= 5; step++)
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.only(left: 4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: step <= score.level
-                        ? const Color(0xFFD91E28)
-                        : const Color(0xFFD6D9E0),
+              const SizedBox(height: 3),
+              // Connecting line with nodes
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Horizontal line
+                  Container(
+                    height: 1.5,
+                    margin: EdgeInsets.symmetric(horizontal: itemWidth / 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1).withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(1),
+                    ),
                   ),
-                ),
+                  // Nodes
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      for (var i = 1; i <= 5; i++)
+                        SizedBox(
+                          width: itemWidth,
+                          child: Center(
+                            child: i == activeLevel
+                                ? Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: const Color(0xFFD91E28),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(
+                                            0xFFFF2838,
+                                          ).withValues(alpha: 0.65),
+                                          blurRadius: 6,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : Container(
+                                    width: 5,
+                                    height: 5,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: i < activeLevel
+                                          ? const Color(0xFFE26D74)
+                                          : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Labels
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    SizedBox(
+                      width: itemWidth,
+                      child: Text(
+                        labels[i - 1],
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: i == activeLevel
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: i == activeLevel
+                              ? const Color(0xFFD91E28)
+                              : const Color(0xFF374151),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -663,4 +812,97 @@ class _CourtCardState extends State<CourtCard> {
     'first_aid' => Icons.medical_services_rounded,
     _ => Icons.check_circle_outline_rounded,
   };
+
+  static Widget _buildCustomCardArt(String imageUrl, double size) {
+    Widget content;
+    if (imageUrl.startsWith('preset:')) {
+      final key = imageUrl.substring('preset:'.length);
+      final (iconData, label, color) = switch (key) {
+        'tennis' => (Icons.sports_tennis_rounded, 'เทนนิส', const Color(0xFFD91E28)),
+        'badminton' => (Icons.sports_baseball_rounded, 'แบดมินตัน', const Color(0xFF00897B)),
+        'football' => (Icons.sports_soccer_rounded, 'ฟุตบอล', const Color(0xFF1E88E5)),
+        'basketball' => (Icons.sports_basketball_rounded, 'บาสเกตบอล', const Color(0xFFFB8C00)),
+        'trophy' => (Icons.emoji_events_rounded, 'รางวัล', const Color(0xFFF59E0B)),
+        'stadium' => (Icons.stadium_rounded, 'สนาม', const Color(0xFF8B5CF6)),
+        _ => (Icons.sports_rounded, 'กีฬา', const Color(0xFFD91E28)),
+      };
+      content = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(iconData, size: size * 0.44, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      );
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      content = Image.network(
+        imageUrl,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const Icon(
+          Icons.broken_image_rounded,
+          color: Colors.grey,
+        ),
+      );
+    } else if (imageUrl.startsWith('data:image')) {
+      try {
+        final comma = imageUrl.indexOf(',');
+        final bytes = comma != -1
+            ? base64Decode(imageUrl.substring(comma + 1))
+            : base64Decode(imageUrl);
+        content = Image.memory(
+          bytes,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+        );
+      } catch (_) {
+        content = const Icon(Icons.broken_image_rounded, color: Colors.grey);
+      }
+    } else {
+      content = Image.file(
+        File(imageUrl),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const Icon(
+          Icons.image_outlined,
+          color: Colors.grey,
+        ),
+      );
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.60),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFF2535).withValues(alpha: 0.20),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(17),
+        child: Center(child: content),
+      ),
+    );
+  }
 }
+

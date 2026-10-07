@@ -1,7 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 
 import '../../domain/court_card_style.dart';
 
@@ -10,19 +10,15 @@ import '../../domain/court_card_style.dart';
 /// [level] is 1–5 (rating band / supply tier). Three implementations share the
 /// same composition so the admin can compare them side by side:
 ///
-/// * `painter3d` — drawn with [CustomPainter], no asset loading
-/// * `shaderGlass` — the glass sheen comes from a fragment shader
-/// * `lottieCubes` — the animated variant from `assets/lottie`
-///
-/// The shader and Lottie variants fall back to the painter art whenever the
-/// program or asset is unavailable (widget tests, failed asset load) so the
-/// card never renders blank.
+/// * `painter3d` — 3D isometric voxel cube cluster matching prototype
+/// * `shaderGlass` — the glass sheen comes from a fragment shader over the 3D cubes
+/// * `lottieCubes` — animated floating / breathing voxel cluster variant
 class CourtCardCubeArt extends StatelessWidget {
   static const String painterKey = 'court_card_cubes_painter';
   static const String shaderKey = 'court_card_cubes_shader';
   static const String lottieKey = 'court_card_cubes_lottie';
 
-  static const String lottieAsset = 'assets/lottie/court_card_cubes.json';
+  static const String cubeSheetAsset = 'assets/cubes/court_card_cubes_sheet.png';
   static const String glassShaderAsset = 'shaders/court_card_glass.frag';
 
   final CourtCardStyle style;
@@ -52,243 +48,238 @@ class CourtCardCubeArt extends StatelessWidget {
         key: const ValueKey(lottieKey),
         width: size,
         height: size,
-        child: Lottie.asset(
-          lottieAsset,
-          fit: BoxFit.contain,
-          repeat: true,
-          errorBuilder: (_, _, _) => _PainterCubeArt(level: level),
-        ),
+        child: _AnimatedVoxelCubeArt(level: level),
       );
     }
     return SizedBox(
       key: const ValueKey(painterKey),
       width: size,
       height: size,
-      child: _PainterCubeArt(level: level),
+      child: CustomPaint(painter: CourtCardCubePainter(level: level)),
     );
   }
 }
 
-class _PainterCubeArt extends StatelessWidget {
+/// Animated 3D voxel cube cluster: gently sways and pulses with breathing motion.
+class _AnimatedVoxelCubeArt extends StatefulWidget {
   final int level;
 
-  const _PainterCubeArt({required this.level});
+  const _AnimatedVoxelCubeArt({required this.level});
 
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(painter: CourtCardCubePainter(level: level));
+  State<_AnimatedVoxelCubeArt> createState() => _AnimatedVoxelCubeArtState();
 }
 
-/// Paints the isometric pyramid: four cubes at the base, then three, two and
-/// one. Brightness rises with height and with [level] so a low score reads as
-/// a pale stack and a high score as a glowing one.
-///
-/// Faces are translucent with per-face gradients, a soft ground shadow and a
-/// rim light on the top edges so the stack reads as volumetric glass instead
-/// of flat vector shapes: rear cubes show through the front ones and each
-/// cube shades from a lit top edge into a darker base.
+class _AnimatedVoxelCubeArtState extends State<_AnimatedVoxelCubeArt>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+        final floatDy = -math.sin(t * math.pi) * 3.5;
+        final pulse = 0.95 + 0.10 * math.sin(t * math.pi);
+        return Transform.translate(
+          offset: Offset(0, floatDy),
+          child: CustomPaint(
+            painter: CourtCardCubePainter(
+              level: widget.level,
+              pulseFactor: pulse,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Paints the photorealistic 3D isometric voxel cube cluster matching the prototype:
+/// - Three stepped columns of ruby glass cubes
+/// - Lit top faces with specular chamfer outlines
+/// - Left and right faces shaded for volumetric depth
+/// - Internal ambient red glow radiating into the glass
 class CourtCardCubePainter extends CustomPainter {
-  static const List<List<double>> _levelOffsets = [
-    [-3, -1, 1, 3],
-    [-2, 0, 2],
-    [-1, 1],
-    [0],
-  ];
-
-  static const Color _lit = Color(0xFFD91E28);
-  static const Color _pale = Color(0xFFEFD2D4);
-
-  static const double _halfWidth = 24.0;
-  static const double _halfDepth = 14.0;
-  static const double _cubeHeight = 24.0;
-
   final int level;
+  final double pulseFactor;
 
-  const CourtCardCubePainter({required this.level});
+  const CourtCardCubePainter({
+    required this.level,
+    this.pulseFactor = 1.0,
+  });
+
+  double get _levelFactor => (level.clamp(1, 5)) / 5.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final originX = size.width / 2;
-    final originY = size.height - 18;
+    final originX = size.width * 0.46;
+    final originY = size.height * 0.70;
+    final cubeS = size.width * 0.17;
+    const cos30 = 0.866025;
+    const sin30 = 0.50;
 
-    final cubes = <({double x, double y, double brightness})>[];
-    for (var row = 0; row < _levelOffsets.length; row++) {
-      for (final offset in _levelOffsets[row]) {
-        final heightFactor = (row + 1) / _levelOffsets.length;
-        cubes.add((
-          x: originX + offset * _halfWidth,
-          y: originY - row * _cubeHeight,
-          brightness: (0.35 + 0.65 * heightFactor) * _levelFactor,
-        ));
-      }
+    Offset proj(double x, double y, double z) {
+      final px = originX + (x - y) * cubeS * cos30;
+      final py = originY + (x + y) * cubeS * sin30 - z * cubeS;
+      return Offset(px, py);
     }
-    // Front-most cubes last so they overlap the rows behind them.
-    cubes.sort((a, b) => b.y.compareTo(a.y));
 
-    _paintGroundShadow(canvas, originX, originY);
+    _paintGroundShadow(canvas, size, originX, originY);
     _paintCoreGlow(canvas, size, originX, originY);
 
-    for (final cube in cubes) {
-      final top = Color.lerp(_pale, _lit, cube.brightness)!;
-      _fillFace(
+    // Voxel grid matching prototype:
+    // (x, y, maxZ)
+    final grid = const [
+      (0, 0, 2),
+      (1, 0, 2),
+      (0, 1, 3),
+      (1, 1, 4), // tallest tower in center
+      (2, 0, 1),
+      (0, 2, 2),
+      (2, 1, 3),
+      (1, 2, 4),
+      (2, 2, 2),
+    ];
+
+    final voxels = <({double x, double y, double z})>[];
+    for (final col in grid) {
+      final maxZ = (col.$3 * (0.6 + 0.4 * _levelFactor)).ceil().clamp(1, col.$3);
+      for (var z = 0; z < maxZ; z++) {
+        voxels.add((x: col.$1.toDouble(), y: col.$2.toDouble(), z: z.toDouble()));
+      }
+    }
+
+    // Back-to-front sorting (painter's algorithm)
+    voxels.sort((a, b) {
+      final depthComp = -(a.x + a.y).compareTo(-(b.x + b.y));
+      if (depthComp != 0) return depthComp;
+      return a.z.compareTo(b.z);
+    });
+
+    for (final v in voxels) {
+      final heightFactor = (v.z + 1) / 4.0;
+      final brightness =
+          (0.45 + 0.55 * heightFactor) * (0.55 + 0.45 * _levelFactor) * pulseFactor;
+
+      // 1. Left face (points left-down)
+      _drawPolygon(
         canvas,
-        cube,
-        top,
-        const [
-          Offset(-_halfWidth, 0),
-          Offset(0, -_halfDepth),
-          Offset(_halfWidth, 0),
-          Offset(0, _halfDepth),
+        [
+          proj(v.x, v.y + 1, v.z),
+          proj(v.x, v.y, v.z),
+          proj(v.x, v.y, v.z + 1),
+          proj(v.x, v.y + 1, v.z + 1),
         ],
-        shade: 1.0,
+        Color.lerp(const Color(0xFFC0101E), const Color(0xFFE52230), brightness.clamp(0.0, 1.0))!,
+        alpha: 0.92,
+      );
+
+      // 2. Right face (points right-down, deeper ruby shadow)
+      _drawPolygon(
+        canvas,
+        [
+          proj(v.x, v.y, v.z),
+          proj(v.x + 1, v.y, v.z),
+          proj(v.x + 1, v.y, v.z + 1),
+          proj(v.x, v.y, v.z + 1),
+        ],
+        Color.lerp(const Color(0xFF8B0912), const Color(0xFFB0101C), brightness.clamp(0.0, 1.0))!,
+        alpha: 0.95,
+      );
+
+      // 3. Top face (points straight up, lit ruby red with specular edge)
+      _drawPolygon(
+        canvas,
+        [
+          proj(v.x, v.y, v.z + 1),
+          proj(v.x + 1, v.y, v.z + 1),
+          proj(v.x + 1, v.y + 1, v.z + 1),
+          proj(v.x, v.y + 1, v.z + 1),
+        ],
+        Color.lerp(const Color(0xFFFF2535), const Color(0xFFFF5664), brightness.clamp(0.0, 1.0))!,
         alpha: 0.96,
+        isTop: true,
       );
-      _fillFace(
-        canvas,
-        cube,
-        top,
-        const [
-          Offset(0, _halfDepth),
-          Offset(_halfWidth, 0),
-          Offset(_halfWidth, _cubeHeight),
-          Offset(0, _halfDepth + _cubeHeight),
-        ],
-        shade: 0.82,
-        alpha: 0.58,
-      );
-      _fillFace(
-        canvas,
-        cube,
-        top,
-        const [
-          Offset(-_halfWidth, 0),
-          Offset(0, _halfDepth),
-          Offset(0, _halfDepth + _cubeHeight),
-          Offset(-_halfWidth, _cubeHeight),
-        ],
-        shade: 0.58,
-        alpha: 0.42,
-      );
-      _paintRimLight(canvas, cube);
     }
   }
 
-  double get _levelFactor => (level.clamp(1, 5)) / 5;
+  void _drawPolygon(
+    Canvas canvas,
+    List<Offset> points,
+    Color color, {
+    required double alpha,
+    bool isTop = false,
+  }) {
+    final path = Path()..addPolygon(points, true);
+    final paint = Paint()..color = color.withValues(alpha: alpha);
+    canvas.drawPath(path, paint);
 
-  /// Blurred dark ellipse beneath the stack so it looks like it sits on the
-  /// card instead of floating. Stronger when the level is higher.
-  void _paintGroundShadow(Canvas canvas, double originX, double originY) {
-    final strength = 0.10 + 0.30 * _levelFactor;
-    final paint = Paint()
-      ..color = const Color(0xFF3A0208).withValues(alpha: strength)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+    if (isTop) {
+      final edgePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..color = Colors.white.withValues(alpha: 0.40);
+      canvas.drawPath(path, edgePaint);
+    }
+  }
+
+  void _paintGroundShadow(Canvas canvas, Size size, double originX, double originY) {
+    final shadowPaint = Paint()
+      ..color = const Color(0xFF280206).withValues(alpha: 0.25 * _levelFactor)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(originX, originY + _halfDepth * 0.8),
-        width: _halfWidth * 5.8,
-        height: _halfDepth * 2.2,
+        center: Offset(originX, originY + 12),
+        width: size.width * 0.85,
+        height: 22,
       ),
-      paint,
+      shadowPaint,
     );
   }
 
-  /// Soft red radial glow behind the stack; its strength tracks the level so
-  /// a high score reads as a lit glass cluster.
   void _paintCoreGlow(Canvas canvas, Size size, double originX, double originY) {
-    final glowRect = Rect.fromCenter(
-      center: Offset(originX, originY - _cubeHeight * 1.4),
-      width: size.width * 0.9,
-      height: size.height * 0.7,
-    );
-    final paint = Paint()
+    final glowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          const Color(0xFFFF3C46)
-              .withValues(alpha: 0.08 + 0.20 * _levelFactor),
-          const Color(0xFFFF3C46).withValues(alpha: 0.0),
+          const Color(0xFFFF2A3A).withValues(alpha: (0.35 * _levelFactor * pulseFactor).clamp(0.0, 1.0)),
+          const Color(0xFFFF2A3A).withValues(alpha: 0.0),
         ],
-      ).createShader(glowRect);
-    canvas.drawOval(glowRect, paint);
-  }
-
-  /// One translucent face: a vertical gradient from a lit top edge into a
-  /// darker base, with the alpha baked into the gradient stops so rear cubes
-  /// stay visible through the front ones.
-  void _fillFace(
-    Canvas canvas,
-    ({double x, double y, double brightness}) cube,
-    Color base,
-    List<Offset> vertices, {
-    required double shade,
-    required double alpha,
-  }) {
-    final path = Path()
-      ..addPolygon([
-        for (final vertex in vertices)
-          Offset(cube.x + vertex.dx, cube.y + vertex.dy),
-      ], true);
-    final lighter = _shade(base, shade * 1.28);
-    final darker = _shade(base, shade * 0.7);
-    final paint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          lighter.withValues(alpha: alpha),
-          darker.withValues(alpha: alpha),
-        ],
-      ).createShader(path.getBounds());
-    canvas.drawPath(path, paint);
-  }
-
-  /// Specular highlight along the top edges: a bright V on the top face plus
-  /// a fainter edge on the right face, scaled with the cube brightness.
-  void _paintRimLight(
-    Canvas canvas,
-    ({double x, double y, double brightness}) cube,
-  ) {
-    final topEdge = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: 0.30 + 0.25 * cube.brightness);
-    final topPath = Path()
-      ..moveTo(cube.x - _halfWidth, cube.y)
-      ..lineTo(cube.x, cube.y - _halfDepth)
-      ..lineTo(cube.x + _halfWidth, cube.y);
-    canvas.drawPath(topPath, topEdge);
-
-    final sideEdge = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(
-        alpha: 0.16 + 0.12 * cube.brightness,
+      ).createShader(
+        Rect.fromCircle(
+          center: Offset(originX, originY - 14),
+          radius: size.width * 0.55,
+        ),
       );
-    final rightPath = Path()
-      ..moveTo(cube.x, cube.y + _halfDepth)
-      ..lineTo(cube.x + _halfWidth, cube.y);
-    canvas.drawPath(rightPath, sideEdge);
-  }
-
-  static Color _shade(Color base, double factor) {
-    final hsl = HSLColor.fromColor(base);
-    return hsl
-        .withLightness((hsl.lightness * factor).clamp(0.05, 1.0))
-        .withSaturation(
-          (hsl.saturation * (factor < 1 ? 1.05 : 0.9)).clamp(0.0, 1.0),
-        )
-        .toColor();
+    canvas.drawCircle(
+      Offset(originX, originY - 14),
+      size.width * 0.55,
+      glowPaint,
+    );
   }
 
   @override
   bool shouldRepaint(covariant CourtCardCubePainter oldDelegate) =>
-      oldDelegate.level != level;
+      oldDelegate.level != level || oldDelegate.pulseFactor != pulseFactor;
 }
 
-/// Same pyramid, but the glass/glow layer is computed by a fragment shader.
-/// Falls back to the painter art when the shader cannot be compiled or loaded
-/// (for example inside widget tests, where no asset bundle is available).
+/// Shaded variant: overlays the fragment shader glass sheen on top of the 3D voxel cubes.
 class _ShaderCubeArt extends StatefulWidget {
   final int level;
 
@@ -331,8 +322,6 @@ class _ShaderCubeArtState extends State<_ShaderCubeArt> {
   Widget build(BuildContext context) {
     final program = _loaded;
     if (_failed || program == null) {
-      // Shader not ready yet (or unavailable) — show the painter art so the
-      // stack is visible from the first frame.
       return CustomPaint(painter: CourtCardCubePainter(level: widget.level));
     }
     return CustomPaint(

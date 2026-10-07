@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/data/book_court_models.dart';
+import 'package:sheserved/features/sport_club/book_court/domain/court_card_3d_params.dart';
 import 'package:sheserved/features/sport_club/book_court/domain/court_card_style.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card_art.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card_slab.dart';
 
 VenueBooking _booking({
   required String venueId,
@@ -197,6 +199,73 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('คุณมีนัดหมาย'), findsNothing);
+    },
+  );
+
+  testWidgets('3D style renders CourtCardSlab with 5-level stepper track', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CourtCard(
+            venue: const VenueSummary(
+              id: 'venue-1',
+              name: 'สนามทดสอบ สุขุมวิท',
+              district: 'คลองเตย',
+              province: 'กรุงเทพฯ',
+              courtCount: 6,
+              averageRating: 4.3,
+              reviewCount: 18,
+              startingPriceAmount: 250,
+            ),
+            styleOverride: CourtCardStyle.painter3d,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CourtCardSlab), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
+    expect(find.text('4 ดาว'), findsOneWidget);
+    expect(find.text('5 ดาว'), findsOneWidget);
+  });
+
+  testWidgets(
+    '3D style renders replacement preset image when show3dIcon is false',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtCard(
+              venue: const VenueSummary(
+                id: 'venue-1',
+                name: 'สนามทดสอบ สุขุมวิท',
+                courtCount: 6,
+              ),
+              styleOverride: CourtCardStyle.painter3d,
+              params3dOverride: const CourtCard3DParams(
+                show3dIcon: false,
+                customImageUrl: 'preset:tennis',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Should NOT render the 3D cube art
+      expect(find.byType(CourtCardCubeArt), findsNothing);
+      // Should render the preset tennis badge
+      expect(find.text('เทนนิส'), findsOneWidget);
     },
   );
 }
