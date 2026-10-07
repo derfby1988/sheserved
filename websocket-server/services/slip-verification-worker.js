@@ -29,6 +29,8 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const dns = require('dns').promises;
+const net = require('net');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY =
@@ -56,8 +58,10 @@ let _interval = null;
 let _running = false;
 let _fetchImpl = null;
 let _storageDownload = null;
+let _dnsLookup = null;
+let _allowlistWarned = false;
 
-/** Late-bound for tests: pass a fake supabase client / fetch. */
+/** Late-bound for tests: pass a fake supabase client / fetch / dns. */
 function _init(overrides = {}) {
   _client =
     overrides.client ||
@@ -69,6 +73,21 @@ function _init(overrides = {}) {
     overrides.storageDownload ||
     ((path) =>
       _client.storage.from(BUCKET).download(path));
+  _dnsLookup =
+    overrides.dnsLookup ||
+    ((hostname, options) => dns.lookup(hostname, options));
+}
+
+/** Parsed VERIFICATION_ALLOWED_HOSTS: null when unset (legacy mode),
+ * otherwise the lowercase hostname allowlist. */
+function _allowedHosts() {
+  const raw = process.env.VERIFICATION_ALLOWED_HOSTS;
+  if (raw == null) return null;
+  const list = raw
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  return list.length ? list : null;
 }
 
 function start(overrides = {}) {
@@ -109,17 +128,79 @@ function _resolveApiKey(provider) {
 const PRIVATE_HOST_RE =
   /^(localhost|127\.|0\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fc00:|fd00:|fe80:|\[)/i;
 
-/** Egress/SSRF guard: provider endpoints must be https on a public host.
- * The admin registry is trusted input, but a hijacked/stale row must never
- * make the worker POST slip images to loopback/private/metadata targets.
- * Redirects are not followed implicitly — Node fetch defaults to 'follow',
- * so adapters keep redirect handling off and treat 3xx as unavailable. */
+/** Synchronous URL-shape checks for the SSRF guard. With
+ * VERIFICATION_ALLOWED_HOSTS set, the hostname must be on the allowlist;
+ * without it we fall back to the pre-P0.3 hostname heuristics and warn
+ * once, so existing deployments keep working until the env is set. */
 function _isAllowedEndpoint(endpointUrl) {
   try {
     const u = new URL(endpointUrl);
     if (u.protocol !== 'https:') return false;
-    if (PRIVATE_HOST_RE.test(u.hostname)) return false;
+    if (u.username || u.password) return false;
+    if (u.port && u.port !== '443') return false;
+    const host = u.hostname.toLowerCase();
+    const bare = host.replace(/^\[|\]$/g, '');
+    if (net.isIP(bare)) return false;
+    const allowed = _allowedHosts();
+    if (allowed) return allowed.includes(host);
+    if (!_allowlistWarned) {
+      _allowlistWarned = true;
+      console.warn(
+        '[SlipVerificationWorker] VERIFICATION_ALLOWED_HOSTS is not set —' +
+          ' provider endpoints are checked with hostname heuristics only;' +
+          ' set an explicit allowlist (e.g. api.slipok.com)',
+      );
+    }
+    if (PRIVATE_HOST_RE.test(host)) return false;
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Private/loopback/link-local/reserved IP check for resolved answers. */
+function _isPrivateIp(address) {
+  if (net.isIPv6(address)) {
+    const a = address.toLowerCase();
+    if (a === '::1' || a === '::') return true;
+    if (a.startsWith('fe80:') || a.startsWith('fc') || a.startsWith('fd')) {
+      return true;
+    }
+    const mapped = a.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return _isPrivateIp(mapped[1]);
+    return false;
+  }
+  const parts = address.split('.').map((n) => parseInt(n, 10));
+  if (
+    parts.length !== 4 ||
+    parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
+  ) {
+    return true;
+  }
+  const [a, b] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+/** Full egress check: URL shape, then — only when the allowlist is
+ * configured — a best-effort DNS resolution check. Best-effort because the
+ * answer can change between lookup and connect (TOCTOU); the hostname
+ * allowlist remains the primary control, this complements it. Lookup
+ * failures fail closed. */
+async function _endpointAllowed(endpointUrl) {
+  if (!_isAllowedEndpoint(endpointUrl)) return false;
+  if (!_allowedHosts()) return true;
+  try {
+    const addrs = await _dnsLookup(new URL(endpointUrl).hostname, {
+      all: true,
+    });
+    if (!addrs || addrs.length === 0) return false;
+    return addrs.every((a) => !_isPrivateIp(a.address));
   } catch {
     return false;
   }
@@ -166,7 +247,7 @@ async function _callProvider(provider, image, mime) {
   if (!apiKey) {
     return { result: 'unavailable', meta: { reason: 'missing_api_key' } };
   }
-  if (!_isAllowedEndpoint(provider.endpointUrl)) {
+  if (!(await _endpointAllowed(provider.endpointUrl))) {
     return { result: 'unavailable', meta: { reason: 'endpoint_blocked' } };
   }
   const code = (provider.code || '').toLowerCase();
@@ -281,5 +362,7 @@ module.exports = {
   _resolveApiKey,
   _callSlipOk,
   _isAllowedEndpoint,
+  _isPrivateIp,
+  _endpointAllowed,
   WORKER_ID,
 };

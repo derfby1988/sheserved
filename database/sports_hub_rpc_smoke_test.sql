@@ -106,6 +106,8 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261013100000_sports_hub_booking_verify_global_policy.sql
 \ir ../supabase/migrations/20261014100000_sports_hub_evidence_queue_defer.sql
 \ir ../supabase/migrations/20261015100000_sports_hub_evidence_upload_grants.sql
+\ir ../supabase/migrations/20261016100000_sports_hub_verify_adapter_readiness.sql
+\ir ../supabase/migrations/20261017100000_verification_admin_audit.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -2469,16 +2471,17 @@ BEGIN
           IS NOT NULL
       AND to_regclass('public.slip_verification_transactions') IS NOT NULL
       AND to_regclass('public.slip_verification_providers') IS NOT NULL
-      AND to_regclass('public.slip_verification_usage') IS NOT NULL,
+      AND to_regclass('public.slip_verification_usage') IS NOT NULL
+      AND to_regclass('public.verification_admin_audit') IS NOT NULL,
     'evidence tables exist');
   PERFORM pg_temp.expect(
-    (SELECT count(*) = 7 FROM pg_class
+    (SELECT count(*) = 8 FROM pg_class
      WHERE relname IN (
        'sports_venue_booking_groups','sports_venue_booking_evidence',
        'sports_venue_booking_payment_claims',
        'sports_venue_booking_refund_cases',
        'slip_verification_transactions','slip_verification_providers',
-       'slip_verification_usage')
+       'slip_verification_usage','verification_admin_audit')
        AND relrowsecurity),
     'private evidence tables have RLS enabled and no client policies');
 
@@ -2539,7 +2542,7 @@ BEGIN
   PERFORM public.admin_set_sports_venue_verify_policy(
     v_admin, v_venue, 'whitelist', 'owner', 100, 30);
   PERFORM public.admin_upsert_slip_verification_provider(
-    v_admin, 'smoke_slip', 'Smoke Slip',
+    v_admin, 'slipok', 'Smoke Slip',
     'https://provider.example/verify', 'SMOKE_SLIP_KEY', 1.5, 15,
     NULL, true, 100, NULL);
   PERFORM pg_temp.expect_raise(
@@ -2560,7 +2563,7 @@ BEGIN
     AND (SELECT verify_allowlisted FROM public.sports_venues
       WHERE id = v_venue)
     AND (SELECT is_enabled FROM public.slip_verification_providers
-      WHERE code = 'smoke_slip'),
+      WHERE code = 'slipok'),
     'global whitelist, venue allowlist and provider config are stored');
   PERFORM public.admin_set_sports_venue_verify_global_scope(
     v_admin, 'all');
@@ -3349,9 +3352,47 @@ BEGIN
   PERFORM public.admin_set_sports_venue_verify_policy(
     v_admin, v_venue, 'whitelist', 'platform', NULL, 30);
   PERFORM public.admin_upsert_slip_verification_provider(
-    v_admin, 'smoke_slip_http', 'Smoke Slip HTTP',
+    v_admin, 'slipok', 'Smoke Slip HTTP',
     'https://provider.example/verify', 'SLIPOK_API_KEY', 1.5, 15,
     NULL, true, 10, NULL);
+
+  -- -- Adapter readiness gate (P0.2) --------------------------------
+  PERFORM pg_temp.expect(
+    public.verification_adapter_known('slipok')
+      AND public.verification_adapter_known('SLIPOK')
+      AND NOT public.verification_adapter_known('ghost_adapter')
+      AND NOT public.verification_adapter_known(NULL),
+    'adapter readiness is a compile-time allowlist');
+  -- An unknown adapter can be staged as a disabled draft but never
+  -- enabled through the admin RPC.
+  PERFORM public.admin_upsert_slip_verification_provider(
+    v_admin, 'smoke_ghost', 'Smoke Ghost',
+    'https://ghost.example/verify', 'GHOST_KEY', 1.0, 15,
+    NULL, false, NULL, NULL);
+  PERFORM pg_temp.expect(
+    EXISTS (SELECT 1 FROM public.slip_verification_providers
+            WHERE code = 'smoke_ghost' AND NOT is_enabled
+              AND adapter_code = 'smoke_ghost'),
+    'an unknown-adapter provider can be saved as a disabled draft');
+  PERFORM pg_temp.expect_raise(
+    'enabling a provider with no registered adapter is refused',
+    format($s$SELECT public.admin_upsert_slip_verification_provider(
+      %L, 'smoke_ghost', 'Smoke Ghost', NULL, NULL, NULL, NULL, NULL,
+      true, NULL, NULL)$s$, v_admin),
+    'ADAPTER_NOT_AVAILABLE');
+  -- A stale/legacy row enabled directly (bypassing the RPC) is still
+  -- filtered out of every readiness path.
+  INSERT INTO public.slip_verification_providers (
+    code, display_name, endpoint_url, api_key_ref, is_enabled,
+    priority, adapter_code, supported_domains
+  ) VALUES (
+    'ghost_slip', 'Ghost Slip', 'https://ghost.example/verify',
+    'GHOST_KEY', true, 1, 'ghost_adapter', '{sports_booking}'
+  );
+  PERFORM pg_temp.expect(
+    (SELECT (public.admin_get_sports_venue_verify_global_policy(v_admin)
+       ->>'configuredProviderCount')::INT) = 1,
+    'provider readiness counts only adapter-known providers');
   PERFORM public.set_sports_venue_court_evidence_policy(
     v_owner, v_court, 'custom', jsonb_build_object(
       'requirements', jsonb_build_array(jsonb_build_object(
@@ -3384,8 +3425,13 @@ BEGIN
       AND v_claim->>'storagePath'
           = 'groups/' || v_group2 || '/payment/s.jpg'
       AND (v_claim->>'expectedAmount')::NUMERIC = 100
-      AND v_claim->'provider'->>'apiKeyRef' = 'SLIPOK_API_KEY',
+      AND v_claim->'provider'->>'apiKeyRef' = 'SLIPOK_API_KEY'
+      AND v_claim->'provider'->>'code' = 'slipok',
     'the worker claim leases the outbox row with provider config');
+  PERFORM pg_temp.expect(
+    v_claim->'provider'->>'code' = 'slipok',
+    'an enabled higher-priority provider without an adapter is never '
+      || 'selected by the worker claim');
   PERFORM pg_temp.expect(
     public.worker_claim_sports_venue_slip_verification(
       'submit:' || v_evidence::text, 'worker-2') IS NULL,
@@ -3393,7 +3439,7 @@ BEGIN
 
   -- Wrong amount is downgraded to failed; the slip goes to owner review.
   v_apply := public.worker_apply_sports_venue_slip_verification(
-    'submit:' || v_evidence::text, 'smoke_slip_http', 'verified',
+    'submit:' || v_evidence::text, 'slipok', 'verified',
     p_amount => 50, p_fingerprint => 'fp-wrong-amount');
   PERFORM pg_temp.expect(
     v_apply = 'applied'
@@ -3405,7 +3451,7 @@ BEGIN
     'an amount mismatch downgrades verified to failed for owner review');
   PERFORM pg_temp.expect(
     public.worker_apply_sports_venue_slip_verification(
-      'submit:' || v_evidence::text, 'smoke_slip_http', 'verified',
+      'submit:' || v_evidence::text, 'slipok', 'verified',
       p_amount => 100, p_fingerprint => 'fp-again') = 'already_done',
     'applying a settled attempt is idempotent');
 
@@ -3433,7 +3479,7 @@ BEGIN
   PERFORM public.worker_claim_sports_venue_slip_verification(
     'submit:' || v_evidence::text, 'worker-1');
   v_apply := public.worker_apply_sports_venue_slip_verification(
-    'submit:' || v_evidence::text, 'smoke_slip_http', 'verified',
+    'submit:' || v_evidence::text, 'slipok', 'verified',
     p_amount => 100, p_fingerprint => 'fp-unique-1',
     p_provider_ref => 'txn-1');
   PERFORM pg_temp.expect(
@@ -3461,7 +3507,7 @@ BEGIN
   PERFORM public.worker_claim_sports_venue_slip_verification(
     'submit:' || v_evidence::text, 'worker-1');
   v_apply := public.worker_apply_sports_venue_slip_verification(
-    'submit:' || v_evidence::text, 'smoke_slip_http', 'verified',
+    'submit:' || v_evidence::text, 'slipok', 'verified',
     p_amount => 100, p_fingerprint => 'fp-unique-1');
   PERFORM pg_temp.expect(
     v_apply = 'applied'
@@ -3587,4 +3633,45 @@ BEGIN
       AND public.cleanup_sports_venue_evidence_orphans()
           ? 'intentsPurged',
     'orphan cleanup returns its sweep report');
+
+  -- -- Admin config audit (P0.4) ------------------------------------
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM public.verification_admin_audit a
+      WHERE a.admin_id = v_admin
+        AND a.action = 'admin_upsert_slip_verification_provider'
+        AND a.target_type = 'provider' AND a.target_id = 'slipok'
+        AND a.after->>'api_key_ref' = 'SLIPOK_API_KEY'),
+    'provider upserts are audited with the secret ref name only');
+  PERFORM pg_temp.expect(
+    EXISTS (
+      SELECT 1 FROM public.verification_admin_audit a
+      WHERE a.action = 'admin_set_sports_venue_verify_global_scope'
+        AND a.before->>'scope' IS NOT NULL
+        AND a.after->>'scope' IS NOT NULL)
+    AND EXISTS (
+      SELECT 1 FROM public.verification_admin_audit a
+      WHERE a.action = 'admin_set_sports_venue_verify_controls'
+        AND a.target_id = v_venue::text),
+    'scope and per-venue control changes are audited before/after');
+  PERFORM pg_temp.expect(
+    (SELECT count(*) >= 1 FROM jsonb_array_elements(
+      public.admin_list_verification_admin_audit(v_admin))),
+    'the admin audit listing returns recorded changes');
+  PERFORM pg_temp.expect_raise(
+    'a non-admin cannot read the verification audit log',
+    format($s$SELECT public.admin_list_verification_admin_audit(%L)$s$,
+      v_customer),
+    'NOT_ADMIN');
+  PERFORM pg_temp.expect(
+    NOT has_function_privilege(
+      'authenticated', 'public.verification_adapter_known(text)',
+      'execute')
+    AND NOT has_function_privilege(
+      'authenticated',
+      'public.record_verification_admin_audit(uuid,varchar,varchar,varchar,jsonb,jsonb)',
+      'execute')
+    AND NOT has_table_privilege(
+      'authenticated', 'public.verification_admin_audit', 'select'),
+    'the adapter allowlist and audit table are not client reachable');
 END $client$;

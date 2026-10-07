@@ -609,7 +609,9 @@ class _AdminCourtOwnerReviewPanelState
               ),
               Switch(
                 value: p.isEnabled,
-                onChanged: (v) => _toggleProvider(p, v),
+                onChanged: p.adapterKnown
+                    ? (v) => _toggleProvider(p, v)
+                    : null,
               ),
             ],
           ),
@@ -622,6 +624,30 @@ class _AdminCourtOwnerReviewPanelState
             ].join(' · '),
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
           ),
+          if (!p.adapterKnown)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 15,
+                    color: Colors.orange.shade800,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'ยังไม่มี adapter บนเซิร์ฟเวอร์สำหรับผู้ให้บริการนี้'
+                      ' — เปิดใช้ไม่ได้จนกว่าจะ deploy adapter',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (p.notes?.isNotEmpty == true)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -1051,6 +1077,10 @@ class _AdminCourtOwnerReviewPanelState
     }
     if (raw.contains('INVALID_STATUS')) {
       return 'สถานะสถานที่ไม่อนุญาตให้ทำรายการนี้';
+    }
+    if (raw.contains('ADAPTER_NOT_AVAILABLE')) {
+      return 'ยังไม่มี adapter สำหรับผู้ให้บริการนี้บนเซิร์ฟเวอร์'
+          ' — deploy adapter ก่อนเปิดใช้งาน';
     }
     if (raw.contains('INVALID_PROVIDER') ||
         raw.contains('INVALID_VERIFY_POLICY')) {

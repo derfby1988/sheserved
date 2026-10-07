@@ -1,5 +1,5 @@
 # แผนพัฒนาระบบตรวจสอบหลักฐาน/สลิปส่วนกลาง (Shared Verification Core Plan)
-> สถานะ: **ข้อเสนอ (proposal) — ยังไม่เริ่ม implement** · แก้ไขรอบที่ 3 (2026-10-07)
+> สถานะ: **เริ่ม implement แล้ว — P0.2/P0.3/P0.4 เขียนโค้ด+test ผ่านบน scratch DB (รอ apply production), P0.1 (rotate key) เป็นงาน ops รอดำเนินการ, P0.5/P0.6 ค้าง** · แก้ไขรอบที่ 4 (2026-10-07)
 > อ้างอิงจาก: 21.7.21 ใน `Match_Sport_PLAN.md` (implement + live แล้ว), `20261010100000`–`20261015100000`
 > ขอบเขตเอกสาร: ทำให้ระบบตรวจสลิปอัตโนมัติของ Sports Hub **ถูกต้อง ปลอดภัย และสลับ provider ได้** แล้วจึง (ถ้ามีระบบที่สองจริง) แยกเป็นแกนกลางที่ระบบอื่นของ Sheserved ใช้ร่วมได้ โดย**ไม่ทำให้ระบบจองสนามพัง**
 
@@ -378,6 +378,14 @@ P0.2 (adapter readiness) บล็อก P4 | P2.a/P2.b/P2.c บล็อก "�
 | P0.6 | **แก้เอกสาร** — แก้วันที่ผิดใน `Match_Sport_PLAN.md` runbook (2026-10-15 → 2026-10-07), เพิ่มหัวข้อ "Shared verification core" ใน `AGENTS.md` (คำสั่ง verify, env ที่เพิ่ม, ลำดับ deploy Node-ก่อน-migration สำหรับ adapter ใหม่) | docs |
 
 **Deploy order rule (สำคัญ):** ของที่ทำให้ DB "รู้จัก adapter ใหม่" ต้อง deploy **Node (มี adapter) ก่อน** แล้วค่อย apply migration ที่เพิ่ม code เข้า `verification_adapter_known` — ถ้ากลับด้านจะเกิดช่วงที่ DB เลือก provider ที่ Node ยังเรียกไม่ได้
+
+**P0 implementation status (2026-10-07):**
+- P0.1 (rotate SlipOK key): **ops pending** — ต้องทำบนเครื่องที่ deploy Node จริง (ออก key ใหม่ที่ provider → เพิกถอนเดิม → `SLIP_PROVIDER_KEY_SLIPOK` ใน env → restart → `GET /quota` 200 + key เดิม 401/403)
+- P0.2: `supabase/migrations/20261016100000_sports_hub_verify_adapter_readiness.sql` + rollback script — `adapter_code`/`supported_domains`, `verification_adapter_known()` ('slipok' เท่านั้น), กรอง adapter ใน claim/`auto_verify_allowed`/provider counts, upsert ปฏิเสธ enable ด้วย `ADAPTER_NOT_AVAILABLE`, UI ปิด toggle + แสดงเหตุผลใน `admin_court_owner_review_page.dart`
+- P0.3: `VERIFICATION_ALLOWED_HOSTS` + DNS→public check ใน `slip-verification-worker.js` (fallback เดิม + warn เมื่อ env ไม่ตั้ง) + `.env.example`
+- P0.4: `supabase/migrations/20261017100000_verification_admin_audit.sql` + rollback script — `verification_admin_audit` (RLS+REVOKE) เขียนใน admin RPCs ทั้ง 4 ตัว + `admin_list_verification_admin_audit`
+- Gate ที่ตรวจได้บนเครื่อง: SQL smoke **405 PASS / 0 FAIL / 0 ERROR** (scratch PG14, strip `security_invoker`), `npm test` **58/58**, `dart analyze` clean, flutter book_court **247 tests ผ่าน**
+- Gate ที่เหลือ (ต้องทำบนระบบจริงหลัง apply): live smoke 1 ใบ (key ใหม่), rollback drill ปิด provider → `no_provider` → owner review
 
 **Gate P0 (ต้องผ่านครบ):**
 1. `database/sports_hub_rpc_smoke_test.sql` → PASS ≥ 395, FAIL 0, ERROR 0 + assertion ใหม่: เพิ่ม provider ปลอม priority 1 (ไม่มี adapter) → claim ยังเลือก `slipok`; enable provider ไม่มี adapter → `ADAPTER_NOT_AVAILABLE`; audit row ถูกสร้างและไม่มี secret; non-admin → `NOT_ADMIN`

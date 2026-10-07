@@ -1855,6 +1855,9 @@ class OwnerEvidenceQueue {
 
 /// One admin-visible slip-verification provider registry row (no secrets —
 /// `hasApiKey` only signals that a secret-store reference exists).
+/// `adapterKnown` reports whether the worker ships an adapter for
+/// [adapterCode]; a backend that predates the readiness gate omits the key
+/// and the UI treats it as known to stay compatible.
 class SlipVerificationProvider {
   final String code;
   final String displayName;
@@ -1866,6 +1869,9 @@ class SlipVerificationProvider {
   final bool isEnabled;
   final int priority;
   final String? notes;
+  final String? adapterCode;
+  final bool adapterKnown;
+  final List<String> supportedDomains;
   final DateTime? updatedAt;
 
   const SlipVerificationProvider({
@@ -1879,6 +1885,9 @@ class SlipVerificationProvider {
     this.isEnabled = false,
     this.priority = 100,
     this.notes,
+    this.adapterCode,
+    this.adapterKnown = true,
+    this.supportedDomains = const [],
     this.updatedAt,
   });
 
@@ -1898,6 +1907,13 @@ class SlipVerificationProvider {
         isEnabled: j['isEnabled'] == true,
         priority: (j['priority'] as num?)?.toInt() ?? 100,
         notes: j['notes']?.toString(),
+        adapterCode: j['adapterCode']?.toString(),
+        adapterKnown: j['adapterKnown'] != false,
+        supportedDomains: j['supportedDomains'] is List
+            ? (j['supportedDomains'] as List)
+                .map((e) => e.toString())
+                .toList()
+            : const [],
         updatedAt: DateTime.tryParse(j['updatedAt']?.toString() ?? ''),
       );
 }

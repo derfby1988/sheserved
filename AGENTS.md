@@ -198,3 +198,27 @@ grep -c 'PASS:' smoke.log   # failures print `FAIL:` / `ERROR:`
 The Homebrew `postgresql@15` formula is keg-only, so call its binaries by full path;
 it does not disturb a system PostgreSQL 14 installation. When adding a migration,
 add the matching `\ir` line to the smoke script and extend the phase assertions.
+
+## Shared verification core (slip verification)
+
+Plan: `docs/plans/SHARED_VERIFICATION_CORE_PLAN.md` (phase P0 implemented
+2026-10-07 — see its "P0 implementation status" block for what is pending).
+
+- Provider registry admins can only **enable** a provider whose adapter the
+  worker ships: `verification_adapter_known(code)` is a compile-time CASE
+  list changed by migration only (`ADAPTER_NOT_AVAILABLE` otherwise).
+  Deploy order for a new provider: Node adapter first, then the migration.
+- `VERIFICATION_ALLOWED_HOSTS` (websocket-server env, comma-separated)
+  allowlists provider endpoint hostnames and adds a DNS resolves-to-public
+  check; unset = legacy hostname heuristics + a startup warning. Set
+  `VERIFICATION_ALLOWED_HOSTS=api.slipok.com` on the deploy host.
+- Config changes (global scope, venue controls, provider upserts) are
+  audited in `verification_admin_audit` (RLS + REVOKE, admin reads via
+  `admin_list_verification_admin_audit`); api_key_ref stores only the
+  secret-store ref name — never the key.
+- Migration rollbacks live in `supabase/rollbacks/<migration file>.sql`
+  (apply newest-first when rolling back a stack).
+- On machines with only PostgreSQL 14 (e.g. the secondary dev machine),
+  run the smoke test against stripped migration copies:
+  `for f in $(grep -o 'migrations/[0-9a-z_]*\.sql' database/sports_hub_rpc_smoke_test.sql | sort -u); do sed 's/WITH (security_invoker = on)//g' "supabase/$f" > "/tmp/migcheck/supabase/$f"; done`
+  with the smoke script copied to `/tmp/migcheck/database/`.
