@@ -19,10 +19,16 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
   final Future<bool> Function(Set<String> selected)? onApply;
   final ValueListenable<bool> suspensionSignal;
 
-  /// Phase 22 — ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด: ใช้ `categoryId` ของหมวด
-  /// นั้นเพียงหมวดเดียว ไม่อ่าน/commit `_draft` และไม่เปลี่ยนตัวกรองยอดนิยม
+  /// Phase 22 — ปุ่ม "แผนที่เกิดเหตุ" บรรทัดเดียวกับชื่อหมวด (ต่อจากชื่อ
+  /// ก่อน toggle): ใช้ `categoryId` ของหมวดนั้นเพียงหมวดเดียว ไม่อ่าน/
+  /// commit `_draft` และไม่เปลี่ยนตัวกรองยอดนิยม
   /// (null = ปิด feature gate → ไม่แสดงปุ่ม)
   final void Function(DonationCategory category)? onOpenIncidentMap;
+
+  /// Phase 22 — แจ้ง draft ปัจจุบันของ sheet ให้หน้าเก็บไว้ (ครั้งแรกตอนเปิด
+  /// และทุกครั้งที่ผู้ใช้สลับ toggle) เพื่อให้กดย้อนกลับจากโหมดแผนที่แล้วเปิด
+  /// sheet กลับมาที่สถานะเดิมได้ (§22.13)
+  final ValueChanged<Set<String>>? onDraftChanged;
 
   const TrendingCategoryFilterSheet({
     super.key,
@@ -31,6 +37,7 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
     required this.suspensionSignal,
     this.onApply,
     this.onOpenIncidentMap,
+    this.onDraftChanged,
   });
 
   static Future<void> show(
@@ -40,6 +47,7 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
     required ValueListenable<bool> suspensionSignal,
     Future<bool> Function(Set<String> selected)? onApply,
     void Function(DonationCategory category)? onOpenIncidentMap,
+    ValueChanged<Set<String>>? onDraftChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -56,6 +64,7 @@ class TrendingCategoryFilterSheet extends StatefulWidget {
         suspensionSignal: suspensionSignal,
         onApply: onApply,
         onOpenIncidentMap: onOpenIncidentMap,
+        onDraftChanged: onDraftChanged,
       ),
     );
   }
@@ -76,7 +85,11 @@ class _TrendingCategoryFilterSheetState
     super.initState();
     widget.suspensionSignal.addListener(_onSuspensionChanged);
     // เปิดมาระหว่างที่ suspension เริ่มไปแล้ว → ปิดทันที
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onSuspensionChanged());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onSuspensionChanged();
+      // แจ้ง draft เริ่มต้น — หน้าเก็บไว้ใช้เปิด sheet กลับมาที่เดิม (§22.13)
+      widget.onDraftChanged?.call(Set.of(_draft));
+    });
   }
 
   @override
@@ -101,6 +114,7 @@ class _TrendingCategoryFilterSheetState
   Future<void> _clearAllAndApply() async {
     if (_applying) return;
     setState(() => _draft.clear());
+    widget.onDraftChanged?.call(Set.of(_draft));
     await _apply();
   }
 
@@ -189,40 +203,43 @@ class _TrendingCategoryFilterSheetState
             value: _draft.contains(category.id),
             onChanged: _applying
                 ? null
-                : (selected) => setState(() {
-                    if (selected) {
-                      _draft.add(category.id);
-                    } else {
-                      _draft.remove(category.id);
-                    }
-                  }),
+                : (selected) {
+                    setState(() {
+                      if (selected) {
+                        _draft.add(category.id);
+                      } else {
+                        _draft.remove(category.id);
+                      }
+                    });
+                    widget.onDraftChanged?.call(Set.of(_draft));
+                  },
+            // ✅ Phase 22: ปุ่ม "แผนที่เกิดเหตุ" บรรทัดเดียวกับชื่อหมวด
+            // (ต่อจากชื่อ ก่อน toggle) — ใช้หมวดนั้นเพียงหมวดเดียว
+            // ไม่แตะ draft/ตัวกรอง (§22.1/§22.11)
+            titleAccessory: widget.onOpenIncidentMap == null
+                ? null
+                : NeumorphicPillButton(
+                    text: 'แผนที่เกิดเหตุ',
+                    icon: Icons.map_outlined,
+                    height: 32,
+                    fontSize: 12,
+                    iconSize: 15,
+                    depth: 3,
+                    blur: 6,
+                    // กว้างขั้นต่ำเท่ากันทุกหมวดตาม convention ของ
+                    // NeumorphicPillButton (minWidth = กว้างเนื้อหาในแคปซูล)
+                    minWidth: 132,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    // ✅ §22.1: กดแล้ว sheet ปิดตัวเองก่อน (ไม่ commit draft)
+                    // แล้ว callback จึงเข้าสู่โหมดแผนที่ — page ไม่ต้อง pop ซ้ำ
+                    onPressed: _applying
+                        ? null
+                        : () {
+                            Navigator.of(context).pop();
+                            widget.onOpenIncidentMap!(category);
+                          },
+                  ),
           ),
-          // ✅ Phase 22: ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด — ใช้หมวดนั้น
-          // เพียงหมวดเดียว ไม่แตะ draft/ตัวกรอง (§22.1)
-          if (widget.onOpenIncidentMap != null)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: NeumorphicPillButton(
-                  text: 'แผนที่เกิดเหตุ',
-                  icon: Icons.map_outlined,
-                  height: 32,
-                  fontSize: 12,
-                  iconSize: 15,
-                  depth: 3,
-                  blur: 6,
-                  // ✅ §22.1: กดแล้ว sheet ปิดตัวเองก่อน (ไม่ commit draft)
-                  // แล้ว callback จึงเข้าสู่โหมดแผนที่ — page ไม่ต้อง pop ซ้ำ
-                  onPressed: _applying
-                      ? null
-                      : () {
-                          Navigator.of(context).pop();
-                          widget.onOpenIncidentMap!(category);
-                        },
-                ),
-              ),
-            ),
         ],
       ],
     );

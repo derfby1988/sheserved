@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,6 +18,7 @@ import 'package:sheserved/shared/widgets/glass/glass_primitives.dart';
 
 import '../../application/book_court_booking_service.dart';
 import '../../application/book_court_query.dart';
+import '../../application/court_card_style_service.dart';
 import '../../data/book_court_models.dart';
 import '../../data/book_court_repository.dart';
 import '../../domain/book_court_filter.dart';
@@ -46,12 +49,14 @@ class BookCourtPage extends StatefulWidget {
   /// by the shell overlay, so this page then only reserves its height.
   final SportsHubSportCatalog? sportCatalog;
   final SportsHubBarController? sportBar;
+  final String? initialVenueId;
 
   const BookCourtPage({
     super.key,
     this.hubController,
     this.sportCatalog,
     this.sportBar,
+    this.initialVenueId,
   });
 
   @override
@@ -75,6 +80,11 @@ class _BookCourtPageState extends State<BookCourtPage> {
   int _requestId = 0;
   double? _userLat;
   double? _userLng;
+  List<VenueBooking> _upcomingBookings = const [];
+  String? _upcomingBookingsUserId;
+  bool _upcomingBookingsLoaded = false;
+  int _upcomingBookingsRequestId = 0;
+  bool _initialVenueOpened = false;
 
   static const _pageSize = 20;
 
@@ -129,6 +139,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
   void _onHubChanged() {
     if (!mounted) return;
     _reload();
+    unawaited(_loadUpcomingBookings());
   }
 
   Future<void> _init() async {
@@ -144,6 +155,56 @@ class _BookCourtPageState extends State<BookCourtPage> {
       }
     }
     await _reload();
+    unawaited(_loadUpcomingBookings());
+    unawaited(CourtCardStyleService.instance.load());
+    await _openInitialVenue();
+  }
+
+  Future<void> _loadUpcomingBookings({bool force = false}) async {
+    final userId = _userId;
+    if (!force &&
+        _upcomingBookingsLoaded &&
+        _upcomingBookingsUserId == userId) {
+      return;
+    }
+    _upcomingBookingsLoaded = true;
+    _upcomingBookingsUserId = userId;
+    final requestId = ++_upcomingBookingsRequestId;
+    if (userId == null) {
+      if (mounted) setState(() => _upcomingBookings = const []);
+      return;
+    }
+    try {
+      final bookings = await _repo.listMyBookings(userId);
+      if (!mounted || requestId != _upcomingBookingsRequestId) return;
+      final now = DateTime.now();
+      final upcoming = bookings
+          .where((booking) => booking.isConfirmed && booking.endsAt.isAfter(now))
+          .toList()
+        ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+      setState(() => _upcomingBookings = upcoming);
+    } catch (_) {
+      if (mounted && requestId == _upcomingBookingsRequestId) {
+        setState(() => _upcomingBookings = const []);
+      }
+    }
+  }
+
+  Future<void> _openInitialVenue() async {
+    final venueId = widget.initialVenueId;
+    if (_initialVenueOpened || venueId == null || venueId.isEmpty) return;
+    _initialVenueOpened = true;
+    try {
+      final venue = await _repo.getPublicVenue(venueId);
+      if (!mounted) return;
+      if (venue == null) {
+        _toast('ไม่พบสถานที่นี้แล้ว อาจถูกปิดรับจอง');
+        return;
+      }
+      await _openVenue(venue);
+    } catch (_) {
+      if (mounted) _toast('เปิดสถานที่ไม่สำเร็จ กรุณาลองใหม่');
+    }
   }
 
   void _onScroll() {
@@ -154,6 +215,10 @@ class _BookCourtPageState extends State<BookCourtPage> {
         _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
     }
+  }
+
+  Future<void> _refresh() async {
+    await Future.wait([_reload(), _loadUpcomingBookings(force: true)]);
   }
 
   Future<void> _reload() async {
@@ -360,6 +425,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
           : () => _openMyBookings(reviewVenueId: venue.id),
       onOpenMyBookings: () => _openMyBookings(),
     );
+    if (mounted) await _loadUpcomingBookings(force: true);
   }
 
   /// Booking flow: pick slot -> accept venue terms -> trusted RPC create.
@@ -475,6 +541,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
           );
           if (!mounted) return;
           await _openGroupSheet(groupId);
+          await _loadUpcomingBookings(force: true);
           return;
         }
         final result = await _booking.bookSlots(
@@ -485,6 +552,9 @@ class _BookCourtPageState extends State<BookCourtPage> {
         );
         completed += result.completed;
         if (!mounted) return;
+        if (result.completed > 0) {
+          await _loadUpcomingBookings(force: true);
+        }
         final error = result.error;
         if (error == null) {
           if (ranges.length == 1) {
@@ -822,7 +892,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
         ),
         Expanded(
           child: RefreshIndicator(
-            onRefresh: _reload,
+            onRefresh: _refresh,
             child: _loading
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -875,6 +945,7 @@ class _BookCourtPageState extends State<BookCourtPage> {
                       return CourtCard(
                         venue: venue,
                         distanceKm: _distanceTo(venue),
+                        upcomingBookings: _upcomingBookings,
                         onTap: () => _openVenue(venue),
                       );
                     },

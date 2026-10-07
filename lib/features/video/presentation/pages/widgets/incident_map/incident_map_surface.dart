@@ -19,7 +19,8 @@ export 'incident_map_photo_layout.dart'
     show IncidentPhotoCardPlacement, layoutIncidentPhotoCards;
 
 /// Zoom ที่เริ่มแสดงภาพตัวอย่างจาก gallery (§22.5)
-const double kIncidentMapPhotoZoomThreshold = 13;
+const double kIncidentMapPhotoZoomThreshold =
+    IncidentMapZoomPolicy.photoPreviewThreshold;
 
 /// Cluster icon grows with the incident count.
 Size _clusterIconSize(int count) {
@@ -68,6 +69,7 @@ class IncidentMapCameraState {
 class IncidentMapSurface extends StatefulWidget {
   final IncidentMapAvailability availability;
   final IncidentMapBounds initialBounds;
+  final IncidentMapCameraFocus? initialFocus;
   final List<IncidentMapItem> items;
 
   /// Legend chip highlight — dim markers outside this bucket (§22.3.4).
@@ -84,6 +86,7 @@ class IncidentMapSurface extends StatefulWidget {
     super.key,
     required this.availability,
     required this.initialBounds,
+    this.initialFocus,
     required this.items,
     this.highlightedBucket,
     this.onPointTap,
@@ -402,14 +405,23 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
   }
 
   Widget _buildGoogleMap() {
+    final focus = widget.initialFocus;
     return GoogleMap(
       initialCameraPosition: CameraPosition(
-        target: LatLng(_centerLat, _centerLng),
-        zoom: 5.5,
+        target: focus == null
+            ? LatLng(_centerLat, _centerLng)
+            : LatLng(focus.latitude, focus.longitude),
+        zoom: focus?.zoom ?? 5.5,
       ),
       onMapCreated: (controller) {
         _googleController = controller;
-        _fitInitialGoogleBounds();
+        if (focus == null) {
+          _fitInitialGoogleBounds();
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(_syncGoogleCamera());
+          });
+        }
       },
       onCameraIdle: _syncGoogleCamera,
       markers: _googleMarkers,
@@ -430,16 +442,24 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
   // ──────────────────────────────────────────────────────────────
 
   Widget _buildOsmMap(TileSource source) {
+    final focus = widget.initialFocus;
     return fm.FlutterMap(
       mapController: _osmController,
       options: fm.MapOptions(
-        initialCameraFit: fm.CameraFit.bounds(
-          bounds: fm.LatLngBounds(
-            ll.LatLng(widget.initialBounds.south, widget.initialBounds.west),
-            ll.LatLng(widget.initialBounds.north, widget.initialBounds.east),
-          ),
-          padding: const EdgeInsets.all(16),
-        ),
+        initialCenter: focus == null
+            ? ll.LatLng(_centerLat, _centerLng)
+            : ll.LatLng(focus.latitude, focus.longitude),
+        initialZoom: focus?.zoom ?? 5.5,
+        initialCameraFit: focus == null
+            ? fm.CameraFit.bounds(
+                bounds: fm.LatLngBounds(
+                  ll.LatLng(widget.initialBounds.south, widget.initialBounds.west),
+                  ll.LatLng(widget.initialBounds.north, widget.initialBounds.east),
+                ),
+                padding: const EdgeInsets.all(16),
+              )
+            : null,
+        onMapReady: _syncOsmCamera,
         onPositionChanged: (_, _) => _syncOsmCamera(),
       ),
       children: [
@@ -509,6 +529,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
       anchorByIncidentId: anchors,
       photosByIncidentId: photos,
       viewport: viewport,
+      preferredIncidentId: widget.initialFocus?.incidentId,
     );
   }
 

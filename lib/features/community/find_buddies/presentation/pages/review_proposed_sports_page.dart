@@ -12,6 +12,7 @@ import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 import '../../../../sport_club/book_court/data/book_court_repository.dart';
 import '../../../../sport_club/book_court/presentation/pages/admin_court_owner_review_page.dart';
 import '../../../../sport_club/book_court/presentation/widgets/admin_platform_venue_terms_panel.dart';
+import '../../../../sport_club/book_court/presentation/widgets/court_card_style_panel.dart';
 
 class ReviewProposedSportsPage extends ConsumerStatefulWidget {
   const ReviewProposedSportsPage({super.key});
@@ -273,7 +274,7 @@ class _ReviewProposedSportsPageState
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: AppColors.primary,
         extendBody: true,
@@ -353,6 +354,7 @@ class _ReviewProposedSportsPageState
                         Tab(text: 'เพิ่มประเภทกีฬา'),
                         Tab(text: 'ลงทะเบียนสนาม'),
                         Tab(text: 'เงื่อนไขมาตรฐานสนาม'),
+                        Tab(text: 'รูปแบบการ์ด'),
                       ],
                     ),
                     Expanded(
@@ -365,6 +367,7 @@ class _ReviewProposedSportsPageState
                               repo: _courtRepo,
                               adminId: AuthService.instance.currentUser?.id,
                             ),
+                            const CourtCardStylePanel(),
                           ],
                         ),
                       ),

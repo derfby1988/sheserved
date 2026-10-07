@@ -19,12 +19,11 @@ class TrendingPanelWidget extends StatefulWidget {
   /// - ป้องกันผู้ช่วยเหลือเผลอกดเปลี่ยนเหตุการณ์ก่อนจบภารกิจ
   final bool lockToCurrentVideo;
 
-  /// ✅ Phase 20: ตัวกรองประเภทเหตุของกล่องยอดนิยม (multi-select)
-  /// ปุ่มเปิด sheet ย้ายไปอยู่แถวบนสุดแล้ว (`EmergencyTopBar`) — panel เหลือ
-  /// เฉพาะสถานะที่ต้องใช้แสดงผล:
-  /// - [selectedCategoryIds] ใช้ตัดสิน empty state ("ไม่พบเหตุในประเภทที่เลือก")
-  /// - [onApplyCategoryFilter] ใช้โดยปุ่ม "ล้างตัวกรอง" ใน empty state และ
-  ///   ต้องคืน true เมื่อ commit สำเร็จเท่านั้น
+  /// ✅ Phase 20/22: active category scope ของกล่องยอดนิยม — ปกติเป็น
+  /// committed multi-select filter; ใน map-playback เป็น temporary map category.
+  /// ปุ่มเปิด sheet อยู่ใน `EmergencyTopBar`; [selectedCategoryIds] ใช้ตัดสิน
+  /// empty state. [onApplyCategoryFilter] มีค่าเฉพาะเมื่อ scope แก้ได้จาก sheet
+  /// (map-playback scope ล้างจาก empty state ไม่ได้) และต้องคืน true เมื่อ commit สำเร็จเท่านั้น
   final Set<String> selectedCategoryIds;
   final Future<bool> Function(Set<String> selected)? onApplyCategoryFilter;
 
@@ -46,8 +45,8 @@ class TrendingPanelWidget extends StatefulWidget {
     this.pinnedFromMapVideoId,
   });
 
-  /// ✅ Phase 22: การ์ดที่เลือกจากแผนที่เกิดเหตุ — แสดงป้าย "จากแผนที่"
-  /// (§22.1: ปักบนสุดโดยไม่นับในผลกรอง/ไม่กระทบ pagination)
+  /// ✅ Phase 22: เหตุการณ์ที่เลือกจากแผนที่ — แสดงป้าย "จากแผนที่" บนการ์ด
+  /// ที่เลือกภายใน feed ซึ่งถูกจำกัดให้อยู่ในหมวดของแผนที่ (§22.14)
   final String? pinnedFromMapVideoId;
 
   @override

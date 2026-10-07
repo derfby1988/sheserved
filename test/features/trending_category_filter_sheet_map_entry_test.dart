@@ -25,6 +25,7 @@ Widget _harness({
   Set<String> initialSelectedIds = const {},
   Future<bool> Function(Set<String>)? onApply,
   void Function(DonationCategory category)? onOpenIncidentMap,
+  ValueChanged<Set<String>>? onDraftChanged,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -38,6 +39,7 @@ Widget _harness({
               suspensionSignal: ValueNotifier<bool>(false),
               onApply: onApply,
               onOpenIncidentMap: onOpenIncidentMap,
+              onDraftChanged: onDraftChanged,
             ),
             child: const Text('open'),
           ),
@@ -124,4 +126,45 @@ void main() {
       });
     },
   );
+
+  group('TrendingCategoryFilterSheet — onDraftChanged (Phase 22 §22.13)', () {
+    testWidgets(
+      'แจ้ง draft เริ่มต้นตอนเปิด แล้วแจ้งใหม่ทุกครั้งที่สลับ toggle',
+      (tester) async {
+        final drafts = <Set<String>>[];
+        await _openSheet(
+          tester,
+          _harness(
+            initialSelectedIds: const {'cat-flood'},
+            onDraftChanged: drafts.add,
+          ),
+        );
+
+        expect(drafts, isNotEmpty);
+        expect(drafts.first, {'cat-flood'});
+
+        // แตะแถวหมวดแรก = toggle (InkWell ครอบทั้งแถว)
+        await tester.tap(find.text('อุบัติเหตุ'));
+        await tester.pump();
+
+        expect(drafts.last, {'cat-flood', 'cat-accident'});
+      },
+    );
+
+    testWidgets(
+      'เปิด sheet ด้วย draft ที่ค้างไว้ → draft เริ่มต้นตรงกับที่ส่งมา',
+      (tester) async {
+        final drafts = <Set<String>>[];
+        await _openSheet(
+          tester,
+          _harness(
+            initialSelectedIds: const {'cat-accident', 'cat-flood'},
+            onDraftChanged: drafts.add,
+          ),
+        );
+
+        expect(drafts.first, {'cat-accident', 'cat-flood'});
+      },
+    );
+  });
 }

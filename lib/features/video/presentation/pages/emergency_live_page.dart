@@ -50,6 +50,7 @@ import '../../../../services/map_config_service.dart';
 import '../../../../services/platform_service.dart';
 import '../../../admin/models/map_provider_config.dart';
 import 'widgets/incident_map/incident_map_surface.dart';
+import 'widgets/incident_map/incident_category_picker_dialog.dart';
 import 'widgets/emergency_chat_widget.dart';
 import 'widgets/fullscreen_video_viewer.dart';
 import 'widgets/rescue_accept_panel_widget.dart';
@@ -235,6 +236,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
   bool get _isIncidentMapMode =>
       _surfaceMode == EmergencySurfaceMode.incidentMap;
+
+  bool get _hasIncidentMapPlaybackContext =>
+      !_isIncidentMapMode && _incidentMapSession?.pinnedVideoId != null;
 
   int _prepCountdown = 0;
   int _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;
@@ -460,12 +464,16 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     }
 
     return PopScope(
-      // ✅ Phase 22: hardware back ในโหมดแผนที่ = ออกจากโหมดแผนที่ก่อน
-      // ไม่ pop ออกจากหน้า (§22.3.5)
-      canPop: !_isIncidentMapMode,
+      // ✅ Phase 22: hardware back ใน map-return playback คืนสู่แผนที่;
+      // hardware back ในแผนที่ปิด map context ไป Emergency ปกติ — ไม่ pop หน้า
+      canPop: !_isIncidentMapMode && !_hasIncidentMapPlaybackContext,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_isIncidentMapMode) _exitIncidentMapMode();
+        if (_isIncidentMapMode) {
+          _closeIncidentMapContext();
+        } else if (_hasIncidentMapPlaybackContext) {
+          _returnToIncidentMap();
+        }
       },
       child: Scaffold(
       body: GestureDetector(
@@ -659,16 +667,19 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
             // ✅ Phase 20: ปุ่มตัวกรองประเภทเหตุชิดขวาของแถวนี้ (เดิมอยู่ใน
             // header ของกล่องยอดนิยม) — เงื่อนไขการแสดงต้องเทียบเท่าเดิม:
             // UI เปิด + tab 0 + ไม่ได้กำลังรายงานไทยมุง + filter พร้อม
-            // ✅ Phase 22: ในโหมดแผนที่ — ซ่อนเครื่องมือวิดีโอ/ตัวกรอง,
-            // ย้อนกลับ = ออกจากโหมดแผนที่, ฝั่งขวา = "เปลี่ยนประเภทเหตุ";
-            // ในโหมดปกติที่มี map-return context — ฝั่งขวา = "เลือกเหตุการณ์อื่น"
+            // ✅ Phase 22: โหมดแผนที่ซ่อนเครื่องมือ/ตัวกรอง; ปุ่มสถานการณ์
+            // หลังปุ่มย้อนกลับเปิด dialog เปลี่ยนประเภทเหตุ. ใน map-return
+            // playback: ซ้ายกลับแผนที่, ปุ่มวงกลมขวาปิดสู่ Emergency ปกติ;
+            // ซ่อนตัวกรองเพื่อให้กล่องยอดนิยมคง scope หมวดของแผนที่
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
               left: 16,
               right: 16,
               child: EmergencyTopBar(
                 onBackTap: _isIncidentMapMode
-                    ? _exitIncidentMapMode
+                    ? _closeIncidentMapContext
+                    : _hasIncidentMapPlaybackContext
+                    ? _returnToIncidentMap
                     : () => Navigator.of(context).pop(),
                 backButtonVisible:
                     _isUiVisible &&
@@ -690,22 +701,27 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
                 showCategoryFilter:
                     _isUiVisible &&
                     !_isIncidentMapMode &&
+                    !_hasIncidentMapPlaybackContext &&
                     _selectedTab == 0 &&
                     !_isThaiMhungReporting &&
                     _canShowTrendingCategoryFilter,
                 selectedCategoryCount: _selectedTrendingCategoryIds.length,
                 onCategoryFilterTap: _openTrendingCategoryFilterSheet,
-                trailingLabel: _isIncidentMapMode
-                    ? 'เปลี่ยนประเภทเหตุ'
-                    : (_incidentMapSession?.pinnedVideoId != null &&
-                            !_isIncidentMapMode)
-                        ? 'เลือกเหตุการณ์อื่น'
-                        : null,
-                onTrailingTap: _isIncidentMapMode
+                trailingLabel: _hasIncidentMapPlaybackContext ? 'ปิด' : null,
+                trailingIcon: _hasIncidentMapPlaybackContext
+                    ? Icons.close_rounded
+                    : null,
+                onTrailingTap: _hasIncidentMapPlaybackContext
+                    ? _closeIncidentMapContext
+                    : null,
+                // ✅ Phase 22: ปุ่มสถานการณ์ปัจจุบันเปิด dialog เปลี่ยนประเภทเหตุ
+                // แทนปุ่ม "เปลี่ยน" แยกบนแผนที่ (§22.14)
+                categoryLabel: _isIncidentMapMode && _incidentMapSession != null
+                    ? 'สถานการณ์: ${_incidentMapSession!.categoryName}'
+                    : null,
+                onCategoryLabelTap: _isIncidentMapMode
                     ? _openIncidentMapCategoryPicker
-                    : (_incidentMapSession?.pinnedVideoId != null
-                        ? _returnToIncidentMap
-                        : null),
+                    : null,
               ),
             ),
 
@@ -1173,13 +1189,19 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
           },
           // ✅ Mission Lock: เมื่อมีภารกิจค้าง กล่องยอดนิยมแสดงเฉพาะ
           // การ์ดภารกิจตนเอง + การ์ดที่ได้รับแจ้งเตือน/มีสิทธิเข้าร่วมเป็นจิตอาสา
-          // ✅ Phase 20: ต่อด้วย category filter (ยกเว้นช่วง suspension)
+          // ✅ Phase 20/22: filter ปกติใช้ committed categories; map-return
+          // playback ใช้ category scope ชั่วคราวจากแผนที่ (ยกเว้น suspension)
           trendingVideos: _trendingVideosForPanel(),
-          pinnedFromMapVideoId: _incidentMapSession?.pinnedVideoId,
+          pinnedFromMapVideoId: _hasIncidentMapPlaybackContext
+              ? _incidentMapSession?.pinnedVideoId
+              : null,
           onLoadMoreTrending: _loadMoreTrendingVideos,
           isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
-          selectedTrendingCategoryIds: _selectedTrendingCategoryIds,
-          onApplyTrendingCategoryFilter: _applyTrendingCategoryFilter,
+          selectedTrendingCategoryIds: _effectiveTrendingCategoryIds(),
+          onApplyTrendingCategoryFilter:
+              _hasIncidentMapPlaybackContext || _missionFilterSuspended
+              ? null
+              : _applyTrendingCategoryFilter,
           trendingFilterResetToken: _trendingFilterResetToken,
           highlightVideoId: _highlightVideoId,
           canViewUnblurred: _canViewUnblurred,

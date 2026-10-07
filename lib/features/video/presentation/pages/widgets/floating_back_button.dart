@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 class FloatingBackButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool visible;
+  final IconData icon;
 
   const FloatingBackButton({
     super.key,
     required this.onTap,
     this.visible = true,
+    this.icon = Icons.arrow_back_ios_new_rounded,
   });
 
   @override
@@ -42,8 +44,8 @@ class FloatingBackButton extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
+                child: Icon(
+                  icon,
                   color: Colors.white,
                   size: 18, // ลดจาก 22 เป็น 18
                 ),

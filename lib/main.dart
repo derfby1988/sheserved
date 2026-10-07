@@ -325,11 +325,34 @@ class SheservedApp extends StatelessWidget {
             const SportsHubPage(initialPage: 0),
         // Booker-side venue_booking notifications land on the booker's own
         // booking list rather than the public venue directory.
-        '/community/sports/courts/my-bookings': (context) => AuthGuardWidget(
-          child: CourtMyBookingsPage(
-            repo: BookCourtRepository(Supabase.instance.client),
-          ),
-        ),
+        '/community/sports/courts/my-bookings': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final payload = args is Map<String, dynamic>
+              ? args
+              : const <String, dynamic>{};
+          final groupId =
+              payload['groupId'] ??
+              payload['group_id'] ??
+              payload['bookingGroupId'] ??
+              payload['booking_group_id'];
+          return AuthGuardWidget(
+            child: CourtMyBookingsPage(
+              repo: BookCourtRepository(Supabase.instance.client),
+              initialGroupId: groupId?.toString(),
+            ),
+          );
+        },
+        '/community/sports/courts/detail': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final payload = args is Map<String, dynamic>
+              ? args
+              : const <String, dynamic>{};
+          final venueId = payload['venueId'] ?? payload['venue_id'];
+          return SportsHubPage(
+            initialPage: 0,
+            initialVenueId: venueId?.toString(),
+          );
+        },
         '/community/sports/coaches': (context) =>
             const SportsHubPage(initialPage: 2),
         '/community/sports/courts/owner/dashboard': (context) =>

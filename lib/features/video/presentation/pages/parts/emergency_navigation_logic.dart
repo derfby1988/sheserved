@@ -343,36 +343,44 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       !_isLoadingTrending &&
       _emergencyCategories.isNotEmpty;
 
-  /// category ids ที่ใช้กับ request จริง — ช่วง suspension = unfiltered เสมอ
-  Set<String> _effectiveTrendingCategoryIds() {
-    if (_missionFilterSuspended) return const {};
-    return _selectedTrendingCategoryIds;
-  }
+  /// category ids ที่ใช้กับ request จริง:
+  /// - mission/reporter suspension = unfiltered เสมอ
+  /// - หลังเลือก marker/photo จาก incident map = scope ชั่วคราวเป็นหมวดของ map
+  /// - โหมด emergency ปกติ = ตัวกรองที่ commit ไว้ใน sheet
+  /// Scope ของ map ไม่เขียนทับ `_selectedTrendingCategoryIds`.
+  Set<String> _effectiveTrendingCategoryIds() =>
+      trendingCategoryIdsForActiveScope(
+        committedCategoryIds: _selectedTrendingCategoryIds,
+        incidentMapCategoryId: _incidentMapSession?.categoryId,
+        isIncidentMapPlaybackContext: _hasIncidentMapPlaybackContext,
+        missionFilterSuspended: _missionFilterSuspended,
+      );
 
-  /// ลิสต์การ์ดที่ส่งเข้ากล่องยอดนิยม = role filter เดิม + OR filter ตามหมวด
-  /// (ยกเว้นช่วง suspension ที่คืน role filter อย่างเดียว)
-  /// ✅ Phase 22: การ์ดที่เลือกจากแผนที่ถูกปักบนสุดพร้อมป้าย "จากแผนที่" —
-  /// ไม่นับรวมในผลกรอง ไม่กระทบ pagination (§22.1)
+  /// ลิสต์การ์ดที่ส่งเข้ากล่องยอดนิยม = role filter เดิม + category scope
+  /// ปัจจุบัน (ตัวกรองที่ commit หรือหมวดชั่วคราวจากแผนที่)
+  /// การ์ดที่แตะบนแผนที่ยังถูกปักไว้บนสุด ถ้าอยู่นอกหน้า pagination ปัจจุบัน
   List<Video> _trendingVideosForPanel() {
-    final videos = _filteredTrendingVideos();
-    List<Video> result;
-    if (_missionFilterSuspended || _selectedTrendingCategoryIds.isEmpty) {
-      result = videos;
-    } else {
-      result = videos
-          .where(
-            (v) =>
-                v.categoryId != null &&
-                _selectedTrendingCategoryIds.contains(v.categoryId),
-          )
-          .toList();
-    }
+    final categoryIds = _effectiveTrendingCategoryIds();
+    final result = filterTrendingVideosByCategoryIds(
+      _filteredTrendingVideos(),
+      categoryIds,
+    );
+    final sessionCategoryId = _incidentMapSession?.categoryId;
     final pinnedId = _incidentMapSession?.pinnedVideoId;
+    final currentVideo = _currentVideo;
+    final pinnedMatchesScope =
+        categoryIds.isEmpty ||
+        (_hasIncidentMapPlaybackContext &&
+            sessionCategoryId != null &&
+            categoryIds.contains(sessionCategoryId) &&
+            (currentVideo?.categoryId == null ||
+                categoryIds.contains(currentVideo!.categoryId)));
     if (pinnedId != null &&
-        _currentVideo != null &&
-        _currentVideo!.id == pinnedId &&
-        !result.any((v) => v.id == pinnedId)) {
-      result = [_currentVideo!, ...result];
+        currentVideo != null &&
+        currentVideo.id == pinnedId &&
+        pinnedMatchesScope &&
+        !result.any((video) => video.id == pinnedId)) {
+      return [currentVideo, ...result];
     }
     return result;
   }
@@ -512,6 +520,14 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         });
         _checkPrivacyPermissions();
       }
+      if (video != null && _currentVideoId == video.id) {
+        _updateIncidentMapReturnFocusForVideo(
+          video.id,
+          categoryId: video.categoryId,
+          latitude: video.latitude,
+          longitude: video.longitude,
+        );
+      }
       if (video != null) {
         if (video.localFilePath != null &&
             localRefExistsSync(video.localFilePath!)) {
@@ -530,6 +546,18 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       final tracks = await ServiceLocator.instance.videoRepository.getGpsTracks(
         _currentVideoId!,
       );
+      if (video != null && _currentVideoId == video.id && tracks.isNotEmpty) {
+        final firstTrack = tracks.firstWhere(
+          (track) => track.latitude != 0 || track.longitude != 0,
+          orElse: () => tracks.first,
+        );
+        _updateIncidentMapReturnFocusForVideo(
+          video.id,
+          categoryId: video.categoryId,
+          latitude: firstTrack.latitude,
+          longitude: firstTrack.longitude,
+        );
+      }
       if (tracks.isNotEmpty) {
         _dbGpsTracks = tracks;
         if (mounted) {
@@ -1554,6 +1582,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   void _switchVideo(String newVideoId, {bool refreshTrending = true}) {
+    _updateIncidentMapReturnFocusForVideo(newVideoId);
     if (_currentVideoId != null)
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     _interactionSub?.cancel();

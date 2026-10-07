@@ -6061,11 +6061,11 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 
 | เรื่อง | ข้อสรุป |
 |---|---|
-| ทางเข้า | ใน `TrendingCategoryFilterSheet` (หัว sheet "คัดกรอง และแผนที่" / คำใบ้ "เลือกเพื่อประเมินสถานการณ์ (เฉพาะเหตุ)") มีปุ่ม **"แผนที่เกิดเหตุ"** วาง **ใต้แต่ละหมวด**; ปุ่มใช้ `categoryId` ของหมวดนั้นเพียงหมวดเดียว ไม่อ่าน/commit `_draft` และไม่เปลี่ยน `_selectedTrendingCategoryIds`; disable ขณะ `_applying`; กดแล้วปิด sheet โดยไม่ commit draft |
+| ทางเข้า | ใน `TrendingCategoryFilterSheet` (หัว sheet "คัดกรอง และแผนที่" / คำใบ้ "เลือกเพื่อประเมินสถานการณ์ (เฉพาะเหตุ)") มีปุ่ม **"แผนที่เกิดเหตุ"** วาง **บรรทัดเดียวกับชื่อหมวด ต่อจากชื่อ (ก่อน toggle)** — ปรับจากแถวล่างตาม request หลัง verify; ปุ่มใช้ `categoryId` ของหมวดนั้นเพียงหมวดเดียว ไม่อ่าน/commit `_draft` และไม่เปลี่ยน `_selectedTrendingCategoryIds`; disable ขณะ `_applying`; กดแล้วปิด sheet โดยไม่ commit draft |
 | Legend และการเน้นช่วงอายุ | legend 5 ช่วงสีพร้อมจำนวนเหตุต่อช่วง (กะทัดรัด พับได้); แตะช่วงหนึ่ง = เน้นหมุดช่วงนั้น/หรี่ช่วงอื่น แตะซ้ำ = ยกเลิก — client-side ล้วน ไม่ยิง API ใหม่ ไม่แตะ committed filter |
-| ทางออกจากโหมดแผนที่ | ปุ่มย้อนกลับซ้ายบนคืนการ์ดเดิม (resume เฉพาะกรณีก่อนเข้าหยุดเล่นอยู่); ในโหมดแผนที่ยังมีปุ่ม **"เปลี่ยนประเภทเหตุ"** เปิด sheet เดิมได้ เพื่อไม่ให้ผู้ใช้ติดอยู่ในบริบท map-return และไม่ให้ตัวกรอง Phase 20 เข้าไม่ถึง |
+| ทางออกจากโหมดแผนที่ | ใน map-playback back ซ้ายคืนแผนที่และปุ่มวงกลม close คืน Emergency ปกติ; ในโหมดแผนที่ปุ่ม **"สถานการณ์: <หมวด>"** หลังปุ่มย้อนกลับเปิด glass dialog เลือกประเภทเหตุ (ไม่มีปุ่ม "เปลี่ยน" แยก) |
 | เหตุที่เปิดการ์ดไม่ได้ | หมุดที่โหลดการ์ดไม่สำเร็จ → คงอยู่บนแผนที่ + SnackBar + ทำเครื่องหมาย unavailable เฉพาะ session; ไม่ค้างครึ่งทาง และไม่บันทึก view |
-| การ์ดที่มาจากแผนที่ | ปักการ์ดที่เลือกบนสุดของกล่องยอดนิยมพร้อมป้าย "จากแผนที่" เพื่อให้เห็นตำแหน่งปัจจุบัน; ไม่นับรวมในผลกรอง ไม่กระทบ pagination และล้างเมื่อจบ session |
+| การ์ดที่มาจากแผนที่ | หลังแตะหมุด/ภาพ กล่องยอดนิยมแสดงทุกการ์ดของ `session.categoryId` (load-more ใช้ category scope เดียวกัน); ปักการ์ดที่แตะพร้อมป้าย "จากแผนที่" เฉพาะเมื่ออยู่นอกหน้าที่โหลด; ห้ามมีการ์ดต่างหมวด และการ์ดทุกใบกดเล่นได้; scope นี้ชั่วคราว ไม่แก้ filter ที่ commit ใน sheet |
 | ขอบเขตข้อมูล | เหตุการณ์ย้อนหลังทั้งหมดของหมวดนั้น ไม่จำกัดเฉพาะเหตุที่ยัง active; ใช้ event types เดียวกับ emergency list (`emergency`, `emergency_photo`) และต้องมีพิกัดเหตุที่ตรวจสอบได้ |
 | มุมมองแรก | fit bounds ของประเทศไทยทั้งประเทศ; ไม่ใช้ตำแหน่งผู้ใช้หรือพิกัดเหตุปัจจุบันเป็นกล้องเริ่มต้น |
 | อายุเหตุและสี | คำนวณ elapsed time จาก `videos.created_at` ถึงเวลาปัจจุบันใน UTC: แดง `0–24 ชม.`; ส้ม `>24 ชม.–7 วัน`; เหลืองทอง `>7–35 วัน`; เทา `>35–365 วัน`; ดำ `>365 วัน` (ใช้ปี 365 วันเพื่อให้ช่วงไม่ทับ/ไม่ขาด) |
@@ -6073,8 +6073,8 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 | จุดหนาแน่น | ใช้ cluster พร้อมจำนวนเหตุและจำนวนแยกตาม bucket สีในระดับ zoom ที่จุดซ้อน; เมื่อซูมพอจึงแสดงหมุด/ภาพรายเหตุ — เหตุการณ์ต้องไม่หายเพียงเพราะไม่มีพื้นที่วางภาพ |
 | Map provider | แผนที่ต้องอ่าน config ด้วย `MapConfigService` และ resolve `MapFeature.emergency` สำหรับ platform ปัจจุบัน; ใช้ renderer/tile source ตาม allowlist ที่อนุมัติ ไม่ hardcode Google และไม่ fallback ไป provider อื่นอย่างเงียบ ๆ |
 | เลือกเหตุ/ภาพ | แตะหมุด → กลับโหมดปกติและเล่นการ์ดเหตุนั้น; แตะภาพ → เปิด gallery ของเหตุเดียวกันที่ภาพซึ่งแตะ โดยการ์ดวิดีโอหยุดอยู่เบื้องหลัง |
-| คืนสถานะ | จากแผนที่กดปุ่มย้อนกลับก่อนเลือกหมุด → คืนการ์ดเดิมและ resume เฉพาะเมื่อก่อนหน้าหยุดเล่นอยู่ ไม่ pop ออกจาก `EmergencyPage`; ปิด overlay ภาพ → คืนการ์ดเดิมและ resume; ปุ่ม "เลือกเหตุการณ์อื่น" จากการ์ด/overlay คืนแผนที่เดิม พร้อมหมวดและ center/zoom เดิม |
-| ปุ่มบนแถว | ขณะเล่นการ์ดที่เลือกจากแผนที่หรือดู overlay ภาพ ให้แทนปุ่มตัวกรองมุมขวาบนด้วย **"เลือกเหตุการณ์อื่น"** ในตำแหน่งเดียวกัน; แตะแล้วคืน map state เดิม; ในโหมดแผนที่ฝั่งขวาใช้ "เปลี่ยนประเภทเหตุ" (หรือว่างเมื่อ category list ใช้ไม่ได้) และซ่อนเครื่องมือวิดีโอ |
+| คืนสถานะ | จาก video map-return กด back/hardware back → คืนแผนที่เดิมพร้อมหมวดและ center/zoom; กด "ปิด" → Emergency ปกติพร้อม committed filter จาก sheet; จากแผนที่กดปิด → Emergency ปกติ; ปิด overlay ภาพ → คืนการ์ดเดิมและ resume ตาม policy เดิม |
+| ปุ่มบนแถว | ใน video map-return: ซ่อนปุ่มตัวกรอง; back ซ้าย = คืนแผนที่; ปุ่มวงกลม `close` ขวา (semantics "ปิด") = Emergency ปกติ + committed filter; ในหน้าแผนที่: ซ่อน filter/video controls, ปุ่ม "สถานการณ์: <หมวด>" หลัง back เปิด category dialog; ไม่มีปุ่ม "เปลี่ยน" แยก |
 
 > เหตุการณ์ที่มี `created_at` ในอนาคต/อ่านไม่ได้ หรือพิกัดไม่ถูกต้อง ห้ามจัดเป็นสีแดง/แสดงที่ `(0,0)`; ให้ตัดออกจากหมุดปกติและนับ/แจ้งใน telemetry แบบไม่เปิดข้อมูลผู้ใช้เพื่อให้ตรวจ data quality
 
@@ -6094,12 +6094,12 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 
 ### 22.3 State machine และ UI invariants
 
-1. **เข้าแผนที่จากหมวด:** เพิ่ม action ใต้แต่ละ `NeumorphicSwitchTile` ใน sheet; action ส่ง `categoryId` ตรงไปยัง page-level handler, ปิด sheet แล้วเข้า map mode. การเปิด map ไม่ใช่ Apply filter และไม่เปลี่ยน draft, committed filter, pagination หรือ playback target ของ Trending โดยอัตโนมัติ. ปุ่ม "ล้างค่าทั้งหมด"/"แสดงผล" และ transactional behavior ของ Phase 20 ต้องคงเดิม
+1. **เข้าแผนที่จากหมวด:** เพิ่ม action ใต้แต่ละ `NeumorphicSwitchTile` ใน sheet; action ส่ง `categoryId` ตรงไปยัง page-level handler, ปิด sheet แล้วเข้า map mode. การเปิด map ไม่ใช่ Apply filter และไม่เปลี่ยน draft/committed filter ของ Phase 20; เมื่อแตะหมุด/ภาพจึงเปิด temporary Trending feed ของ map category ตาม §22.14. ปุ่ม "ล้างค่าทั้งหมด"/"แสดงผล" และ transactional behavior ของ Phase 20 ต้องคงเดิม
 2. **แยก mode จาก tab/mission/reporting:** เพิ่มสถานะ map overview ที่ชัดเจนใน `EmergencyLivePage` (เช่น mode enum + `IncidentMapState`) แยกจาก `_selectedTab` และ `_isThaiMhungReporting`; ห้ามใช้ `Navigator.pop()` เพื่อปิด map mode เพราะจะออกจากหน้าแม่
 3. **เก็บ state สำหรับ return:** เก็บ selected category, camera center/zoom, viewport request generation, current video id และสถานะ/ตำแหน่ง playback ก่อนเปิด map. ตอนเปิด map ให้ pause player เดิมและจำว่าก่อนหน้าหยุดเล่นอยู่หรือไม่; ปุ่มย้อนกลับ (รวม hardware back ที่ต้องใช้ `PopScope`) คืน player เดิมและ resume เฉพาะเมื่อก่อนหน้าหยุดเล่นอยู่
 4. **เลือกหมุด:** ใช้ lifecycle สลับวิดีโอเดิม (`_switchVideo()`/`getVideoById`) เพื่อ join/leave room, dispose controller และโหลด metadata ของเหตุที่เลือก; map ต้องเปิดเหตุย้อนหลังได้แม้ไม่อยู่ในหน้า Trending ปัจจุบัน. การเห็นหมุด, เปิดแผนที่, pan/zoom หรือโหลด thumbnail ห้ามสร้าง like/view/mission event; บันทึก view ได้เฉพาะตาม flow ปกติของการ์ด
 5. **เลือกภาพ:** สลับไปการ์ดของ incident ที่เป็นเจ้าของภาพก่อน แล้วเปิดภาพที่แตะผ่าน overlay บนการ์ดเดิม (`_selectedOverlayPhotoUrl` + `onOverlayChanged` → `_isOverlayVisible`) เพื่อให้การ์ดหยุดอยู่เบื้องหลังจริง; ต้อง pause player ตอนเปิด overlay (ปัจจุบันไม่ pause), resolve ให้ได้ว่าภาพที่แตะอยู่ในหน้าใดของ gallery ก่อนแสดง, และปิด overlay แล้วจึง resume การ์ด. ใช้ pending-photo handoff + generation guard เพื่อไม่ให้ภาพ/response ของเหตุเก่าปนหลังสลับการ์ด
-6. **เลือกเหตุการณ์อื่น:** action ด้านขวาของ `EmergencyTopBar` แทน filter เฉพาะเมื่อยังมี map-return context; restore category + camera + map query state. หลังออกจากบริบท map แล้วคืนปุ่ม filter ตามเงื่อนไขเดิมของ Phase 20. ป้ายข้อความต้องย่อ/จัด layout ได้ที่ 320/375/390 dp โดยเครื่องมือวิดีโอเป็นส่วนที่ scroll ได้เท่านั้น
+6. **Map-return playback:** back ซ้าย/hardware back คืน map category + camera + viewport; ปุ่ม "ปิด" ขวาสิ้นสุด context และคืน Emergency ปกติพร้อม committed filter. ซ่อน filter button ระหว่าง map-playback; action map category picker อยู่ในหน้า map เท่านั้น. ป้ายต้องย่อได้ที่ 320/375/390 dp
 7. **Mission/role safety:** ใช้ gate เดียวกับการเปิด filter เดิม; เมื่อเกิด mission/reporter suspension ระหว่าง map mode ให้ปิด/suspend map โดยไม่ commit filter และไม่ pop `EmergencyPage`. Marker tap ห้าม bypass lock/authorization หรือสร้างทางลัดให้รับ mission จากเหตุที่ไม่ผ่าน policy เดิม
 
 #### 22.3.1 Mode และ state machine
@@ -6120,19 +6120,20 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 | จาก → ไป | ตัวกระตุ้น | สิ่งที่ต้องทำ | สิ่งที่ห้ามทำ |
 |---|---|---|---|
-| live → incidentMap | ปุ่ม "แผนที่เกิดเหตุ" ใต้หมวด | ปิด sheet โดยไม่ commit draft; ตั้ง mode = incidentMap; บังคับ `_isUiVisible = true`; ปิดแชท; pause player และจำ `wasPlaying`/position; ซ่อน video controls/tab/chat/trending panel; mount พื้นผิวแผนที่พร้อม `loading` state | ห้าม Apply/ล้าง filter, ห้าม pop หน้า, ห้ามเปลี่ยน `_currentVideoId` |
-| incidentMap → live | แตะหมุด | ตั้ง `pinnedVideoId`; เรียก `_switchVideo(id, refreshTrending: false)`; ออกโหมดแผนที่ทันทีแล้วให้การ์ดแสดง loading ของตัวเอง | ห้ามรอ map fetch จบก่อนปิดแผนที่, ห้ามสร้าง view/like/mission event |
-| incidentMap → live | ปุ่มย้อนกลับ / hardware back / `PopScope` | คืน `previousPlayback`; resume เฉพาะเมื่อ `wasPlaying == true` | ห้ามออกจากหน้า, ห้าม commit filter |
-| incidentMap → incidentMap | กด "เปลี่ยนประเภทเหตุ" แล้วเลือกหมวดใหม่ | เริ่ม session ใหม่ (camera = Thailand bounds) และทิ้ง viewport cache เดิม | ห้าม commit draft ของ sheet |
-| live(+session) → incidentMap | ปุ่ม "เลือกเหตุการณ์อื่น" | restore `camera` + viewport cache ของ session (ถ้ายังใช้ได้) | ห้ามยิง full refetch ถ้า cache ยังสด |
+| live → incidentMap | ปุ่ม "แผนที่เกิดเหตุ" ในแถวชื่อหมวด | ปิด sheet โดยไม่ commit draft; ตั้ง mode = incidentMap; บังคับ `_isUiVisible = true`; ปิดแชท; pause player และจำ `wasPlaying`/position; ซ่อน video controls/tab/chat/trending panel; mount พื้นผิวแผนที่พร้อม `loading` state | ห้าม Apply/ล้าง filter, ห้าม pop หน้า, ห้ามเปลี่ยน `_currentVideoId` |
+| incidentMap → live(map-playback) | แตะหมุด/ภาพ | ตั้ง `pinnedVideoId`; เรียก `_switchVideo(id, refreshTrending: false)`; fetch หน้าแรกด้วย `{session.categoryId}` และ reset panel; feed/pagination แสดงทุกการ์ดในหมวดนั้น พร้อม pin การ์ดที่เลือกถ้าอยู่นอก page | ห้ามแสดงการ์ดหมวดอื่น, ห้ามเปลี่ยน `_selectedTrendingCategoryIds`, ห้ามสร้าง view/like/mission event จากการเปิด map |
+| live(map-playback) → incidentMap | ปุ่มย้อนกลับ / hardware back / `PopScope` | restore `camera` + viewport/cache เดิมและ pause video | ห้าม pop `EmergencyPage`, ห้ามแสดงปุ่ม filter |
+| live(map-playback) → live(normal) | ปุ่ม "ปิด" | clear map-return context; โหลด feed ใหม่ด้วย committed category IDs จาก sheet; คืน filter button; auto-switch ตาม policy ปกติเมื่อจำเป็น | ห้าม commit map category เข้า filter sheet |
+| incidentMap → live(normal) | ปุ่มปิด / hardware back / state-card action | ปิด map context; โหลด feed ด้วย committed categories จาก sheet | ห้าม pop หน้า, ห้ามเปลี่ยน filter ที่ commit |
+| incidentMap → incidentMap | แตะปุ่ม "สถานการณ์: <หมวด>" แล้วเลือกหมวดใหม่ใน dialog | เริ่ม session ใหม่ (camera = Thailand bounds) และทิ้ง viewport cache เดิม | ห้าม commit draft/filter ของ sheet |
 | ใด ๆ → live | mission/reporter lock หรือ rescue-incoming | suspend session (เก็บไว้เพื่อกลับมา) แล้วออกไปที่การ์ด/แผงภารกิจ | ห้าม block การรับภารกิจ, ห้าม commit filter |
 
 #### 22.3.2 Layer, chrome และ layout
 
 - แทรกชั้นแผนที่ระหว่าง `EmergencyUiOverlay` (Layer 2) กับแถวปุ่ม (Layer 3) เพื่อให้แถวปุ่มอยู่เหนือแผนที่และใช้ปุ่มเดิมได้; พื้นผิวแผนที่ต้อง opaque เต็มจอ ไม่ให้การ์ด/แท็บเดิมโผล่ทะลุ
-- โหมดแผนที่: แสดงปุ่มย้อนกลับ + "เปลี่ยนประเภทเหตุ" ชิดขวา; `videoControls` = null; `showCategoryFilter` = false; ซ่อนแชท, แท็บล่าง, trending panel, rescue control panel และปุ่มยกเลิกภารกิจของผู้แจ้ง; ซ่อน tap-toggle UI ของ overlay (แตะแผนที่ = ลาก/ซูม ไม่ใช่ซ่อน UI)
+- โหมดแผนที่: แสดงปุ่มย้อนกลับ + ปุ่ม glass "สถานการณ์: <หมวด>" (map icon + chevron) ถัดจากปุ่มย้อนกลับ; แตะแล้วเปิด category dialog; ไม่มีปุ่ม "เปลี่ยน" แยก; `videoControls` = null; `showCategoryFilter` = false; ซ่อนแชท, แท็บล่าง, trending panel, rescue control panel และปุ่มยกเลิกภารกิจของผู้แจ้ง; ซ่อน tap-toggle UI ของ overlay
 - legend วางมุมล่างซ้ายเหนือ safe area พับได้; ต้องไม่ทับ attribution ของ provider (Google logo / OSM attribution ต้องมองเห็นเสมอ) และไม่ทับปุ่มใด ๆ
-- โหมดปกติที่มี map-return context: ฝั่งขวาเป็น "เลือกเหตุการณ์อื่น" (แทน filter) และยังคงปุ่มย้อนกลับ/เครื่องมือวิดีโอตามเงื่อนไขเดิม; ป้ายต้องย่อ/ตัดบรรทัดได้ที่ 320/375/390 dp
+- video map-return playback: แสดง back ซ้ายเพื่อคืนแผนที่และปุ่ม "ปิด" ขวาเพื่อกลับ Emergency ปกติ; ซ่อนปุ่มตัวกรองใน context นี้; กล่องยอดนิยมแสดงทุก card ใน map category ผ่าน paginated category fetch, cards กดเล่นได้; ปิด context แล้วคืน committed categories จาก sheet; trailing label ใช้ `Flexible` + `ellipsis` ที่จอแคบ
 - ปุ่ม/legend/marker ต้องมี hit target ≥ 44 px และไม่ล้นใน landscape หรือจอ 320 dp
 
 #### 22.3.3 Loading / empty / error / degraded
@@ -6149,18 +6150,18 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 #### 22.3.4 Tap flows
 
 - **หมุด:** แตะแล้วมี pressed state และ guard กัน double-tap; ถ้าเป็นเหตุที่กำลังเล่นอยู่ให้แค่ปิดโหมดแผนที่; ถ้าโหลดการ์ดล้มเหลว → คงอยู่บนแผนที่ + SnackBar + mark unavailable (§22.1)
-- **ภาพตัวอย่าง:** แตะ → สลับการ์ดของเหตุนั้น (pause) → เปิด overlay ภาพที่แตะ (resume เมื่อปิด) → ระหว่าง overlay แสดงปุ่ม "เลือกเหตุการณ์อื่น"; ภาพที่ `blurring/failed` ไม่ถูกแสดงบนแผนที่ตั้งแต่ต้น
+- **ภาพตัวอย่าง:** แตะ → สลับการ์ดของเหตุนั้น (pause) → เปิด overlay ภาพที่แตะ (resume เมื่อปิด); ระหว่าง overlay map-return back คืนแผนที่และปุ่ม "ปิด" คืน Emergency ปกติ; ภาพที่ `blurring/failed` ไม่ถูกแสดงบนแผนที่ตั้งแต่ต้น
 - **cluster:** แตะ = zoom เข้า bounds ของ cluster (animated) ไม่เปิดการ์ด; ถ้า cluster มีเหตุเดียวให้ถือเป็นหมุด
   - สถานะ v1: surface fit grid cell ของ cluster ผ่าน renderer controller แล้ว (Google `animateCamera` / OSM `fitCamera`, fallback centroid +2 จนถึง zoom 12) แต่ **cluster `count=1` ยังซูมเข้า cell ไม่เปิดการ์ด** เพราะ payload ไม่มี incident id — ต้องตัดสินใจเพิ่ม field ใน response หรือปรับ spec (จดไว้ใน §22.11)
 - **legend chip:** เน้น/หรี่เฉพาะ marker ฝั่ง client, ไม่เปลี่ยน camera, ไม่ยิง request, ไม่กระทบ committed filter
-- **ปุ่ม "เลือกเหตุการณ์อื่น":** ใช้ได้ทั้งระหว่างเล่นการ์ดและระหว่าง overlay ภาพ; ถ้ากดระหว่าง overlay ต้องปิด overlay อย่างถูกต้องก่อนกลับแผนที่ (ไม่ทิ้ง `_isOverlayVisible = true` ค้าง)
+- **Back/close:** map-playback back ซ้ายหรือ hardware back กลับ map; trailing "ปิด" สิ้นสุด map context และคืน committed Trending feed; ทุก exit ต้องไม่ทิ้ง `_isOverlayVisible = true` ค้าง
 
 #### 22.3.5 Back / exit flows
 
-- ปุ่มย้อนกลับในโหมดแผนที่และ hardware back (ต้องมี `PopScope` เพราะหน้าปัจจุบันไม่มี) → ออกโหมดแผนที่ก่อนเสมอ ไม่ pop หน้า
-- ปุ่มย้อนกลับในโหมดปกติยัง pop หน้าตามเดิม; เมื่อออกจากหน้า session และ pinned card ต้องถูกล้างพร้อม dispose controller/stream ที่เกี่ยวข้อง
-- ถ้ามี sheet หรือ dialog เปิดอยู่เหนือโหมดแผนที่ ให้ปิดชั้นบนสุดก่อนหนึ่งชั้นต่อการกดย้อนกลับหนึ่งครั้ง
-- กลับจากการ์ดที่มาจากแผนที่ด้วย "เลือกเหตุการณ์อื่น" แล้วต้องได้ camera/zoom/legend highlight เดิมคืน
+- ใน map-playback context ปุ่มย้อนกลับและ hardware back → กลับ incident map พร้อม camera/zoom/legend highlight เดิม; ต้องมี `PopScope` เพื่อไม่ pop `EmergencyPage`
+- ใน incident map ปุ่มย้อนกลับ/ปิดและ hardware back → ปิด map context ไป Emergency ปกติ, clear pinned state และโหลด Trending ด้วย committed categories จาก sheet
+- เมื่ออยู่ใน Emergency ปกติ ปุ่มย้อนกลับยัง pop หน้าตามเดิม; เมื่อออกจากหน้า session และ pinned card ต้องถูกล้างพร้อม dispose controller/stream ที่เกี่ยวข้อง
+- ถ้ามี sheet หรือ dialog เปิดอยู่เหนือ map ให้ปิดชั้นบนสุดก่อนหนึ่งชั้นต่อการกดย้อนกลับหนึ่งครั้ง
 
 #### 22.3.6 Realtime และ edge cases
 
@@ -6209,10 +6210,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 1. **Contract + data audit:** ยืนยันความหมาย `created_at`, event type, canonical GPS point, สถานะภาพไทยมุง และข้อมูลย้อนหลัง Local/Supabase; ทำ typed DTO, age-bucket policy และ fixtures ขอบเขตสี
 2. **Backend map query:** เพิ่ม bounded viewport/zoom endpoint, category validation, cluster aggregation, batch safe-thumbnail lookup, Local API/Supabase parity, indexes/cache/invalidation; วัด EXPLAIN และ query load ก่อน UI เรียกจริง
 3. **Emergency provider integration:** เชื่อม `MapConfigService` กับ Emergency map renderer, รองรับ Google/OSM ตาม config/registry พร้อม disabled/degraded state, attribution และ smoke test ทุก platform; ยืนยันว่า live map กับ overview ใช้ target เดียวกัน
-4. **Page mode + controls:** เพิ่มปุ่มใต้แต่ละหมวด, `IncidentMapState`, Thailand initial bounds, map overlay/mode, back/restore, marker-to-card และ topbar action "เลือกเหตุการณ์อื่น" โดยไม่เปลี่ยน Phase 20 state
+4. **Page mode + controls:** เพิ่มปุ่มใต้แต่ละหมวด, `IncidentMapState`, Thailand initial bounds, map overlay/mode, marker-to-card, temporary map-category Trending feed, map-return back/close และ category picker โดยไม่เปลี่ยน committed Phase 20 state
 5. **Cluster/photo layout + gallery:** collision-aware screen overlay หลายภาพต่อเหตุ, marker/cluster fallback, open full gallery at tapped image, pause/resume player และ lifecycle/cache guards
 6. **Canary + rollout:** เปิดด้วย feature gate, ทดสอบจำนวน incident/thumbnail ที่ใกล้ production, latency, memory, map tile usage, API rate-limit และ renderer/config fallback ก่อนเปิดทั่วไป
-7. **UI flow hardening:** ทำ state machine ตาม §22.3.1 ให้ครบ (entry/exit/PopScope/suspend/restore), ปุ่ม "เปลี่ยนประเภทเหตุ" เป็นทางออก, ปักการ์ดจากแผนที่พร้อมป้าย, pending-photo handoff + pause ตอนเปิด overlay, และ fullscreen ที่ปักเหตุปัจจุบันไว้ในลิสต์
+7. **UI flow hardening:** ทำ state machine ตาม §22.3.1 ให้ครบ (entry/exit/PopScope/suspend/restore), ปุ่มสถานการณ์ที่เปิด category dialog, ปักการ์ดจากแผนที่พร้อมป้าย, pending-photo handoff + pause ตอนเปิด overlay, และ fullscreen ที่ปักเหตุปัจจุบันไว้ในลิสต์
 
 ### 22.7 Risk register และ mitigation
 
@@ -6227,18 +6228,18 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 | map mode ทำให้ mission/filter/player state เสีย | สูง | page-level state machine, suspension listener, preserve committed category filter, playback/controller generation tests และ server-side authorization เดิม |
 | OSM/Google แสดง bounds/marker ต่างกัน | ปานกลาง | shared domain marker/cluster model, same Thailand bounds and camera semantics, cross-renderer golden/smoke tests |
 | มี platform view สองตัว (iOS `recreating_view`) หรือพื้นผิวแผนที่โหลดซ้ำเกินจำเป็น | สูง | single-surface rule, dispose-before-create, suspend `_adjustMapBounds()`, iOS regression test และเฝ้า metric map load/tile |
-| ผู้ใช้ติดอยู่ในบริบท map-return เพราะปุ่ม filter ถูกแทนที่ | ปานกลาง | ปุ่ม "เปลี่ยนประเภทเหตุ" ในโหมดแผนที่ + ล้าง session เมื่อออกจากหน้า/หมวดหาย/ถูก suspend |
+| map-return feed ปนหมวดหรือออกจาก context แล้วไม่คืน filter เดิม | สูง | server/category scope ทั้งหน้าและ load-more; filter button ซ่อนใน map-playback; back→map, close→normal+committed filter; mission suspension ยังคง override ตาม policy |
 | ภาพที่แตะจากแผนที่ไม่ตรงตำแหน่งใน gallery | สูง | tie-break `created_at DESC, id DESC` + photo page resolution แบบมีขอบเขต และ fallback ที่แจ้งชัด ไม่เปิดภาพข้ามเหตุ |
-| overlay ภาพค้างสถานะ `_isOverlayVisible` แล้วปุ่ม/gesture เพี้ยน | สูง | ปิด overlay ให้ครบทุกเส้นทางออก (back, เลือกเหตุการณ์อื่น, เปลี่ยนการ์ด, suspend) และมี state test |
-| fullscreen/ปัดการ์ดจากเหตุย้อนหลังทำให้สลับไปเหตุอื่นโดยไม่ตั้งใจ | ปานกลาง | ปักเหตุปัจจุบันในลิสต์ fullscreen/panel, ไม่นับในผลกรอง, ล้างเมื่อจบ session |
+| overlay ภาพค้างสถานะ `_isOverlayVisible` แล้วปุ่ม/gesture เพี้ยน | สูง | ปิด overlay ให้ครบทุกเส้นทางออก (back→map, close context, เปลี่ยนการ์ด, suspend) และมี state test |
+| fullscreen/ปัดการ์ดจากเหตุย้อนหลังทำให้สลับไปเหตุอื่นโดยไม่ตั้งใจ | ปานกลาง | fullscreen/panel ใช้ map-category scope เดียวกันและ pin เหตุปัจจุบันถ้าอยู่นอก page; ล้าง context เมื่อปิด map |
 | legend/ปุ่มทับ attribution หรือล้นจอเล็ก | ปานกลาง | layout test 320/375/390 dp + landscape, คง attribution มองเห็นได้, legend พับได้ |
 
 ### 22.8 Test และ exit gate
 
 **Category entry / mode state**
-- [ ] ปุ่ม "แผนที่เกิดเหตุ" อยู่ใต้ทุกหมวด, ส่ง `categoryId` ที่ถูกต้อง, ปิด sheet แล้วเปิด map; การกดไม่เปลี่ยน `_draft` หรือ `_selectedTrendingCategoryIds` และ footer Apply/Clear เดิมยัง transactional
-- [ ] Initial map fit ครอบคลุมประเทศไทยบน portrait/landscape และทั้ง Google/OSM; back ก่อนเลือกหมุดคืนการ์ดเดิม/ตำแหน่งเล่นและไม่ pop `EmergencyPage`
-- [ ] marker เลือก incident ที่อยู่นอกหน้า Trending ปัจจุบันได้; กลับจากการ์ด/gallery ด้วย "เลือกเหตุการณ์อื่น" แล้ว category, viewport, zoom และชุด marker เดิมยังอยู่
+- [ ] ปุ่ม "แผนที่เกิดเหตุ" อยู่ในแถวชื่อทุกหมวด, ส่ง `categoryId` ที่ถูกต้อง, ปิด sheet แล้วเปิด map; การกดไม่เปลี่ยน `_draft` หรือ `_selectedTrendingCategoryIds` และ footer Apply/Clear เดิมยัง transactional
+- [ ] Initial map fit ครอบคลุมประเทศไทยบน portrait/landscape และทั้ง Google/OSM; ปิดก่อนเลือกหมุดคืน Emergency ปกติและ committed filter โดยไม่ pop `EmergencyPage`
+- [ ] marker เลือก incident นอกหน้า Trending ได้; map-playback แสดงทุก card เฉพาะ map category (รวม load-more) และเล่นได้; back กลับ map เดิม, close กลับ normal พร้อม committed filter
 - [ ] mission/reporter lock ที่เริ่มก่อนหรือระหว่าง map mode ปิด/ระงับ map ตาม policy; ไม่ bypass role/authorization, ไม่เปลี่ยน filter และไม่ทิ้ง controller/socket/gallery listener
 
 **Map data / time / density**
@@ -6252,16 +6253,16 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - [ ] `MapConfigService` resolve `MapFeature.emergency` ตาม platform/default/override; Google/OSM, disabled, app-default/network failure, tile readiness/attribution/CSP ทำงานตาม config โดยไม่มี silent fallback
 - [ ] Emergency live map และ overview ใช้ provider target เดียวกัน; Home/Rescue/Group Create ไม่เปลี่ยน behavior ใน Phase นี้
 - [ ] แตะหมุดเปิดการ์ดเหตุที่ตรง; แตะรูปเปิด gallery ที่รูปที่เลือก, player หยุดอยู่เบื้องหลังและกลับมาเล่นต่อเมื่อปิด; ไม่มี view/like จากการเห็นหมุดหรือ preview เอง
-- [ ] "เลือกเหตุการณ์อื่น" แทนปุ่ม filter เฉพาะเมื่อมี map-return context; ไม่มี overflow ที่ 320/375/390 dp และเครื่องมือวิดีโอเป็นส่วนที่ scroll ได้เท่านั้น
+- [ ] map-return playback ซ่อน filter, back คืน map และ "ปิด" คืน Emergency ปกติ; topbar ไม่มี overflow/overlap ที่ 320/375/390 dp
 - [ ] รัน Flutter widget/policy tests, Dart analyze เฉพาะไฟล์ที่เปลี่ยน, Node API tests, Local/Supabase contract tests, iOS/Android/Web map smoke tests และ `git diff --check`; rollout gate ต้องไม่มี privacy leak, unbounded query หรือ regression ใน Phase 20/21
 
 **UI flow เพิ่มเติม (ตาม §22.3)**
 - [ ] loading → ready/empty/error/degraded/partial ครบทุกสถานะ พร้อมข้อความ/ปุ่มตามตาราง §22.3.3 และ retry ไม่ล้าง session
-- [ ] ปุ่มย้อนกลับและ hardware back (PopScope) ออกจากโหมดแผนที่ก่อนเสมอ; ปุ่มย้อนกลับในโหมดปกติยัง pop หน้าและล้าง session
-- [ ] ปุ่ม "เปลี่ยนประเภทเหตุ" เปิด sheet เดิมได้จากในโหมดแผนที่; เลือกหมวดใหม่แล้ว camera รีเซ็ตเป็น Thailand bounds และ viewport cache เก่าถูกทิ้ง
-- [ ] แตะรูปแล้วการ์ด pause จริงระหว่าง overlay และ resume ตอนปิด; ปิด overlay ครบทุกเส้นทาง (back, เลือกเหตุการณ์อื่น, เปลี่ยนการ์ด, suspend) และ `_isOverlayVisible` ไม่ค้าง
+- [ ] map-playback back/hardware back คืนแผนที่; map-mode close/hardware back คืน Emergency ปกติและ committed filter; Emergency ปกติยัง pop หน้าและล้าง session
+- [ ] ปุ่มสถานการณ์ในแผนที่เปิด glass category dialog; เลือกหมวดใหม่แล้ว map query/scope ใช้หมวดใหม่และ viewport cache เก่าถูกทิ้ง
+- [ ] แตะรูปแล้วการ์ด pause จริงระหว่าง overlay และ resume ตอนปิด; ปิด overlay ครบทุกเส้นทาง (back-to-map, close context, เปลี่ยนการ์ด, suspend) และ `_isOverlayVisible` ไม่ค้าง
 - [ ] ภาพที่อยู่นอกหน้าแรกของ gallery เปิดได้ตรงตำแหน่ง; resolve ไม่ได้ภายในขอบเขตแล้วได้ข้อความแจ้ง ไม่เปิดภาพของเหตุอื่น
-- [ ] การ์ดที่มาจากแผนที่ถูกปักพร้อมป้าย "จากแผนที่", ไม่นับในผลกรอง/pagination, และ `_openFullscreen()` ไม่สลับไปเหตุอื่น
+- [ ] map-playback feed จำกัดทุก card ตาม map category; card ที่แตะถูกปักพร้อมป้าย "จากแผนที่" ถ้าอยู่นอก page; pagination/fullscreen ไม่แสดงการ์ดนอกหมวดและ `_openFullscreen()` ไม่สลับไปเหตุอื่น
 - [ ] mission/reporter lock หรือ rescue-incoming ระหว่างโหมดแผนที่ → suspend และออกไปที่การ์ด/แผงภารกิจได้ทันที ไม่ block การรับภารกิจ
 - [ ] legend แตะแล้วเน้น/หรี่เฉพาะ client (ไม่ยิง request), ไม่ทับ attribution, และ layout ไม่ล้นที่ 320/375/390 dp + landscape
 - [ ] iOS: เข้า/ออกโหมดแผนที่ซ้ำ ๆ แล้วไม่มี `PlatformException(recreating_view)` และไม่มีการสร้างพื้นผิวแผนที่ซ้อนกัน
@@ -6270,7 +6271,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 - ปิด feature gate/ซ่อน entry actions ได้โดยไม่ลบข้อมูล ไม่เปลี่ยน video/category/GPS record และไม่กระทบหน้า Emergency playback, mission, realtime หรือ filter Phase 20
 - API map เป็น additive; ถ้า map endpoint/provider/gallery ใช้ไม่ได้ให้แสดง retry/degraded state และกลับการ์ดเดิมได้ — ห้ามแสดงข้อมูลทุกหมวดหรือ provider อื่นแทนเงียบ ๆ
-- ไม่ทำ heatmap, route/directions, แก้พิกัดเหตุ, offline map/tile download, admin filter, เปลี่ยน semantics ของ Trending, หรือ gallery ภาพผู้แจ้งเหตุจาก Phase 19 ใน Phase นี้
+- ไม่ทำ heatmap, route/directions, แก้พิกัดเหตุ, offline map/tile download, admin filter, เปลี่ยน committed/multi-select semantics ของ Trending (temporary map-category scope ตาม §22.14 แยกจาก filter sheet), หรือ gallery ภาพผู้แจ้งเหตุจาก Phase 19 ใน Phase นี้
 - ไม่ทำ filter ตามช่วงอายุฝั่ง server, ไม่วางภาพตามพิกัดรายภาพ, ไม่ทำ timeline playback บนแผนที่ และไม่เปลี่ยน picker/route/place-search ของระบบอื่น
 - ไม่แก้ `MapBackgroundWidget` ให้เปลี่ยน provider ของ Home/Rescue/Group Create — ขอบเขต provider integration ของ Phase นี้จำกัดที่พื้นผิว Emergency ตาม §22.5
 
@@ -6290,10 +6291,11 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - `data/repositories/video_repository.dart` + `thai_mhung_ruler_gallery_widget.dart` — gallery เรียง `created_at DESC, id DESC` ทั้ง Local/Supabase และ resolve photo ID ภายในไม่เกิน 5 หน้าเพื่อโฟกัสรูปใน overlay; หากหาไม่พบเลือกภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้
 - `widgets/incident_map/incident_map_surface.dart` — พื้นผิวเดียวสอง renderer (GoogleMap marker bitmap จาก canvas / flutter_map widget markers), camera state ชุดเดียว + projector (Web Mercator สำหรับ Google, `projectAtZoom` สำหรับ OSM), cluster tap fit grid bounds ผ่าน renderer controller (fallback zoom เข้า centroid), photo overlay ตาม zoom ≥ 13, legend bar, state card
 - `widgets/incident_map/incident_map_photo_layout.dart` — collision layout pure function (ไม่ทับกัน/ไม่ทับหมุดเหตุอื่น/ไม่ล้นจอ, recency priority, cap 3/เหตุ)
-- `parts/emergency_incident_map_logic.dart` — `EmergencySurfaceMode` + `IncidentMapSession` + transition ตาม §22.3.1 (เข้า/แตะหมุด/ย้อนกลับ/เปลี่ยนหมวด/กลับจาก "เลือกเหตุการณ์อื่น"/pause-resume), gate จาก `MapConfigService.resolveTarget(MapFeature.emergency)`, realtime pill กรองตาม `categoryId`
-- `emergency_live_page.dart` — layer 2.5 ระหว่าง UI overlay กับแถวปุ่ม, PopScope (hardware back = ออกโหมดแผนที่), top bar (โหมดแผนที่: ซ่อนเครื่องมือ/ตัวกรอง + "เปลี่ยนประเภทเหตุ"; โหมดปกติมี session: "เลือกเหตุการณ์อื่น"), pinned card + ป้าย "จากแผนที่" (fullscreen ได้การ์ดที่ปักเพราะ `_trendingVideosForPanel()` ปักให้)
-- `trending_category_filter_sheet.dart` — ปุ่ม "แผนที่เกิดเหตุ" ใต้แต่ละหมวด (disable ขณะ `_applying`, ไม่แตะ draft)
-- `emergency_top_bar.dart` — `trailingLabel`/`onTrailingTap` แทนปุ่มตัวกรองชั่วคราว
+- `parts/emergency_incident_map_logic.dart` — `EmergencySurfaceMode` + `IncidentMapSession` + transition ตาม §22.3.1 (เข้า/เลือก marker/photo/category feed/back map/close normal/pause-resume), gate จาก `MapConfigService.resolveTarget(MapFeature.emergency)`, realtime pill กรองตาม `categoryId`
+- `emergency_live_page.dart` — layer 2.5, PopScope (map-playback back = map; map-mode close = normal), top bar ซ่อน filter ใน map-playback, map mode ใช้ปุ่มสถานการณ์เปิด category dialog แทนปุ่ม "เปลี่ยน", feed คืน committed filter หลัง close
+- `emergency_navigation_logic.dart` — `trendingCategoryIdsForActiveScope`: map-return fetch/filter/load-more ทุก card ด้วย map category; pinned marker stays within category; close clears session then reloads committed sheet category IDs
+- `trending_category_filter_sheet.dart` — ปุ่ม "แผนที่เกิดเหตุ" ในแถวชื่อหมวดผ่าน `NeumorphicSwitchTile.titleAccessory` (disable ขณะ `_applying`, ไม่แตะ draft/committed filter, ชื่อยาว ellipsize)
+- `emergency_top_bar.dart` — แยก back/trailing/filter actions; page caller ซ่อน filter เฉพาะ map-playback context
 - `live_view_widget.dart` — state เป็น public + `showOverlayPhoto(photoId, photoUrl)` + **pause ตอนเปิด overlay** (fix ตาม §22.2) + `_overlayPhotoGeneration` guard กัน resolve ค้างทับภาพที่ผู้ใช้เลือกเอง
 - Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
 - Tests (Flutter): `incident_map_models_test.dart` เพิ่ม `IncidentMapZoomPolicy` (zoom +2 จนถึง 12), `gridBounds` จาก response zoom และ bounded page-resolution (found/missing/maxPages); targeted tests ผ่าน 23/23 และ `dart analyze` ไฟล์ที่แตะไม่มี error ใหม่ (เหลือ warning/info เดิมของ repo)
@@ -6303,7 +6305,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 ### 22.11 Device verification รอบ 1 + มติแก้บั๊ก (2026-10-06, Android SM X135G / Google renderer)
 
 **ยืนยันผ่านจากหลักฐานหน้าจอ + log (ไม่มี `recreating_view`, ไม่มี `[IncidentMap]` error):**
-- Gate เปิดใน Platform Settings → ปุ่ม "แผนที่เกิดเหตุ" โผล่ใต้ทุกหมวดใน sheet
+- Gate เปิดใน Platform Settings → ปุ่ม "แผนที่เกิดเหตุ" โผล่ในแถวชื่อทุกหมวดใน sheet
 - แผนที่ fit ประเทศไทย, cluster + donut แยก bucket, จุดสีตรง legend, chip "ตัดออก N"
 - Photo cards วางไม่ทับกัน/ไม่ทับหมุดบนจอจริง (collision layout)
 - "เปลี่ยนประเภทเหตุ" สลับหมวดโหลดชุดใหม่ถูก; แตะหมุด → การ์ดเล่น + pinned "จากแผนที่" + "เลือกเหตุการณ์อื่น" แทนปุ่มตัวกรอง
@@ -6316,7 +6318,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 **ยังค้าง verify ตามลำดับ:**
 1. Re-verify 3 fixes บนเครื่องเดิม (legend ตัดบรรทัด, camera restore, overlay แสดงชัดเท่า server-blur)
-2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; "เลือกเหตุการณ์อื่น" → camera/zoom เดิม
+2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; map-playback back → โฟกัส incident ของ clip ล่าสุดที่ zoom 14 และเห็น preview album cards (สูงสุด 3 ตาม map contract); "ปิด" → normal Emergency คืน committed filter
 3. รอบ OSM renderer (admin สลับ Emergency → OSM + tile source) ทำ checklist §22.8 เดิมทั้งชุด
 4. iOS — เข้า-ออกโหมดแผนที่ ~10 รอบ เฝ้า `PlatformException(recreating_view)`
 5. realtime pill "มีเหตุใหม่" (แจ้งจากเครื่องอื่น), mission suspend, Web (CSP/attribution)
@@ -6324,3 +6326,46 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 7. ตรวจ cluster tap ซูมผ่าน controller บน Google/OSM และยืนยัน viewport refetch หลังกล้อง settle (implement แล้ว — fit grid cell / fallback centroid +2 จนถึง zoom 12)
 8. แตะภาพจากแผนที่ → overlay เปิดภาพตรง photo ID; ทดสอบ fallback ภาพ completed ล่าสุดเมื่อหาไม่พบใน 5 หน้าและข้อความแจ้ง (implement แล้ว — resolver ผ่าน unit test, รอเช็กบนเครื่อง)
 9. ตัดสินใจ cluster `count=1` ตาม §22.3.4 ("ถือเป็นหมุด") — ปัจจุบันซูมเข้า cell เพราะ payload ไม่มี incident id; เลือกระหว่างขยาย response field หรือปรับ spec ให้ตรง v1
+
+### 22.12 ปรับ UI ทางเข้าแผนที่ (implement แล้ว — รอ device verify รวมกับข้อ 1 ของ §22.11)
+
+**1. ปุ่ม "แผนที่เกิดเหตุ" อยู่บรรทัดเดียวกับชื่อหมวด (§22.1)**
+- `NeumorphicSwitchTile` เพิ่ม param optional `titleAccessory` — widget ที่วางต่อจากชื่อหมวดในแถวเดียวกัน (ก่อน toggle); ชื่อหมวดอยู่ใน `Flexible` + `ellipsis` จึงหดได้เมื่อจอแคบ
+- sheet ย้าย pill จากแถวล่างเข้า `titleAccessory` ของแต่ละหมวด → layout: `[ชื่อหมวด] [แผนที่เกิดเหตุ] … [toggle]`
+- **ความกว้างปุ่ม:** `NeumorphicPillButton` ไม่มี `width` (ต่างจาก `NeumorphicVerifyButton`) — แนวทางของ widget นี้คือ `minWidth` (กว้างขั้นต่ำของเนื้อหาในแคปซูล ข้อความกึ่งกลาง) + `padding` แนวนอน จึงตั้ง `minWidth: 132` + `padding: horizontal 10` เพื่อให้แคปซูลกว้างเท่ากันทุกหมวด; กันล้นมี `maxWidth` (default = จอกว้าง − 32) + `FittedBox` ในตัวปุ่มอยู่แล้ว
+- พฤติกรรมไม่เปลี่ยน: ใช้ `categoryId` ของหมวดนั้นเพียงหมวดเดียว, ไม่แตะ `_draft`/ตัวกรองที่ commit, disable ขณะ `_applying`, ปิด sheet ก่อนเรียก callback
+
+**2. ปุ่มสถานการณ์ที่กำลังแสดงบนแผนที่ (§22.3.4)**
+- `EmergencyTopBar` รับ `categoryLabel` + `onCategoryLabelTap`; chip กระจกแสดงไอคอน map + `สถานการณ์: <ชื่อหมวด>` + chevron และเป็นปุ่มขนาด 42dp พร้อม semantics label
+- แตะ chip เรียก category picker dialog โดยตรง; แทนปุ่ม "เปลี่ยน" แยกบนแผนที่; `session.categoryName` มาจาก session เดิม ไม่ต้องยิง request เพิ่ม และ label ย่อด้วย ellipsis บนจอแคบ
+- ไม่ชน chip "ตัดออก N" / pill "มีเหตุใหม่" ซึ่งอยู่ต่ำกว่าแถวบน
+- เป้าหมาย: ยืนยันหมวดแผนที่ได้และเปลี่ยนหมวดจากจุดเดียว
+- Tests: `test/features/emergency_top_bar_trailing_test.dart` ตรวจ category button/callback, ไม่มีปุ่มเปลี่ยนแยก, close semantics และ layout 320dp — ผ่าน 8/8; `dart analyze` ไม่พบ error
+
+### 22.13 Glass dialog สำหรับเปลี่ยนประเภทเหตุบนแผนที่ (implement แล้ว)
+
+- widget `lib/features/video/presentation/pages/widgets/incident_map/incident_category_picker_dialog.dart` ใช้ `GlassDialog.show` + `GlassActionButton`/`GlassIconButton` จาก `lib/shared/widgets/glass`; เลือกทีละหมวดและคืน `DonationCategory?`; หมวดปัจจุบันแสดง filled + ไอคอน map
+- รายการมาจาก `_emergencyCategories` ซึ่ง query ตารางจริง `donation_categories` ด้วย `is_emergency = true`, เรียง `display_order asc` เหมือน `trending_category_filter_sheet`; เลือกหมวดใหม่เริ่ม map session ใหม่และไม่ commit filter/draft ของ sheet
+- มี guard `_missionFilterSuspended` ตาม §22.3 ข้อ 7
+- กล้องเมื่อเปลี่ยนหมวดแล้ว renderer อาจคง camera เดิมเพราะ `IncidentMapSurface` เป็น widget ตัวเดิม; viewport/query จะถูกโหลดใหม่ — device verify ต่อใน §22.11
+- Tests: `test/features/incident_category_picker_dialog_test.dart` ครอบคลุมลำดับปุ่ม / เลือกและปิด / current category / empty categories / จอ 320dp
+
+### 22.14 Map-category Trending feed และ navigation (implement แล้ว — รอ device verify)
+
+**1. กล่องยอดนิยมระหว่างเล่นเหตุที่เลือกจากแผนที่**
+- เมื่อแตะ marker หรือ photo ใน map session ให้ `_incidentMapSession.categoryId` เป็น **temporary feed scope**: fetch หน้าแรกด้วย `categoryIdsOverride: {categoryId}`; client filter และ `_loadMoreTrendingVideos` ใช้ effective scope เดียวกัน จึงแสดงทุก card ในหมวดเดียวกันแบบ pagination และยังแตะเล่น card ใดก็ได้
+- card ที่เลือกจากแผนที่ถูกปักพร้อมป้าย "จากแผนที่"; ถ้าไม่ได้อยู่ในหน้าที่โหลด จะ prepend เฉพาะ card นั้น แต่ต้องยังตรง category scope — ไม่ให้ card ต่างหมวดหลุดเข้ามา
+- scope ชั่วคราวของแผนที่ **ไม่แก้** `_selectedTrendingCategoryIds` หรือ draft ใน sheet; ถ้าเลือกหมวดอื่นผ่านปุ่มสถานการณ์บนแผนที่แล้วแตะ marker ใหม่ feed จะเปลี่ยนไปหมวดใหม่
+- mission/reporter suspension ยังคง override category filtering ตาม policy เดิม (§22.3 ข้อ 7)
+
+**2. Back/close และการคืน Emergency ปกติ**
+- map-return playback: back ซ้าย / hardware back → กลับ incident map และโฟกัส incident ของ clip ที่เล่นล่าสุดที่ zoom 14 (photo preview threshold = 13); บังคับ refetch viewport เมื่อ camera settle และจัด photo cards ของ incident ที่โฟกัสก่อน เพื่อให้เห็น preview album cards ที่ map API ส่งมา (ปัจจุบันสูงสุด 3 ใบ/incident); ซ่อนปุ่มตัวกรองใน context นี้
+- ปุ่มวงกลม `close` (semantics "ปิด") → clear map context แล้วกลับ Emergency ปกติ
+- incident map surface: ปุ่มปิด/ hardware back / ปุ่มปิดใน state card → Emergency ปกติ; ปุ่มสถานการณ์เปิด glass dialog; ไม่มีปุ่มตัวกรองหรือปุ่ม "เปลี่ยน" แยกบนแผนที่
+- เมื่อปิด map context โหลด Trending ใหม่ด้วย `_selectedTrendingCategoryIds` ที่ commit ไว้ใน sheet (หรือ unfiltered เมื่อว่าง), คืนปุ่มตัวกรองและไม่เอา map category ไป commit; ถ้า video ปัจจุบันอยู่นอก committed scope ใช้ auto-switch policy เดิม
+- การแสดง action: ใน map-playback ซ่อน `showCategoryFilter`, back ซ้าย = map, ปุ่มวงกลม `close` = normal; ใน map mode back/close = normal, category status button = category picker
+
+**3. การแก้ UI ก่อนหน้าและการยืนยัน**
+- `EmergencyTopBar` เคยปรับให้ filter อยู่ร่วมกับ trailing เพื่อแก้อาการปุ่มหาย; requirement ล่าสุดกำหนดให้ **ซ่อน filter โดยเจตนา** ใน map-playback และใช้ "ปิด" แทน "เลือกเหตุการณ์อื่น"; เมื่อปิด context ตัวกรองปกติกลับมา
+- ป้าย trailing ใช้ `Flexible` + ellipsis เพื่อไม่ให้ล้นที่ 320 dp
+- Tests: scope policy ตรวจ map-category filter ทุก card/restore committed scope/mission suspension; camera-focus test ตรวจ incident/พิกัด/zoom photo overview; photo-layout test ให้เหตุที่เพิ่งเล่นได้ priority และวางครบ 3 preview cards เมื่อพื้นที่พอ; top-bar test ตรวจ back→map, circular close→normal, semantics และขนาด 42×42; focused map/top-bar suites ผ่าน 48/48

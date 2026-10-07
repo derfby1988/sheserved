@@ -200,6 +200,30 @@ void main() {
       expect(IncidentMapZoomPolicy.zoomAfterClusterTap(11), 12);
       expect(IncidentMapZoomPolicy.zoomAfterClusterTap(12), 12);
     });
+
+    test('map return focuses the selected point at photo overview zoom', () {
+      final point = IncidentMapPointItem(
+        lat: 13.75,
+        lng: 100.5,
+        id: 'incident-1',
+        categoryId: 'category-1',
+        createdAt: DateTime.utc(2026, 10, 6),
+        bucket: IncidentAgeBucket.red,
+        photos: const [
+          IncidentMapPhoto(id: 'photo-1', url: 'https://example.test/1'),
+        ],
+      );
+
+      final focus = IncidentMapCameraFocus.forPoint(point);
+      expect(focus.incidentId, point.id);
+      expect(focus.latitude, point.lat);
+      expect(focus.longitude, point.lng);
+      expect(focus.zoom, IncidentMapZoomPolicy.photoOverviewZoom);
+      expect(
+        focus.zoom,
+        greaterThanOrEqualTo(IncidentMapZoomPolicy.photoPreviewThreshold),
+      );
+    });
   });
 
   group('gallery photo page resolution', () {

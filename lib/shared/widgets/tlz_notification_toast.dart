@@ -36,21 +36,46 @@ Map<String, dynamic>? groupChatNotificationRouteArguments(
 /// เส้นทางปลายทางที่ notification ระบุไว้ใน payload
 /// ใช้กับ event ที่ไม่ใช่แชทก๊วน เช่นคำขอเพิ่มประเภทกีฬา (`/community/sport-club/sport/review`)
 String? notificationPayloadRoute(AppNotification notification) {
-  final route = notification.payload['route']?.toString();
-  if (route == null || !route.startsWith('/')) return null;
-  return venueBookingNotificationRoute(notification, route);
+  final rawRoute = notification.payload['route']?.toString();
+  final route = rawRoute != null && rawRoute.startsWith('/') ? rawRoute : null;
+  if (notification.category == 'venue_booking') {
+    return venueBookingNotificationRoute(notification, route);
+  }
+  return route;
 }
 
 /// Owner-side venue booking notifications keep the owner dashboard route;
-/// booker-side ones point at the venue deep link, which opens the public
-/// directory — the booker expects their own booking list instead.
-String venueBookingNotificationRoute(
+/// booker-side requests open the booking list, while successful bookings open
+/// the venue detail sheet.
+String? venueBookingNotificationRoute(
   AppNotification notification,
-  String route,
+  String? route,
 ) {
-  if (notification.category == 'venue_booking' &&
-      route.startsWith('/community/sports/courts/') &&
-      !route.startsWith('/community/sports/courts/owner/')) {
+  if (route?.startsWith('/community/sports/courts/owner/') == true) {
+    return route;
+  }
+  switch (notification.eventType) {
+    case 'venue_booking.group_preapproved':
+    case 'venue_booking.group_rejected':
+    case 'venue_booking.slot_conflict':
+    case 'venue_booking.group_expired':
+    case 'venue_booking.payment_claim_decided':
+      return '/community/sports/courts/my-bookings';
+    case 'venue_booking.confirmed':
+      final venueId =
+          notification.payload['venueId']?.toString() ??
+          notification.payload['venue_id']?.toString();
+      if (venueId != null && venueId.isNotEmpty) {
+        return '/community/sports/courts/detail';
+      }
+      return route ?? '/community/sports/courts/my-bookings';
+    case 'venue_booking.group_request':
+    case 'venue_booking.group_hold':
+    case 'venue_booking.group_confirmed':
+    case 'venue_booking.payment_claim':
+      return '/community/sports/courts/owner/dashboard';
+  }
+  if (route?.startsWith('/community/sports/courts/') == true) {
     return '/community/sports/courts/my-bookings';
   }
   return route;
@@ -452,7 +477,12 @@ class _TlzNotificationToastState extends ConsumerState<TlzNotificationToast>
           .read(notificationProvider.notifier)
           .removeLocalNotification(notification.id);
     }
-    NavigationService.navigatorKey.currentState?.pushNamed(route);
+    NavigationService.navigatorKey.currentState?.pushNamed(
+      route,
+      arguments: notification.category == 'venue_booking'
+          ? notification.payload
+          : null,
+    );
   }
 
   /// การ์ดปัจจุบันกดเปิดปลายทางได้หรือไม่ (แชทก๊วน หรือ route ใน payload)

@@ -3,7 +3,7 @@ import 'floating_back_button.dart';
 import 'trending_category_filter_button.dart';
 
 /// แถวบนสุดของหน้าเหตุการณ์สด: ปุ่มย้อนกลับ (ซ้าย) + เครื่องมือวิดีโอ + ปุ่ม
-/// ตัวกรองประเภทเหตุของกล่องยอดนิยม (ชิดขวา)
+/// ตัวกรองประเภทเหตุของกล่องยอดนิยม + action ฝั่งขวา (ชิดขวา)
 ///
 /// Layout note: ระหว่างปุ่มย้อนกลับกับปุ่มตัวกรองใช้ [Expanded] + [Align] แทน
 /// `Flexible` คู่กับ `Spacer` เพราะ `Flexible` กับ `Spacer` จะแบ่งพื้นที่ว่าง
@@ -22,11 +22,17 @@ class EmergencyTopBar extends StatelessWidget {
   final int selectedCategoryCount;
   final VoidCallback? onCategoryFilterTap;
 
-  /// Phase 22 — action ฝั่งขวาแบบข้อความ ("เลือกเหตุการณ์อื่น" ขณะมี
-  /// map-return context หรือ "เปลี่ยนประเภทเหตุ" ในโหมดแผนที่) — เมื่อให้มา
-  /// จะ **แทนที่** ปุ่มตัวกรองในตำแหน่งเดียวกัน (§22.1)
+  /// Phase 22 — action ฝั่งขวา เช่น ปุ่มปิดวงกลมใน map-playback context.
+  /// `trailingLabel` เป็นข้อความ/semantics; [trailingIcon] เลือกปุ่มวงกลม
+  /// แทนป้ายข้อความ
   final String? trailingLabel;
+  final IconData? trailingIcon;
   final VoidCallback? onTrailingTap;
+
+  /// ปุ่มประเภทเหตุที่กำลังแสดงบนแผนที่ — แตะเพื่อเปิด category picker
+  /// แทนปุ่มเปลี่ยนประเภทแยก; null = ไม่แสดง
+  final String? categoryLabel;
+  final VoidCallback? onCategoryLabelTap;
 
   const EmergencyTopBar({
     super.key,
@@ -37,13 +43,17 @@ class EmergencyTopBar extends StatelessWidget {
     this.selectedCategoryCount = 0,
     this.onCategoryFilterTap,
     this.trailingLabel,
+    this.trailingIcon,
     this.onTrailingTap,
+    this.categoryLabel,
+    this.onCategoryLabelTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final showTrailing =
         trailingLabel != null && trailingLabel!.isNotEmpty && onTrailingTap != null;
+    final showCategoryLabel = categoryLabel != null && categoryLabel!.isNotEmpty;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -53,19 +63,111 @@ class EmergencyTopBar extends StatelessWidget {
           Expanded(
             child: Align(alignment: Alignment.centerLeft, child: videoControls),
           ),
+        ] else if (showCategoryLabel) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _TopBarCategoryChip(
+                label: categoryLabel!,
+                onTap: onCategoryLabelTap,
+              ),
+            ),
+          ),
         ] else
           const Spacer(),
-        if (showTrailing) ...[
-          const SizedBox(width: 8),
-          _TopBarTextPill(label: trailingLabel!, onTap: onTrailingTap!),
-        ] else if (showCategoryFilter && onCategoryFilterTap != null) ...[
+        // ปุ่มตัวกรองเป็นอิสระจาก action ฝั่งขวา; caller ซ่อน filter ใน
+        // map-playback context และเปิดกลับเมื่อคืน Emergency ปกติ (§22.14)
+        if (showCategoryFilter && onCategoryFilterTap != null) ...[
           const SizedBox(width: 8),
           TrendingCategoryFilterButton(
             selectedCount: selectedCategoryCount,
             onTap: onCategoryFilterTap!,
           ),
         ],
+        if (showTrailing) ...[
+          const SizedBox(width: 8),
+          if (trailingIcon != null)
+            Semantics(
+              button: true,
+              label: trailingLabel,
+              child: FloatingBackButton(
+                icon: trailingIcon!,
+                onTap: onTrailingTap!,
+              ),
+            )
+          else
+            Flexible(
+              child: _TopBarTextPill(
+                label: trailingLabel!,
+                onTap: onTrailingTap!,
+              ),
+            ),
+        ],
       ],
+    );
+  }
+}
+
+/// ปุ่มสถานการณ์ปัจจุบันบนแผนที่ — แตะเพื่อเปิด category picker (§22.3.4)
+class _TopBarCategoryChip extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const _TopBarCategoryChip({required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Semantics(
+      container: enabled,
+      button: enabled,
+      enabled: enabled,
+      excludeSemantics: enabled,
+      label: enabled ? 'เปลี่ยนประเภทเหตุ: $label' : label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(21),
+          child: Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(21),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.map_outlined, size: 15, color: Colors.white70),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (enabled) ...[
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.expand_more_rounded,
+                    size: 17,
+                    color: Colors.white70,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

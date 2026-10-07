@@ -44,6 +44,52 @@ Widget _panel({
 
 void main() {
   group('Trending category filter playback policy', () {
+    test('map playback temporarily scopes all cards to the map category', () {
+      final committed = {'cat-accident'};
+      final activeScope = trendingCategoryIdsForActiveScope(
+        committedCategoryIds: committed,
+        incidentMapCategoryId: 'cat-flood',
+        isIncidentMapPlaybackContext: true,
+        missionFilterSuspended: false,
+      );
+
+      expect(activeScope, {'cat-flood'});
+      expect(committed, {'cat-accident'});
+      expect(
+        filterTrendingVideosByCategoryIds([
+          _video('flood-1', categoryId: 'cat-flood'),
+          _video('accident', categoryId: 'cat-accident'),
+          _video('flood-2', categoryId: 'cat-flood'),
+          _video('missing-category'),
+        ], activeScope).map((video) => video.id).toList(),
+        ['flood-1', 'flood-2'],
+      );
+    });
+
+    test(
+      'normal emergency restores committed scope; mission lock suspends it',
+      () {
+        expect(
+          trendingCategoryIdsForActiveScope(
+            committedCategoryIds: const {'cat-accident', 'cat-flood'},
+            incidentMapCategoryId: 'cat-dust',
+            isIncidentMapPlaybackContext: false,
+            missionFilterSuspended: false,
+          ),
+          {'cat-accident', 'cat-flood'},
+        );
+        expect(
+          trendingCategoryIdsForActiveScope(
+            committedCategoryIds: const {'cat-accident'},
+            incidentMapCategoryId: 'cat-dust',
+            isIncidentMapPlaybackContext: true,
+            missionFilterSuspended: true,
+          ),
+          isEmpty,
+        );
+      },
+    );
+
     test('switches to the first visible video in the selected categories', () {
       expect(
         trendingCategoryFilterAutoSwitchTarget(

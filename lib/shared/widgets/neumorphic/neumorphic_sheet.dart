@@ -461,6 +461,7 @@ class NeumorphicSwitchTile extends StatelessWidget {
     required this.onChanged,
     this.activeColor = NeumorphicTheme.primaryBlue,
     this.leading,
+    this.titleAccessory,
   });
 
   final String title;
@@ -473,6 +474,10 @@ class NeumorphicSwitchTile extends StatelessWidget {
 
   /// Widget นำหน้า (เช่น badge ไอคอนนูน) — วางก่อนคอลัมน์ title/subtitle
   final Widget? leading;
+
+  /// Widget ต่อท้ายชื่อในแถวเดียวกัน (ก่อน toggle) — ชื่อจะ ellipsize
+  /// เมื่อที่เหลือไม่พอ
+  final Widget? titleAccessory;
 
   @override
   Widget build(BuildContext context) {
@@ -499,17 +504,28 @@ class NeumorphicSwitchTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w600,
-                          color: enabled
-                              ? NeumorphicTheme.textPrimary
-                              : NeumorphicTheme.textSecondary.withValues(
-                                  alpha: 0.7,
-                                ),
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                                color: enabled
+                                    ? NeumorphicTheme.textPrimary
+                                    : NeumorphicTheme.textSecondary.withValues(
+                                        alpha: 0.7,
+                                      ),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (titleAccessory != null) ...[
+                            const SizedBox(width: 8),
+                            titleAccessory!,
+                          ],
+                        ],
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: 2),

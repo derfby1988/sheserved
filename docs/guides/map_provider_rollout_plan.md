@@ -460,9 +460,9 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 
 | Phase | Priority / ความยากทดสอบ | สถานะ | ขอบเขตและ exit gate |
 |---|---|---|---|
-| 0. Baseline + เลือก tile-source profile | P0 / ง่ายมาก | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase0/phase0_report.md)) | ยืนยันตัวเลือก provider, key restrictions, attribution, CSP/CORS, privacy, defaults; เก็บ screenshot/behavior baseline ของ Google; เลือก production source จากหลายตัวเลือก (ไม่ hardcode OSM Standard) |
-| 1. Settings model + persistence | P0 / ง่าย | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase1/phase1_report.md)) | config resolver, platform defaults, feature overrides, validation, revision, backend admin path; UI เลือก Google/OSM + source; unit/API/widget tests พิสูจน์ save/reload, permission, fallback config ก่อนเปลี่ยน renderer |
-| 2. Shared adapter + fake tile harness | P0 / ปานกลาง | ✅ เสร็จ 2026-10-06 ([รายงาน](../evidence/map_provider_phase2/phase2_report.md)) | map model/controller facade + Google/OSM adapter; automated tests ใช้ fake/local tiles; Google behavior เดิมผ่าน regression |
+| 0. Baseline + เลือก tile-source profile | P0 / ง่ายมาก | ✅ เสร็จ 2026-10-06 — commit `0226c9f` ([รายงาน](../evidence/map_provider_phase0/phase0_report.md)) | ยืนยันตัวเลือก provider, key restrictions, attribution, CSP/CORS, privacy, defaults; เก็บ screenshot/behavior baseline ของ Google; เลือก production source จากหลายตัวเลือก (ไม่ hardcode OSM Standard) |
+| 1. Settings model + persistence | P0 / ง่าย | ✅ เสร็จ 2026-10-06 — commits `0226c9f`, `13fc938` ([รายงาน](../evidence/map_provider_phase1/phase1_report.md)) | config resolver, platform defaults, feature overrides, validation, revision, backend admin path; UI เลือก Google/OSM + source; unit/API/widget tests พิสูจน์ save/reload, permission, fallback config ก่อนเปลี่ยน renderer |
+| 2. Shared adapter + fake tile harness | P0 / ปานกลาง | ✅ เสร็จ 2026-10-06 — commit `0d952b7` ([รายงาน](../evidence/map_provider_phase2/phase2_report.md)) | map model/controller facade + Google/OSM adapter; automated tests ใช้ fake/local tiles; Google behavior เดิมผ่าน regression |
 | 3. Group Create Map | P1 / ง่ายสุดในกลุ่มแผนที่จริง | ⬜ ยังไม่เริ่ม | tap/drag pin, use location, fullscreen, restore พิกัด, สร้างก๊วนได้ `lat/lng` เดิม; Nominatim/Places flow ไม่เปลี่ยน |
 | 4. Home Map | P1 / ง่าย–ปานกลาง | ⬜ ยังไม่เริ่ม | initial camera, user location, nearest emergency, event markers, re-center, route polyline; permission denied + network interruption |
 | 5. Yield Way Dialog | P1 / ปานกลาง | ⬜ ยังไม่เริ่ม | inherit จาก Emergency; alert fixtures, fit bounds, route line, marker, ปุ่มให้ทาง/ไม่สะดวก, callback |
@@ -470,7 +470,16 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 | 7. Emergency Live Map | P0 safety / ยากสุด | ⬜ ยังไม่เริ่ม (ส่วนย่อย §22 incident map ทำแล้ว — ดู §10.3) | markers, responder routes, profession colors, live location, camera fit, overlays; ผ่าน Mission Lock, websocket, response state, controller lifecycle; OSM แสดงว่าไม่มี traffic; ห้าม production rollout ก่อน safety gate |
 | 8. Map systems อนาคต | P2 / ง่ายต่อระบบ | ⬜ ยังไม่เริ่ม | register feature key + ใช้ selector/config เดียวกันเมื่อมี map จริง; ไม่ reintroduce Sport Club Map View เพียงเพราะมี OSM |
 
-### 10.3 สถานะจริงหลัง Phase 0–2 และงานที่ค้าง (อัปเดต 2026-10-06)
+### 10.3 สถานะจริงหลัง Phase 0–2 และงานที่ค้าง (อัปเดต 2026-10-07)
+
+**VCS state:** งาน Phase 0–2 + เอกสารนี้ commit ครบแล้ว —
+`0226c9f` (Phase 0/1: migration, map-config route, model, service,
+settings UI, evidence, smoke harness, maestro baseline), `13fc938`
+(Phase 1 report), `0d952b7` (Phase 2: `lib/shared/map/`, tests, report,
+harness → shared adapter) และ `6f2d524` (VIDEO_SYSTEM_PLAN §22 notes +
+incident map glue) — commit เหล่านี้รวมงานขนานอื่นไว้ด้วย ไม่ใช่ commit
+เฉพาะ phase; working tree เหลือเฉพาะ `pubspec.lock` drift จาก pub
+resolution (ไม่เกี่ยวกับงานนี้)
 
 **งานขนานที่ลงจอดก่อนกำหนด — Incident Overview Map (VIDEO_SYSTEM_PLAN §22):**
 `widgets/incident_map/incident_map_surface.dart` เป็นพื้นผิวสอง renderer

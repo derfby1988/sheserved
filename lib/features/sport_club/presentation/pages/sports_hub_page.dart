@@ -23,8 +23,14 @@ class SportsHubPage extends StatefulWidget {
   /// such as `/community/sports/courts` (0) and `/community/sports/coaches`
   /// (2) land on their domain page directly.
   final int initialPage;
+  final String? initialVenueId;
 
-  const SportsHubPage({super.key, this.findBuddiesPage, this.initialPage = 1});
+  const SportsHubPage({
+    super.key,
+    this.findBuddiesPage,
+    this.initialPage = 1,
+    this.initialVenueId,
+  });
 
   @override
   State<SportsHubPage> createState() => _SportsHubPageState();
@@ -237,6 +243,7 @@ class _SportsHubPageState extends State<SportsHubPage> {
                   hubController: _hubController,
                   sportCatalog: _sportCatalog,
                   sportBar: _sportBar,
+                  initialVenueId: widget.initialVenueId,
                 ),
                 findBuddiesPage:
                     widget.findBuddiesPage ??

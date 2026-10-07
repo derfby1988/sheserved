@@ -20,6 +20,10 @@ class IncidentMapSession {
   /// การ์ดที่เลือกจากแผนที่ (ปักบนสุดของกล่องยอดนิยมพร้อมป้าย — §22.1)
   String? pinnedVideoId;
 
+  /// เหตุที่ map-playback ต้องโฟกัสเมื่อ Back กลับมาแผนที่ พร้อม zoom ที่
+  /// เปิด preview cards ของอัลบั้มได้ (§22.14)
+  IncidentMapCameraFocus? returnFocus;
+
   /// ภาพที่รอเปิด overlay หลังสลับการ์ดเสร็จ (§22.3 ข้อ 5)
   String? pendingOverlayPhotoId;
   String? pendingOverlayPhotoUrl;
@@ -29,7 +33,7 @@ class IncidentMapSession {
   bool wasPlayingBeforeMap = false;
   Duration? playbackPositionBeforeMap;
 
-  /// viewport cache ล่าสุด — ใช้คืนทันทีเมื่อกด "เลือกเหตุการณ์อื่น"
+  /// viewport cache ล่าสุด — ใช้คืนทันทีเมื่อย้อนจาก map-playback กลับแผนที่
   IncidentMapResponse? lastResponse;
   int? lastFetchedZoom;
   IncidentMapBounds? lastFetchedBounds;
@@ -38,6 +42,7 @@ class IncidentMapSession {
   /// ตำแหน่ง/ซูมเดิมเมื่อกลับเข้าโหมดแผนที่ (§22.11 fix 2)
   IncidentMapBounds? lastCameraBounds;
   double? lastCameraZoom;
+  bool refreshOnNextCameraSettle = false;
 
   IncidentMapSession({required this.categoryId, required this.categoryName});
 }
@@ -185,7 +190,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     session.wasPlayingBeforeMap = false;
   }
 
-  /// ปุ่มย้อนกลับ / hardware back จากโหมดแผนที่ — คืนการ์ดเดิม ไม่ pop หน้า
+  /// คืนจาก incident map surface ไปยัง Emergency surface โดยไม่ pop หน้า
   void _exitIncidentMapMode() {
     setState(() => _surfaceMode = EmergencySurfaceMode.live);
     _resumePlayerFromMap();
@@ -194,50 +199,175 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     });
   }
 
-  /// แตะหมุด → กลับโหมดปกติและเล่นการ์ดเหตุนั้น (§22.3 ข้อ 4)
-  void _selectIncidentFromMap(IncidentMapPointItem point) {
+  /// เปลี่ยนจากแผนที่ไปยังหน้าเล่นวิดีโอ พร้อมเปิด feed ชั่วคราวของหมวดแผนที่
+  /// (ทุก incident ในหมวดนั้น; ไม่เปลี่ยนตัวกรองที่ commit จาก sheet)
+  void _showIncidentMapCategoryFeed() {
     final session = _incidentMapSession;
     if (session == null) return;
+    setState(() {
+      _surfaceMode = EmergencySurfaceMode.live;
+      _isLoadingTrending = true;
+      _isLoadingMoreTrending = false;
+      _trendingFilterResetToken++;
+    });
+    unawaited(
+      _loadTrendingVideos(
+        forceRefresh: true,
+        categoryIdsOverride: {session.categoryId},
+      ).then<void>((_) {}),
+    );
+  }
+
+  /// แตะหมุด → กลับมาเล่นการ์ดเหตุการณ์นั้น และแสดงการ์ดทั้งหมดในหมวดแผนที่
+  void _selectIncidentFromMap(IncidentMapPointItem point) {
+    final session = _incidentMapSession;
+    if (session == null || point.categoryId != session.categoryId) return;
     session.pinnedVideoId = point.id;
+    session.returnFocus = IncidentMapCameraFocus.forPoint(point);
     session.photoHandoffGeneration++;
     session.pendingOverlayPhotoId = null;
     session.pendingOverlayPhotoUrl = null;
-    setState(() => _surfaceMode = EmergencySurfaceMode.live);
+    _showIncidentMapCategoryFeed();
     _switchVideo(point.id, refreshTrending: false);
   }
 
-  /// ปุ่ม "เลือกเหตุการณ์อื่น" — คืนแผนที่เดิมพร้อม camera/viewport cache
+  void _updateIncidentMapReturnFocusForVideo(
+    String videoId, {
+    String? categoryId,
+    double? latitude,
+    double? longitude,
+  }) {
+    final session = _incidentMapSession;
+    if (!_hasIncidentMapPlaybackContext || session == null) return;
+    if (categoryId != null && categoryId != session.categoryId) return;
+
+    for (final item in _incidentMapData?.items ?? const <IncidentMapItem>[]) {
+      if (item is IncidentMapPointItem &&
+          item.id == videoId &&
+          item.categoryId == session.categoryId) {
+        session.pinnedVideoId = item.id;
+        session.returnFocus = IncidentMapCameraFocus.forPoint(item);
+        return;
+      }
+    }
+
+    bool validCoordinates(double? lat, double? lng) =>
+        lat != null &&
+        lng != null &&
+        lat.isFinite &&
+        lng.isFinite &&
+        !(lat == 0 && lng == 0) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180;
+
+    var resolvedCategoryId = categoryId;
+    var resolvedLatitude = latitude;
+    var resolvedLongitude = longitude;
+    for (final video in _trendingVideos) {
+      if (video.id != videoId) continue;
+      resolvedCategoryId ??= video.categoryId;
+      if (!validCoordinates(resolvedLatitude, resolvedLongitude) &&
+          validCoordinates(video.latitude, video.longitude)) {
+        resolvedLatitude = video.latitude;
+        resolvedLongitude = video.longitude;
+      }
+      break;
+    }
+    if (resolvedCategoryId != session.categoryId ||
+        !validCoordinates(resolvedLatitude, resolvedLongitude)) {
+      return;
+    }
+    session.pinnedVideoId = videoId;
+    session.returnFocus = IncidentMapCameraFocus(
+      incidentId: videoId,
+      latitude: resolvedLatitude!,
+      longitude: resolvedLongitude!,
+      zoom: IncidentMapZoomPolicy.photoOverviewZoom,
+    );
+  }
+
+  /// ปุ่มย้อนกลับใน video map-return context → คืนแผนที่เดิมพร้อม camera/cache
   void _returnToIncidentMap() {
     final session = _incidentMapSession;
     if (session == null) return;
+    final playingVideo = _currentVideo;
+    final playingVideoId = _currentVideoId;
+    if (playingVideoId != null) {
+      _updateIncidentMapReturnFocusForVideo(
+        playingVideoId,
+        categoryId: playingVideo?.categoryId,
+        latitude: playingVideo?.latitude,
+        longitude: playingVideo?.longitude,
+      );
+    }
+    session.refreshOnNextCameraSettle = session.returnFocus != null;
     setState(() {
       _isChatVisible = false;
       _isUiVisible = true;
       _surfaceMode = EmergencySurfaceMode.incidentMap;
       _incidentMapUiState =
-          session.lastResponse != null && _incidentMapData != null
+          !session.refreshOnNextCameraSettle &&
+              session.lastResponse != null &&
+              _incidentMapData != null
           ? IncidentMapUiState.ready
           : IncidentMapUiState.loading;
     });
     _pausePlayerForMap();
-    if (session.lastResponse == null) {
+    if (session.lastResponse == null && session.returnFocus == null) {
       _fetchIncidentMapData();
     }
   }
 
-  /// ปุ่ม "เปลี่ยนประเภทเหตุ" ในโหมดแผนที่ — เปิด sheet เดิม (ทางออกจาก
-  /// บริบท map-return, §22.1) — draft/apply ของ Phase 20 คงเดิมทุกอย่าง
-  void _openIncidentMapCategoryPicker() {
-    TrendingCategoryFilterSheet.show(
+  /// ปุ่ม "ปิด" ใน map-playback หรือปุ่มปิดแผนที่ → กลับ Emergency ปกติ
+  /// และคืน category scope ที่ commit ไว้ใน Trending sheet (ไม่เอา map scope
+  /// ไปเขียนทับตัวกรองเดิม)
+  Future<void> _closeIncidentMapContext() async {
+    final session = _incidentMapSession;
+    final currentVideoIdAtClose = _currentVideoId;
+    if (_isIncidentMapMode) {
+      _exitIncidentMapMode();
+    } else {
+      setState(() {
+        _isChatVisible = false;
+        _isUiVisible = true;
+      });
+    }
+    if (session != null) {
+      session.photoHandoffGeneration++;
+      session.pinnedVideoId = null;
+      session.pendingOverlayPhotoId = null;
+      session.pendingOverlayPhotoUrl = null;
+    }
+    setState(() {
+      _incidentMapSession = null;
+      _incidentMapData = null;
+      _incidentMapNewCount = 0;
+      _isLoadingTrending = true;
+      _isLoadingMoreTrending = false;
+      _trendingFilterResetToken++;
+    });
+    final loaded = await _loadTrendingVideos(forceRefresh: true);
+    if (!loaded || !mounted) return;
+    _autoSwitchForTrendingCategoryFilter(
+      currentVideoIdAtApply: currentVideoIdAtClose,
+      selectedCategoryIds: _selectedTrendingCategoryIds,
+    );
+  }
+
+  /// ปุ่ม "เปลี่ยนประเภทเหตุ" ในโหมดแผนที่ (§22.13) — เปิด glass dialog ที่
+  /// ลิสต์ปุ่มประเภทเหตุฉุกเฉินจากตารางจริง (ลำดับเดียวกับ sheet ตัวกรอง)
+  /// เลือกแล้วสลับหมวดของแผนที่ทันที — ไม่แตะตัวกรองยอดนิยมที่ commit อยู่
+  Future<void> _openIncidentMapCategoryPicker() async {
+    if (_missionFilterSuspended) return; // §22.3 ข้อ 7
+    final picked = await IncidentCategoryPickerDialog.show(
       context,
       categories: _emergencyCategories,
-      initialSelectedIds: _selectedTrendingCategoryIds,
-      suspensionSignal: _missionSuspendSignal,
-      onApply: _applyTrendingCategoryFilter,
-      onOpenIncidentMap: _canShowIncidentMapEntry
-          ? _openIncidentMapForCategory
-          : null,
+      currentCategoryId: _incidentMapSession?.categoryId,
     );
+    if (!mounted || picked == null) return;
+    await _enterIncidentMapMode(picked);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -284,6 +414,11 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     }
     session.lastCameraBounds = bounds;
     session.lastCameraZoom = zoom;
+    if (session.refreshOnNextCameraSettle) {
+      session.refreshOnNextCameraSettle = false;
+      _fetchIncidentMapData(bounds: bounds, zoom: zoom.toInt());
+      return;
+    }
     final lastZoom = session.lastFetchedZoom;
     final lastBounds = session.lastFetchedBounds;
     final zoomChanged = lastZoom == null || zoom.toInt() != lastZoom;
@@ -311,12 +446,13 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     IncidentMapPhoto photo,
   ) {
     final session = _incidentMapSession;
-    if (session == null) return;
+    if (session == null || point.categoryId != session.categoryId) return;
     final handoffGeneration = ++session.photoHandoffGeneration;
     session.pinnedVideoId = point.id;
+    session.returnFocus = IncidentMapCameraFocus.forPoint(point);
     session.pendingOverlayPhotoId = photo.id;
     session.pendingOverlayPhotoUrl = photo.url;
-    setState(() => _surfaceMode = EmergencySurfaceMode.live);
+    _showIncidentMapCategoryFeed();
     if (_currentVideoId == point.id) {
       // การ์ดเดียวกันอยู่แล้ว — เปิด overlay ได้ทันที
       _consumePendingOverlayPhoto(handoffGeneration);
@@ -384,14 +520,15 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
               subtitle: availability.isAppDefault
                   ? 'เชื่อมต่อ server ไม่ได้ — ใช้ค่า default ที่ฝังในแอป'
                   : null,
-              actionLabel: 'กลับ',
-              onAction: _exitIncidentMapMode,
+              actionLabel: 'ปิดแผนที่',
+              onAction: _closeIncidentMapContext,
             )
           else ...[
             IncidentMapSurface(
               availability: availability,
               initialBounds:
                   session.lastCameraBounds ?? IncidentMapBounds.thailand,
+              initialFocus: session.returnFocus,
               items: _incidentMapData?.items ?? const [],
               highlightedBucket: _incidentMapHighlightedBucket,
               onPointTap: _selectIncidentFromMap,
@@ -412,7 +549,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                 title: 'ไม่พบเหตุในหมวดนี้',
                 subtitle: 'เหตุในหมวดนี้ยังไม่มีพิกัดที่แสดงได้',
                 actionLabel: 'ปิดแผนที่',
-                onAction: _exitIncidentMapMode,
+                onAction: _closeIncidentMapContext,
               ),
             if (_incidentMapUiState == IncidentMapUiState.error)
               IncidentMapStateCard(

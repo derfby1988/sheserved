@@ -142,6 +142,30 @@ tiles — never raise `panelFillOpacity` to make the panel itself light/milky.
 - Moving an existing pending booking uses `allowDisjoint: false` and keeps the
   single-booking change-slot RPC. Multi-range creation is not atomic.
 
+## Court card styles (Book Court feed)
+
+The venue card chrome is admin-selectable: **จัดการกีฬา → tab "รูปแบบการ์ด"**
+(`ReviewProposedSportsPage` → `CourtCardStylePanel`).
+
+- `CourtCardStyle` (`book_court/domain/court_card_style.dart`) — `classic`
+  (flat, default) plus three 3D styles: `painter_3d`, `shader_glass`,
+  `lottie_cubes`. Unknown/missing values fall back to `classic`.
+- The choice is stored in `app_settings` key `court_card_style` as
+  `{"style": "<wireValue>"}` and read/written by `CourtCardStyleService`
+  (same admin-config table the donation/video panels write to — no migration).
+  `CourtCard` listens to the service, so a change repaints the feed immediately.
+- `CourtCard.styleOverride` renders one specific style — that is how the admin
+  tab previews all styles side by side.
+- The shader and Lottie variants must never render blank: `CourtCardCubeArt`
+  falls back to the CustomPainter art when `FragmentProgram.fromAsset` or
+  `Lottie.asset` fails (which is exactly what happens inside widget tests).
+- Assets: `shaders/court_card_glass.frag` (registered under `flutter: shaders:`)
+  and `assets/lottie/court_card_cubes.json` (registered under `flutter: assets:`).
+  Regenerate the Lottie stack with `python3 tool/gen_court_card_lottie.py`.
+- `flutter test` cannot compile shaders, so validate shader edits with
+  `flutter build bundle` (it runs impellerc) and check
+  `build/flutter_assets/shaders/court_card_glass.frag` exists.
+
 ## websocket-server (Node)
 
 - `npm test` runs `node --test 'test/**/*.test.js'` (built-in runner, no extra deps). Unit

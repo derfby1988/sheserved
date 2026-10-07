@@ -19,6 +19,7 @@ import '../widgets/court_usage_terms_dialog.dart';
 /// with cancel / change-slot / review actions.
 class CourtMyBookingsPage extends StatefulWidget {
   final BookCourtRepository repo;
+  final String? initialGroupId;
 
   /// When provided, forfeited/rejected groups offer a "เลือกเวลาใหม่"
   /// CTA that reopens the venue's court sheet through the caller's
@@ -28,6 +29,7 @@ class CourtMyBookingsPage extends StatefulWidget {
   const CourtMyBookingsPage({
     super.key,
     required this.repo,
+    this.initialGroupId,
     this.onRebookVenue,
   });
 
@@ -43,6 +45,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
   List<VenueReviewTag> _tagCatalog = const [];
   List<VenueReviewCategory> _categoryCatalog = const [];
   bool _loading = true;
+  bool _initialGroupOpened = false;
   // 0 = การจอง, 1 = ถูกปฏิเสธ/หมดอายุ, 2 = ยกเลิก, 3 = เสร็จสิ้น
   int _tab = 0;
 
@@ -72,8 +75,10 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
     // hide the flat bookings the page already shows.
     ({DateTime? serverNow, List<VenueBookingGroup> groups}) groupsRes =
         (serverNow: null, groups: const []);
+    var groupsLoaded = false;
     try {
       groupsRes = await widget.repo.listMyBookingGroups(userId);
+      groupsLoaded = true;
     } catch (_) {}
     try {
       final results = await Future.wait([
@@ -92,9 +97,38 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
         _groupsServerNow = groupsRes.serverNow;
         _loading = false;
       });
+      final initialGroupId = widget.initialGroupId;
+      if (groupsLoaded &&
+          !_initialGroupOpened &&
+          initialGroupId != null &&
+          initialGroupId.isNotEmpty) {
+        final groupIndex = groupsRes.groups.indexWhere(
+          (group) => group.id == initialGroupId,
+        );
+        if (groupIndex >= 0) {
+          _initialGroupOpened = true;
+          await _openBookingGroup(groupsRes.groups[groupIndex]);
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openBookingGroup(VenueBookingGroup group) async {
+    final userId = _userId;
+    if (userId == null) return;
+    await BookingGroupSheet.show(
+      context,
+      repo: widget.repo,
+      userId: userId,
+      group: group,
+      serverNow: _groupsServerNow,
+      onRebook: widget.onRebookVenue == null
+          ? null
+          : () => _rebookGroup(group),
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _cancel(VenueBooking b) async {
@@ -609,22 +643,7 @@ class _CourtMyBookingsPageState extends State<CourtMyBookingsPage> {
       blur: 8,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () async {
-          final userId = _userId;
-          if (userId == null) return;
-          await BookingGroupSheet.show(
-            context,
-            repo: widget.repo,
-            userId: userId,
-            group: g,
-            serverNow: _groupsServerNow,
-            onRebook:
-                widget.onRebookVenue == null
-                    ? null
-                    : () => _rebookGroup(g),
-          );
-          await _load();
-        },
+        onTap: () => _openBookingGroup(g),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

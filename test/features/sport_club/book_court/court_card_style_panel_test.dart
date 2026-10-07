@@ -1,0 +1,71 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sheserved/features/sport_club/book_court/application/court_card_style_service.dart';
+import 'package:sheserved/features/sport_club/book_court/domain/court_card_style.dart';
+import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card_style_panel.dart';
+
+void main() {
+  setUp(() {
+    CourtCardStyleService.instance.style.value = CourtCardStyle.classic;
+  });
+
+  testWidgets('previews every style and marks the active one', (tester) async {
+    tester.view.physicalSize = const Size(1200, 5200);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CourtCardStylePanel())),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    for (final style in CourtCardStyle.values) {
+      expect(
+        find.byKey(ValueKey('court-card-style-${style.wireValue}')),
+        findsOneWidget,
+      );
+      expect(find.text(style.label), findsWidgets);
+    }
+    expect(find.text('ใช้อยู่'), findsOneWidget);
+    expect(
+      find.text('ใช้อยู่ตอนนี้: ${CourtCardStyle.classic.label}'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('selecting a style applies it to the card service', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 5200);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CourtCardStylePanel())),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final selectButton = find.byKey(
+      const ValueKey('court-card-style-select-painter_3d'),
+    );
+    await tester.ensureVisible(selectButton);
+    await tester.pump();
+    await tester.tap(selectButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      CourtCardStyleService.instance.style.value,
+      CourtCardStyle.painter3d,
+    );
+    // Supabase is unavailable in tests, so the panel reports the local-only
+    // outcome instead of claiming the shared setting was saved.
+    expect(find.textContaining('เปลี่ยนบนเครื่องนี้แล้ว'), findsOneWidget);
+    expect(
+      find.text('ใช้อยู่ตอนนี้: ${CourtCardStyle.painter3d.label}'),
+      findsOneWidget,
+    );
+  });
+}

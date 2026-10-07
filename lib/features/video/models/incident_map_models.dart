@@ -192,6 +192,28 @@ class IncidentMapPointItem extends IncidentMapItem {
       bucket.relativeAgeTh(now.difference(createdAt));
 }
 
+class IncidentMapCameraFocus {
+  final String incidentId;
+  final double latitude;
+  final double longitude;
+  final double zoom;
+
+  const IncidentMapCameraFocus({
+    required this.incidentId,
+    required this.latitude,
+    required this.longitude,
+    required this.zoom,
+  });
+
+  factory IncidentMapCameraFocus.forPoint(IncidentMapPointItem point) =>
+      IncidentMapCameraFocus(
+        incidentId: point.id,
+        latitude: point.lat,
+        longitude: point.lng,
+        zoom: IncidentMapZoomPolicy.photoOverviewZoom,
+      );
+}
+
 class IncidentMapLegend {
   final int red;
   final int orange;
@@ -253,6 +275,8 @@ enum IncidentMapMode { points, clusters }
 
 class IncidentMapZoomPolicy {
   static const double pointsThreshold = 12;
+  static const double photoPreviewThreshold = 13;
+  static const double photoOverviewZoom = photoPreviewThreshold + 1;
   static const double clusterTapStep = 2;
 
   static double zoomAfterClusterTap(double currentZoom) {

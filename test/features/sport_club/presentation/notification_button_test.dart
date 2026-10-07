@@ -309,6 +309,42 @@ void main() {
     );
   });
 
+  test('routes a group preapproval notification to its booking evidence', () {
+    final notification = AppNotification(
+      id: 'booking-preapproved',
+      professionId: '',
+      recipientId: 'booker-1',
+      category: 'venue_booking',
+      eventType: 'venue_booking.group_preapproved',
+      title: 'คำขออนุมัติแล้ว กรุณาแนบสลิป',
+      createdAt: DateTime.utc(2026, 10, 7),
+      payload: const {'groupId': 'group-1', 'venueId': 'venue-1'},
+    );
+
+    expect(
+      notificationPayloadRoute(notification),
+      '/community/sports/courts/my-bookings',
+    );
+  });
+
+  test('routes a confirmed booking notification to its venue detail', () {
+    final notification = AppNotification(
+      id: 'booking-confirmed',
+      professionId: '',
+      recipientId: 'booker-1',
+      category: 'venue_booking',
+      eventType: 'venue_booking.confirmed',
+      title: 'สลิปยืนยันแล้ว การจองสำเร็จ',
+      createdAt: DateTime.utc(2026, 10, 7),
+      payload: const {'groupId': 'group-1', 'venueId': 'venue-1'},
+    );
+
+    expect(
+      notificationPayloadRoute(notification),
+      '/community/sports/courts/detail',
+    );
+  });
+
   test('keeps the owner dashboard route for venue booking requests', () {
     final notification = AppNotification(
       id: 'booking-2',

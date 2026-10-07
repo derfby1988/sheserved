@@ -145,5 +145,37 @@ void main() {
       // ทั้งคู่วางได้ — ตรวจว่าใบของเหตุใหม่ถูกวางก่อนในลิสต์
       expect(placements.first.incidentId, 'new-i');
     });
+
+    test(
+      'map-return incident photos take layout priority and keep all 3 cards',
+      () {
+        final placements = layoutIncidentPhotoCards(
+          anchorByIncidentId: {
+            'selected': const Offset(150, 400),
+            'newer': const Offset(450, 400),
+          },
+          photosByIncidentId: {
+            'selected': [
+              _photo('selected-1', createdAt: DateTime.utc(2026, 1, 1)),
+              _photo('selected-2', createdAt: DateTime.utc(2026, 1, 2)),
+              _photo('selected-3', createdAt: DateTime.utc(2026, 1, 3)),
+            ],
+            'newer': [_photo('newer-1', createdAt: DateTime.utc(2026, 10, 6))],
+          },
+          viewport: const Size(600, 800),
+          cardSize: _cardSize,
+          preferredIncidentId: 'selected',
+        );
+
+        expect(
+          placements.take(3).map((placement) => placement.incidentId),
+          everyElement('selected'),
+        );
+        expect(
+          placements.where((placement) => placement.incidentId == 'selected'),
+          hasLength(3),
+        );
+      },
+    );
   });
 }

@@ -100,7 +100,8 @@ screen ──► SheservedMap(target: MapTarget)          resolved by Phase 1 co
   documented clean-checkout failures (`test/widget_test.dart`,
   `test/integration/phase2_role_sync_test.dart`). The third —
   `court_my_bookings_page_test.dart` ("expired shares the rejected tab…")
-  — is inside the uncommitted `sport_club/book_court` WIP and unrelated to
+  — is inside the `sport_club/book_court` feature work (uncommitted at the
+  time of writing, since committed) and unrelated to
   the map work (expects text "สนามรออนุมัติ" not found; Phase 2 touches
   nothing under `features/sport_club/`).
 - Android smoke required an `adb` daemon restart (device shell was hung);

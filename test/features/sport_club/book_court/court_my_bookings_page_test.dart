@@ -27,6 +27,14 @@ class _FakeBookCourtRepository extends BookCourtRepository {
       );
 
   List<VenueBooking> bookings = const [];
+  ({DateTime? serverNow, List<VenueBookingGroup> groups}) groupsResult = (
+    serverNow: null,
+    groups: const [],
+  );
+
+  @override
+  Future<({DateTime? serverNow, List<VenueBookingGroup> groups})>
+  listMyBookingGroups(String userId) async => groupsResult;
 
   @override
   Future<List<VenueBooking>> listMyBookings(
@@ -112,6 +120,40 @@ VenueBooking _booking({
   decidedAt: decidedAt,
 );
 
+VenueBookingGroup _evidenceGroup(DateTime now) => VenueBookingGroup(
+  id: 'group-notified',
+  venueId: 'venue-1',
+  venueName: 'สนามทดสอบ',
+  timezone: 'Asia/Bangkok',
+  status: BookingGroupStatus.awaitingEvidence,
+  stage: 'payment',
+  approvalMode: BookingApprovalMode.ownerApproval,
+  totalAmount: 1,
+  evidenceDueAt: now.add(const Duration(hours: 1)),
+  paymentDestination: '0830103050',
+  requirements: const [
+    EvidenceRequirement(
+      key: 'req_1',
+      label: 'สลิปชำระเงิน',
+      kind: 'payment_slip',
+      stage: 'payment',
+      reviewMode: 'auto_verify',
+      required: true,
+    ),
+  ],
+  bookings: [
+    BookingGroupChild(
+      id: 'booking-1',
+      courtId: 'court-1',
+      courtName: 'คอร์ท 1',
+      startsAt: now.add(const Duration(hours: 2)),
+      endsAt: now.add(const Duration(hours: 3)),
+      status: VenueBookingStatus.awaitingEvidence,
+      priceTotal: 1,
+    ),
+  ],
+);
+
 void main() {
   setUp(() async {
     await AuthService.instance.logout();
@@ -121,6 +163,47 @@ void main() {
     await PresenceService.instance.stop();
     await AuthService.instance.logout();
   });
+
+  testWidgets(
+    'opens the notified group evidence sheet when my bookings loads',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await AuthService.instance.login(_testUser());
+      final now = DateTime.now();
+      final repo = _FakeBookCourtRepository()
+        ..groupsResult = (serverNow: now, groups: [_evidenceGroup(now)]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            chatUnreadProvider.overrideWith((ref) => _FakeChatUnreadNotifier()),
+            notificationRepositoryProvider.overrideWithValue(
+              _FakeNotificationRepository(),
+            ),
+          ],
+          child: MaterialApp(
+            home: CourtMyBookingsPage(
+              repo: repo,
+              initialGroupId: 'group-notified',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('สนามทดสอบ'), findsNWidgets(2));
+      expect(find.text('สลิปชำระเงิน'), findsOneWidget);
+      expect(find.text('ยังไม่ได้ส่ง'), findsOneWidget);
+      expect(find.text('ส่ง'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await AuthService.instance.logout();
+      await PresenceService.instance.stop();
+    },
+  );
 
   testWidgets(
     'expired shares the rejected tab and completed has its own reviewable tab',

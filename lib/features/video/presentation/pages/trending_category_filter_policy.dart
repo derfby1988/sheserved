@@ -1,5 +1,34 @@
 import '../../models/video_models.dart';
 
+Set<String> trendingCategoryIdsForActiveScope({
+  required Set<String> committedCategoryIds,
+  required String? incidentMapCategoryId,
+  required bool isIncidentMapPlaybackContext,
+  required bool missionFilterSuspended,
+}) {
+  if (missionFilterSuspended) return const {};
+  final mapCategoryId = incidentMapCategoryId?.trim();
+  if (isIncidentMapPlaybackContext &&
+      mapCategoryId != null &&
+      mapCategoryId.isNotEmpty) {
+    return {mapCategoryId};
+  }
+  return Set<String>.of(committedCategoryIds);
+}
+
+List<Video> filterTrendingVideosByCategoryIds(
+  Iterable<Video> videos,
+  Set<String> categoryIds,
+) {
+  if (categoryIds.isEmpty) return List<Video>.of(videos);
+  return videos
+      .where(
+        (video) =>
+            video.categoryId != null && categoryIds.contains(video.categoryId),
+      )
+      .toList();
+}
+
 String? trendingCategoryFilterAutoSwitchTarget({
   required String? currentVideoId,
   required String? currentVideoIdAtApply,

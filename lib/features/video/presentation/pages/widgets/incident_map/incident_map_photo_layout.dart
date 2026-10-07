@@ -11,8 +11,8 @@ import '../../../../models/incident_map_models.dart';
 ///     above its pin
 ///   * a card is placed only when it does not intersect any already-placed
 ///     card, any other incident's anchor exclusion zone, or the viewport edge
-///   * incidents are processed newest-first (recency priority), ties by id —
-///     deterministic for a given input
+///   * [preferredIncidentId] is placed first when returning from map playback;
+///     remaining incidents are newest-first (recency priority), ties by id
 ///   * incidents that cannot fit simply show fewer/no cards — the incident
 ///     itself is never dropped (the pin remains on the map)
 
@@ -46,6 +46,7 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   required Map<String, Offset> anchorByIncidentId,
   required Map<String, List<IncidentMapPhoto>> photosByIncidentId,
   required Size viewport,
+  String? preferredIncidentId,
   Size cardSize = const Size(64, 64),
   double gap = 6,
   int maxPerIncident = 3,
@@ -75,6 +76,8 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   final ids =
       anchorByIncidentId.keys.where(photosByIncidentId.containsKey).toList()
         ..sort((a, b) {
+          if (a == preferredIncidentId) return -1;
+          if (b == preferredIncidentId) return 1;
           final byTime = firstCreatedAt(b).compareTo(firstCreatedAt(a));
           if (byTime != 0) return byTime;
           return a.compareTo(b);
