@@ -428,6 +428,60 @@ class _CourtCardStylePanelState extends State<CourtCardStylePanel> {
 
           const SizedBox(height: 10),
           const Divider(height: 1),
+          const SizedBox(height: 8),
+
+          // ==================== จัดการเงาและการสะท้อน (Shadow Controls) ====================
+          Row(
+            children: [
+              Icon(Icons.wb_shade_rounded, size: 16, color: Colors.grey.shade700),
+              const SizedBox(width: 6),
+              Text(
+                'การจัดการเงาและแสงสะท้อน',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+
+          // 6. รัศมีกว้างเงาแนวนอน (shadowWidthFactor)
+          _paramSlider(
+            icon: Icons.swap_horiz_rounded,
+            label: 'ความกว้างเงา',
+            value: p.shadowWidthFactor,
+            min: 0.50,
+            max: 1.80,
+            displayValue: '${(p.shadowWidthFactor * 100).toStringAsFixed(0)}%',
+            onChanged: (v) => _updateParam(p.copyWith(shadowWidthFactor: v)),
+          ),
+
+          // 7. ความยาวเงาแนวตั้ง (shadowHeightFactor)
+          _paramSlider(
+            icon: Icons.swap_vert_rounded,
+            label: 'ความยาวเงา',
+            value: p.shadowHeightFactor,
+            min: 0.40,
+            max: 2.20,
+            displayValue: '${(p.shadowHeightFactor * 100).toStringAsFixed(0)}%',
+            onChanged: (v) => _updateParam(p.copyWith(shadowHeightFactor: v)),
+          ),
+
+          // 8. ความเข้มเงา (shadowOpacity)
+          _paramSlider(
+            icon: Icons.tonality_rounded,
+            label: 'ความเข้มเงา',
+            value: p.shadowOpacity,
+            min: 0.0,
+            max: 1.80,
+            displayValue: '${(p.shadowOpacity * 100).toStringAsFixed(0)}%',
+            onChanged: (v) => _updateParam(p.copyWith(shadowOpacity: v)),
+          ),
+
+          const SizedBox(height: 10),
+          const Divider(height: 1),
           const SizedBox(height: 10),
 
           // ==================== Toggle ไอคอน 3 มิติ / รูปภาพ ====================

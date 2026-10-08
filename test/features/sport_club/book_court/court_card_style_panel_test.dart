@@ -116,4 +116,26 @@ void main() {
     expect(CourtCardStyleService.instance.params3d.value.show3dIcon, isFalse);
     expect(CourtCardStyleService.instance.params3d.value.customImageUrl, 'preset:badminton');
   });
+
+  testWidgets('shadow management sliders are visible in 3D params section', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 5200);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    CourtCardStyleService.instance.style.value = CourtCardStyle.painter3d;
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CourtCardStylePanel())),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Shadow controls section and sliders should be rendered
+    expect(find.text('การจัดการเงาและแสงสะท้อน'), findsOneWidget);
+    expect(find.text('ความกว้างเงา'), findsOneWidget);
+    expect(find.text('ความยาวเงา'), findsOneWidget);
+    expect(find.text('ความเข้มเงา'), findsOneWidget);
+  });
 }

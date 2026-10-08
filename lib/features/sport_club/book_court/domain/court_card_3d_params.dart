@@ -24,6 +24,18 @@ class CourtCard3DParams {
   /// Custom replacement image URL, file path, base64 or preset key (รูปภาพที่เลือกแทน).
   final String? customImageUrl;
 
+  /// Shadow horizontal spread/width multiplier (รัศมีความกว้างเงาแนวนอน).
+  /// 1.0 = standard width.
+  final double shadowWidthFactor;
+
+  /// Shadow vertical spread/height multiplier (ความยาวเงาแนวตั้ง).
+  /// 1.0 = standard length.
+  final double shadowHeightFactor;
+
+  /// Shadow overall intensity / opacity multiplier (ความเข้มเงา).
+  /// 1.0 = standard opacity.
+  final double shadowOpacity;
+
   const CourtCard3DParams({
     this.rotateY = -0.10,
     this.rotateX = 0.05,
@@ -32,6 +44,9 @@ class CourtCard3DParams {
     this.lightAngle = 0.75,
     this.show3dIcon = true,
     this.customImageUrl,
+    this.shadowWidthFactor = 1.0,
+    this.shadowHeightFactor = 1.0,
+    this.shadowOpacity = 1.0,
   });
 
   static const CourtCard3DParams defaults = CourtCard3DParams();
@@ -45,6 +60,9 @@ class CourtCard3DParams {
     bool? show3dIcon,
     String? customImageUrl,
     bool clearCustomImage = false,
+    double? shadowWidthFactor,
+    double? shadowHeightFactor,
+    double? shadowOpacity,
   }) {
     return CourtCard3DParams(
       rotateY: rotateY ?? this.rotateY,
@@ -56,6 +74,9 @@ class CourtCard3DParams {
       customImageUrl: clearCustomImage
           ? null
           : (customImageUrl ?? this.customImageUrl),
+      shadowWidthFactor: shadowWidthFactor ?? this.shadowWidthFactor,
+      shadowHeightFactor: shadowHeightFactor ?? this.shadowHeightFactor,
+      shadowOpacity: shadowOpacity ?? this.shadowOpacity,
     );
   }
 
@@ -67,6 +88,9 @@ class CourtCard3DParams {
         'lightAngle': lightAngle,
         'show3dIcon': show3dIcon,
         if (customImageUrl != null) 'customImageUrl': customImageUrl,
+        'shadowWidthFactor': shadowWidthFactor,
+        'shadowHeightFactor': shadowHeightFactor,
+        'shadowOpacity': shadowOpacity,
       };
 
   factory CourtCard3DParams.fromJson(Object? json) {
@@ -81,6 +105,18 @@ class CourtCard3DParams {
           ? json['show3dIcon'] as bool
           : defaults.show3dIcon,
       customImageUrl: json['customImageUrl']?.toString(),
+      shadowWidthFactor: _d(
+        json['shadowWidthFactor'],
+        defaults.shadowWidthFactor,
+      ),
+      shadowHeightFactor: _d(
+        json['shadowHeightFactor'],
+        defaults.shadowHeightFactor,
+      ),
+      shadowOpacity: _d(
+        json['shadowOpacity'],
+        defaults.shadowOpacity,
+      ),
     );
   }
 
@@ -99,7 +135,10 @@ class CourtCard3DParams {
           opacity == other.opacity &&
           lightAngle == other.lightAngle &&
           show3dIcon == other.show3dIcon &&
-          customImageUrl == other.customImageUrl;
+          customImageUrl == other.customImageUrl &&
+          shadowWidthFactor == other.shadowWidthFactor &&
+          shadowHeightFactor == other.shadowHeightFactor &&
+          shadowOpacity == other.shadowOpacity;
 
   @override
   int get hashCode => Object.hash(
@@ -110,5 +149,8 @@ class CourtCard3DParams {
         lightAngle,
         show3dIcon,
         customImageUrl,
+        shadowWidthFactor,
+        shadowHeightFactor,
+        shadowOpacity,
       );
 }

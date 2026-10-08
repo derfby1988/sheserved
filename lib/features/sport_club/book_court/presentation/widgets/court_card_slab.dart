@@ -15,6 +15,9 @@ class CourtCardSlab extends StatelessWidget {
   final double opacity;
   final Alignment sheenBegin;
   final Alignment sheenEnd;
+  final double shadowWidthFactor;
+  final double shadowHeightFactor;
+  final double shadowOpacity;
 
   const CourtCardSlab({
     super.key,
@@ -24,6 +27,9 @@ class CourtCardSlab extends StatelessWidget {
     this.opacity = 0.38,
     this.sheenBegin = const Alignment(-1.2, -1.0),
     this.sheenEnd = const Alignment(1.2, 1.0),
+    this.shadowWidthFactor = 1.0,
+    this.shadowHeightFactor = 1.0,
+    this.shadowOpacity = 1.0,
   });
 
   @override
@@ -34,7 +40,7 @@ class CourtCardSlab extends StatelessWidget {
     final slabMarginLeft = 6.0;
     final slabMarginTop = 8.0;
     final slabMarginRight = thickness.clamp(2.0, 32.0) + 8.0;
-    final slabMarginBottom = 16.0;
+    final slabMarginBottom = (16.0 * shadowHeightFactor).clamp(16.0, 36.0);
 
     return CustomPaint(
       painter: CourtCardSlabPainter(
@@ -47,6 +53,9 @@ class CourtCardSlab extends StatelessWidget {
         marginTop: slabMarginTop,
         marginRight: slabMarginRight,
         marginBottom: slabMarginBottom,
+        shadowWidthFactor: shadowWidthFactor,
+        shadowHeightFactor: shadowHeightFactor,
+        shadowOpacity: shadowOpacity,
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -77,6 +86,9 @@ class CourtCardSlabPainter extends CustomPainter {
   final double marginTop;
   final double marginRight;
   final double marginBottom;
+  final double shadowWidthFactor;
+  final double shadowHeightFactor;
+  final double shadowOpacity;
 
   const CourtCardSlabPainter({
     required this.level,
@@ -88,6 +100,9 @@ class CourtCardSlabPainter extends CustomPainter {
     this.marginTop = 8.0,
     this.marginRight = 20.0,
     this.marginBottom = 16.0,
+    this.shadowWidthFactor = 1.0,
+    this.shadowHeightFactor = 1.0,
+    this.shadowOpacity = 1.0,
   });
 
   double get _levelFactor => (level.clamp(1, 5)) / 5.0;
@@ -132,54 +147,142 @@ class CourtCardSlabPainter extends CustomPainter {
     _paintGlassRimHighlights(canvas, frontRRect, frontRect);
   }
 
-  /// Soft dark contact shadow directly where the slab touches the floor,
-  /// plus a subtle ground mirror reflection.
+  /// Seamless, photorealistic contact shadow and diffuse floor reflection matching
+  /// the prototype image (prototype_bottom.png):
+  /// - No sharp cutoffs or boxy drawRect edges anywhere (zero rectangular cuts)
+  /// - Smooth Gaussian falloff in all directions (left, right, bottom)
+  /// - Tight ambient occlusion contact crease directly along the base touchline
+  /// - Soft frosted floor reflection mirroring the card, with warm red ambient
+  ///   glow under the ruby cubes
+  /// - Seamless optical continuity transitioning smoothly into the card's rounded corners
   void _paintGroundShadow(Canvas canvas, Rect frontRect, double thicknessX) {
-    final totalWidth = frontRect.width + thicknessX * 0.8;
-    final centerX = frontRect.left + totalWidth * 0.5;
+    if (shadowOpacity <= 0.0) return;
 
-    // Ambient occlusion crease right under the base
+    const cornerRadius = 22.0;
+    final footprintWidth = frontRect.width + thicknessX;
+    final centerX = frontRect.left + footprintWidth * 0.5;
+    final bottom = frontRect.bottom;
+
+    final wFactor = shadowWidthFactor.clamp(0.4, 2.5);
+    final hFactor = shadowHeightFactor.clamp(0.3, 3.0);
+    final opFactor = shadowOpacity.clamp(0.0, 2.0);
+
+    // 1. Wide ambient ground shadow (บรรยากาศเงามืดรอบฐานแบบกระจายกว้าง นุ่มนวล)
+    final ambientShadowRect = Rect.fromCenter(
+      center: Offset(centerX, bottom + 8.0 * hFactor),
+      width: footprintWidth * 1.06 * wFactor,
+      height: 24.0 * hFactor,
+    );
+    final ambientShadowPaint = Paint()
+      ..color = const Color(0xFF080D1A).withValues(alpha: (0.16 * opFactor).clamp(0.0, 1.0))
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 14.0 * math.sqrt(hFactor));
+    canvas.drawOval(ambientShadowRect, ambientShadowPaint);
+
+    // 2. Main contact ground shadow (เงาหลักใต้แผ่นการ์ด นุ่มลึก)
+    final mainShadowRect = Rect.fromCenter(
+      center: Offset(centerX + 2.0, bottom + 5.0 * hFactor),
+      width: footprintWidth * 0.94 * wFactor,
+      height: 16.0 * hFactor,
+    );
+    final mainShadowPaint = Paint()
+      ..color = const Color(0xFF060A14).withValues(alpha: (0.26 * opFactor).clamp(0.0, 1.0))
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8.0 * math.sqrt(hFactor));
+    canvas.drawOval(mainShadowRect, mainShadowPaint);
+
+    // 3. Ambient occlusion contact crease (รอยเงาสัมผัสแนบสนิทที่ผิวสัมผัสพื้น)
+    //    Tapers naturally as the rounded corners curve upward off the ground.
+    final creaseWidth = math.max(20.0, (frontRect.width - cornerRadius * 1.4 + thicknessX * 0.5) * wFactor);
+    final creaseCenterX = frontRect.left + cornerRadius * 0.7 + (creaseWidth / wFactor) * 0.5;
     final creaseRect = Rect.fromCenter(
-      center: Offset(centerX, frontRect.bottom + 4),
-      width: totalWidth * 0.92,
-      height: 8.0,
+      center: Offset(creaseCenterX, bottom),
+      width: creaseWidth,
+      height: 4.5 * math.min(1.4, hFactor),
     );
     final creasePaint = Paint()
-      ..color = const Color(0xFF0F141F).withValues(alpha: 0.32)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+      ..color = const Color(0xFF03050A).withValues(alpha: (0.44 * opFactor).clamp(0.0, 1.0))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.2);
     canvas.drawOval(creaseRect, creasePaint);
 
-    // Wide soft ground shadow
-    final shadowRect = Rect.fromCenter(
-      center: Offset(centerX + 4, frontRect.bottom + 12),
-      width: totalWidth * 0.98,
-      height: 20.0,
-    );
-    final shadowPaint = Paint()
-      ..color = const Color(0xFF1B2232).withValues(alpha: 0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-    canvas.drawOval(shadowRect, shadowPaint);
-
-    // Floor reflection: mirror glow of bottom rim
-    final reflectRect = Rect.fromLTWH(
-      frontRect.left + 8,
-      frontRect.bottom + 2,
-      totalWidth - 16,
-      14,
+    // 4. Soft frosted floor reflection (แสงสะท้อนบนพื้นโต๊ะจากแผ่นกระจก)
+    //    Naturally elliptical with Gaussian blur — NO sharp edges, smoothly dissolves.
+    final reflectWidth = math.max(20.0, (frontRect.width * 0.88 + thicknessX * 0.5) * wFactor);
+    final reflectRect = Rect.fromCenter(
+      center: Offset(centerX, bottom + 4.0 * hFactor),
+      width: reflectWidth,
+      height: 13.0 * hFactor,
     );
     final reflectPaint = Paint()
       ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
         colors: [
-          Colors.white.withValues(alpha: 0.22),
+          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withValues(alpha: (0.22 * opFactor).clamp(0.0, 1.0)),
+          Colors.white.withValues(alpha: (0.28 * opFactor).clamp(0.0, 1.0)),
+          Color(0xFFFF6270).withValues(alpha: (0.26 * _levelFactor * opFactor).clamp(0.0, 1.0)),
           Colors.white.withValues(alpha: 0.0),
         ],
-      ).createShader(reflectRect);
-    canvas.drawRect(reflectRect, reflectPaint);
+        stops: const [0.0, 0.16, 0.52, 0.82, 1.0],
+      ).createShader(reflectRect)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4.5 * math.sqrt(hFactor));
+    canvas.drawOval(reflectRect, reflectPaint);
+
+    // 5. Warm red ambient puddle under the 3D voxel cubes (แสงสีแดงส่องกระทบพื้น)
+    final cubeGlowCenterX = frontRect.right - frontRect.width * 0.20;
+    final cubeGlowRect = Rect.fromCenter(
+      center: Offset(cubeGlowCenterX, bottom + 3.0 * hFactor),
+      width: frontRect.width * 0.44 * wFactor,
+      height: 10.0 * hFactor,
+    );
+    final cubeGlowPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFFF2535).withValues(alpha: (0.26 * _levelFactor * opFactor).clamp(0.0, 1.0)),
+          const Color(0xFFFF4552).withValues(alpha: (0.10 * _levelFactor * opFactor).clamp(0.0, 1.0)),
+          const Color(0xFFFF2535).withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.48, 1.0],
+      ).createShader(cubeGlowRect)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5.0 * math.sqrt(hFactor));
+    canvas.drawOval(cubeGlowRect, cubeGlowPaint);
+
+    // 6. Hairline contact specular highlight along the card's flat bottom edge (เส้นประกายสัมผัสพื้น)
+    //    Connects the card face and ground seamlessly without protruding past corners.
+    final contactLineStart = frontRect.left + cornerRadius * 0.85;
+    final contactLineEnd = frontRect.right + thicknessX * 0.35;
+    if (contactLineEnd > contactLineStart) {
+      final lineRect = Rect.fromLTRB(
+        contactLineStart,
+        bottom - 1.0,
+        contactLineEnd,
+        bottom + 1.0,
+      );
+      final linePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.0),
+            Colors.white.withValues(alpha: (0.65 * opFactor).clamp(0.0, 1.0)),
+            Colors.white.withValues(alpha: (0.80 * opFactor).clamp(0.0, 1.0)),
+            Colors.white.withValues(alpha: (0.50 * opFactor).clamp(0.0, 1.0)),
+            Colors.white.withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.15, 0.50, 0.85, 1.0],
+        ).createShader(lineRect);
+      canvas.drawLine(
+        Offset(contactLineStart, bottom),
+        Offset(contactLineEnd, bottom),
+        linePaint,
+      );
+    }
   }
 
-  /// Paints the visible thickness of the slab on the RIGHT side (สันขอบความหนาทางขวาของการ์ด).
+  /// Paints the visible thickness of the slab on the RIGHT side and BOTTOM
+  /// (สันขอบความหนาทางขวาและล่างของการ์ด), simulating frosted acrylic depth
+  /// with an inner shadow at the seam, matching the reference image.
   void _paintExtrudedRightRim(
     Canvas canvas,
     Path frontPath,
@@ -191,23 +294,26 @@ class CourtCardSlabPainter extends CustomPainter {
     // The rim is the area of the back plate that extends outside the front plate.
     final rimPath = Path.combine(PathOperation.difference, backPath, frontPath);
 
-    // 1. Polished clear acrylic/glass facet: vertical refraction gradient
+    // --- Single seamless paint of the entire rim shape ---
+    // rimPath is already the correct rounded-corner shape from Path.combine(difference).
+    // No clips needed — the path itself defines clean boundaries at every corner.
+    // A single diagonal gradient covers top→right specular + bottom warm-red reflection.
     final rimPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topRight,
-        end: Alignment.bottomRight,
+        end: Alignment.bottomLeft,
         colors: [
-          Colors.white.withValues(alpha: 0.98), // Bright specular highlight at top-right curve
-          const Color(0xFFE8EDF6).withValues(alpha: 0.90), // Polished glass upper facet
-          const Color(0xFFCAD5E5).withValues(alpha: 0.78), // Translucent body
-          const Color(0xFFB4C2D6).withValues(alpha: 0.72), // Glass refraction tone
-          const Color(0xFFFFD2D8).withValues(alpha: 0.80), // Warm red glow reflection from cubes at bottom
+          Colors.white.withValues(alpha: 0.98),          // specular top-right
+          const Color(0xFFECF0F8).withValues(alpha: 0.90), // polished glass
+          const Color(0xFFD6DDE9).withValues(alpha: 0.80), // frosted body
+          const Color(0xFFBFC9DA).withValues(alpha: 0.74), // depth
+          const Color(0xFFFFD2D8).withValues(alpha: 0.78), // warm red glow (cube reflection)
         ],
-        stops: const [0.0, 0.20, 0.55, 0.80, 1.0],
+        stops: const [0.0, 0.20, 0.50, 0.78, 1.0],
       ).createShader(backRRect.outerRect);
     canvas.drawPath(rimPath, rimPaint);
 
-    // 2. Rear edge specular highlight line (ขอบสันกระจกด้านหลังสุด)
+    // 3. Rear edge specular highlight line (ขอบสันกระจกด้านหลังสุด)
     final rearStroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.3
@@ -227,18 +333,44 @@ class CourtCardSlabPainter extends CustomPainter {
     canvas.drawRRect(backRRect, rearStroke);
     canvas.restore();
 
-    // 3. Seam line along front face's right edge (รอยต่อระหว่างหน้าการ์ดกับสันหนา)
-    final seamStroke = Paint()
+    // 4. Inner shadow along the seam — dark contact line where front face meets
+    //    the extruded edge, visible in the reference as a soft dark crease
+    //    (เงาตรงรอยต่อระหว่างหน้าการ์ดกับสันหนา)
+    canvas.save();
+    canvas.clipPath(rimPath);
+    final seamShadow = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
+      ..strokeWidth = 2.8
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: 0.90),
-          Colors.white.withValues(alpha: 0.45),
-          const Color(0xFF8894A8).withValues(alpha: 0.35),
-          Colors.white.withValues(alpha: 0.75),
+          const Color(0xFF3A4556).withValues(alpha: 0.0),
+          const Color(0xFF3A4556).withValues(alpha: 0.30),
+          const Color(0xFF3A4556).withValues(alpha: 0.45),
+          const Color(0xFF3A4556).withValues(alpha: 0.25),
+          const Color(0xFF3A4556).withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.15, 0.50, 0.85, 1.0],
+      ).createShader(frontRect)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
+    canvas.drawRRect(frontRRect, seamShadow);
+    canvas.restore();
+
+    // 5. Seam specular highlight line along front face's edge — sits on top of
+    //    the shadow, giving the bright-edge-over-dark-crease look of glass
+    //    (ขอบขาวด้านในรอยต่อ)
+    final seamStroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withValues(alpha: 0.92),
+          Colors.white.withValues(alpha: 0.50),
+          const Color(0xFF8894A8).withValues(alpha: 0.30),
+          Colors.white.withValues(alpha: 0.70),
         ],
         stops: const [0.0, 0.30, 0.70, 1.0],
       ).createShader(frontRect);
@@ -372,5 +504,8 @@ class CourtCardSlabPainter extends CustomPainter {
       oldDelegate.marginLeft != marginLeft ||
       oldDelegate.marginTop != marginTop ||
       oldDelegate.marginRight != marginRight ||
-      oldDelegate.marginBottom != marginBottom;
+      oldDelegate.marginBottom != marginBottom ||
+      oldDelegate.shadowWidthFactor != shadowWidthFactor ||
+      oldDelegate.shadowHeightFactor != shadowHeightFactor ||
+      oldDelegate.shadowOpacity != shadowOpacity;
 }

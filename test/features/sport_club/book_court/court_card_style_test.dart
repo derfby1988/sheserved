@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/sport_club/book_court/application/court_card_style_service.dart';
+import 'package:sheserved/features/sport_club/book_court/domain/court_card_3d_params.dart';
 import 'package:sheserved/features/sport_club/book_court/domain/court_card_style.dart';
 import 'package:sheserved/features/sport_club/book_court/presentation/widgets/court_card_art.dart';
 
@@ -84,6 +85,26 @@ void main() {
         CourtCardStyleService.parseSettingsValue(const {'style': 'nope'}),
         CourtCardStyle.fallback,
       );
+    });
+  });
+
+  group('CourtCard3DParams', () {
+    test('round-trips shadow parameters through toJson and fromJson', () {
+      const original = CourtCard3DParams(
+        shadowWidthFactor: 1.4,
+        shadowHeightFactor: 1.6,
+        shadowOpacity: 0.8,
+      );
+      final json = original.toJson();
+      expect(json['shadowWidthFactor'], 1.4);
+      expect(json['shadowHeightFactor'], 1.6);
+      expect(json['shadowOpacity'], 0.8);
+
+      final restored = CourtCard3DParams.fromJson(json);
+      expect(restored.shadowWidthFactor, 1.4);
+      expect(restored.shadowHeightFactor, 1.6);
+      expect(restored.shadowOpacity, 0.8);
+      expect(restored, original);
     });
   });
 }

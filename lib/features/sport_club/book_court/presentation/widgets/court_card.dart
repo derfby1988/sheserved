@@ -393,6 +393,9 @@ class _CourtCardState extends State<CourtCard> {
           opacity: p3d.opacity,
           sheenBegin: Alignment(sheenBeginX, sheenBeginY),
           sheenEnd: Alignment(sheenEndX, sheenEndY),
+          shadowWidthFactor: p3d.shadowWidthFactor,
+          shadowHeightFactor: p3d.shadowHeightFactor,
+          shadowOpacity: p3d.shadowOpacity,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
