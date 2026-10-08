@@ -67,13 +67,18 @@ class EmergencyTopBar extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: Alignment.center,
               child: _TopBarCategoryChip(
                 label: categoryLabel!,
                 onTap: onCategoryLabelTap,
               ),
             ),
           ),
+          // ชดเชยปุ่มย้อนกลับ (42) + ระยะห่าง (8) ฝั่งซ้าย ให้ปุ่มหมวดอยู่
+          // กึ่งกลางจอพอดี — ข้ามเมื่อมีปุ่มฝั่งขวาเพราะจะไปทับบล็อกนั้น
+          if (!showTrailing &&
+              !(showCategoryFilter && onCategoryFilterTap != null))
+            const SizedBox(width: 50),
         ] else
           const Spacer(),
         // ปุ่มตัวกรองเป็นอิสระจาก action ฝั่งขวา; caller ซ่อน filter ใน

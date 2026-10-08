@@ -574,66 +574,77 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                     )
                   : const SizedBox.shrink(),
             ),
-            // Partial chip (§22.3.3) — ตัด record ที่พิกัดใช้ไม่ได้ออก
-            if (_incidentMapData != null &&
-                _incidentMapData!.excluded.total > 0)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 64,
-                left: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Text(
-                    'แสดงเฉพาะเหตุที่มีพิกัด (ตัดออก ${_incidentMapData!.excluded.total})',
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                ),
-              ),
-            // Realtime pill (§22.3.6) — กดเพื่อรีเฟรช ไม่ขยับแผนที่เอง
-            if (_incidentMapNewCount > 0)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 64,
-                right: 16,
-                child: GestureDetector(
-                  onTap: _refreshIncidentMapFromPill,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B35).withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.new_releases_outlined,
-                          size: 14,
-                          color: Colors.white,
+            // Partial chip (§22.3.3) + realtime pill (§22.3.6) — ชิดขวา
+            // เรียงแนวตั้งในคอลัมน์เดียวกันล้นทับกันเมื่อแสดงพร้อมกัน
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 64,
+              right: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_incidentMapData != null &&
+                      _incidentMapData!.excluded.total > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Text(
+                        'แสดงเฉพาะเหตุที่มีพิกัด (ตัดออก ${_incidentMapData!.excluded.total})',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'มีเหตุใหม่ $_incidentMapNewCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  if (_incidentMapNewCount > 0) ...[
+                    if (_incidentMapData != null &&
+                        _incidentMapData!.excluded.total > 0)
+                      const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: _refreshIncidentMapFromPill,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFFF6B35,
+                          ).withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.new_releases_outlined,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'มีเหตุใหม่ $_incidentMapNewCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
+            ),
           ],
         ],
       ),

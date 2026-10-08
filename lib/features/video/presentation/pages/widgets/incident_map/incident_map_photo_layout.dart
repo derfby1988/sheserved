@@ -1,20 +1,26 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import '../../../../models/incident_map_models.dart';
 
 /// Screen-space collision layout for incident gallery thumbnails
-/// (VIDEO_SYSTEM_PLAN.md §22.5).
+/// (VIDEO_SYSTEM_PLAN.md §22.5/§22.17).
 ///
 /// Pure function — no Flutter dependencies beyond `dart:ui`, so the no-overlap
 /// guarantee is unit-testable:
-///   * each incident may show up to [maxPerIncident] cards in a row anchored
-///     above its pin
+///   * each incident may show up to [maxPerIncident] cards arranged as a
+///     **radial ring around its pin** — the same pattern as the consultation
+///     `RadialQuestionLayout` (`angle = startAngle + 2π·i/n`, `offset =
+///     r·(cos θ, sin θ)`): cards orbit the anchor instead of sitting in a row
+///     above it, so the pin face is always visible
+///   * [ringRadius] defaults to `pinRadius + cardHalfDiagonal + pad` → a card
+///     is geometrically incapable of covering its own pin
+///   * a ring is committed all-or-none; up to 8 rotations are tried before
+///     the incident's cards are dropped (the pin itself remains on the map)
 ///   * a card is placed only when it does not intersect any already-placed
-///     card, any other incident's anchor exclusion zone, or the viewport edge
+///     card, any other incident's pin exclusion circle, or the viewport edge
 ///   * [preferredIncidentId] is placed first when returning from map playback;
 ///     remaining incidents are newest-first (recency priority), ties by id
-///   * incidents that cannot fit simply show fewer/no cards — the incident
-///     itself is never dropped (the pin remains on the map)
 
 class IncidentPhotoCardPlacement {
   final String incidentId;
@@ -30,17 +36,15 @@ class IncidentPhotoCardPlacement {
   });
 
   Rect get rect => topLeft & size;
+
+  /// จุดกึ่งกลางของการ์ด — ใช้ตรวจระยะห่างจากหมุด (radial contract)
+  Offset get center => rect.center;
 }
 
-Rect _anchorExclusion(Offset anchor, Size size) {
-  // Keep a small zone around the pin itself so cards never cover the marker.
-  const pad = 6.0;
-  return Rect.fromCenter(
-    center: anchor,
-    width: size.width + pad * 2,
-    height: size.height + pad * 2,
-  );
-}
+/// รัศมีที่หมุดอีกเหตุต้องรักษา — การ์ดใด ๆ ที่มาทับวงกลมนี้จะถือว่าบังหมุด
+/// (radius = รัศมีหมุดที่มองเห็น + ครึ่งเส้นทแยงมุมการ์ด + pad)
+Rect _anchorExclusion(Offset anchor, double radius) =>
+    Rect.fromCircle(center: anchor, radius: radius);
 
 List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   required Map<String, Offset> anchorByIncidentId,
@@ -51,19 +55,40 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   double gap = 6,
   int maxPerIncident = 3,
   double minZoomScale = 1.0,
+
+  /// รัศมีของหมุดบนแผนที่ (รวมขอบขาว) — OSM widget ~22px box, Google
+  /// painter รัศมี ~19 บนบิตแมป 44dp; ใช้ 22 เผื่อทั้งคู่
+  double pinRadius = 22,
+
+  /// มุมเริ่มของการ์ดใบแรก — ดีฟอลต์ด้านบนของหมุด (เดียวกับ
+  /// RadialQuestionLayout)
+  double startAngle = -math.pi / 2,
+
+  /// ระยะจุดกลางการ์ดถึงหมุด — null = `pinRadius + cardHalfDiagonal + gap`
+  /// (ค่าที่ทำให้การ์ดไม่มีทางทับหน้าหมุด)
+  double? ringRadius,
 }) {
   if (minZoomScale <= 0) return const [];
   final effectiveCard = Size(
     cardSize.width * minZoomScale,
     cardSize.height * minZoomScale,
   );
+  final cardHalfDiag =
+      math.sqrt(
+        effectiveCard.width * effectiveCard.width +
+            effectiveCard.height * effectiveCard.height,
+      ) /
+      2;
+  final ring = ringRadius ?? (pinRadius + cardHalfDiag + gap);
   final placements = <IncidentPhotoCardPlacement>[];
   final placedRects = <Rect>[];
-  // Cards must never cover another incident's pin (§22.5) — the incident's
-  // own anchor is exempt because its card row sits above the pin by design.
+  // Cards must never cover another incident's pin (§22.5) — radial rings
+  // ทิ้งการ์ดได้รอบทิศ จึงขยาย zone เป็นวงกลมรอบหมุดแทนกล่องเหนือหมุด;
+  // หมุดของตัวเองเว้นไว้เพราะ ringRadius คุมไม่ให้การ์ดแตะหน้าหมุดอยู่แล้ว
+  const pad = 6.0;
   final anchorExclusions = <String, Rect>{
     for (final entry in anchorByIncidentId.entries)
-      entry.key: _anchorExclusion(entry.value, effectiveCard),
+      entry.key: _anchorExclusion(entry.value, pinRadius + cardHalfDiag + pad),
   };
 
   // Recency priority: newest photo first, ties by incident id.
@@ -83,6 +108,18 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
           return a.compareTo(b);
         });
 
+  // ลองหมุนวงรอบหมุด (0°, ±45°, ±90°, ±135°, 180°) จนกว่าจะวางครบทุกใบ
+  const rotations = <double>[
+    0,
+    math.pi / 4,
+    -math.pi / 4,
+    math.pi / 2,
+    -math.pi / 2,
+    3 * math.pi / 4,
+    -3 * math.pi / 4,
+    math.pi,
+  ];
+
   for (final id in ids) {
     final anchor = anchorByIncidentId[id];
     if (anchor == null) continue;
@@ -90,23 +127,20 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
         .take(maxPerIncident)
         .toList();
     if (photos.isEmpty) continue;
+    final n = photos.length;
 
-    // Row of cards centered above the anchor: try offsets 0, -1, +1, -2, +2 …
-    // in units of (cardWidth + gap) until every card fits without overlap.
-    final rowWidth =
-        photos.length * effectiveCard.width + (photos.length - 1) * gap;
-    final rowTop = anchor.dy - effectiveCard.height - 10;
-    final unit = effectiveCard.width + gap;
-
-    bool tryRow(double startDx) {
+    bool tryRing(double rotation) {
       final rects = <Rect>[];
-      for (var i = 0; i < photos.length; i++) {
-        final left = anchor.dx - rowWidth / 2 + startDx + i * unit;
-        final rect = Rect.fromLTWH(
-          left,
-          rowTop,
-          effectiveCard.width,
-          effectiveCard.height,
+      for (var i = 0; i < n; i++) {
+        final angle = startAngle + rotation + 2 * math.pi * i / n;
+        final center = Offset(
+          anchor.dx + ring * math.cos(angle),
+          anchor.dy + ring * math.sin(angle),
+        );
+        final rect = Rect.fromCenter(
+          center: center,
+          width: effectiveCard.width,
+          height: effectiveCard.height,
         );
         if (rect.left < 0 ||
             rect.right > viewport.width ||
@@ -124,7 +158,7 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
         rects.add(rect);
       }
       // Commit
-      for (var i = 0; i < photos.length; i++) {
+      for (var i = 0; i < n; i++) {
         placements.add(
           IncidentPhotoCardPlacement(
             incidentId: id,
@@ -138,16 +172,10 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
       return true;
     }
 
-    var placed = false;
-    for (var step = 0; step <= 6 && !placed; step++) {
-      for (final dx in step == 0 ? [0.0] : [-step * unit, step * unit]) {
-        if (tryRow(dx)) {
-          placed = true;
-          break;
-        }
-      }
+    for (final rotation in rotations) {
+      if (tryRing(rotation)) break;
     }
-    // Cannot fit → show nothing for this incident; the pin still exists.
+    // วงไม่มีที่วาง → ไม่แสดงการ์ดของเหตุนี้; หมุดยังอยู่บนแผนที่
   }
   return placements;
 }

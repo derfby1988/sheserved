@@ -6131,7 +6131,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 #### 22.3.2 Layer, chrome และ layout
 
 - แทรกชั้นแผนที่ระหว่าง `EmergencyUiOverlay` (Layer 2) กับแถวปุ่ม (Layer 3) เพื่อให้แถวปุ่มอยู่เหนือแผนที่และใช้ปุ่มเดิมได้; พื้นผิวแผนที่ต้อง opaque เต็มจอ ไม่ให้การ์ด/แท็บเดิมโผล่ทะลุ
-- โหมดแผนที่: แสดงปุ่มย้อนกลับ + ปุ่ม glass "สถานการณ์: <หมวด>" (map icon + chevron) ถัดจากปุ่มย้อนกลับ; แตะแล้วเปิด category dialog; ไม่มีปุ่ม "เปลี่ยน" แยก; `videoControls` = null; `showCategoryFilter` = false; ซ่อนแชท, แท็บล่าง, trending panel, rescue control panel และปุ่มยกเลิกภารกิจของผู้แจ้ง; ซ่อน tap-toggle UI ของ overlay
+- โหมดแผนที่: แสดงปุ่มย้อนกลับ + ปุ่ม glass "สถานการณ์: <หมวด>" (map icon + chevron) กึ่งกลางแถวบน (ชดเชยความกว้างปุ่มย้อนกลับ 42+8 ด้วย spacer ขวา); แตะแล้วเปิด category dialog; ไม่มีปุ่ม "เปลี่ยน" แยก; `videoControls` = null; `showCategoryFilter` = false; ซ่อนแชท, แท็บล่าง, trending panel, rescue control panel และปุ่มยกเลิกภารกิจของผู้แจ้ง; ซ่อน tap-toggle UI ของ overlay
 - legend วางมุมล่างซ้ายเหนือ safe area พับได้; ต้องไม่ทับ attribution ของ provider (Google logo / OSM attribution ต้องมองเห็นเสมอ) และไม่ทับปุ่มใด ๆ
 - video map-return playback: แสดง back ซ้ายเพื่อคืนแผนที่และปุ่ม "ปิด" ขวาเพื่อกลับ Emergency ปกติ; ซ่อนปุ่มตัวกรองใน context นี้; กล่องยอดนิยมแสดงทุก card ใน map category ผ่าน paginated category fetch, cards กดเล่นได้; ปิด context แล้วคืน committed categories จาก sheet; trailing label ใช้ `Flexible` + `ellipsis` ที่จอแคบ
 - ปุ่ม/legend/marker ต้องมี hit target ≥ 44 px และไม่ล้นใน landscape หรือจอ 320 dp
@@ -6145,7 +6145,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 | empty | หมวดนี้ไม่มีเหตุที่มีพิกัด | การ์ดกลางจอ "ไม่พบเหตุในหมวดนี้" และถ้ามีเหตุแต่ไม่มีพิกัดให้เพิ่มบรรทัด "เหตุในหมวดนี้ยังไม่มีพิกัดที่แสดงได้" + ปุ่ม "ปิดแผนที่" |
 | error | request ล้มเหลว/parse ไม่ได้ | การ์ดกลางจอ "โหลดแผนที่ไม่สำเร็จ" + ปุ่ม "ลองอีกครั้ง" (ไม่ล้าง session) |
 | degraded | provider disabled / config ใช้ไม่ได้ / renderer เริ่มไม่สำเร็จ | การ์ดกลางจอ "แผนที่ถูกปิดใช้งานสำหรับแพลตฟอร์มนี้" + "กลับ" (ห้ามเงียบ ๆ ไปใช้ provider อื่น) |
-| partial | ตัด record ที่พิกัดใช้ไม่ได้ออก | chip ข้อมูลเล็ก ๆ "แสดงเฉพาะเหตุที่มีพิกัด (ตัดออก N)" — ไม่ใช้ dialog ขวางทาง |
+| partial | ตัด record ที่พิกัดใช้ไม่ได้ออก | chip ข้อมูลเล็ก ๆ "แสดงเฉพาะเหตุที่มีพิกัด (ตัดออก N)" ชิดขวาใต้แถวบน — ไม่ใช้ dialog ขวางทาง; เรียงเหนือ pill "มีเหตุใหม่" ในคอลัมน์ชิดขวาเดียวกัน |
 
 #### 22.3.4 Tap flows
 
@@ -6198,7 +6198,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - เคารพ `enabled`, `isAppDefault`, feature override, tile-source readiness, attribution และ CSP ตาม provider plan; เมื่อ config ระบุ disabled หรือโหลดได้เพียง app default ให้แสดงสถานะ degraded/disabled ที่ตรงจริง. ห้าม fallback ไป Google/OSM โดยไม่แจ้งหรือส่ง secret/API key ลง client config
 - ทั้งสอง renderer ต้อง fit bounds ประเทศไทยเดียวกันในมุมมองเริ่มต้น และคืน/restore center+zoom เดียวกันเชิงภูมิศาสตร์; traffic/routing เป็น service แยกจาก basemap — OSM ไม่มี Google traffic overlay และแผนที่ภาพรวมไม่เรียก routing/place search โดยไม่จำเป็น
 - ในระดับประเทศ/จุดหนาแน่นให้ cluster หมุด; cluster แสดงจำนวนแยกตาม age bucket เพื่อไม่ระบายสี cluster ด้วยอายุเดียวเมื่อมีเหตุหลายช่วง. เมื่อถึง zoom threshold ให้แสดง event markers ตามสีใน §22.1
-- เมื่อซูมถึงระดับ gallery preview ให้ฉายตำแหน่ง incident เป็นพิกัดหน้าจอแล้วจัดวาง thumbnail หลายใบต่อเหตุจากภาพไทยมุงล่าสุด โดยตรวจ collision ระหว่างกล่องภาพกับหมุด/ภาพเหตุอื่นทุกครั้งที่กล้องเปลี่ยน. แสดงเท่าที่วางได้โดยไม่ซ้อน; รูปที่วางไม่พอคงอยู่ใน full gallery และมี count/cluster affordance ที่ไม่ทำให้เหตุหาย
+- เมื่อซูมถึงระดับ gallery preview ให้ฉายตำแหน่ง incident เป็นพิกัดหน้าจอแล้วจัดวาง thumbnail หลายใบต่อเหตุจากภาพไทยมุงล่าสุด **เป็นวงแหวนรอบหมุด (radial ring)** — รายละเอียด §22.17: ศูนย์วงอยู่ที่ anchor ของหมุด, รัศมีวงรับประกันการ์ดไม่แตะวงกลม exclusion ของหมุด (pinRadius + cardHalfDiagonal + gap) และกระจายมุมเท่า ๆ กัน; ตรวจ collision ระหว่างกล่องภาพกับหมุด/ภาพเหตุอื่นทุกครั้งที่กล้องเปลี่ยน. แสดงเท่าที่วางได้โดยไม่ซ้อน; รูปที่วางไม่พอคงอยู่ใน full gallery และมี count/cluster affordance ที่ไม่ทำให้เหตุหาย
 - Map preview แสดงเฉพาะภาพไทยมุงที่ผ่านการประมวลผลพร้อมใช้งาน (`blur_status = completed`); pending/failed ไม่มี thumbnail จริงและห้าม fallback ไป raw/original. API สำหรับ map คืนเฉพาะ safe thumbnail/derivative ตามสิทธิเดิม ไม่เพิ่มการเปิดเผย `user_id` หรือ URL ต้นฉบับ
 - ห้าม mount `ThaiMhungRulerGalleryWidget` หนึ่ง instance ต่อ incident เพราะ widget ปัจจุบัน poll ทุก 5 วินาที; โหลด gallery เต็มเมื่อผู้ใช้แตะภาพเท่านั้น และใช้ API/realtime invalidation แบบมี rate budget
 - **Single-surface rule:** ใช้พื้นผิวแผนที่เดียวที่ mode เป็นตัวกำหนด props (markers/camera/traffic/myLocation/polylines) เพื่อไม่ให้มี platform view สองตัวพร้อมกัน; ถ้าจำเป็นต้องมีสองพื้นผิว ต้อง dispose ตัวเดิมให้เสร็จก่อนสร้างตัวใหม่ และต้องมี regression test บน iOS ว่าไม่เกิด `PlatformException(recreating_view)` (log อุปกรณ์จริงพบ view id '0'/'1' อยู่แล้ว)
@@ -6332,13 +6332,15 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 **1. ปุ่ม "แผนที่เกิดเหตุ" อยู่บรรทัดเดียวกับชื่อหมวด (§22.1)**
 - `NeumorphicSwitchTile` เพิ่ม param optional `titleAccessory` — widget ที่วางต่อจากชื่อหมวดในแถวเดียวกัน (ก่อน toggle); ชื่อหมวดอยู่ใน `Flexible` + `ellipsis` จึงหดได้เมื่อจอแคบ
 - sheet ย้าย pill จากแถวล่างเข้า `titleAccessory` ของแต่ละหมวด → layout: `[ชื่อหมวด] [แผนที่เกิดเหตุ] … [toggle]`
-- **ความกว้างปุ่ม:** `NeumorphicPillButton` ไม่มี `width` (ต่างจาก `NeumorphicVerifyButton`) — แนวทางของ widget นี้คือ `minWidth` (กว้างขั้นต่ำของเนื้อหาในแคปซูล ข้อความกึ่งกลาง) + `padding` แนวนอน จึงตั้ง `minWidth: 132` + `padding: horizontal 10` เพื่อให้แคปซูลกว้างเท่ากันทุกหมวด; กันล้นมี `maxWidth` (default = จอกว้าง − 32) + `FittedBox` ในตัวปุ่มอยู่แล้ว
+- **ความกว้างปุ่ม:** `NeumorphicPillButton` ไม่มี `width` (ต่างจาก `NeumorphicVerifyButton`) — แนวทางของ widget นี้คือ `minWidth` (กว้างขั้นต่ำของเนื้อหาในแคปซูล ข้อความกึ่งกลาง) + `padding` แนวนอน; กันล้นมี `maxWidth` (default = จอกว้าง − 32) + `FittedBox` ในตัวปุ่มอยู่แล้ว
+- **§22.15 แก้ปุ่มบดบังชื่อหมวด:** ค่าเดิม `fontSize 12` / `iconSize 15` / `minWidth 132` / `padding 10` ทำให้แคปซูลกว้าง ~152dp บนจอจริง จนชื่อหมวดเหลือ 2–3 ตัวอักษร; ลดเป็น `fontSize 11` / `iconSize 13` / `minWidth 100` / `padding 8` → แคปซูล ~116dp คืนพื้นที่ให้ชื่อ ~36dp (ต้องลด `minWidth` ด้วย เพราะบนจอจริงค่านี้เป็นตัวบังคับความกว้าง ไม่ใช่ขนาดตัวอักษร)
 - พฤติกรรมไม่เปลี่ยน: ใช้ `categoryId` ของหมวดนั้นเพียงหมวดเดียว, ไม่แตะ `_draft`/ตัวกรองที่ commit, disable ขณะ `_applying`, ปิด sheet ก่อนเรียก callback
 
 **2. ปุ่มสถานการณ์ที่กำลังแสดงบนแผนที่ (§22.3.4)**
 - `EmergencyTopBar` รับ `categoryLabel` + `onCategoryLabelTap`; chip กระจกแสดงไอคอน map + `สถานการณ์: <ชื่อหมวด>` + chevron และเป็นปุ่มขนาด 42dp พร้อม semantics label
+- chip อยู่**กึ่งกลางจอ** — `Align(center)` ใน `Expanded` + spacer ขวา 50dp ชดเชยปุ่มย้อนกลับ (42) + gap (8); spacer ถูกข้ามเมื่อมีปุ่มฝั่งขวา
 - แตะ chip เรียก category picker dialog โดยตรง; แทนปุ่ม "เปลี่ยน" แยกบนแผนที่; `session.categoryName` มาจาก session เดิม ไม่ต้องยิง request เพิ่ม และ label ย่อด้วย ellipsis บนจอแคบ
-- ไม่ชน chip "ตัดออก N" / pill "มีเหตุใหม่" ซึ่งอยู่ต่ำกว่าแถวบน
+- chip "ตัดออก N" และ pill "มีเหตุใหม่" อยู่ใต้แถวบนชิดขวา เรียงในคอลัมน์เดียวกันกันทับซ้อน
 - เป้าหมาย: ยืนยันหมวดแผนที่ได้และเปลี่ยนหมวดจากจุดเดียว
 - Tests: `test/features/emergency_top_bar_trailing_test.dart` ตรวจ category button/callback, ไม่มีปุ่มเปลี่ยนแยก, close semantics และ layout 320dp — ผ่าน 8/8; `dart analyze` ไม่พบ error
 
@@ -6369,3 +6371,25 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - `EmergencyTopBar` เคยปรับให้ filter อยู่ร่วมกับ trailing เพื่อแก้อาการปุ่มหาย; requirement ล่าสุดกำหนดให้ **ซ่อน filter โดยเจตนา** ใน map-playback และใช้ "ปิด" แทน "เลือกเหตุการณ์อื่น"; เมื่อปิด context ตัวกรองปกติกลับมา
 - ป้าย trailing ใช้ `Flexible` + ellipsis เพื่อไม่ให้ล้นที่ 320 dp
 - Tests: scope policy ตรวจ map-category filter ทุก card/restore committed scope/mission suspension; camera-focus test ตรวจ incident/พิกัด/zoom photo overview; photo-layout test ให้เหตุที่เพิ่งเล่นได้ priority และวางครบ 3 preview cards เมื่อพื้นที่พอ; top-bar test ตรวจ back→map, circular close→normal, semantics และขนาด 42×42; focused map/top-bar suites ผ่าน 48/48
+
+### 22.16 Gradient indicator ต่อภาพระหว่างโหลด thumbnail บนแผนที่ (implement แล้ว — รอ device verify)
+
+- widget ใหม่ `lib/shared/widgets/gradient_progress_bar.dart` — `GradientProgressBar` เป็น indeterminate loading bar: segment กว้าง 45% ของแถบกวาดจากนอกซ้ายไปนอกขวา (`Align` alignment ±(1+w)/(1−w) = ±2.636) แล้ววนซ้ำ, gradient จางหัว-ท้ายด้วย alpha 0 จึงไม่กระตุกตอนเริ่มรอบใหม่; ปรับ `height`/`colors`/`trackColor`/`period`/`borderRadius` ได้; export ผ่าน `lib/shared/widgets/widgets.dart`
+- **indicator ต่อภาพเท่านั้น (per-image):** thumbnail ของเหตุการณ์บนแผนที่ (`_PhotoCard`) เดิมใช้ placeholder เป็นกล่องดำนิ่ง `Colors.black26` ที่แยกไม่ออกว่ากำลังโหลดหรือโหลดไม่สำเร็จ → เปลี่ยนเป็น `IncidentPhotoLoadingPlaceholder` (public ใน `incident_map_surface.dart`) = พื้นดำ + `GradientProgressBar(height: 3, trackColor: Colors.white24)` **วางกึ่งกลางการ์ด 64dp** (padding แนวนอน 10dp); `errorWidget` ยังเป็นไอคอน `broken_image` เหมือนเดิม จึงแยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ได้ — ภาพที่ cache แล้วจะไม่แสดงแถบ
+- **ไม่มี indicator ระดับหน้าแล้ว:** แถบ gradient ใต้แถวบน (ที่เคยผูกกับ `_incidentMapFetching`) และ state flag นั้นถูกถอดออกตาม requirement — indicator ระดับหน้าของโหมดแผนที่เหลือเฉพาะ `CircularProgressIndicator` กลางจอตอนโหลดครั้งแรก (`IncidentMapUiState.loading`) ซึ่งผู้ใช้เลือกให้คงไว้
+- เหตุผลเชิงพฤติกรรม: การรอที่ผู้ใช้รับรู้จริงคือ **ภาพของแต่ละเหตุ** (โหลดผ่าน `CachedNetworkImage` แยกใบ) ส่วนการ refetch viewport/cluster หลังกล้อง settle เร็วและมักใช้ response เดิม จึงไม่ต้องมีแถบระดับหน้า
+- Tests: `test/shared/widgets/gradient_progress_bar_test.dart` ตรวจความสูง, การเคลื่อนซ้าย→ขวา + วนรอบ, จุดเริ่ม/จบที่หลุดจอ, สี gradient จางหัวท้าย, `trackColor` และความกว้าง 320dp — ผ่าน 6/6; `test/features/incident_map_photo_loading_placeholder_test.dart` ตรวจว่ามี gradient bar ต่อใบ, track จาง, เคลื่อนไหวจริง, ไม่ล้นการ์ด 64dp และ bar อยู่กึ่งกลางการ์ดทั้งแกน x/y — ผ่าน 4/4
+- ยังต้อง device verify: ความชัดของแถบบน tile เข้ม/ภาพสว่าง และความรู้สึกว่าแถบกลางภาพ 64dp มองเห็นพอหรือควรเพิ่มความสูงของแถบ
+
+### 22.17 Radial photo ring รอบหมุดเหตุการณ์ (implement แล้ว — รอ device verify)
+
+- **ปัญหา:** layout เดิมวาง thumbnail เป็นแถวเหนือหมุด (`row above pin`) โดยอ้างแค่ padding 10px จาก anchor แต่หมุดวาดเป็น hitbox 44×44 ด้วยวงกลมรัศมี 22 จึงมีเฟรมที่การ์ดบังหมุด — ผู้ใช้แตะหมุดไม่ได้/มองไม่เห็นตำแหน่ง
+- **แนวทาง:** ยืม pattern จาก `lib/features/consultation/presentation/widgets/closed_ended/radial_question_layout.dart` (`angle = startAngle + 2π·i/n`, `offset = r·(cos,sin)`, เริ่มที่ −π/2) มาใช้กับ `layoutIncidentPhotoCards` ใน `incident_map_photo_layout.dart` — การ์ดแต่ละเหตุถูกกระจายเท่า ๆ กันบนวงแหวนที่มีศูนย์ตรงกับหมุด
+- **Invariant ที่บังคับในฟังก์ชัน:**
+  1. `ringRadius = pinRadius(22) + cardHalfDiagonal + gap(6)` → การ์ดที่วางบนวงนี้ **ไม่มีทางแตะ** วงกลมหมุดรัศมี 22 (ระยะศูนย์การ์ด−ศูนย์หมุด ≥ ครึ่งเส้นทแยงการ์ด + ช่องว่าง)
+  2. ทุก card rect ต้องหลุดวงกลม exclusion ของหมุด**อื่นทุกตัว** และไม่ overlap rect ที่วางไปแล้ว — ถ้า ring rotation ปัจจุบันวางไม่ได้ทั้งใบ ให้หมุนเริ่มมุมใหม่ (8 เฟรม รอบละ π/4); หมุนครบยังไม่ได้ → เหตุนั้นไม่วาด (pin ยังมองเห็นและแตะได้เสมอ)
+  3. Rect ต้องอยู่ใน viewport เต็มใบ (margin 0) — หมุดชิดมุมจอจะถูกหมุนวงไปทางด้านที่ว่าง ไม่ใช่ดันการ์ดทะลุจอ
+  4. คง max 3 ใบ/เหตุ (ตาม contract gallery API) และ `preferredIncidentId` (map-return) ได้จัดวางก่อน
+- **ข้อจำกัดที่ยอมรับ:** เหตุที่อยู่ชิดกันมาก (< ~150px) อาจวางการ์ดได้เฉพาะบางเหตุ — เลือกตาม priority (map-return > recency) และการ์ดที่วางไม่ได้ไม่ถูกบีบลงมาบังหมุดอีกต่อไป (ดีกว่าของเดิมที่ยอมบังหมุดเพื่อให้การ์ดครบแถว)
+- Tests: `test/features/incident_map_photo_layout_test.dart` เขียนใหม่เป็น 10 เคส — ring radius ตรง invariant, เริ่มด้านบนหมุด, ไม่ทับหมุดตัวเอง/หมุดเหตุอื่น, ไม่ overlap กัน, มุมจอหมุนหาด้านว่าง, หลุดจอไกลไม่วาด, max 3 ใบ, recency และ map-return priority — ผ่าน 10/10
+- ยังต้อง device verify: ความรู้สึกการ์ดล้อมหมุดบน tile จริง, ระยะวง 73px เทียบขนาดจอ 320dp และพฤติกรรมเมื่อเหตุหนาแน่น (zoom ต่ำกว่า threshold กลับเป็น cluster เดิม)

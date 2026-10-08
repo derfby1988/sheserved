@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
+import 'package:sheserved/features/sport_club/application/feed_filter_collapse_controller.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/feed/filter_collapse_box.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/feed/sport_club_filter_button.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_bar_controller.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
@@ -62,6 +67,11 @@ class _FindCoachPageState extends State<FindCoachPage> {
   late final CoachRequestService _requests;
 
   final _scrollController = ScrollController();
+  final _filterCollapse = FeedFilterCollapseController();
+
+  static const double _filterButtonTopCollapsed = 9;
+  static const double _filterButtonTopEmbeddedExpanded = 67;
+  static const double _filterButtonTopExpanded = 59;
 
   List<Map<String, dynamic>> _sports = [];
   List<CoachSummary> _coaches = [];
@@ -171,10 +181,11 @@ class _FindCoachPageState extends State<FindCoachPage> {
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    widget.sportBar?.reportScroll(2, _scrollController.position.pixels);
+    final pixels = _scrollController.position.pixels;
+    widget.sportBar?.reportScroll(2, pixels);
+    if (_filterCollapse.update(pixels)) setState(() {});
     if (_loading || _isLoadingMore || !_hasMore) return;
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+    if (pixels >= _scrollController.position.maxScrollExtent - 200) {
       _loadMore();
     }
   }
@@ -501,6 +512,47 @@ class _FindCoachPageState extends State<FindCoachPage> {
   Widget build(BuildContext context) {
     final shared = _hub?.shared;
     final filter = _filter;
+    return Stack(
+      children: [
+        _buildBody(shared, filter),
+        // Floating filter button: appears where the quick-filter row used to
+        // be while it is collapsed, so the advanced filter stays reachable —
+        // mirrors the Find Buddies feed and Book Court overlays.
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          left: 16,
+          top: _filterCollapse.isCollapsed
+              ? _filterButtonTopCollapsed
+              : (widget.sportBar != null
+                    ? _filterButtonTopEmbeddedExpanded
+                    : _filterButtonTopExpanded),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _filterCollapse.isCollapsed ? 1 : 0,
+            child: IgnorePointer(
+              ignoring: !_filterCollapse.isCollapsed,
+              child: ExcludeSemantics(
+                excluding: !_filterCollapse.isCollapsed,
+                child: SportClubFilterButton(
+                  activeFilterCount:
+                      filter.activeCount + (shared?.activeCount ?? 0),
+                  filterSummary: _filterSummary,
+                  onTap: () {
+                    setState(_filterCollapse.expand);
+                    widget.sportBar?.expand();
+                    unawaited(_showAdvancedFilter());
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBody(SportsDiscoveryFilter? shared, FindCoachFilter filter) {
     return Column(
       children: [
         Padding(
@@ -520,19 +572,26 @@ class _FindCoachPageState extends State<FindCoachPage> {
                   trailing: _buildBarTrailing(),
                 ),
               const SizedBox(height: 8),
-              CoachQuickFilterRow(
-                verifiedOnly: filter.verifiedOnly,
-                availableOnly: filter.availableOnly,
-                favoritesOnly: filter.favoritesOnly,
-                myCoachesOnly: filter.myCoachesOnly,
-                signedIn: _userId != null,
-                locationEnabled: shared?.locationEnabled ?? false,
-                radiusKm: shared?.radiusKm,
-                activeFilterCount:
-                    filter.activeCount + (shared?.activeCount ?? 0),
-                filterSummary: _filterSummary,
-                onToggleFilter: _toggleQuickFilter,
-                onShowAdvancedFilter: _showAdvancedFilter,
+              // Quick filters slide away (and give their height back to the
+              // list) once the coach list is scrolled up — same behaviour as
+              // the Find Buddies feed and Book Court.
+              FilterCollapseBox(
+                collapsed: _filterCollapse.isCollapsed,
+                collapseHeight: true,
+                child: CoachQuickFilterRow(
+                  verifiedOnly: filter.verifiedOnly,
+                  availableOnly: filter.availableOnly,
+                  favoritesOnly: filter.favoritesOnly,
+                  myCoachesOnly: filter.myCoachesOnly,
+                  signedIn: _userId != null,
+                  locationEnabled: shared?.locationEnabled ?? false,
+                  radiusKm: shared?.radiusKm,
+                  activeFilterCount:
+                      filter.activeCount + (shared?.activeCount ?? 0),
+                  filterSummary: _filterSummary,
+                  onToggleFilter: _toggleQuickFilter,
+                  onShowAdvancedFilter: _showAdvancedFilter,
+                ),
               ),
             ],
           ),

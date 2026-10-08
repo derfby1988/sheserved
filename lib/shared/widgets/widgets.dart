@@ -27,5 +27,8 @@ export 'glass/glass_primitives.dart';
 export 'glass/glass_dialog.dart';
 export 'glass/glass_confirm_dialog.dart';
 
+// Loading Indicators
+export 'gradient_progress_bar.dart';
+
 // Sections & Cards
 export 'recommended_article_section.dart';

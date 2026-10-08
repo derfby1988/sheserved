@@ -74,6 +74,54 @@ void main() {
         expect(find.text('แผนที่เกิดเหตุ'), findsNothing);
       });
 
+      testWidgets('ใช้ตัวอักษรเล็กลงและคืนพื้นที่ให้ชื่อหมวด (§22.15)', (
+        tester,
+      ) async {
+        await _openSheet(tester, _harness(onOpenIncidentMap: (_) {}));
+
+        final pill = tester.widget<NeumorphicPillButton>(
+          find
+              .ancestor(
+                of: find.text('แผนที่เกิดเหตุ'),
+                matching: find.byType(NeumorphicPillButton),
+              )
+              .first,
+        );
+        expect(pill.fontSize, lessThanOrEqualTo(11));
+        expect(pill.iconSize, lessThanOrEqualTo(13));
+        expect(pill.minWidth, lessThanOrEqualTo(100));
+        expect(pill.padding, const EdgeInsets.symmetric(horizontal: 8));
+      });
+
+      testWidgets('390dp: แคปซูลเล็กลงและชื่อหมวดยังมีพื้นที่พออ่าน', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await _openSheet(tester, _harness(onOpenIncidentMap: (_) {}));
+
+        expect(tester.takeException(), isNull);
+        final pillWidth = tester
+            .getSize(
+              find
+                  .ancestor(
+                    of: find.text('แผนที่เกิดเหตุ'),
+                    matching: find.byType(NeumorphicPillButton),
+                  )
+                  .first,
+            )
+            .width;
+        final titleWidth = tester.getSize(find.text('อุบัติเหตุ')).width;
+        // หมายเหตุ: ใน widget test ฟอนต์กว้างเท่า fontSize ต่อตัวอักษร จึงเป็น
+        // เคสที่แคบกว่าจอจริง (จอจริงThai font ~0.55em); แคปซูลเดิม
+        // (fontSize 12/minWidth 132/padding 10) กว้าง ~197 และเหลือชื่อ ~59
+        expect(pillWidth, lessThanOrEqualTo(195));
+        expect(titleWidth, greaterThanOrEqualTo(60));
+      });
+
       testWidgets('กดปุ่มของหมวดใด → callback ได้รับหมวดนั้นเพียงหมวดเดียว '
           'และ sheet ปิดโดยไม่เรียก onApply', (tester) async {
         final opened = <String>[];

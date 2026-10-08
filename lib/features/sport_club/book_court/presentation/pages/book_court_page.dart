@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:sheserved/features/community/find_buddies/data/fitness_buddies_repository.dart';
+import 'package:sheserved/features/sport_club/application/feed_filter_collapse_controller.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/feed/filter_collapse_box.dart';
+import 'package:sheserved/features/sport_club/presentation/widgets/feed/sport_club_filter_button.dart';
 import 'package:sheserved/features/sport_club/presentation/widgets/sport_club_utils.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_bar_controller.dart';
 import 'package:sheserved/features/sport_club/shared/application/sports_hub_controller.dart';
@@ -70,6 +73,17 @@ class _BookCourtPageState extends State<BookCourtPage> {
   late final BookCourtBookingService _booking;
 
   final _scrollController = ScrollController();
+
+  /// Collapses the quick-filter row while the venue list is scrolled, exactly
+  /// like the Find Buddies feed (see `FeedFilterCollapseController`).
+  final _filterCollapse = FeedFilterCollapseController();
+
+  // Floating filter-button offsets, mirroring the feed: the button parks on
+  // the shared bar's content row once the quick filters collapse, and returns
+  // to its row position while they are expanded.
+  static const double _filterButtonTopCollapsed = 9;
+  static const double _filterButtonTopEmbeddedExpanded = 67;
+  static const double _filterButtonTopExpanded = 59;
 
   List<Map<String, dynamic>> _sports = [];
   List<VenueSummary> _venues = [];
@@ -209,7 +223,11 @@ class _BookCourtPageState extends State<BookCourtPage> {
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    widget.sportBar?.reportScroll(0, _scrollController.position.pixels);
+    final pixels = _scrollController.position.pixels;
+    widget.sportBar?.reportScroll(0, pixels);
+    if (_filterCollapse.update(pixels)) {
+      setState(() {});
+    }
     if (_loading || _isLoadingMore || !_hasMore) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -819,6 +837,39 @@ class _BookCourtPageState extends State<BookCourtPage> {
     return Stack(
       children: [
         _buildBody(shared, filter),
+        // Floating filter button: appears where the quick-filter row used to
+        // be while it is collapsed, so the advanced filter stays reachable —
+        // mirrors the Find Buddies feed overlay.
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          left: 16,
+          top: _filterCollapse.isCollapsed
+              ? _filterButtonTopCollapsed
+              : (widget.sportBar != null
+                    ? _filterButtonTopEmbeddedExpanded
+                    : _filterButtonTopExpanded),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _filterCollapse.isCollapsed ? 1 : 0,
+            child: IgnorePointer(
+              ignoring: !_filterCollapse.isCollapsed,
+              child: ExcludeSemantics(
+                excluding: !_filterCollapse.isCollapsed,
+                child: SportClubFilterButton(
+                  activeFilterCount:
+                      filter.activeCount + (shared?.activeCount ?? 0),
+                  filterSummary: _filterSummary,
+                  onTap: () {
+                    setState(_filterCollapse.expand);
+                    widget.sportBar?.expand();
+                    unawaited(_showAdvancedFilter());
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
         if (filter.ownerOnly)
           Positioned(
             right: 16,
@@ -854,17 +905,24 @@ class _BookCourtPageState extends State<BookCourtPage> {
                   onSportSelected: _onSportSelected,
                 ),
               const SizedBox(height: 8),
-              BookCourtQuickFilterRow(
-                availableOnly: filter.availableOnly,
-                bookedByMeOnly: filter.bookedByMeOnly,
-                ownerOnly: filter.ownerOnly,
-                locationEnabled: shared?.locationEnabled ?? false,
-                radiusKm: shared?.radiusKm,
-                activeFilterCount:
-                    filter.activeCount + (shared?.activeCount ?? 0),
-                filterSummary: _filterSummary,
-                onToggleFilter: _toggleQuickFilter,
-                onShowAdvancedFilter: _showAdvancedFilter,
+              // Quick filters slide away (and give their height back to the
+              // list) once the venue list is scrolled up — same behaviour as
+              // the Find Buddies feed.
+              FilterCollapseBox(
+                collapsed: _filterCollapse.isCollapsed,
+                collapseHeight: true,
+                child: BookCourtQuickFilterRow(
+                  availableOnly: filter.availableOnly,
+                  bookedByMeOnly: filter.bookedByMeOnly,
+                  ownerOnly: filter.ownerOnly,
+                  locationEnabled: shared?.locationEnabled ?? false,
+                  radiusKm: shared?.radiusKm,
+                  activeFilterCount:
+                      filter.activeCount + (shared?.activeCount ?? 0),
+                  filterSummary: _filterSummary,
+                  onToggleFilter: _toggleQuickFilter,
+                  onShowAdvancedFilter: _showAdvancedFilter,
+                ),
               ),
               if (filter.ownerOnly) ...[
                 const SizedBox(height: 4),

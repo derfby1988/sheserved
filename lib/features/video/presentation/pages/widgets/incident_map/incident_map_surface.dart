@@ -11,6 +11,7 @@ import 'package:latlong2/latlong.dart' as ll;
 
 import '../../../../../../services/map_config_service.dart';
 import '../../../../../../shared/widgets/glass/glass_primitives.dart';
+import '../../../../../../shared/widgets/gradient_progress_bar.dart';
 import '../../../../models/incident_map_models.dart';
 import '../../../../../admin/models/map_provider_config.dart';
 import 'incident_map_photo_layout.dart';
@@ -794,12 +795,33 @@ class _PhotoCard extends StatelessWidget {
           child: CachedNetworkImage(
             imageUrl: photo.url,
             fit: BoxFit.cover,
-            placeholder: (_, _) => const ColoredBox(color: Colors.black26),
+            placeholder: (_, _) => const IncidentPhotoLoadingPlaceholder(),
             errorWidget: (_, _, _) => const ColoredBox(
               color: Colors.black26,
               child: Icon(Icons.broken_image, color: Colors.white54, size: 18),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// พื้นหลังระหว่างรอ thumbnail ของเหตุการณ์โหลด (§22.16)
+///
+/// เดิมเป็นกล่องดำนิ่งที่แยกไม่ออกว่ากำลังโหลดหรือโหลดไม่สำเร็จ — ตอนนี้มี
+/// gradient bar ต่อใบ วางกลางการ์ด (พร้อมรางจาง ๆ) ให้เห็นว่าภาพใบนี้กำลังมาถึง
+class IncidentPhotoLoadingPlaceholder extends StatelessWidget {
+  const IncidentPhotoLoadingPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Colors.black26,
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: GradientProgressBar(height: 3, trackColor: Colors.white24),
         ),
       ),
     );

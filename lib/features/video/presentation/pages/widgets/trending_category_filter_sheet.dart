@@ -222,14 +222,15 @@ class _TrendingCategoryFilterSheetState
                     text: 'แผนที่เกิดเหตุ',
                     icon: Icons.map_outlined,
                     height: 32,
-                    fontSize: 12,
-                    iconSize: 15,
+                    // §22.15: ลดตัวอักษร/ไอคอนและความกว้างขั้นต่ำลง เพื่อไม่ให้
+                    // แคปซูลกินพื้นที่จนชื่อหมวดเหลือ 2–3 ตัวอักษร (เดิม
+                    // fontSize 12/minWidth 132/padding 10 → แคปซูล ~152dp)
+                    fontSize: 11,
+                    iconSize: 13,
                     depth: 3,
                     blur: 6,
-                    // กว้างขั้นต่ำเท่ากันทุกหมวดตาม convention ของ
-                    // NeumorphicPillButton (minWidth = กว้างเนื้อหาในแคปซูล)
-                    minWidth: 132,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minWidth: 100,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     // ✅ §22.1: กดแล้ว sheet ปิดตัวเองก่อน (ไม่ commit draft)
                     // แล้ว callback จึงเข้าสู่โหมดแผนที่ — page ไม่ต้อง pop ซ้ำ
                     onPressed: _applying

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,15 +8,22 @@ import 'package:sheserved/features/video/presentation/pages/widgets/incident_map
 const _cardSize = Size(64, 64);
 const _viewport = Size(390, 800);
 
+// radial contract: ring radius = pinRadius(22) + cardHalfDiag(45.25) + gap(6)
+const _ringRadius = 73.25;
+const _pinExclusionRadius = 22 + 45.25 + 6;
+
 IncidentMapPhoto _photo(String id, {DateTime? createdAt}) => IncidentMapPhoto(
   id: id,
   url: 'http://x/$id.jpg',
   createdAt: createdAt ?? DateTime.utc(2026, 10, 6, 12),
 );
 
+Rect _pinCircle(Offset anchor) =>
+    Rect.fromCircle(center: anchor, radius: _pinExclusionRadius);
+
 void main() {
-  group('layoutIncidentPhotoCards — ไม่ทับกัน (§22.5)', () {
-    test('เหตุเดียว 3 ภาพ → เรียงแถวเหนือหมุด', () {
+  group('layoutIncidentPhotoCards — radial ring รอบหมุด (§22.17)', () {
+    test('เหตุเดียว 3 ภาพ → วางเป็นวงแหวนรอบหมุด ไม่บังหมุด', () {
       final placements = layoutIncidentPhotoCards(
         anchorByIncidentId: {'a': const Offset(200, 300)},
         photosByIncidentId: {
@@ -36,10 +44,36 @@ void main() {
           );
         }
       }
-      // ทุกใบอยู่เหนือหมุด
+      // ทุกใบอยู่บนวงแหวนรัศมีเดียวกันและไม่มีใบแตะวงกลมของหมุด
       for (final p in placements) {
-        expect(p.rect.bottom, lessThanOrEqualTo(300));
+        expect(
+          (p.center - const Offset(200, 300)).distance,
+          closeTo(_ringRadius, 0.5),
+          reason: 'การ์ดไม่ได้อยู่บนวงแหวนรอบหมุด',
+        );
+        expect(
+          p.rect.overlaps(
+            Rect.fromCircle(center: const Offset(200, 300), radius: 22),
+          ),
+          isFalse,
+          reason: 'การ์ดทับหมุดของตัวเอง',
+        );
       }
+    });
+
+    test('การ์ดใบเดียวเริ่มที่ด้านบนของหมุด', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'a': const Offset(200, 300)},
+        photosByIncidentId: {
+          'a': [_photo('p1')],
+        },
+        viewport: _viewport,
+        cardSize: _cardSize,
+      );
+      expect(placements, hasLength(1));
+      final c = placements.single.center;
+      expect(c.dx, closeTo(200, 0.5));
+      expect(c.dy, closeTo(300 - _ringRadius, 0.5));
     });
 
     test('จำกัด 3 ใบต่อเหตุ — ส่วนที่เหลือไม่วาด (ยังอยู่ใน gallery เต็ม)', () {
@@ -60,7 +94,7 @@ void main() {
       expect(placements.length, 3);
     });
 
-    test('สองเหตุใกล้กัน → ใบที่วางไม่ได้ถูกข้าม ไม่ทับหมุดเหตุอื่น', () {
+    test('สองเหตุใกล้กัน → วงที่วางไม่ได้ถูกข้าม ไม่ทับหมุดเหตุอื่น', () {
       final placements = layoutIncidentPhotoCards(
         anchorByIncidentId: {
           'a': const Offset(100, 300),
@@ -74,18 +108,19 @@ void main() {
         cardSize: _cardSize,
       );
 
-      // ไม่มี card ใดทับ exclusion zone ของหมุดอีกเหตุ
+      // ไม่มี card ใดทับวงกลม exclusion ของหมุดอีกเหตุ
       for (final p in placements) {
         if (p.incidentId == 'a') {
-          final bExclusion = Rect.fromCenter(
-            center: const Offset(130, 300),
-            width: _cardSize.width + 12,
-            height: _cardSize.height + 12,
-          );
           expect(
-            p.rect.overlaps(bExclusion),
+            p.rect.overlaps(_pinCircle(const Offset(130, 300))),
             isFalse,
             reason: 'card ของ a ทับหมุดของ b',
+          );
+        } else {
+          expect(
+            p.rect.overlaps(_pinCircle(const Offset(100, 300))),
+            isFalse,
+            reason: 'card ของ b ทับหมุดของ a',
           );
         }
       }
@@ -98,7 +133,23 @@ void main() {
       }
     });
 
-    test('ออกนอกจอ → ไม่วาด (ไม่ล้น viewport)', () {
+    test('สองเหตุห่างพอ → วางวงได้ทั้งคู่', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {
+          'a': const Offset(80, 300),
+          'b': const Offset(330, 300),
+        },
+        photosByIncidentId: {
+          'a': [_photo('p1')],
+          'b': [_photo('q1')],
+        },
+        viewport: _viewport,
+        cardSize: _cardSize,
+      );
+      expect(placements, hasLength(2));
+    });
+
+    test('หมุดชิดมุมจอ → หมุนวงหาด้านที่ว่าง (ยังแสดงการ์ด)', () {
       final placements = layoutIncidentPhotoCards(
         anchorByIncidentId: {'edge': const Offset(5, 5)},
         photosByIncidentId: {
@@ -107,7 +158,24 @@ void main() {
         viewport: _viewport,
         cardSize: _cardSize,
       );
-      // หมุดชิดมุมบนซ้าย — แถวเหนือหมุดลบกับขอบบน จึงไม่มีที่วาง
+      // ด้านขวาล่างของหมุดยังอยู่ในจอ — วงแหวนหมุนไปทางนั้นได้
+      expect(placements, hasLength(1));
+      final rect = placements.single.rect;
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(_viewport.width));
+      expect(rect.bottom, lessThanOrEqualTo(_viewport.height));
+    });
+
+    test('หมุดหลุดจอไกลเกินไป → ไม่วาด', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'far': const Offset(-200, 300)},
+        photosByIncidentId: {
+          'far': [_photo('p1')],
+        },
+        viewport: _viewport,
+        cardSize: _cardSize,
+      );
       expect(placements, isEmpty);
     });
 

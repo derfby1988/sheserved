@@ -198,6 +198,28 @@ void main() {
       expect(find.byIcon(Icons.map_outlined), findsNothing);
     });
 
+    testWidgets('ปุ่มหมวดอยู่กึ่งกลางจอเมื่อไม่มีปุ่มฝั่งขวา', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _harness(
+          showCategoryFilter: false,
+          categoryLabel: 'สถานการณ์: น้ำท่วม',
+          onCategoryLabelTap: () {},
+        ),
+      );
+
+      final chip = find.ancestor(
+        of: find.text('สถานการณ์: น้ำท่วม'),
+        matching: find.byType(Container),
+      );
+      final chipRect = tester.getRect(chip.first);
+      expect((chipRect.center.dx - 195).abs(), lessThan(4));
+    });
+
     testWidgets('ปุ่มหมวดยาวไม่ล้นที่ 320dp และไม่มีปุ่มเปลี่ยนแยก', (
       tester,
     ) async {

@@ -17,6 +17,7 @@ import '../widgets/sheets/advanced_filter_sheet.dart';
 import '../widgets/sheets/group_detail_sheet.dart';
 import '../widgets/feed/sport_category_chips.dart';
 import '../widgets/feed/quick_filter_row.dart';
+import '../widgets/feed/filter_collapse_box.dart';
 import '../widgets/feed/sport_club_filter_button.dart';
 import '../widgets/feed/radius_slider_control.dart';
 import '../widgets/feed/group_card.dart';
@@ -1003,71 +1004,63 @@ class _SportClubPageState extends State<SportClubPage> {
                 : 0,
             left: 0,
             right: 0,
-            child: AnimatedSlide(
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              offset: _filterCollapse.isCollapsed
-                  ? const Offset(0, -0.6)
-                  : Offset.zero,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 240),
-                opacity: _filterCollapse.isCollapsed ? 0 : 1,
-                child: Container(
-                  key: _filterBarKey,
-                  width: double.infinity,
-                  color: Colors.white,
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    _sharedBarActive ? 8 : 16,
-                    16,
-                    0,
-                  ),
-                  child: Column(
-                    children: [
-                      if (!_sharedBarActive) ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SportCategoryChips(
-                                sports: _sports,
-                                selectedSportId: _sportId,
-                                myCreatedSportIds: _myCreatedSportIds,
-                                onSportSelected: (id, selected) async {
-                                  setState(() {
-                                    final nextSportId = selected ? id : null;
-                                    _filter = _filter.copyWith(
-                                      sportId: nextSportId,
-                                      clearSportId: nextSportId == null,
-                                    );
-                                    _reloadingGroups = true;
-                                  });
-                                  _publishFeedTitle();
-                                  await _persistFilterState();
-                                  widget.hubController?.absorbSportClubFilter(
-                                    _filter,
+            child: FilterCollapseBox(
+              collapsed: _filterCollapse.isCollapsed,
+              child: Container(
+                key: _filterBarKey,
+                width: double.infinity,
+                color: Colors.white,
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  _sharedBarActive ? 8 : 16,
+                  16,
+                  0,
+                ),
+                child: Column(
+                  children: [
+                    if (!_sharedBarActive) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SportCategoryChips(
+                              sports: _sports,
+                              selectedSportId: _sportId,
+                              myCreatedSportIds: _myCreatedSportIds,
+                              onSportSelected: (id, selected) async {
+                                setState(() {
+                                  final nextSportId = selected ? id : null;
+                                  _filter = _filter.copyWith(
+                                    sportId: nextSportId,
+                                    clearSportId: nextSportId == null,
                                   );
-                                  await _reload();
-                                },
-                              ),
+                                  _reloadingGroups = true;
+                                });
+                                _publishFeedTitle();
+                                await _persistFilterState();
+                                widget.hubController?.absorbSportClubFilter(
+                                  _filter,
+                                );
+                                await _reload();
+                              },
                             ),
-                            const AddSportFab(),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      QuickFilterRow(
-                        filterOpenOnly: _filterOpenOnly,
-                        filterJoinedOnly: _filterJoinedOnly,
-                        filterManagedOnly: _filterManagedOnly,
-                        locationEnabled: _locationEnabled,
-                        radiusKm: _radiusKm,
-                        activeFilterCount: _activeFilterCount,
-                        filterSummary: _filterSummary,
-                        onToggleFilter: _toggleQuickFilter,
-                        onShowAdvancedFilter: _showAdvancedFilterSheet,
+                          ),
+                          const AddSportFab(),
+                        ],
                       ),
+                      const SizedBox(height: 10),
                     ],
-                  ),
+                    QuickFilterRow(
+                      filterOpenOnly: _filterOpenOnly,
+                      filterJoinedOnly: _filterJoinedOnly,
+                      filterManagedOnly: _filterManagedOnly,
+                      locationEnabled: _locationEnabled,
+                      radiusKm: _radiusKm,
+                      activeFilterCount: _activeFilterCount,
+                      filterSummary: _filterSummary,
+                      onToggleFilter: _toggleQuickFilter,
+                      onShowAdvancedFilter: _showAdvancedFilterSheet,
+                    ),
+                  ],
                 ),
               ),
             ),
