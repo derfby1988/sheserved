@@ -183,7 +183,7 @@ class _CourtOwnerEvidenceQueueState
     String title,
   ) async {
     String code = kQueueReasonCodes.keys.first;
-    final noteController = TextEditingController();
+    String note = '';
     final result = await showDialog<({String code, String? note})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -206,7 +206,7 @@ class _CourtOwnerEvidenceQueueState
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: noteController,
+                onChanged: (value) => note = value,
                 decoration: InputDecoration(
                   labelText: code == 'other'
                       ? 'ระบุเหตุผล (จำเป็น)'
@@ -223,11 +223,14 @@ class _CourtOwnerEvidenceQueueState
             ),
             FilledButton(
               onPressed: () {
-                final note = noteController.text.trim();
-                if (code == 'other' && note.isEmpty) return;
+                final trimmedNote = note.trim();
+                if (code == 'other' && trimmedNote.isEmpty) return;
                 Navigator.pop(
                   ctx,
-                  (code: code, note: note.isEmpty ? null : note),
+                  (
+                    code: code,
+                    note: trimmedNote.isEmpty ? null : trimmedNote,
+                  ),
                 );
               },
               child: const Text('ยืนยัน'),
@@ -236,7 +239,6 @@ class _CourtOwnerEvidenceQueueState
         ),
       ),
     );
-    noteController.dispose();
     return result;
   }
 

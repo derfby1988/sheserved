@@ -6431,3 +6431,93 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
   - invalidate `video:emergency:map:*` ทั้งตอน insert และตอน blur เสร็จ (ก่อน broadcast)
 - Tests: `websocket-server/test/incident-map.test.js` 18 เคส (fair rounds, cap 15, ผู้ส่ง >15 ได้ตัวแทนล่าสุดคนละใบ, pending slot ไม่มี url, PHOTOS_SQL และ Supabase migration contract, RPC fallback, upload→invalidate→global event); Flutter focused map suite 61/61 รวม layout cap 15 และวง 2 ชั้น 5+10 ที่ viewport 390×800; full `npm test` 62/62
 - **Device verified ก่อนหน้า (2026-10-18, cap 9):** incident gallery 6 ภาพแสดงครบ, ช่อง gradient bar สลับเป็นภาพจริงอัตโนมัติหลัง blur (Android). การขยาย cap 15/fair sender rounds ผ่าน unit tests แล้ว แต่ยังต้อง apply Supabase migration + restart Node และ device verify ภาพ 10–15 ภาพจริง; poll load เมื่อมีหลาย incident pending ก็ยังต้องทดสอบ
+
+## 23. Phase — แชร์เหตุการณ์ (Incident Share Link + Recipient Focus View — แผนงาน ยังไม่ Implement)
+
+### 23.1 เป้าหมายและขอบเขต
+
+ผู้ใช้ที่กำลังดูเหตุการณ์ (การ์ดถูกเลือกจากกล่องยอดนิยม) สามารถกดปุ่ม **แชร์** เพื่อส่งลิงก์ต่อให้ผู้อื่น; ผู้รับลิงก์กดแล้วเข้าสู่หน้า Emergency พร้อมเหตุการณ์ที่ผู้แชร์ตั้งใจ โดย:
+
+- ผู้แชร์ **ไม่ได้ค้างภาพ** ใดใน gallery → ผู้รับเข้า **โหมด video player** (เล่นอัตโนมัติตามพฤติกรรมการ์ดปกติ)
+- ผู้แชร์ **ค้างภาพ** (overlay ภาพจาก gallery เปิดอยู่) → ผู้รับเข้า **โหมดแสดงภาพจาก gallery** — overlay เดียวกัน + focus/autoscroll ไปตำแหน่งภาพนั้น ด้วยกลไกเดิมของระบบ
+- ทั้งสองโหมด: กล่องยอดนิยมของผู้รับถูกกรองเหลือ **เฉพาะเหตุการณ์ที่แชร์** และปุ่มย้อนกลับ (top bar + hardware back) ออกจาก shared view กลับสู่ Emergency ปกติ พร้อมคืนสิทธิ์ผู้ชมทั่วไป
+
+### 23.2 สภาพปัจจุบันที่ตรวจสอบแล้ว (Verified — 2026-10-08)
+
+- **Gallery ตำแหน่งจริง:** `ThaiMhungRulerGalleryWidget` อยู่ใน `Row` ขวาของวิดีโอใน `LiveViewWidget` (`live_view_widget.dart` ~574–610): `SizedBox(8)` → `Expanded(gallery, height: videoHeight)` → `SizedBox(width: (maxW-32)*0.35+8)` สำรองที่ให้ Trending panel ที่วาดทับด้วย `AnimatedPositioned` แยกชั้น
+- **Photo overlay + focus/autoscroll มีอยู่แล้ว:** `showMapPhotoOverlay(photoId, url, videoId)` → `_resolveMapPhotoOverlay` → `_galleryKey.currentState?.focusPhotoById(photoId)` คืน `ThaiMhungPhotoFocusResult{index, photoUrl, exact}` และ scroll ไปตำแหน่งผ่าน `_scrollToPhotoIndex` (`thai_mhung_ruler_gallery_widget.dart` ~414–518); `exact=false` จะ fallback ภาพล่าสุด + snackbar — reuse ทั้งหมดได้สำหรับ recipient photo mode
+- **จุดขาด — photo id ไม่หลุดจาก gallery callbacks:** `onPhotoTap`/`onPhotoChanged` ส่งแค่ `(index, photoUrl)`; `_selectedOverlayPhotoIndex`/`_overlayPhotoGeneration` อยู่ใน LiveViewWidget แต่ไม่มี `photo.id` — ต้องขยาย callback/state ให้แนบ id ของ `ThaiMhungRulerPhoto`
+- **Deep link intake ยังไม่มีที่ระดับ OS:** `SportClubDeepLinkService` + `onGenerateRoute` (`main.dart` ~390–424) รองรับเฉพาะ **in-app routing** (`Navigator.pushNamed`/initialRoute); iOS `Info.plist` มีแค่ Google OAuth scheme (ไม่มี `sheserved://`), Android `AndroidManifest.xml` ไม่มี `VIEW`/`BROWSABLE` intent-filter เลย → ลิงก์จากแอปภายนอกเปิดเข้าแอปไม่ได้ในปัจจุบัน. `app_links` 7.0.0 เป็น transitive dep อยู่แล้ว (ผ่าน `supabase_flutter`) — promote เป็น direct dep เพื่อใช้ `uriLinkStream`/`getInitialLink`; universal link จริงต้องมี AASA + `assetlinks.json` บน `sheserved.com` (งาน web/infra แยก)
+- **Share:** `share_plus` ใช้แล้วใน `group_invite_poster_sheet.dart` (`Share.shareXFiles`/`Share.share`) — ปุ่มแชร์ข้อความลิงก์ใช้ `Share.share` พอ (iPad ต้องส่ง `sharePositionOrigin`)
+- **Single-incident lock มีต้นแบบ:** `_trendingVideosForPanel()` กรองตาม mission lock และ embed `_currentVideo` เข้าลิสต์ถ้าหลุด top (`emergency_navigation_logic.dart` ~310–328); `lockToCurrentVideo = _currentResponseId != null` ล็อก swipe/fullscreen; โซนออกจากโหมดอ้าง `PopScope(canPop)` + `EmergencyTopBar.onBackTap` chain (`emergency_live_page.dart` ~474–485, 687–723)
+- **`_switchVideo(videoId)`** ทำ context switch เต็ม (ออก room, dispose player, clear state, `_loadInitialData`) — ใช้เป็นจุดเข้าเหตุการณ์ที่แชร์ได้ทันที
+
+### 23.3 การตัดสินใจ
+
+1. **เงื่อนไขแสดงปุ่ม:** เหมือนเงื่อนไข gallery เป๊ะ — `currentVideoId != null` บน live surface เท่านั้น (ซ่อนเองใน map/report/chat-only states เพราะ gallery ไม่ render); ไม่ต้องมี flag เพิ่ม
+2. **Layout ปุ่มแชร์:** วางเหนือ gallery ใน `Expanded` column เดียวกัน: `Column([shareButton, SizedBox(gap), gallery(height: videoHeight − shareButtonHeight − gap)])` — ขอบล่าง gallery (จุดสิ้นสุดแนวตั้ง) คงเดิมตรงกับขอบล่างวิดีโอ, ความกว้างปุ่ม = ความกว้าง column เท่านั้น (ไม่เกิน)
+3. **ไอคอนปุ่ม scale อัตโนมัติ:** `FittedBox(fit: BoxFit.scaleDown)` ครอบเนื้อในปุ่ม (icon + label) — จอแคบ label ย่อก่อนตัด, invariant: ปุ่มไม่ overflow ความกว้าง gallery column
+4. **Link contract:**
+   - Web: `https://sheserved.com/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
+   - Custom scheme: `sheserved://emergency/incident/<videoId>[?photo=<photoId>]`
+   - แนบ `photo` **เฉพาะเมื่อ overlay ภาพเปิดค้างอยู่** ตอนกดแชร์ (`_selectedOverlayPhotoUrl != null` + photo id ที่ resolve แล้ว); overlay ปิด/ไม่เคยเปิด → video mode; ภาพ `blurring`/`failed` ไม่ถูกแนบ (gallery resolve เฉพาะ `completed` อยู่แล้ว)
+   - ลิงก์เปิดเผยแค่ video/photo id — ข้อมูล public feed เดิม ไม่มี user id ของผู้แชร์
+5. **Service:** สร้าง `EmergencyIncidentDeepLinkService` แยกจาก sport club (domain คนละ route family) — `buildIncidentShareUrl`, `parseDeepLink` รับทั้ง web/custom scheme/relative, pending store/consume เหมือน pattern เดิม
+6. **Recipient flow:** `onGenerateRoute` parse `/emergency/incident/...` → store pending → `EmergencyLivePage` consume หลัง init (รอ login ก่อนถ้าจำเป็น, pattern เดียวกับ `SportClubPage._handlePendingDeepLink`) → **ตรวจ guard ก่อนสลับการ์ดเสมอ** (ภารกิจค้าง/รายงานค้าง → snackbar + ทิ้งลิงก์, ไม่เข้า shared view) → `_switchVideo(videoId)` → เข้า **shared-incident view**; มี `photo` → post-frame `showMapPhotoOverlay` ผ่าน `_liveViewKey` (generation/videoId guard เดิมกัน race)
+7. **Shared-incident lock:** `_sharedIncidentVideoId` แยกจาก mission lock — `_trendingVideosForPanel()` คืนลิสต์การ์ดเดียว (embed `_currentVideo` เหมือน mission lock ถ้าไม่อยู่ใน trending), ล็อก swipe/แตะการ์ดอื่น/fullscreen ด้วย semantics เดียวกับ `lockToCurrentVideo` แต่ **ไม่** ให้สิทธิ์ responder/เจ้าของเหตุเพิ่ม — ผู้รับเป็น viewer ล้วน (`canViewUnblurred` ยังคำนวณจากสิทธิ์จริง)
+8. **Exit:** ขยาย `onBackTap` chain + `PopScope` — ใน shared view back = `_exitSharedIncidentView()` (clear lock → `_loadTrendingVideos(forceRefresh)` คืนกล่องยอดนิยมเต็ม → คืนสิทธิ์ปกติ) ไม่ pop หน้า; ออกแล้วพฤติกรรมเหมือนผู้ชมทั่วไปทุกประการ
+9. **Fail-closed:** video id โหลดไม่ได้/เหตุถูกลบ → snackbar + หน้า Emergency ปกติ (ไม่ค้าง lock, ไม่มีการ์ดเปล่า)
+10. **OS plumbing เป็นงานบังคับของ phase นี้** (ไม่ใช่ optional): `app_links` เป็น direct dep + Android intent-filters (`sheserved://` และ `https://sheserved.com/emergency` — `autoVerify` ต้องมี `assetlinks.json`) + iOS `CFBundleURLSchemes` + `Runner.entitlements` associated domains (ต้องมี AASA บนเว็บ)
+
+### 23.4 Edge cases
+
+- **ภาพที่แชร์ถูกลบ/ยัง blur ระหว่างทาง:** `focusPhotoById` ไม่เจอ → fallback ภาพล่าสุด + snackbar เดิม; gallery ว่าง → video mode
+- **ผู้รับมีภารกิจค้าง (`_currentResponseId != null` หรือ reporter lock):** **ไม่อนุญาตเข้า shared view จากลิงก์เลย**ขณะภารกิจยังไม่จบ — ต้องเคลียร์ภารกิจให้เสร็จก่อน (`_switchVideo` จะฉีก video context/GPS tracking ของภารกิจ); consume ลิงก์แล้วแสดง snackbar ว่าต้องจบภารกิจก่อน (ลิงก์ถูกทิ้ง ไม่ค้าง pending มาเด้งทีหลัง — ผู้ใช้กดลิงก์ใหม่ได้เสมอ); ผู้รับทั่วไปที่ไม่มีภารกิจ panel เหลือการ์ดเดียวตาม requirement เสมอ — shared lock แคบกว่า filter อื่นทุกชนิด (mission/category/map scope) ขณะ active
+- **กำลังรายงานอยู่ (`_isThaiMhungReporting`/`_selectedTab == 2` ที่มี `_capturedPhotos` ค้าง หรือ `_isRecording`):** ใช้ guard เดียวกับภารกิจ — เข้า shared view จะล้างภาพที่ยังไม่ส่งโดยผู้ใช้ไม่ได้กดลบเอง จึงบล็อก + snackbar เหมือนกัน
+- **ลิงก์เข้าขณะ Emergency page เปิดอยู่แล้ว:** ผู้ใช้ตั้งใจเปิดหน้าใหม่ผ่านลิงก์เอง → **ยกเลิกหน้าเดิมแล้วเปิดใหม่ได้**: ถ้า top route เป็น `EmergencyLivePage` ให้ `pushReplacementNamed` (dispose instance เดิม — leave room/cancel streams/dispose player ครบใน teardown เดิม) แทนการ stack ซ้อน; ยกเว้นหน้าเดิมมีภารกิจหรือรายงานค้าง → guard ข้างบนชนะ (ไม่ replace, snackbar แทน); ถ้า emergency ไม่ได้อยู่บนสุดของ stack push ตามปกติ
+- **ผู้รับเป็นเจ้าของเหตุหรือมีสิทธิ์อยู่แล้ว:** สิทธิ์ `canViewUnblurred`/เจ้าของเหตุคำนวณจากสถานะจริงของผู้รับเสมอ ไม่ได้รับจากลิงก์ — exit shared view แล้ว filter/suspension เดิมทำงานต่อครบ
+- **ผู้รับยังไม่ login:** pending deep link รอผ่าน login เหมือนกลุ่มกีฬา; หน้า Emergency ต้อง consume หลัง auth พร้อม
+- **เปิดลิงก์ซ้ำ/ลิงก์ใหม่ขณะ lock อยู่:** consume ล่าสุดชนะ — `_switchVideo` เปลี่ยนเหตุ + อัปเดต lock
+- **ผู้รับกดลิงก์เหตุเดียวกับที่ดูอยู่:** `_switchVideo` เดิมรีเซ็ต state ครบ (คล้าย map photo flow) — ไม่แยกเคส
+- **Web/desktop เปิดลิงก์:** MVP เสิร์ฟ landing page บน `sheserved.com/emergency/incident/*` (redirect เข้าแอป/สโตร์) — งานฝั่งเว็บแยก อยู่นอก repo นี้ แต่ต้องระบุใน deploy checklist
+- **iPad share sheet:** `Share.share` ต้องมี `sharePositionOrigin` (rect ของปุ่ม) ไม่งั้นครับท์ popover
+
+### 23.5 ลำดับดำเนินงาน
+
+1. `EmergencyIncidentDeepLinkService` + parser/pending + **unit tests** (pure Dart, ไม่แตะ UI)
+2. OS plumbing: `app_links` direct dep (pin ตาม lockfile), Android intent-filters, iOS schemes/entitlements, `onGenerateRoute` + listener ใน `main.dart`
+3. Share button + layout: column เหนือ gallery ใน `LiveViewWidget`, FittedBox icon, gallery height ลดเท่าปุ่ม+gap; ขยาย photo callbacks ให้แนบ `photo.id`
+4. Recipient flow: pending consume → `_switchVideo` → photo overlay (reuse `showMapPhotoOverlay`) → shared lock + `_exitSharedIncidentView` + PopScope/topbar wiring
+5. Landing page บน `sheserved.com` + `assetlinks.json`/AASA (งาน web/infra แยก — block universal link จนกว่าพร้อม, custom scheme ทำงานก่อนได้)
+6. Device verification ทั้งสองโหมดบน Android + iOS
+
+### 23.6 Invariants ที่ห้ามละเมิด
+
+- ขอบล่าง gallery ตรงขอบล่างวิดีโอเสมอ (ปุ่มกินจากด้านบนเท่านั้น); ปุ่มแชร์กว้าง ≤ gallery column
+- photo id ในลิงก์ต้อง resolve เฉพาะภาพ `blur_status=completed` — ห้ามเปิดภาพที่ยัง blur ผ่านลิงก์
+- shared lock ไม่ให้สิทธิ์เพิ่มและไม่แตะ mission/reporter lock ของผู้รับ
+- exit shared view ต้องคืน trending เต็ม + filter/suspension state ปกติ (ทดสอบเทียบ `_closeIncidentMapContext`)
+- ห้ามใช้ `Navigator.pop` ปิด shared view ถ้าหน้าถูกเปิดจากลิงก์ (อาจไม่มี route ด้านล่าง)
+
+### 23.7 Risk register
+
+| Risk | ผลกระทบ | Mitigation |
+|---|---|---|
+| Universal link ต้อง config เว็บ/สโตร์ | ลิงก์ https ไม่เปิดแอปจนกว่า AASA/assetlinks พร้อม | custom scheme + landing page redirect ทำงานก่อน; checklist deploy แยก |
+| เหตุถูกลบ/จบก่อนผู้รับเปิด | ผู้รับเจอจอว่าง/lock ผี | fail-closed → snackbar + Emergency ปกติ (23.4/23.3.9) |
+| แชร์ภาพที่ยัง blur | ผู้รับเห็น placeholder ค้าง | แนบ `photo` เฉพาะ `completed`; focus fallback แสดงภาพล่าสุด |
+| gallery height ลดทำ ruler hit area เล็กเกิน | จอเตี้ยเลื่อนยาก | ขั้นต่ำปุ่ม ≤40dp; gallery height ≥ 0.35×videoHeight ไม่งั้นซ่อนปุ่มเป็นปุ่ม icon ลอย |
+| `Share.share` บน iPad | crash popover | `sharePositionOrigin` จากปุ่มจริง |
+
+### 23.8 Test และ exit gate
+
+- **Unit:** parser ครบ web/custom/relative/photo param/malformed; build URL encode id ถูก; pending store/consume/peek
+- **Widget:** ปุ่มแชร์แสดงเฉพาะเมื่อมีการ์ด; ความกว้างปุ่ม ≤ gallery column และขอบล่าง gallery คงเดิม (วัด rect ก่อน/หลัง); FittedBox ย่อ label บนจอ 320dp; lock ทำให้ trending เหลือการ์ดเดียวและ tap การ์ดอื่นไม่ได้; exit คืนลิสต์เต็ม
+- **Integration/device:** เปิดลิงก์ custom scheme จริงทั้งสองโหมด (รวมเคส photo ถูกลบ), exit ด้วยปุ่มและ hardware back, ผู้รับยังไม่ login → login → เข้าเหตุถูกต้อง
+- Exit gate: `flutter test` ผ่าน + `flutter build ios --no-codesign` + device verify อย่างน้อย Android เครื่องจริงทั้งสองโหมด
+
+### 23.9 Rollout และ rollback
+
+- ปุ่มแชร์เป็น additive UI — rollback = revert widget; recipient path ไม่ทำงานถ้าไม่มีลิงก์ถูกสร้างจึงปลอดภัยแม้ backend เว็บยังไม่พร้อม
+- OS plumbing revert ได้อิสระ (intent-filter/scheme ไม่กระทบ flow อื่น — `sheserved://` ยังไม่มีผู้ใช้)
+- ห้ามเปลี่ยน: mission lock semantics, `focusPhotoById` contract, `_switchVideo` behavior, สิทธิ์ `canViewUnblurred`

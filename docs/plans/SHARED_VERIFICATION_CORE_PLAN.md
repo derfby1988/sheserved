@@ -1,5 +1,5 @@
 # แผนพัฒนาระบบตรวจสอบหลักฐาน/สลิปส่วนกลาง (Shared Verification Core Plan)
-> สถานะ: **เริ่ม implement แล้ว — P0.2/P0.3/P0.4 เขียนโค้ด+test ผ่านบน scratch DB (รอ apply production), P0.1 (rotate key) เป็นงาน ops รอดำเนินการ, P0.5/P0.6 ค้าง** · แก้ไขรอบที่ 4 (2026-10-07)
+> สถานะ: **P0.2/P0.3/P0.4 apply + พิสูจน์บน production แล้ว (2026-10-08) — rollback drill และ live smoke ผ่าน; P0.1 key ใหม่ active แล้ว เหลือเพิกถอน key เก่า; งาน ops ค้าง: คืน quota venue เป็น 1 + ตรวจ audit listing/NOT_ADMIN; P0.5 (ตัดสิน D9 staging) ค้าง** · แก้ไขรอบที่ 5 (2026-10-08)
 > อ้างอิงจาก: 21.7.21 ใน `Match_Sport_PLAN.md` (implement + live แล้ว), `20261010100000`–`20261015100000`
 > ขอบเขตเอกสาร: ทำให้ระบบตรวจสลิปอัตโนมัติของ Sports Hub **ถูกต้อง ปลอดภัย และสลับ provider ได้** แล้วจึง (ถ้ามีระบบที่สองจริง) แยกเป็นแกนกลางที่ระบบอื่นของ Sheserved ใช้ร่วมได้ โดย**ไม่ทำให้ระบบจองสนามพัง**
 
@@ -68,12 +68,12 @@ P0 ปิดช่องโหว่ไม่เปลี่ยนพฤติ�
 | รายการ | ค่า |
 |---|---|
 | Global scope | `whitelist` |
-| Venue allowlisted | 1 แห่ง (venue ทดสอบ) + `verify_monthly_quota = 1` + bearer `platform` |
-| Provider | `slipok` enabled (endpoint `https://api.slipok.com/api/line/apikey/77918`, key ref `SLIPOK`) |
+| Venue allowlisted | 1 แห่ง (venue ทดสอบ `ใหม่ หลังจวญ`) + `verify_monthly_quota = 5` (ยกชั่วคราวระหว่าง live smoke 2026-10-08 — **ค้างคืนเป็น 1**) + bearer `platform` |
+| Provider | `slipok` enabled (endpoint `https://api.slipok.com/api/line/apikey/77918`, key ref `SLIPOK`, `adapter_code='slipok'`); **key หมุนเวียน 2026-10-08** — ค่าใหม่ใน `.env` + `VERIFICATION_ALLOWED_HOSTS=api.slipok.com`; key เก่าค้างเพิกถอน |
 | Worker | เปิด (`SLIP_VERIFICATION_WORKER_ENABLED=true`, interval 15s) |
-| Live verification | ผ่าน 1 ใบ (2026-10-07): claim → private download → SlipOK `verified` → apply → booking auto-confirm |
-| Migrations | `20261010100000`–`20261015100000` apply บนฐานจริงแล้ว |
-| Baseline tests | SQL smoke 395 PASS / 0 FAIL · flutter book_court 227 tests · node 55 tests · `dart analyze` clean |
+| Live verification | ผ่าน 2 ใบ: 2026-10-07 (claim → private download → SlipOK `verified` → apply → auto-confirm) และ 2026-10-08 (key ใหม่ผ่าน allowlist — ใบ revision ที่ 2 หลังใบปลอมใน rollback drill ถูก owner ปฏิเสธ) |
+| Migrations | `20261010100000`–`20261017100000` apply บนฐานจริงแล้ว |
+| Baseline tests | SQL smoke 405 PASS / 0 FAIL · flutter book_court 252 tests · node 58 tests · `dart analyze` clean |
 | Staging | **ไม่พบ**: ไม่มี `supabase/config.toml`, ไม่มี docker ในเครื่องนี้ (มีแต่ `supabase` CLI) → local Supabase stack รันไม่ได้ (ดู D9) |
 
 > ✅ **แก้ความไม่สอดคล้องของวันที่ (เดิมเป็น Q1):** ระบบวันที่ของเครื่อง = 2026-10-07 — วันที่ `2026-10-15` ในหมายเหตุ runbook ของ `Match_Sport_PLAN.md` เป็น **ความผิดพลาดของผู้เขียนรอบก่อน** (ไม่ใช่เหตุการณ์จริง) ได้แก้เป็น 2026-10-07 แล้วใน P0.6
@@ -379,20 +379,22 @@ P0.2 (adapter readiness) บล็อก P4 | P2.a/P2.b/P2.c บล็อก "�
 
 **Deploy order rule (สำคัญ):** ของที่ทำให้ DB "รู้จัก adapter ใหม่" ต้อง deploy **Node (มี adapter) ก่อน** แล้วค่อย apply migration ที่เพิ่ม code เข้า `verification_adapter_known` — ถ้ากลับด้านจะเกิดช่วงที่ DB เลือก provider ที่ Node ยังเรียกไม่ได้
 
-**P0 implementation status (2026-10-07):**
-- P0.1 (rotate SlipOK key): **ops pending** — ต้องทำบนเครื่องที่ deploy Node จริง (ออก key ใหม่ที่ provider → เพิกถอนเดิม → `SLIP_PROVIDER_KEY_SLIPOK` ใน env → restart → `GET /quota` 200 + key เดิม 401/403)
-- P0.2: `supabase/migrations/20261016100000_sports_hub_verify_adapter_readiness.sql` + rollback script — `adapter_code`/`supported_domains`, `verification_adapter_known()` ('slipok' เท่านั้น), กรอง adapter ใน claim/`auto_verify_allowed`/provider counts, upsert ปฏิเสธ enable ด้วย `ADAPTER_NOT_AVAILABLE`, UI ปิด toggle + แสดงเหตุผลใน `admin_court_owner_review_page.dart`
-- P0.3: `VERIFICATION_ALLOWED_HOSTS` + DNS→public check ใน `slip-verification-worker.js` (fallback เดิม + warn เมื่อ env ไม่ตั้ง) + `.env.example`
-- P0.4: `supabase/migrations/20261017100000_verification_admin_audit.sql` + rollback script — `verification_admin_audit` (RLS+REVOKE) เขียนใน admin RPCs ทั้ง 4 ตัว + `admin_list_verification_admin_audit`
-- Gate ที่ตรวจได้บนเครื่อง: SQL smoke **405 PASS / 0 FAIL / 0 ERROR** (scratch PG14, strip `security_invoker`), `npm test` **58/58**, `dart analyze` clean, flutter book_court **247 tests ผ่าน**
-- Gate ที่เหลือ (ต้องทำบนระบบจริงหลัง apply): live smoke 1 ใบ (key ใหม่), rollback drill ปิด provider → `no_provider` → owner review
+**P0 implementation status (2026-10-08 — production):**
+- P0.1 (rotate SlipOK key): **ใกล้เสร็จ** — key ใหม่ตั้งใน `websocket-server/.env` แล้ว, `GET /quota` (branch 77918) = 200, Node restart โหลด env ใหม่, live smoke ผ่านด้วย key ใหม่ → **ค้าง: เพิกถอน key เก่าที่ SlipOK dashboard แล้วยืนยัน key เก่า = 401 (`code:1002`)**
+- P0.2: apply `20261016100000` บน production แล้ว (+ rollback script) — `verification_adapter_known('slipok'/'SLIPOK')=true`, `('ghost')=false`; provider `slipok` backfill `adapter_code='slipok'`; functional test บน prod: staging `smoke_ghost` (disabled) สำเร็จ → enable โดน `ADAPTER_NOT_AVAILABLE` → `configuredProviderCount=1` → ลบแถวทดสอบแล้ว
+- P0.3: `VERIFICATION_ALLOWED_HOSTS=api.slipok.com` ตั้งใน `.env` แล้ว + Node restart; live smoke ยิง provider ผ่าน allowlist สำเร็จ (endpoint ไม่ถูกบล็อก)
+- P0.4: apply `20261017100000` บน production แล้ว (`verification_admin_audit` + RLS/REVOKE + `admin_list_verification_admin_audit`); การ disable/enable provider และเปลี่ยน quota ใน drill ข้างล่างเขียน audit rows แล้ว → **ค้าง: ตรวจเนื้อ audit (`admin_list_verification_admin_audit`) ว่าแถวครบ + ไม่มี secret + non-admin → `NOT_ADMIN`**
+- Gate ที่ตรวจได้บนเครื่อง: SQL smoke **405 PASS / 0 FAIL / 0 ERROR** (scratch PG14, strip `security_invoker`), `npm test` **58/58**, `dart analyze` clean, flutter book_court **252 tests ผ่าน**
+- **Rollback drill (2026-10-08): ผ่าน** — ปิด `slipok` → อัปโหลดหลักฐาน → `verification_status=pending` + `providerSkipped='no_provider'` + usage `result='unavailable'` (ตก owner review ไม่เรียก provider) → เปิดกลับ
+- **Live smoke (2026-10-08): ผ่าน** — ยก quota venue เป็น 5 → สลิปจริง 1 บาท → `verified` (`provider_code='slipok'`) → booking auto-`confirmed` → **ค้างคืน quota เป็น 1**
+- Bug ที่พบระหว่าง drill (แก้แล้ว): owner กด "ปฏิเสธ" หลักฐานแล้วแอป crash — `_promptRejectReason` dispose `TextEditingController` ก่อน dialog reverse animation จบ; แก้เป็น local string ใน `court_owner_evidence_queue.dart` + regression test ใน `court_owner_evidence_queue_test.dart` (ต้อง hot-restart/rebuild แอปเพื่อรับ fix)
 
-**Gate P0 (ต้องผ่านครบ):**
-1. `database/sports_hub_rpc_smoke_test.sql` → PASS ≥ 395, FAIL 0, ERROR 0 + assertion ใหม่: เพิ่ม provider ปลอม priority 1 (ไม่มี adapter) → claim ยังเลือก `slipok`; enable provider ไม่มี adapter → `ADAPTER_NOT_AVAILABLE`; audit row ถูกสร้างและไม่มี secret; non-admin → `NOT_ADMIN`
-2. `npm test` → ≥ 55 pass + test ใหม่: host นอก allowlist/IP literal/พอร์ตแปลก/DNS→private → `endpoint_blocked`; host ใน allowlist ผ่านเหมือนเดิม
-3. `dart analyze lib test` ไม่มี error ในไฟล์ที่แตะ; `flutter test test/features/sport_club/book_court` → 227 ผ่านเท่าเดิม
-4. **Live smoke 1 ใบ** (venue ทดสอบ): `verified` → auto-confirm เหมือนเดิม; key เก่าใช้ไม่ได้
-5. **Rollback drill:** ปิด provider ใน registry → claim คืน `no_provider` → ใบใหม่ตก owner review
+**Gate P0:**
+1. ✅ `database/sports_hub_rpc_smoke_test.sql` → **405 PASS / 0 FAIL / 0 ERROR** (scratch DB) — assertion adapter/audit/non-admin รวมอยู่
+2. ✅ `npm test` → **58/58** — เคส `endpoint_blocked` (host นอก allowlist/IP literal/พอร์ตแปลก/DNS→private) ครบ
+3. ✅ `dart analyze lib test` clean; `flutter test test/features/sport_club/book_court` → **252 ผ่าน**
+4. ✅ **Live smoke** (2026-10-08): `verified` → auto-confirm ด้วย key ใหม่ — **ค้างยืนยัน key เก่า = 401**
+5. ✅ **Rollback drill** (2026-10-08): ปิด provider → `no_provider` → owner review ผ่าน
 
 **Rollback P0:** revert Node commit + รัน rollback script ของ migration (ฟังก์ชันกลับนิยามเดิม; ตาราง audit ปล่อยทิ้งได้); key ใหม่ไม่ต้อง rollback
 
