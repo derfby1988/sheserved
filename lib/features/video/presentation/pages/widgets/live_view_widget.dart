@@ -530,6 +530,8 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                           !_isKeyboardOpen
                                       ? Column(
                                           mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             const SizedBox(height: 12),
                                             ViewerCountWidget(

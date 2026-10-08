@@ -76,7 +76,10 @@ class IncidentReportWidget extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
                   child: GestureDetector(
-                    onTap: onBackTap,
+                    onTap: () {
+                      capturedPhotos.clear();
+                      onBackTap?.call();
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
@@ -99,28 +102,32 @@ class IncidentReportWidget extends StatelessWidget {
                 ),
               ),
 
-            // Camera Frame
-            Container(
-              constraints: BoxConstraints(maxHeight: screenSize.height * 0.55),
-              width: double.infinity,
-              alignment: Alignment.topCenter,
-              child: cameraController != null && cameraController!.value.isInitialized
-                  ? Builder(
-                      builder: (context) {
-                        final double rawRatio = cameraController!.value.aspectRatio;
-                        final double displayRatio = rawRatio > 1 ? 1 / rawRatio : rawRatio;
-                        return AspectRatio(
-                          aspectRatio: displayRatio,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: CameraPreview(cameraController!),
-                          ),
-                        );
-                      }
-                    )
-                  : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
+            // Camera Frame — Flexible(loose) ให้ย่อตัวได้เมื่อพื้นที่ไม่พอ
+            // (เช่นมี thumbnail รูปที่ถ่ายแล้วเพิ่มแถวด้านล่าง) กัน overflow
+            // โดยยังคง cap 0.55×จอเหมือนเดิมตอนที่ว่าง
+            Flexible(
+              child: Container(
+                constraints: BoxConstraints(maxHeight: screenSize.height * 0.55),
+                width: double.infinity,
+                alignment: Alignment.topCenter,
+                child: cameraController != null && cameraController!.value.isInitialized
+                    ? Builder(
+                        builder: (context) {
+                          final double rawRatio = cameraController!.value.aspectRatio;
+                          final double displayRatio = rawRatio > 1 ? 1 / rawRatio : rawRatio;
+                          return AspectRatio(
+                            aspectRatio: displayRatio,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: CameraPreview(cameraController!),
+                            ),
+                          );
+                        }
+                      )
+                    : const Center(child: Icon(Icons.camera_alt, color: Colors.white38, size: 48)),
+              ),
             ),
-            
+
             // Spacer for Map Gap (This pushes tools to the very bottom)
             const Spacer(),
             
