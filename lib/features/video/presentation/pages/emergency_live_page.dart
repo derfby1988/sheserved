@@ -60,6 +60,7 @@ import '../../data/repositories/victim_repository.dart';
 import '../../models/triage_models.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:intl/intl.dart';
+import '../../services/emergency_incident_deep_link_service.dart';
 
 // Part files for logic
 part 'parts/emergency_reporting_logic.dart';
@@ -277,6 +278,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   bool _isDeadManLoading = false;
   bool _isDeadManCheckingIn = false;
 
+  // ✅ Phase 23: เหตุการณ์และภาพไอ่ที่ผู้รับ deep link อยากดู — บันทึกไว้ขณะ initState
+  // เพื่อ consumeIn _loadInitialData หลังจาก video data โหลดและ gallery พร้อม
+  String? _pendingSharedIncidentId;
+  String? _pendingSharedPhotoId;
+
   @override
   void initState() {
     super.initState();
@@ -296,6 +302,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _checkPermissions();
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
+    _consumePendingDeepLink(); // ✅ Phase 23: ตั้งค่า pending link ก่อน _loadInitialData
     _loadInitialData();
     _loadDeadManCheckinState();
     _loadDonationRequests(); // ✅ โหลดรายการคำร้องบริจาคที่แอคทีฟอยู่

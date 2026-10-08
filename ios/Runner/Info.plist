@@ -37,6 +37,16 @@
 	<string>แอปต้องการสิทธิ์ในการบันทึกภาพโปสเตอร์เชิญชวนลงในคลังรูปภาพของคุณ</string>
 
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.sheserved.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sheserved</string>
+			</array>
+		</dict>
 	</array>
 	<key>GIDClientID</key>
 	<string>1075504521633-qdega7q78umuo9mgmk8d17js1aj0dr1m.apps.googleusercontent.com</string>

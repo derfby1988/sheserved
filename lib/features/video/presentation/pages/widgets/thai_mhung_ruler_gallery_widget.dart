@@ -44,8 +44,8 @@ class ThaiMhungRulerGalleryWidget extends StatefulWidget {
   final String videoId;
   final double height;
   final bool canViewUnblurred;
-  final void Function(int index, String photoUrl)? onPhotoTap;
-  final void Function(int index, String photoUrl)? onPhotoChanged;
+  final void Function(int index, String photoUrl, String photoId)? onPhotoTap;
+  final void Function(int index, String photoUrl, String photoId)? onPhotoChanged;
   final void Function(ThaiMhungRulerPhoto photo)? onNewPhotoArrived;
 
   const ThaiMhungRulerGalleryWidget({
@@ -66,11 +66,13 @@ class ThaiMhungPhotoFocusResult {
   final int index;
   final String photoUrl;
   final bool exact;
+  final String photoId;
 
   const ThaiMhungPhotoFocusResult({
     required this.index,
     required this.photoUrl,
     required this.exact,
+    this.photoId = '',
   });
 }
 
@@ -435,6 +437,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
         index: currentIndex,
         photoUrl: photo.photoUrl,
         exact: true,
+        photoId: photo.id,
       );
     }
 
@@ -515,6 +518,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
       index: selectedIndex,
       photoUrl: photo.photoUrl,
       exact: exact,
+      photoId: photo.id,
     );
   }
 
@@ -530,6 +534,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
       index: index,
       photoUrl: photo.photoUrl,
       exact: false,
+      photoId: photo.id,
     );
   }
 
@@ -745,7 +750,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
             onSelectedItemChanged: (index) {
               setState(() => _currentIndex = index);
               if (widget.onPhotoChanged != null && _photos.isNotEmpty) {
-                 widget.onPhotoChanged!(index, _photos[index].photoUrl);
+                 widget.onPhotoChanged!(index, _photos[index].photoUrl, _photos[index].id);
               }
             },
             childDelegate: ListWheelChildBuilderDelegate(
@@ -769,7 +774,7 @@ class ThaiMhungRulerGalleryWidgetState extends State<ThaiMhungRulerGalleryWidget
                     }
                     if (isSelected) {
                       if (widget.onPhotoTap != null) {
-                        widget.onPhotoTap!(index, photo.photoUrl);
+                        widget.onPhotoTap!(index, photo.photoUrl, photo.id);
                       } else {
                         showLightbox(index);
                       }

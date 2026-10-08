@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
@@ -137,6 +139,7 @@ import 'features/community/find_buddies/presentation/pages/my_groups_page.dart';
 import 'features/community/find_buddies/presentation/pages/propose_sport_page.dart';
 import 'features/community/find_buddies/presentation/pages/review_proposed_sports_page.dart';
 import 'package:sheserved/features/sport_club/services/sport_club_deep_link_service.dart';
+import 'package:sheserved/features/video/services/emergency_incident_deep_link_service.dart';
 
 // เพิ่ม ScrollBehavior เพื่อรองรับ Mouse Dragging ในหน้า Web
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -215,8 +218,78 @@ void main() async {
   runApp(const ProviderScope(child: SheservedApp()));
 }
 
-class SheservedApp extends StatelessWidget {
+class SheservedApp extends StatefulWidget {
   const SheservedApp({super.key});
+
+  @override
+  State<SheservedApp> createState() => _SheservedAppState();
+}
+
+class _SheservedAppState extends State<SheservedApp> {
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  Future<void> _initDeepLinks() async {
+    _appLinks = AppLinks();
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        _handleIncomingUri(initialUri);
+      }
+    } catch (e) {
+      debugPrint('[DeepLink] Error getting initial link: $e');
+    }
+
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleIncomingUri(uri);
+    }, onError: (e) {
+      debugPrint('[DeepLink] Stream error: $e');
+    });
+  }
+
+  void _handleIncomingUri(Uri uri) {
+    debugPrint('[DeepLink] Incoming URI: $uri');
+    final rawUrl = uri.toString();
+
+    // 1. Emergency Incident Deep Link
+    final incidentData = EmergencyIncidentDeepLinkService.parseDeepLink(rawUrl);
+    if (incidentData != null) {
+      EmergencyIncidentDeepLinkService.storePendingDeepLink(incidentData);
+      final nav = NavigationService.navigatorKey.currentState;
+      if (nav != null) {
+        final queryPart = incidentData.photoId != null
+            ? '?src=share&photo=${Uri.encodeComponent(incidentData.photoId!)}'
+            : '?src=share';
+        nav.pushNamed(
+          '/emergency/incident/${Uri.encodeComponent(incidentData.videoId)}$queryPart',
+        );
+      }
+      return;
+    }
+
+    // 2. Sport Club Group Deep Link
+    final groupData = SportClubDeepLinkService.parseDeepLink(rawUrl);
+    if (groupData != null) {
+      SportClubDeepLinkService.storePendingDeepLink(groupData);
+      final nav = NavigationService.navigatorKey.currentState;
+      if (nav != null) {
+        nav.pushNamed('/sport-club/group/${groupData.groupId}');
+      }
+      return;
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -388,6 +461,20 @@ class SheservedApp extends StatelessWidget {
         '/kpi/refresh/history': (context) => const KpiRefreshHistoryPage(),
       },
       onGenerateRoute: (settings) {
+        // Handle Emergency Incident Deep Link
+        if (settings.name?.startsWith('/emergency/incident/') == true) {
+          final incidentLink = EmergencyIncidentDeepLinkService.parseDeepLink(
+            settings.name,
+          );
+          if (incidentLink != null) {
+            EmergencyIncidentDeepLinkService.storePendingDeepLink(incidentLink);
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => const EmergencyLivePage(),
+            );
+          }
+        }
+
         // Handle Sport Club Group Deep Link
         if (settings.name?.startsWith('/sport-club/group/') == true ||
             settings.name?.startsWith('/community/sport-club/group/') == true) {

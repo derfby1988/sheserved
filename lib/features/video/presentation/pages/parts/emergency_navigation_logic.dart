@@ -595,6 +595,12 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       _subscribeToPhotoBlurComplete();
       _subscribeToNewThaiMhungPhotos();
     }
+    // ✅ Phase 23: gallery พร้อมแล้ว — consume pending shared photo overlay
+    if (_pendingSharedIncidentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _triggerSharedPhotoOverlay();
+      });
+    }
   }
 
   /// Phase 6.12: รับ event เมื่อ background face blur เสร็จ → รีเฟรช gallery
@@ -2204,6 +2210,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     );
   }
 
+
   Future<void> _loadConfigFromDatabase() async {
     try {
       final config = await Supabase.instance.client
@@ -2214,5 +2221,99 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
         // อัปเดต AppConfig โค้ดกลาง
       }
     } catch (_) {}
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ✅ Phase 23: Recipient Flow (§23.4–§23.8)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// §23.4 – ดึง pending link จาก EmergencyIncidentDeepLinkService
+  /// (เรียกก่อน _loadInitialData ใน initState เพื่อให้ค่าพร้อมตอน consume)
+  ///
+  /// Guard §23.8 (fail-closed): หากผู้ใช้มีภารกิจ active หรือ responseId
+  /// ค้างอยู่ — ล้าง pending link ทิ้งแล้วกลับสู่โหมดปกติทันที
+  void _consumePendingDeepLink() {
+    final link = EmergencyIncidentDeepLinkService.consumePendingDeepLink();
+    if (link == null) return;
+
+    // Guard §23.8: มีภารกิจค้าง → fail-closed (ไม่รับ shared view)
+    if (_currentResponseId != null || _pendingMissionVideoId != null) {
+      debugPrint(
+        '[Phase23] Deep link ignored — active mission/response present',
+      );
+      return;
+    }
+
+    _pendingSharedIncidentId = link.videoId;
+    _pendingSharedPhotoId = link.photoId;
+    debugPrint(
+      '[Phase23] Pending deep link: videoId=${link.videoId}, photoId=${link.photoId}',
+    );
+
+    // หากหน้าเปิดโดยไม่มีวิดีโอ → สลับไปยังเหตุการณ์ในลิงก์
+    // (กรณีมีวิดีโออยู่แล้วจะ consume ใน _triggerSharedPhotoOverlay ตอน _loadInitialData เสร็จ)
+    if (_currentVideoId == null) {
+      _currentVideoId = link.videoId;
+    }
+  }
+
+  /// §23.5 – เรียกหลัง _loadInitialData โหลด video data และ gallery พร้อมแล้ว
+  /// ปรับตัว overlay ภาพ (ถ้ามี photoId) หรือแค่ scroll gallery ไปที่เหตุการณ์
+  ///
+  /// generation guard: ถ้า videoId เปลี่ยนระหว่างรอ — ทิ้ง pending ทิ้งเงียบ ๆ
+  Future<void> _triggerSharedPhotoOverlay() async {
+    final videoId = _pendingSharedIncidentId;
+    final photoId = _pendingSharedPhotoId;
+    if (videoId == null || _currentVideoId != videoId) {
+      _pendingSharedIncidentId = null;
+      _pendingSharedPhotoId = null;
+      return;
+    }
+
+    _pendingSharedIncidentId = null;
+    _pendingSharedPhotoId = null;
+
+    if (!mounted) return;
+
+    // §23.8 Guard: ตรวจ mission/report lock อีกครั้งก่อนแสดง overlay
+    if (_currentResponseId != null || _pendingMissionVideoId != null) {
+      debugPrint(
+        '[Phase23] Shared overlay suppressed — active mission/response',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'ไม่สามารถเปิดลิงก์แชร์ขณะมีภารกิจค้างอยู่',
+          ),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.black54,
+        ),
+      );
+      return;
+    }
+
+    if (photoId == null) {
+      // ไม่มี photoId → แค่แสดงเหตุการณ์ตามปกติ (วิดีโอโหลดแล้ว)
+      debugPrint('[Phase23] Shared incident view ready, no photo focus');
+      return;
+    }
+
+    // มี photoId → เปิด overlay ภาพผ่าน LiveViewWidgetState
+    debugPrint('[Phase23] Triggering photo overlay for photoId=$photoId');
+    final liveViewState = _liveViewKey.currentState;
+    if (liveViewState == null) {
+      debugPrint('[Phase23] LiveViewWidgetState not found — skipping overlay');
+      return;
+    }
+
+    // หา photo URL จาก gallery photos ที่โหลดไว้แล้ว (ไม่ fetch ซ้ำ)
+    final matchedPhoto = _thaiMhungPhotos.where((p) => p.id == photoId).firstOrNull;
+    final photoUrl = matchedPhoto?.url ?? '';
+    liveViewState.showOverlayPhoto(
+      photoId: photoId,
+      photoUrl: photoUrl.isNotEmpty
+          ? photoUrl
+          : ServiceLocator.instance.videoRepository.ensureFullUrl(''),
+    );
   }
 }

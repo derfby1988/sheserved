@@ -8,12 +8,13 @@ import 'video_player_widget.dart';
 import 'viewer_count_widget.dart';
 import 'action_buttons_widget.dart';
 import 'trending_panel_widget.dart';
-import 'thai_mhung_gallery_widget.dart';
 import 'thai_mhung_ruler_gallery_widget.dart';
 import '../../../models/video_models.dart';
 import 'package:chewie/chewie.dart';
-import 'like_trend_chart_widget.dart';
 import '../../../../../services/websocket_service.dart';
+import 'package:share_plus/share_plus.dart';
+import 'incident_share_button.dart';
+import '../../../services/emergency_incident_deep_link_service.dart';
 
 class LiveViewWidget extends StatefulWidget {
   final ChewieController? chewieController;
@@ -125,9 +126,54 @@ class LiveViewWidgetState extends State<LiveViewWidget>
   // สำหรับระบบ Overlay ภาพจากแกลลอรี่ลงบนวิดีโอ
   String? _selectedOverlayPhotoUrl;
   int? _selectedOverlayPhotoIndex;
+  String? _selectedOverlayPhotoId;
   int _overlayPhotoGeneration = 0;
   final GlobalKey<ThaiMhungRulerGalleryWidgetState> _galleryKey =
       GlobalKey<ThaiMhungRulerGalleryWidgetState>();
+  final GlobalKey _shareButtonKey = GlobalKey();
+
+  GlobalKey<ThaiMhungRulerGalleryWidgetState> get galleryKey => _galleryKey;
+  String? get selectedOverlayPhotoId => _selectedOverlayPhotoId;
+
+  /// ปิด overlay ภาพบนวิดีโอ คืนค่า state และเริ่มเล่นวิดีโอต่อ
+  void closeOverlay() {
+    if (_selectedOverlayPhotoUrl != null || _selectedOverlayPhotoId != null) {
+      _overlayPhotoGeneration++;
+      setState(() {
+        _selectedOverlayPhotoUrl = null;
+        _selectedOverlayPhotoIndex = null;
+        _selectedOverlayPhotoId = null;
+      });
+      widget.onOverlayChanged?.call(false);
+      try {
+        widget.chewieController?.videoPlayerController.play();
+      } catch (_) {}
+    }
+  }
+
+  void _handleShareIncident() {
+    if (widget.currentVideoId == null) return;
+    final shareUrl = EmergencyIncidentDeepLinkService.buildIncidentShareUrl(
+      widget.currentVideoId!,
+      photoId: _selectedOverlayPhotoId,
+    );
+
+    final box =
+        _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final origin =
+        box != null ? (box.localToGlobal(Offset.zero) & box.size) : null;
+
+    final shareText = _selectedOverlayPhotoId != null
+        ? 'ดูภาพเหตุการณ์นี้บน SheServed: $shareUrl'
+        : 'ดูเหตุการณ์นี้บน SheServed: $shareUrl';
+
+    SharePlus.instance.share(
+      ShareParams(
+        text: shareText,
+        sharePositionOrigin: origin,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -152,10 +198,11 @@ class LiveViewWidgetState extends State<LiveViewWidget>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentVideoId != widget.currentVideoId) {
       _overlayPhotoGeneration++;
-      if (_selectedOverlayPhotoUrl != null) {
+      if (_selectedOverlayPhotoUrl != null || _selectedOverlayPhotoId != null) {
         setState(() {
           _selectedOverlayPhotoUrl = null;
           _selectedOverlayPhotoIndex = null;
+          _selectedOverlayPhotoId = null;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           widget.onOverlayChanged?.call(false);
@@ -186,6 +233,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
     setState(() {
       _selectedOverlayPhotoUrl = photoUrl;
       _selectedOverlayPhotoIndex = null;
+      _selectedOverlayPhotoId = photoId;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onOverlayChanged?.call(true);
@@ -223,6 +271,8 @@ class LiveViewWidgetState extends State<LiveViewWidget>
     setState(() {
       _selectedOverlayPhotoUrl = focus.photoUrl;
       _selectedOverlayPhotoIndex = focus.index;
+      _selectedOverlayPhotoId =
+          focus.photoId.isNotEmpty ? focus.photoId : photoId;
     });
     if (!focus.exact) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -382,21 +432,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                                   0;
                                               if (currentIndex == 0) {
                                                 // ถ้าอยู่รูปแรกแล้วปัดขวา -> ปิด Overlay
-                                                setState(() {
-                                                  _selectedOverlayPhotoUrl =
-                                                      null;
-                                                  _selectedOverlayPhotoIndex =
-                                                      null;
-                                                });
-                                                widget.onOverlayChanged?.call(
-                                                  false,
-                                                );
-                                                try {
-                                                  widget
-                                                      .chewieController
-                                                      ?.videoPlayerController
-                                                      .play();
-                                                } catch (_) {}
+                                                closeOverlay();
                                               } else {
                                                 _galleryKey.currentState
                                                     ?.animateToIndex(
@@ -469,23 +505,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                                                         top: 16,
                                                         right: 16,
                                                         child: GestureDetector(
-                                                          onTap: () {
-                                                            setState(() {
-                                                              _selectedOverlayPhotoUrl =
-                                                                  null;
-                                                              _selectedOverlayPhotoIndex =
-                                                                  null;
-                                                            });
-                                                            widget
-                                                                .onOverlayChanged
-                                                                ?.call(false);
-                                                            try {
-                                                              widget
-                                                                  .chewieController
-                                                                  ?.videoPlayerController
-                                                                  .play();
-                                                            } catch (_) {}
-                                                          },
+                                                          onTap: closeOverlay,
                                                           child: Container(
                                                             decoration:
                                                                 const BoxDecoration(
@@ -575,32 +595,58 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                           if (widget.currentVideoId != null) ...[
                             const SizedBox(width: 8),
                             Expanded(
-                              child: ThaiMhungRulerGalleryWidget(
-                                key: _galleryKey,
-                                videoId: widget.currentVideoId!,
-                                height:
-                                    videoHeight, // ความสูงเท่ากับ Video Player พอดี
-                                canViewUnblurred: widget.canViewUnblurred,
-                                onPhotoTap: (index, photoUrl) {
-                                  _overlayPhotoGeneration++;
-                                  _pauseVideoForOverlay(); // ✅ §22.2: การ์ดหยุดขณะ overlay เปิด
-                                  setState(() {
-                                    _selectedOverlayPhotoUrl = photoUrl;
-                                    _selectedOverlayPhotoIndex = index;
-                                  });
-                                  widget.onOverlayChanged?.call(true);
-                                },
-                                onPhotoChanged: (index, photoUrl) {
-                                  // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
-                                  if (_selectedOverlayPhotoUrl != null) {
-                                    _overlayPhotoGeneration++;
-                                    setState(() {
-                                      _selectedOverlayPhotoUrl = photoUrl;
-                                      _selectedOverlayPhotoIndex = index;
-                                    });
-                                  }
-                                },
-                                onNewPhotoArrived: widget.onNewPhotoArrived,
+                              child: SizedBox(
+                                height: videoHeight,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (videoHeight - 40 >= 60) ...[
+                                      IncidentShareButton(
+                                        key: _shareButtonKey,
+                                        isPhotoFocused:
+                                            _selectedOverlayPhotoUrl != null,
+                                        onPressed: _handleShareIncident,
+                                      ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    Expanded(
+                                      child: ThaiMhungRulerGalleryWidget(
+                                        key: _galleryKey,
+                                        videoId: widget.currentVideoId!,
+                                        height: videoHeight -
+                                            (videoHeight - 40 >= 60 ? 40 : 0),
+                                        canViewUnblurred:
+                                            widget.canViewUnblurred,
+                                        onPhotoTap: (index, photoUrl, photoId) {
+                                          _overlayPhotoGeneration++;
+                                          _pauseVideoForOverlay(); // ✅ §22.2: การ์ดหยุดขณะ overlay เปิด
+                                          setState(() {
+                                            _selectedOverlayPhotoUrl = photoUrl;
+                                            _selectedOverlayPhotoIndex = index;
+                                            _selectedOverlayPhotoId = photoId;
+                                          });
+                                          widget.onOverlayChanged?.call(true);
+                                        },
+                                        onPhotoChanged:
+                                            (index, photoUrl, photoId) {
+                                          // สลับภาพ Overlay อัตโนมัติหากหน้าจอ Overlay กำลังทำงานอยู่
+                                          if (_selectedOverlayPhotoUrl != null) {
+                                            _overlayPhotoGeneration++;
+                                            setState(() {
+                                              _selectedOverlayPhotoUrl =
+                                                  photoUrl;
+                                              _selectedOverlayPhotoIndex = index;
+                                              _selectedOverlayPhotoId = photoId;
+                                            });
+                                          }
+                                        },
+                                        onNewPhotoArrived:
+                                            widget.onNewPhotoArrived,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                             // สำรองพื้นที่ด้านขวา เพื่อไม่ให้ Trending Panel มาบัง Gallery

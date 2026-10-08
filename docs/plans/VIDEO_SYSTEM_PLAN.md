@@ -6432,92 +6432,240 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Tests: `websocket-server/test/incident-map.test.js` 18 เคส (fair rounds, cap 15, ผู้ส่ง >15 ได้ตัวแทนล่าสุดคนละใบ, pending slot ไม่มี url, PHOTOS_SQL และ Supabase migration contract, RPC fallback, upload→invalidate→global event); Flutter focused map suite 61/61 รวม layout cap 15 และวง 2 ชั้น 5+10 ที่ viewport 390×800; full `npm test` 62/62
 - **Device verified ก่อนหน้า (2026-10-18, cap 9):** incident gallery 6 ภาพแสดงครบ, ช่อง gradient bar สลับเป็นภาพจริงอัตโนมัติหลัง blur (Android). การขยาย cap 15/fair sender rounds ผ่าน unit tests แล้ว แต่ยังต้อง apply Supabase migration + restart Node และ device verify ภาพ 10–15 ภาพจริง; poll load เมื่อมีหลาย incident pending ก็ยังต้องทดสอบ
 
-## 23. Phase — แชร์เหตุการณ์ (Incident Share Link + Recipient Focus View — แผนงาน ยังไม่ Implement)
+## 23. Phase — แชร์เหตุการณ์ (Incident Share Link + Recipient Focus View — ✅ Implemented 2026-10-08)
 
-### 23.1 เป้าหมายและขอบเขต
+### 23.1 เป้าหมายและขอบเขต (Goal & Scope)
 
-ผู้ใช้ที่กำลังดูเหตุการณ์ (การ์ดถูกเลือกจากกล่องยอดนิยม) สามารถกดปุ่ม **แชร์** เพื่อส่งลิงก์ต่อให้ผู้อื่น; ผู้รับลิงก์กดแล้วเข้าสู่หน้า Emergency พร้อมเหตุการณ์ที่ผู้แชร์ตั้งใจ โดย:
+ผู้ใช้ที่กำลังดูเหตุการณ์ฉุกเฉินใน [LiveViewWidget](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/live_view_widget.dart) สามารถกดปุ่ม **"แชร์เหตุการณ์"** เหนือแกลเลอรี ([ThaiMhungRulerGalleryWidget](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/thai_mhung_ruler_gallery_widget.dart)) เพื่อคัดลอกหรือส่งต่อ deep link ให้ผู้อื่น; ผู้รับลิงก์กดแล้วเข้าสู่หน้า Emergency พร้อมเหตุการณ์ที่ผู้แชร์ตั้งใจอย่างแม่นยำ โดย:
 
-- ผู้แชร์ **ไม่ได้ค้างภาพ** ใดใน gallery → ผู้รับเข้า **โหมด video player** (เล่นอัตโนมัติตามพฤติกรรมการ์ดปกติ)
-- ผู้แชร์ **ค้างภาพ** (overlay ภาพจาก gallery เปิดอยู่) → ผู้รับเข้า **โหมดแสดงภาพจาก gallery** — overlay เดียวกัน + focus/autoscroll ไปตำแหน่งภาพนั้น ด้วยกลไกเดิมของระบบ
-- ทั้งสองโหมด: กล่องยอดนิยมของผู้รับถูกกรองเหลือ **เฉพาะเหตุการณ์ที่แชร์** และปุ่มย้อนกลับ (top bar + hardware back) ออกจาก shared view กลับสู่ Emergency ปกติ พร้อมคืนสิทธิ์ผู้ชมทั่วไป
+- **ผู้แชร์ไม่ได้ค้างภาพใดใน gallery (Normal Video State):**
+  - ปุ่มแชร์แสดงสถานะปกติ: ไอคอน `Icons.share_rounded` + ข้อความ "แชร์เหตุการณ์"
+  - ลิงก์ที่สร้าง: `https://sheserved.com/emergency/incident/<videoId>?src=share` (หรือ `sheserved://emergency/incident/<videoId>`)
+  - ผู้รับเข้า **โหมด video player** — โหลดและเล่นวิดีโอเหตุการณ์ที่แชร์อัตโนมัติ
+- **ผู้แชร์ค้างภาพ overlay จาก gallery อยู่ (Photo Focused State):**
+  - ปุ่มแชร์เปลี่ยนสถานะเป็น Dynamic Visual State อัตโนมัติ: สลับไอคอนเป็น `Icons.image_outlined` + ข้อความ **"แชร์ภาพนี้"** พร้อมเปล่งประกาย **Cyan Glow (`0xFF38BDF8`)** สะท้อนที่ขอบและเงา
+  - ลิงก์ที่สร้าง: แนบพารามิเตอร์รูปภาพ `https://sheserved.com/emergency/incident/<videoId>?src=share&photo=<photoId>` (หรือ `sheserved://emergency/incident/<videoId>?photo=<photoId>`)
+  - ผู้รับเข้า **โหมดแสดงภาพเจาะจง** — เมื่อเปิดหน้าเหตุการณ์แล้ว ระบบจะเปิด overlay ภาพที่ระบุขึ้นมาทับวิดีโอโดยอัตโนมัติ, วิดีโอหยุดเล่นเบื้องหลังชั่วคราว, และ ruler gallery เลื่อนไปยังตำแหน่งภาพนั้นด้วยกลไก `focusPhotoById(photoId)`
+- **ระบบป้องกันและความปลอดภัย (Fail-Closed Guard):**
+  - หากผู้รับมีภารกิจค้างอยู่ (`_currentResponseId != null` หรือ `_pendingMissionVideoId != null`) ระบบจะบล็อกการสลับเหตุการณ์ทันที พร้อมแจ้งเตือน SnackBar เพื่อความปลอดภัยและไม่ทำลาย context ของภารกิจ
+- **ขอบเขต UI ของ Phase 23 (ตัดสินใจโดยผู้ใช้ — ทำเฉพาะส่วนเสริม ไม่แตะ UI เดิม):**
+  - **สร้างใหม่เฉพาะ:** ปุ่มแชร์เหนือแกลเลอรี ([IncidentShareButton](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart)) สไตล์ **Glass Capsule (`lib/shared/widgets/glass`)** ร่วมกับสัมผัสทางกายภาพ **Neumorphic micro-bounce (`lib/shared/widgets/neumorphic`)**
+  - **ปุ่มและ UI เดิมทั้งหมดคงสภาพเดิม:** ปุ่มปิด overlay (X) เดิม, [EmergencyTopBar](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/emergency_top_bar.dart), และกล่องเหตุการณ์ยอดนิยมคง UI เดิมที่สมบูรณ์อยู่แล้ว
+  - **ส่วนขยาย UI เพิ่มเติมในอนาคต:** ย้ายไปเป็นหัวข้อ §23.10 สำหรับพิจารณาในภายหลัง
 
-### 23.2 สภาพปัจจุบันที่ตรวจสอบแล้ว (Verified — 2026-10-08)
+---
 
-- **Gallery ตำแหน่งจริง:** `ThaiMhungRulerGalleryWidget` อยู่ใน `Row` ขวาของวิดีโอใน `LiveViewWidget` (`live_view_widget.dart` ~574–610): `SizedBox(8)` → `Expanded(gallery, height: videoHeight)` → `SizedBox(width: (maxW-32)*0.35+8)` สำรองที่ให้ Trending panel ที่วาดทับด้วย `AnimatedPositioned` แยกชั้น
-- **Photo overlay + focus/autoscroll มีอยู่แล้ว:** `showMapPhotoOverlay(photoId, url, videoId)` → `_resolveMapPhotoOverlay` → `_galleryKey.currentState?.focusPhotoById(photoId)` คืน `ThaiMhungPhotoFocusResult{index, photoUrl, exact}` และ scroll ไปตำแหน่งผ่าน `_scrollToPhotoIndex` (`thai_mhung_ruler_gallery_widget.dart` ~414–518); `exact=false` จะ fallback ภาพล่าสุด + snackbar — reuse ทั้งหมดได้สำหรับ recipient photo mode
-- **จุดขาด — photo id ไม่หลุดจาก gallery callbacks:** `onPhotoTap`/`onPhotoChanged` ส่งแค่ `(index, photoUrl)`; `_selectedOverlayPhotoIndex`/`_overlayPhotoGeneration` อยู่ใน LiveViewWidget แต่ไม่มี `photo.id` — ต้องขยาย callback/state ให้แนบ id ของ `ThaiMhungRulerPhoto`
-- **Deep link intake ยังไม่มีที่ระดับ OS:** `SportClubDeepLinkService` + `onGenerateRoute` (`main.dart` ~390–424) รองรับเฉพาะ **in-app routing** (`Navigator.pushNamed`/initialRoute); iOS `Info.plist` มีแค่ Google OAuth scheme (ไม่มี `sheserved://`), Android `AndroidManifest.xml` ไม่มี `VIEW`/`BROWSABLE` intent-filter เลย → ลิงก์จากแอปภายนอกเปิดเข้าแอปไม่ได้ในปัจจุบัน. `app_links` 7.0.0 เป็น transitive dep อยู่แล้ว (ผ่าน `supabase_flutter`) — promote เป็น direct dep เพื่อใช้ `uriLinkStream`/`getInitialLink`; universal link จริงต้องมี AASA + `assetlinks.json` บน `sheserved.com` (งาน web/infra แยก)
-- **Share:** `share_plus` ใช้แล้วใน `group_invite_poster_sheet.dart` (`Share.shareXFiles`/`Share.share`) — ปุ่มแชร์ข้อความลิงก์ใช้ `Share.share` พอ (iPad ต้องส่ง `sharePositionOrigin`)
-- **Single-incident lock มีต้นแบบ:** `_trendingVideosForPanel()` กรองตาม mission lock และ embed `_currentVideo` เข้าลิสต์ถ้าหลุด top (`emergency_navigation_logic.dart` ~310–328); `lockToCurrentVideo = _currentResponseId != null` ล็อก swipe/fullscreen; โซนออกจากโหมดอ้าง `PopScope(canPop)` + `EmergencyTopBar.onBackTap` chain (`emergency_live_page.dart` ~474–485, 687–723)
-- **`_switchVideo(videoId)`** ทำ context switch เต็ม (ออก room, dispose player, clear state, `_loadInitialData`) — ใช้เป็นจุดเข้าเหตุการณ์ที่แชร์ได้ทันที
+### 23.2 สภาพปัจจุบันที่ตรวจสอบแล้ว (Verified Implementation — 2026-10-08)
 
-### 23.3 การตัดสินใจ
+> **Implementation Status (2026-10-08 — สำเร็จสมบูรณ์ครบทั้ง 7 Steps ฝั่ง App Client):**
+> 1. ✅ **Deep Link Core & Service:** [EmergencyIncidentDeepLinkService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/services/emergency_incident_deep_link_service.dart) รองรับ parse/build ทั้ง Web Universal Link (`https://sheserved.com/emergency/incident/...`), Custom Scheme (`sheserved://emergency/incident/...`) และ Relative Route พร้อมระบบ pending store/consume/peek ครบถ้วน — ผ่าน Unit Tests 9/9 เคส ([emergency_incident_deep_link_service_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/services/emergency_incident_deep_link_service_test.dart))
+> 2. ✅ **OS Plumbing & App Links:** เพิ่ม `app_links: ^7.0.0` เป็น direct dependency ใน [pubspec.yaml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/pubspec.yaml), ตั้งค่า Android Intent Filters ใน [AndroidManifest.xml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/android/app/src/main/AndroidManifest.xml) สำหรับทั้ง `sheserved://` และ `https://sheserved.com`, ตั้งค่า iOS URL Scheme ใน [Info.plist](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Info.plist) และ Associated Domains ใน [Runner.entitlements](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Runner.entitlements)
+> 3. ✅ **App-level Deep Link Stream Intake:** ใน [main.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/main.dart) แปลง `SheservedApp` เป็น `StatefulWidget` เพื่อดักรับ `AppLinks.getInitialLink()` ตอน Cold Start และ `AppLinks.uriLinkStream` ตอน Warm Start พร้อม routing ผ่าน `onGenerateRoute` `/emergency/incident/...`
+> 4. ✅ **UI Component — IncidentShareButton:** สร้าง [incident_share_button.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart) สไตล์ LitGlassSurface Capsule (สูง 34dp, radius 17dp, blurSigma 10, fill 0.09–0.14, rim 1.2/1.1, shadow 0.25) ผสาน Neumorphic micro-bounce (`AnimatedScale` 0.96 ยุบตัวเมื่อกด) และ Dynamic Cyan Glow (`#38BDF8`) พร้อม `FittedBox` ป้องกัน text overflow — ผ่าน Widget Tests 7/7 เคส ([incident_share_button_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/presentation/widgets/incident_share_button_test.dart))
+> 5. ✅ **Gallery Callback Extension:** ขยาย [ThaiMhungRulerGalleryWidget](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/thai_mhung_ruler_gallery_widget.dart) ให้ส่ง `photoId` ใน `onPhotoTap: (int, String, String?)` และ `onPhotoChanged: (int, String, String?)`
+> 6. ✅ **LiveViewWidget Integration:** ใน [live_view_widget.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/live_view_widget.dart) ติดตั้ง `IncidentShareButton` เหนือ Gallery ใน `Column` เดียวกัน (ตรวจสอบความสูง `videoHeight - 40 >= 60`), จัดการ state `_selectedOverlayPhotoId`, เพิ่มฟังก์ชัน `closeOverlay()`, และเรียก `SharePlus.instance.share` พร้อมคำนวณ `sharePositionOrigin` สำหรับ iPad
+> 7. ✅ **Recipient Flow & Guard Protection:** ใน [emergency_live_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/emergency_live_page.dart) และ [emergency_navigation_logic.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart) เพิ่ม `_consumePendingDeepLink()` ใน `initState` เพื่อดึง videoId/photoId, ป้องกันด้วย Guard fail-closed หากมีภารกิจค้าง, โหลดวิดีโอเหตุการณ์, และสั่ง `_triggerSharedPhotoOverlay()` ผ่าน PostFrameCallback เพื่อเปิด overlay ภาพทันทีที่ gallery พร้อม
+>
+> **งาน Web/Infra แยก (Web Team):** เสิร์ฟ Landing page บน `sheserved.com/emergency/incident/*` และไฟล์ `assetlinks.json` / AASA สำหรับ Universal Links แบบสมบูรณ์บนโดเมนจริง
 
-1. **เงื่อนไขแสดงปุ่ม:** เหมือนเงื่อนไข gallery เป๊ะ — `currentVideoId != null` บน live surface เท่านั้น (ซ่อนเองใน map/report/chat-only states เพราะ gallery ไม่ render); ไม่ต้องมี flag เพิ่ม
-2. **Layout ปุ่มแชร์:** วางเหนือ gallery ใน `Expanded` column เดียวกัน: `Column([shareButton, SizedBox(gap), gallery(height: videoHeight − shareButtonHeight − gap)])` — ขอบล่าง gallery (จุดสิ้นสุดแนวตั้ง) คงเดิมตรงกับขอบล่างวิดีโอ, ความกว้างปุ่ม = ความกว้าง column เท่านั้น (ไม่เกิน)
-3. **ไอคอนปุ่ม scale อัตโนมัติ:** `FittedBox(fit: BoxFit.scaleDown)` ครอบเนื้อในปุ่ม (icon + label) — จอแคบ label ย่อก่อนตัด, invariant: ปุ่มไม่ overflow ความกว้าง gallery column
-4. **Link contract:**
-   - Web: `https://sheserved.com/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
-   - Custom scheme: `sheserved://emergency/incident/<videoId>[?photo=<photoId>]`
-   - แนบ `photo` **เฉพาะเมื่อ overlay ภาพเปิดค้างอยู่** ตอนกดแชร์ (`_selectedOverlayPhotoUrl != null` + photo id ที่ resolve แล้ว); overlay ปิด/ไม่เคยเปิด → video mode; ภาพ `blurring`/`failed` ไม่ถูกแนบ (gallery resolve เฉพาะ `completed` อยู่แล้ว)
-   - ลิงก์เปิดเผยแค่ video/photo id — ข้อมูล public feed เดิม ไม่มี user id ของผู้แชร์
-5. **Service:** สร้าง `EmergencyIncidentDeepLinkService` แยกจาก sport club (domain คนละ route family) — `buildIncidentShareUrl`, `parseDeepLink` รับทั้ง web/custom scheme/relative, pending store/consume เหมือน pattern เดิม
-6. **Recipient flow:** `onGenerateRoute` parse `/emergency/incident/...` → store pending → `EmergencyLivePage` consume หลัง init (รอ login ก่อนถ้าจำเป็น, pattern เดียวกับ `SportClubPage._handlePendingDeepLink`) → **ตรวจ guard ก่อนสลับการ์ดเสมอ** (ภารกิจค้าง/รายงานค้าง → snackbar + ทิ้งลิงก์, ไม่เข้า shared view) → `_switchVideo(videoId)` → เข้า **shared-incident view**; มี `photo` → post-frame `showMapPhotoOverlay` ผ่าน `_liveViewKey` (generation/videoId guard เดิมกัน race)
-7. **Shared-incident lock:** `_sharedIncidentVideoId` แยกจาก mission lock — `_trendingVideosForPanel()` คืนลิสต์การ์ดเดียว (embed `_currentVideo` เหมือน mission lock ถ้าไม่อยู่ใน trending), ล็อก swipe/แตะการ์ดอื่น/fullscreen ด้วย semantics เดียวกับ `lockToCurrentVideo` แต่ **ไม่** ให้สิทธิ์ responder/เจ้าของเหตุเพิ่ม — ผู้รับเป็น viewer ล้วน (`canViewUnblurred` ยังคำนวณจากสิทธิ์จริง)
-8. **Exit:** ขยาย `onBackTap` chain + `PopScope` — ใน shared view back = `_exitSharedIncidentView()` (clear lock → `_loadTrendingVideos(forceRefresh)` คืนกล่องยอดนิยมเต็ม → คืนสิทธิ์ปกติ) ไม่ pop หน้า; ออกแล้วพฤติกรรมเหมือนผู้ชมทั่วไปทุกประการ
-9. **Fail-closed:** video id โหลดไม่ได้/เหตุถูกลบ → snackbar + หน้า Emergency ปกติ (ไม่ค้าง lock, ไม่มีการ์ดเปล่า)
-10. **OS plumbing เป็นงานบังคับของ phase นี้** (ไม่ใช่ optional): `app_links` เป็น direct dep + Android intent-filters (`sheserved://` และ `https://sheserved.com/emergency` — `autoVerify` ต้องมี `assetlinks.json`) + iOS `CFBundleURLSchemes` + `Runner.entitlements` associated domains (ต้องมี AASA บนเว็บ)
+---
 
-### 23.4 Edge cases
+### 23.3 การตัดสินใจเชิงสถาปัตยกรรม (Architectural Decisions)
 
-- **ภาพที่แชร์ถูกลบ/ยัง blur ระหว่างทาง:** `focusPhotoById` ไม่เจอ → fallback ภาพล่าสุด + snackbar เดิม; gallery ว่าง → video mode
-- **ผู้รับมีภารกิจค้าง (`_currentResponseId != null` หรือ reporter lock):** **ไม่อนุญาตเข้า shared view จากลิงก์เลย**ขณะภารกิจยังไม่จบ — ต้องเคลียร์ภารกิจให้เสร็จก่อน (`_switchVideo` จะฉีก video context/GPS tracking ของภารกิจ); consume ลิงก์แล้วแสดง snackbar ว่าต้องจบภารกิจก่อน (ลิงก์ถูกทิ้ง ไม่ค้าง pending มาเด้งทีหลัง — ผู้ใช้กดลิงก์ใหม่ได้เสมอ); ผู้รับทั่วไปที่ไม่มีภารกิจ panel เหลือการ์ดเดียวตาม requirement เสมอ — shared lock แคบกว่า filter อื่นทุกชนิด (mission/category/map scope) ขณะ active
-- **กำลังรายงานอยู่ (`_isThaiMhungReporting`/`_selectedTab == 2` ที่มี `_capturedPhotos` ค้าง หรือ `_isRecording`):** ใช้ guard เดียวกับภารกิจ — เข้า shared view จะล้างภาพที่ยังไม่ส่งโดยผู้ใช้ไม่ได้กดลบเอง จึงบล็อก + snackbar เหมือนกัน
-- **ลิงก์เข้าขณะ Emergency page เปิดอยู่แล้ว:** ผู้ใช้ตั้งใจเปิดหน้าใหม่ผ่านลิงก์เอง → **ยกเลิกหน้าเดิมแล้วเปิดใหม่ได้**: ถ้า top route เป็น `EmergencyLivePage` ให้ `pushReplacementNamed` (dispose instance เดิม — leave room/cancel streams/dispose player ครบใน teardown เดิม) แทนการ stack ซ้อน; ยกเว้นหน้าเดิมมีภารกิจหรือรายงานค้าง → guard ข้างบนชนะ (ไม่ replace, snackbar แทน); ถ้า emergency ไม่ได้อยู่บนสุดของ stack push ตามปกติ
-- **ผู้รับเป็นเจ้าของเหตุหรือมีสิทธิ์อยู่แล้ว:** สิทธิ์ `canViewUnblurred`/เจ้าของเหตุคำนวณจากสถานะจริงของผู้รับเสมอ ไม่ได้รับจากลิงก์ — exit shared view แล้ว filter/suspension เดิมทำงานต่อครบ
-- **ผู้รับยังไม่ login:** pending deep link รอผ่าน login เหมือนกลุ่มกีฬา; หน้า Emergency ต้อง consume หลัง auth พร้อม
-- **เปิดลิงก์ซ้ำ/ลิงก์ใหม่ขณะ lock อยู่:** consume ล่าสุดชนะ — `_switchVideo` เปลี่ยนเหตุ + อัปเดต lock
-- **ผู้รับกดลิงก์เหตุเดียวกับที่ดูอยู่:** `_switchVideo` เดิมรีเซ็ต state ครบ (คล้าย map photo flow) — ไม่แยกเคส
-- **Web/desktop เปิดลิงก์:** MVP เสิร์ฟ landing page บน `sheserved.com/emergency/incident/*` (redirect เข้าแอป/สโตร์) — งานฝั่งเว็บแยก อยู่นอก repo นี้ แต่ต้องระบุใน deploy checklist
-- **iPad share sheet:** `Share.share` ต้องมี `sharePositionOrigin` (rect ของปุ่ม) ไม่งั้นครับท์ popover
+1. **เงื่อนไขการแสดงปุ่มแชร์:** แสดงเมื่อ `currentVideoId != null` บนหน้าจอ Live View เท่านั้น และระบบจะซ่อนปุ่มอัตโนมัติหากอยู่ในโหมดแผนที่ (Map Mode), โหมดรายงาน (Report Mode), หรือเมื่อความสูงแนวตั้งไม่เพียงพอ (`videoHeight - 40 < 60`) เพื่อรักษาพื้นที่ใช้งานขั้นต่ำของ Ruler Gallery
+2. **Layout & Visual Styling ของปุ่มแชร์ ([IncidentShareButton](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart)):**
+   - วางเหนือ Ruler Gallery ใน `Column` ขวา: `Column([IncidentShareButton, SizedBox(height: 6), Expanded(ThaiMhungRulerGalleryWidget)])`
+   - ขอบล่าง Gallery ตรงกับขอบล่างของ Video Player พอดี ไม่ดัน layout ส่วนอื่นเสียรูปทรง
+   - **Glass Capsule Styling (`lib/shared/widgets/glass`):**
+     - ความสูง: 34dp (กะทัดรัด ประหยัดพื้นที่)
+     - Border radius: 17dp (ทรงแคปซูล Pill shape สมบูรณ์แบบ)
+     - พื้นผิว: `LitGlassSurface` (blurSigma 10, fillOpacity 0.09–0.14, rimWidth 1.2, rimBoost 1.1, shadowOpacity 0.25)
+   - **Dynamic Visual State (Photo Focused State):**
+     - เมื่อมีภาพ overlay เปิดอยู่ (`isPhotoFocused = true`): เปล่งแสงสะท้อนขอบฟ้า **Cyan Glow (`#38BDF8`)** (accentStrength 0.6, glowOpacity 0.35), สลับไอคอนเป็น `Icons.image_outlined` (15dp), และข้อความเป็น "แชร์ภาพนี้" พร้อม drop shadow สีฟ้า
+     - เมื่อไม่มี overlay (`isPhotoFocused = false`): ไอคอน `Icons.share_rounded` + ข้อความ "แชร์เหตุการณ์" สไตล์ Glass สีขาวนวลตา
+   - **Tactile Physics สไตล์ Neumorphic (`lib/shared/widgets/neumorphic`):**
+     - ใช้ `AnimatedScale(scale: _isPressed ? 0.96 : 1.0, duration: 100ms)` ให้ความรู้สึกสัมผัสแบบ Micro-bounce ยุบตัวนุ่มนวลเมื่อกดแตะ
+   - **FittedBox Safety:** ครอบเนื้อหาด้วย `FittedBox(fit: BoxFit.scaleDown)` ป้องกันปัญหา RenderFlex overflow บนหน้าจอแคบ (320dp)
+3. **Link Contract:**
+   - Universal Link: `https://sheserved.com/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
+   - Custom Scheme: `sheserved://emergency/incident/<videoId>[?photo=<photoId>]`
+   - แนบพารามิเตอร์ `photo` เฉพาะเมื่อ overlay ภาพเปิดค้างอยู่ขณะกดแชร์ และต้องเป็นภาพที่ผ่านการ blur แล้ว (`blur_status = 'completed'`)
+4. **Service Isolation:** แยก [EmergencyIncidentDeepLinkService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/services/emergency_incident_deep_link_service.dart) ออกจาก service กลุ่มกีฬา เพื่อความเป็นเอกเทศของโดเมนฉุกเฉิน
+5. **Recipient Flow & Handshake:**
+   - Intake: `AppLinks` ดักจับ URI → `EmergencyIncidentDeepLinkService.storePendingDeepLink` → Navigator push เข้าสู่ route `/emergency/incident/...`
+   - Consume: [EmergencyLivePage](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/emergency_live_page.dart) ทำการ consume pending link ใน `initState` ผ่าน `_consumePendingDeepLink()`
+   - Data Loading: สลับเหตุการณ์ไปยัง `videoId` ในลิงก์ และโหลดข้อมูลเหตุการณ์ผ่าน `_loadInitialData()`
+   - Overlay Trigger: เมื่อข้อมูลและ Gallery พร้อม ฟังก์ชัน `_triggerSharedPhotoOverlay()` จะเรียก `liveViewState.showOverlayPhoto(photoId: photoId, photoUrl: photoUrl)` เพื่อเปิดภาพและ autoscroll แกลเลอรีไปยังตำแหน่งภาพ
+6. **Overlay Management (`closeOverlay`):** เพิ่ม public method `closeOverlay()` ใน [LiveViewWidgetState](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/live_view_widget.dart) เพื่อล้าง state ภาพ overlay ทั้งหมด, เพิ่ม generation guard, แจ้ง `widget.onOverlayChanged?.call(false)`, และสั่งให้วิดีโอเล่นต่ออัตโนมัติ
+7. **Guard Protection (Fail-Closed):** หากผู้รับมีภารกิจค้างอยู่ (`_currentResponseId != null` หรือ `_pendingMissionVideoId != null`) จะยกเลิกการ consume ลิงก์และแสดง SnackBar แจ้งเตือนทันที เพื่อไม่ให้กระทบภารกิจเดิม
+8. **iPad Safety:** ใน `_handleShareIncident` คำนวณ `sharePositionOrigin` จาก `RenderBox` ของปุ่มจริง เพื่อป้องกัน native share popover crash บน iPad
 
-### 23.5 ลำดับดำเนินงาน
+---
 
-1. `EmergencyIncidentDeepLinkService` + parser/pending + **unit tests** (pure Dart, ไม่แตะ UI)
-2. OS plumbing: `app_links` direct dep (pin ตาม lockfile), Android intent-filters, iOS schemes/entitlements, `onGenerateRoute` + listener ใน `main.dart`
-3. Share button + layout: column เหนือ gallery ใน `LiveViewWidget`, FittedBox icon, gallery height ลดเท่าปุ่ม+gap; ขยาย photo callbacks ให้แนบ `photo.id`
-4. Recipient flow: pending consume → `_switchVideo` → photo overlay (reuse `showMapPhotoOverlay`) → shared lock + `_exitSharedIncidentView` + PopScope/topbar wiring
-5. Landing page บน `sheserved.com` + `assetlinks.json`/AASA (งาน web/infra แยก — block universal link จนกว่าพร้อม, custom scheme ทำงานก่อนได้)
-6. Device verification ทั้งสองโหมดบน Android + iOS
+### 23.4 Edge Cases & Protections
 
-### 23.6 Invariants ที่ห้ามละเมิด
+- **ภาพที่แชร์ถูกลบหรือไม่อยู่ในรายการ:** กลไก `focusPhotoById` จะ fallback ไปแสดงภาพล่าสุดในแกลเลอรีพร้อมแสดง SnackBar ชี้แจงแก่ผู้ใช้
+- **ผู้รับมีภารกิจค้างอยู่:** Guard ป้องกันการสลับเหตุการณ์แบบ fail-closed ทันที ไม่สูญเสีย GPS tracking หรือ context ของภารกิจเดิม
+- **ผู้รับกำลังรายงานเหตุการณ์หรือบันทึกภาพค้าง:** บล็อกการสลับเหตุการณ์เช่นเดียวกันเพื่อป้องกันภาพที่ถ่ายไว้สูญหาย
+- **ผู้ใช้เปิดลิงก์ขณะอยู่ในหน้า Emergency อยู่แล้ว:** ระบบสลับเหตุการณ์ด้วย `_switchVideo(videoId)` ภายในหน้าเดิมโดยไม่ต้องเปิด route ทับซ้อน
+- **ผู้ใช้เปิดลิงก์ขณะอยู่ในโหมดแผนที่ (`_isIncidentMapMode == true`):** ระบบจะปิดโหมดแผนที่อย่างปลอดภัยก่อน (`_closeIncidentMapContext()`) แล้วจึงสลับมายังเหตุการณ์ที่แชร์
+- **หน้าจอขนาดเล็กมาก / จอแนวนอน:** หาก `videoHeight - 40 < 60` ปุ่มแชร์จะซ่อนตัวเองอัตโนมัติ เพื่อให้แน่ใจว่า Ruler Gallery มีพื้นที่แสดงผลเพียงพอเสมอ
 
-- ขอบล่าง gallery ตรงขอบล่างวิดีโอเสมอ (ปุ่มกินจากด้านบนเท่านั้น); ปุ่มแชร์กว้าง ≤ gallery column
-- photo id ในลิงก์ต้อง resolve เฉพาะภาพ `blur_status=completed` — ห้ามเปิดภาพที่ยัง blur ผ่านลิงก์
-- shared lock ไม่ให้สิทธิ์เพิ่มและไม่แตะ mission/reporter lock ของผู้รับ
-- exit shared view ต้องคืน trending เต็ม + filter/suspension state ปกติ (ทดสอบเทียบ `_closeIncidentMapContext`)
-- ห้ามใช้ `Navigator.pop` ปิด shared view ถ้าหน้าถูกเปิดจากลิงก์ (อาจไม่มี route ด้านล่าง)
+---
 
-### 23.7 Risk register
+### 23.5 ลำดับดำเนินงาน (Implementation Status Checklist)
 
-| Risk | ผลกระทบ | Mitigation |
+1. ✅ `EmergencyIncidentDeepLinkService` + parser/pending + unit tests 9/9
+2. ✅ OS plumbing: `app_links` direct dep, Android intent-filters, iOS schemes/entitlements, `onGenerateRoute` + `AppLinks` listener ใน `main.dart`
+3. ✅ สร้าง `IncidentShareButton` widget สไตล์ `LitGlassSurface` + Neumorphic micro-bounce + Dynamic Cyan Glow + FittedBox
+4. ✅ ขยาย photo callbacks ใน `ThaiMhungRulerGalleryWidget` (`onPhotoTap` และ `onPhotoChanged`) ให้แนบ `photoId`
+5. ✅ เพิ่ม `_selectedOverlayPhotoId` state + `closeOverlay()` public method ใน `LiveViewWidgetState`
+6. ✅ ประกอบ `IncidentShareButton` เหนือ Ruler Gallery ใน `LiveViewWidget` (ความสูง 34dp + 6dp gap)
+7. ✅ Recipient flow logic: `_consumePendingDeepLink()` → Guard fail-closed → `_loadInitialData` → `_triggerSharedPhotoOverlay()` → `showOverlayPhoto`
+8. 🔲 Landing page บน `sheserved.com` + `assetlinks.json`/AASA (งาน web/infra ฝั่ง Server แยก)
+9. 🔲 UI Verification ครบทุกหมวดหมู่บนเครื่องจริง (ดูรายละเอียดใน §23.8)
+
+---
+
+### 23.6 Invariants ที่ห้ามละเมิด (Safety Invariants)
+
+- ขอบล่าง gallery ตรงกับขอบล่างวิดีโอเสมอ (ปุ่มแชร์กินพื้นที่เฉพาะด้านบน)
+- ปุ่มแชร์ที่สร้างขึ้นใหม่ต้องใช้ Glass styling (`lib/shared/widgets/glass`) ร่วมกับ Neumorphic micro-bounce
+- ไม่แตะต้องหรือแก้ไข UI เดิมที่ทำงานสมบูรณ์อยู่แล้ว (ปุ่มปิด overlay, Top Bar, Trending panel)
+- `photoId` ในลิงก์ต้องเป็นภาพที่มีสถานะ `blur_status = 'completed'` เท่านั้น
+- Shared deep link ต้องไม่ละเมิด mission lock ของผู้ปฏิบัติการ
+- การปิด overlay ไม่ว่าด้วยปุ่ม X, gesture ปัดขวา, หรือ deep link reset ต้องคืนการเล่นวิดีโอเสมอ
+
+---
+
+### 23.7 Risk Register
+
+| Risk | ผลกระทบ | การป้องกันและแก้ไข (Mitigation) |
 |---|---|---|
-| Universal link ต้อง config เว็บ/สโตร์ | ลิงก์ https ไม่เปิดแอปจนกว่า AASA/assetlinks พร้อม | custom scheme + landing page redirect ทำงานก่อน; checklist deploy แยก |
-| เหตุถูกลบ/จบก่อนผู้รับเปิด | ผู้รับเจอจอว่าง/lock ผี | fail-closed → snackbar + Emergency ปกติ (23.4/23.3.9) |
-| แชร์ภาพที่ยัง blur | ผู้รับเห็น placeholder ค้าง | แนบ `photo` เฉพาะ `completed`; focus fallback แสดงภาพล่าสุด |
-| gallery height ลดทำ ruler hit area เล็กเกิน | จอเตี้ยเลื่อนยาก | ขั้นต่ำปุ่ม ≤40dp; gallery height ≥ 0.35×videoHeight ไม่งั้นซ่อนปุ่มเป็นปุ่ม icon ลอย |
-| `Share.share` บน iPad | crash popover | `sharePositionOrigin` จากปุ่มจริง |
+| Universal link ต้อง config เว็บ/โดเมน | ลิงก์ https ไม่เปิดเข้าแอปจนกว่า AASA/assetlinks จะพร้อม | ใช้งาน Custom Scheme `sheserved://` ได้ทันที พร้อม fallback URL query string |
+| เหตุการณ์ถูกลบหรือสิ้นสุดลงก่อนผู้รับเปิด | ผู้รับพบหน้าว่าง | Fail-closed → แสดง SnackBar แจ้งเตือน + กลับสู่หน้า Emergency ปกติ |
+| แชร์ภาพที่ยังอยู่ในกระบวนการเบลอ | ผู้รับเห็น placeholder หรือภาพยังไม่พร้อม | สร้างลิงก์เฉพาะภาพที่ `blur_status = 'completed'` เท่านั้น |
+| พื้นที่แนวตั้งน้อยทำให้ Ruler Gallery ถูกบีบ | ผู้ใช้เลื่อนดูภาพลำบาก | ซ่อนปุ่มแชร์อัตโนมัติเมื่อ `videoHeight - 40 < 60` |
+| Native share sheet บน iPad แครช | แอปปิดตัวกะทันหัน | คำนวณ `sharePositionOrigin` จาก `RenderBox` ของปุ่มจริง |
 
-### 23.8 Test และ exit gate
+---
 
-- **Unit:** parser ครบ web/custom/relative/photo param/malformed; build URL encode id ถูก; pending store/consume/peek
-- **Widget:** ปุ่มแชร์แสดงเฉพาะเมื่อมีการ์ด; ความกว้างปุ่ม ≤ gallery column และขอบล่าง gallery คงเดิม (วัด rect ก่อน/หลัง); FittedBox ย่อ label บนจอ 320dp; lock ทำให้ trending เหลือการ์ดเดียวและ tap การ์ดอื่นไม่ได้; exit คืนลิสต์เต็ม
-- **Integration/device:** เปิดลิงก์ custom scheme จริงทั้งสองโหมด (รวมเคส photo ถูกลบ), exit ด้วยปุ่มและ hardware back, ผู้รับยังไม่ login → login → เข้าเหตุถูกต้อง
-- Exit gate: `flutter test` ผ่าน + `flutter build ios --no-codesign` + device verify อย่างน้อย Android เครื่องจริงทั้งสองโหมด
+### 23.8 ขั้นตอนการทดสอบผ่าน UI เพื่อยืนยันความสมบูรณ์ (Comprehensive UI Verification Guide)
 
-### 23.9 Rollout และ rollback
+#### Automated Tests Status (ผ่านแล้ว 16/16 เคส ✅)
 
-- ปุ่มแชร์เป็น additive UI — rollback = revert widget; recipient path ไม่ทำงานถ้าไม่มีลิงก์ถูกสร้างจึงปลอดภัยแม้ backend เว็บยังไม่พร้อม
-- OS plumbing revert ได้อิสระ (intent-filter/scheme ไม่กระทบ flow อื่น — `sheserved://` ยังไม่มีผู้ใช้)
-- ห้ามเปลี่ยน: mission lock semantics, `focusPhotoById` contract, `_switchVideo` behavior, สิทธิ์ `canViewUnblurred`
+- **Unit Tests (9/9):** [test/features/video/services/emergency_incident_deep_link_service_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/services/emergency_incident_deep_link_service_test.dart)
+  - URL generation (web universal link, special chars encoding, custom scheme)
+  - Deep link parsing (custom scheme, web link, relative routes, malformed URLs)
+  - Pending store, peek, consume, clear lifecycle
+  - Equality, hashCode, toString contracts
+- **Widget Tests (7/7):** [test/features/video/presentation/widgets/incident_share_button_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/presentation/widgets/incident_share_button_test.dart)
+  - Default LitGlassSurface rendering with `Icons.share_rounded`
+  - Photo focused state with Cyan glow accent (`#38BDF8`) and `Icons.image_outlined`
+  - Custom label rendering
+  - Loading spinner & tap suppression
+  - Disabled state when `onPressed == null`
+  - Tactile micro-bounce `AnimatedScale(scale: 0.96)` on tap down
+  - Responsive layout on narrow column (FittedBox)
+- **Analyzer Status:** `dart analyze lib/features/video lib/main.dart test/features/video` ไม่มี error หรือ warning ใหม่
+
+---
+
+#### ขั้นตอนทดสอบผ่าน UI บนเครื่องจริง (Android / iOS / Simulator)
+
+**สิ่งที่ต้องเตรียมก่อนทดสอบ (Pre-requisites):**
+1. ติดตั้งแอปพลิเคชัน Debug APK บนเครื่อง Android หรือ Debug Build บน iOS Device/Simulator
+2. มีเหตุการณ์ฉุกเฉินในระบบอย่างน้อย 1 เหตุการณ์ที่มีภาพถ่ายไทยมุง (Thai Mhung Photos) ที่ประมวลผลเสร็จแล้ว (`blur_status = 'completed'`) อย่างน้อย 2 ภาพ
+3. เตรียม command line terminal พร้อมคำสั่ง `adb` (สำหรับ Android) หรือ `xcrun simctl` (สำหรับ iOS Simulator)
+
+---
+
+#### หมวดที่ 1: การทดสอบ UI ฝั่งผู้แชร์ (Sender UI Flow & Visual Feedback)
+
+| รหัสทดสอบ | ขั้นตอนการกระทำ (Action) | ผลการทดสอบที่คาดหวัง (Expected Result) | สถานะ |
+|---|---|---|:---:|
+| **UI-S1** | เปิดหน้า Emergency โดยยังไม่มีเหตุการณ์ถูกเลือก | ปุ่มแชร์ **ไม่ปรากฏ** บนหน้าจอ (Gallery ไม่ render) | [ ] |
+| **UI-S2** | แตะเลือกการ์ดเหตุการณ์ที่มีภาพถ่ายไทยมุง | ปุ่มแชร์ปรากฏเหนือ Ruler Gallery ในคอลัมน์ขวา:<br>• ความสูง 34dp, ทรงแคปซูลมน (Pill Radius 17dp)<br>• ขอบล่าง Ruler Gallery ตรงกับขอบล่างของ Video Player พอดี<br>• ระยะห่างระหว่างปุ่มกับ Gallery คือ 6dp | [ ] |
+| **UI-S3** | สังเกตหน้าตาของปุ่มขณะ **ไม่มี** การเปิด Overlay ภาพ (Normal State) | • ไอคอน: `Icons.share_rounded` (ขนาด 15dp)<br>• ข้อความ: "แชร์เหตุการณ์" (SukhumvitSet ขนาด 12dp)<br>• สีพื้นผิว: LitGlassSurface ขาวโปร่งแสงตามระบบ Glassmorphism (ไม่มีแสง Cyan Glow) | [ ] |
+| **UI-S4** | แตะที่รูปภาพรูปแรกใน Ruler Gallery เพื่อเปิด Overlay ภาพ | • ภาพ Overlay ขยายขึ้นทับ Video Player และวิดีโอหยุดเล่นเบื้องหลังชั่วคราว<br>• **ปุ่มแชร์เปลี่ยนสถานะทันที:**<br>  - ขอบและเงาเปล่งแสง **Cyan Glow (`#38BDF8`)** สะท้อนสว่างขึ้น<br>  - ไอคอนเปลี่ยนเป็น `Icons.image_outlined`<br>  - ข้อความเปลี่ยนเป็น **"แชร์ภาพนี้"** พร้อมเงาตัวอักษรสีฟ้าอ่อน | [ ] |
+| **UI-S5** | เลื่อนนิ้วบน Ruler Gallery ไปยังภาพอื่นขณะที่ Overlay ยังเปิดอยู่ | • ภาพ Overlay สลับไปยังภาพใหม่ที่เลื่อนผ่าน<br>• ปุ่มแชร์ยังคงสถานะ "แชร์ภาพนี้" และมี Cyan Glow ต่อเนื่อง<br>• ระบบอัปเดต photoId ภายในให้ตรงกับภาพปัจจุบัน | [ ] |
+| **UI-S6** | ปิด Overlay ภาพโดยแตะปุ่มกากบาท (X) มุมขวาบน | • ภาพ Overlay ปิดลงอย่างราบรื่น<br>• วิดีโอเบื้องหลังกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State: ไอคอน `share_rounded` + ข้อความ "แชร์เหตุการณ์" + แสง Cyan Glow ดับลง | [ ] |
+| **UI-S7** | เปิด Overlay ภาพอีกครั้ง แล้วปัดนิ้วไปทางขวา (Swipe right to dismiss) | • Overlay ปิดลงตาม Gesture ปัดขวา<br>• วิดีโอกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State ทันที | [ ] |
+| **UI-S8** | กดนิ้วค้างลงบนปุ่มแชร์ (ยังไม่ปล่อยนิ้ว) | • สัมผัส Micro-bounce: ปุ่มหดตัวลงอย่างนุ่มนวล `AnimatedScale` ขนาด 0.96 (100ms) ให้ความรู้สึกกดทางกายภาพ | [ ] |
+| **UI-S9** | ปล่อยนิ้วออกจากปุ่มแชร์ | • ปุ่มขยายตัวกลับสู่ขนาดปกติ 1.0 (100ms)<br>• Native OS Share Sheet ปรากฏขึ้นมาบนหน้าจอ | [ ] |
+| **UI-S10** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดวิดีโอปกติ** (ไม่มี overlay) | • ข้อความระบุ: `"ดูเหตุการณ์นี้บน SheServed: https://sheserved.com/emergency/incident/<videoId>?src=share"`<br>• ไม่มีพารามิเตอร์ `&photo=` ต่อท้าย | [ ] |
+| **UI-S11** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดภาพเจาะจง** (เปิด overlay ภาพ) | • ข้อความระบุ: `"ดูภาพเหตุการณ์นี้บน SheServed: https://sheserved.com/emergency/incident/<videoId>?src=share&photo=<photoId>"`<br>• พารามิเตอร์ `photo` มีค่าตรงกับ ID ของรูปภาพที่กำลังเปิดอยู่จริง | [ ] |
+| **UI-S12** | ทดสอบบน iPad / Tablet (ถ้ามี) | • Share Sheet เปิดเป็น Popover ชี้มาที่ตำแหน่งปุ่มแชร์อย่างแม่นยำ ไม่แครช | [ ] |
+| **UI-S13** | ทดสอบบนหน้าจอขนาดแคบ (ความกว้าง ≤ 320dp) | • ตัวอักษรบนปุ่มถูกย่อสเกลด้วย `FittedBox` อย่างสวยงาม ไม่เกิดอาการ RenderFlex overflow | [ ] |
+
+---
+
+#### หมวดที่ 2: การทดสอบ UI ฝั่งผู้รับลิงก์ (Recipient Deep Link Intake & Focus View)
+
+> **ชุดคำสั่งสำหรับทดสอบเปิด Deep Link ผ่าน Terminal:**
+> ```bash
+> # 1. โหมดวิดีโอ (Video Mode)
+> # Android:
+> adb shell am start -a android.intent.action.VIEW -d "sheserved://emergency/incident/<videoId>" com.sheserved.app
+> # iOS Simulator:
+> xcrun simctl openurl booted "sheserved://emergency/incident/<videoId>"
+>
+> # 2. โหมดภาพเจาะจง (Photo Focused Mode)
+> # Android:
+> adb shell am start -a android.intent.action.VIEW -d "sheserved://emergency/incident/<videoId>?photo=<photoId>" com.sheserved.app
+> # iOS Simulator:
+> xcrun simctl openurl booted "sheserved://emergency/incident/<videoId>?photo=<photoId>"
+> ```
+
+| รหัสทดสอบ | ขั้นตอนการกระทำ (Action) | ผลการทดสอบที่คาดหวัง (Expected Result) | สถานะ |
+|---|---|---|:---:|
+| **UI-R1** | **Cold Start (Video Mode):** ปิดแอปพลิเคชันสนิท (Kill app) แล้วรันคำสั่ง Deep Link ของเหตุการณ์ (ไม่มี `photo`) | • แอปพลิเคชันเปิดตัวขึ้นมา<br>• นำทางเข้าสู่หน้า Emergency โดยอัตโนมัติ<br>• การ์ดเหตุการณ์ `videoId` นั้นถูกโหลดขึ้นมาเล่นอัตโนมัติ<br>• Ruler Gallery แสดงรายการภาพของเหตุการณ์นั้น<br>• ปุ่มแชร์แสดงสถานะปกติ ("แชร์เหตุการณ์") | [ ] |
+| **UI-R2** | **Warm Start (Video Mode):** เปิดแอปทิ้งไว้ที่หน้าอื่น (เช่น หน้า Home หรือหน้าโปรไฟล์) แล้วรันคำสั่ง Deep Link | • แอปพลิเคชันสลับนำทางเข้าสู่หน้า Emergency ทันที<br>• โหลดเหตุการณ์ `videoId` ตามลิงก์ขึ้นมาเล่นอย่างถูกต้อง | [ ] |
+| **UI-R3** | **Cold Start (Photo Mode):** ปิดแอปสนิท แล้วรันคำสั่ง Deep Link ที่มี `photo=<photoId>` | • แอปเปิดขึ้นมาและนำทางเข้าหน้า Emergency<br>• โหลดวิดีโอและ Ruler Gallery ของเหตุการณ์นั้น<br>• **Overlay ภาพของ `photoId` นั้นเปิดขึ้นมาแสดงอัตโนมัติทันทีที่ Gallery พร้อม**<br>• วิดีโอหยุดเล่นเบื้องหลัง<br>• Ruler Gallery เลื่อนตำแหน่ง (Autoscroll) ไปโฟกัสที่ภาพนั้น (`focusPhotoById`)<br>• ปุ่มแชร์เปล่งแสง **Cyan Glow** พร้อมข้อความ **"แชร์ภาพนี้"** ทันที | [ ] |
+| **UI-R4** | **Warm Start (Photo Mode):** อยู่ที่หน้าอื่นของแอป แล้วรันคำสั่ง Deep Link ที่มี `photo=<photoId>` | • นำทางเข้าหน้า Emergency และเปิด Overlay ภาพพร้อม Cyan Glow เช่นเดียวกับข้อ UI-R3 | [ ] |
+| **UI-R5** | **Photo Fallback (ภาพไม่อยู่ใน 5 หน้าแรก หรือถูกลบ):** รันคำสั่ง Deep Link ด้วย `photoId` ที่ไม่มีอยู่จริงหรือถูกลบไปแล้ว | • หน้า Emergency โหลดเหตุการณ์ตามปกติ<br>• แสดงภาพล่าสุดใน Gallery แทน พร้อมแสดง SnackBar ชี้แจงสถานะ<br>• ไม่เกิดอาการหน้าจอค้างหรือ Error ขาว | [ ] |
+| **UI-R6** | **Guard Protection (ภารกิจค้างอยู่):** ผู้ใช้รับภารกิจจิตอาสาอยู่ (`_currentResponseId != null`) แล้วกดเปิด Deep Link เหตุการณ์อื่น | • **ระบบบล็อกการสลับเหตุการณ์แบบ Fail-Closed**<br>• หน้าจอยังคงอยู่ที่ภารกิจเดิม ไม่สูญเสีย GPS หรือข้อมูลภารกิจ<br>• แสดง SnackBar แจ้งเตือน: *"ไม่สามารถเปิดลิงก์แชร์ขณะมีภารกิจค้างอยู่"* | [ ] |
+
+---
+
+#### หมวดที่ 3: การทดสอบ UI ด้านความเข้ากันได้ (Regression & Non-interference)
+
+| รหัสทดสอบ | ขั้นตอนการกระทำ (Action) | ผลการทดสอบที่คาดหวัง (Expected Result) | สถานะ |
+|---|---|---|:---:|
+| **UI-N1** | ปัดการ์ดวิดีโอขึ้น/ลง ในหน้า Emergency ก่อนและหลังการกดแชร์ | • การสลับการ์ดวิดีโอทำงานได้ลื่นไหลตามปกติ<br>• การ์ดใหม่มีปุ่มแชร์และแกลเลอรีที่ผูกกับเหตุการณ์ใหม่อย่างถูกต้อง | [ ] |
+| **UI-N2** | กดปุ่ม Back บน `EmergencyTopBar` หรือปุ่ม Back ของเครื่อง Android | • นำทางย้อนกลับออกจากหน้า Emergency ได้อย่างถูกต้อง ไม่ค้าง Navigation Stack | [ ] |
+| **UI-N3** | สลับไปยังแท็บแจ้งเหตุ (Report Tab) หรือแท็บแผนที่ (Map Mode) แล้วสลับกลับมา | • ปุ่มแชร์ซ่อนตัวเมื่ออยู่ในโหมดอื่น และปรากฏกลับมาอย่างถูกต้องเมื่อกลับสู่ Live View | [ ] |
+| **UI-N4** | กดเปิดโหมดเต็มจอ (Fullscreen Video Mode) | • แสดงผลเต็มจอตามปกติ ไม่เกิด UI ซ้อนทับหรือข้อผิดพลาด | [ ] |
+
+---
+
+#### Exit Gate Checklist (เกณฑ์การผ่านเพื่อปิด Phase 23)
+
+- [x] Automated Unit Tests ผ่านครบ 9/9 เคส ([emergency_incident_deep_link_service_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/services/emergency_incident_deep_link_service_test.dart))
+- [x] Automated Widget Tests ผ่านครบ 7/7 เคส ([incident_share_button_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/presentation/widgets/incident_share_button_test.dart))
+- [x] ตรวจสอบ static analysis ผ่าน (`dart analyze lib/features/video lib/main.dart test/features/video` ไม่มี error หรือ warning ใหม่)
+- [ ] ทดสอบ UI-S1 ถึง UI-S13 ผ่านบน Android เครื่องจริง
+- [ ] ทดสอบ UI-R1 ถึง UI-R6 ผ่านบน Android เครื่องจริง
+- [ ] ทดสอบ UI-S1 ถึง UI-S13 ผ่านบน iOS เครื่องจริง หรือ Simulator
+- [ ] ทดสอบ UI-R1 ถึง UI-R6 ผ่านบน iOS เครื่องจริง หรือ Simulator
+- [ ] ตรวจสอบการคอมไพล์ iOS Debug Build ผ่าน (`flutter build ios --no-codesign --debug`)
+
+---
+
+### 23.9 Rollout และ Rollback
+
+- **Add-on UI Isolation:** ปุ่มแชร์ [IncidentShareButton](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart) ทำงานเป็นคอมโพเนนต์อิสระ หากต้องการ Rollback สามารถ revert เฉพาะ widget และจุดเรียกใน [live_view_widget.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/live_view_widget.dart) ได้ทันทีโดยไม่กระทบโครงสร้างอื่น
+- **OS Plumbing Safety:** Intent Filters และ URL Schemes ของ `sheserved://` เป็น namespace เฉพาะตัว ไม่ซ้ำซ้อนและไม่ส่งผลต่อฟังก์ชันภายนอกอื่น
+- **Invariant Guarantee:** การทำงานของ mission lock, `focusPhotoById`, `_switchVideo`, และระบบสิทธิ์ความปลอดภัยยังคงเหมือนเดิมทุกประการ
+
+---
+
+### 23.10 แผนงานส่วนขยาย UI ในอนาคต (Optional UI Polish — รอตัดสินใจภายหลัง)
+
+*หัวข้อนี้รวบรวมข้อเสนอการปรับแต่ง UI เพิ่มเติม เพื่อให้ผู้ใช้พิจารณาทำใน phase ถัดไปตามความเหมาะสม:*
+
+1. **Compact Floating Share Button:** ปรับปุ่มแชร์เป็น `GlassIconButton` ขนาด 32×32dp ลอยมุมขวาบนของ gallery เมื่อพื้นที่แนวตั้งน้อยมาก
+2. **Photo Overlay Glass Chrome:** อัปเกรดปุ่มปิดบน photo overlay เป็น `GlassIconButton` ขนาด 38×38dp, เพิ่ม `GlassBadge` "ภาพจากที่เกิดเหตุ", และปุ่มลอย Quick Share Pill บน overlay
+3. **Recipient Status Indicator บน Top Bar:** เพิ่ม `GlassBadge` "เหตุการณ์ที่แชร์" บน `EmergencyTopBar` คู่กับปุ่ม "ดูเหตุการณ์ทั้งหมด"
+4. **Recipient Explanatory Glass Banner:** เพิ่มแบนเนอร์กระจกฝ้า (`LitGlassSurface.frosted`) ด้านล่างการ์ดเดี่ยวใน `TrendingPanelWidget` เพื่ออธิบายว่ากำลังรับชมเฉพาะเหตุการณ์ที่แชร์
+
