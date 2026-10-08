@@ -108,6 +108,7 @@ INSERT INTO public.sports (id, name_en, status) VALUES
 \ir ../supabase/migrations/20261015100000_sports_hub_evidence_upload_grants.sql
 \ir ../supabase/migrations/20261016100000_sports_hub_verify_adapter_readiness.sql
 \ir ../supabase/migrations/20261017100000_verification_admin_audit.sql
+\ir ../supabase/migrations/20261018110000_sports_hub_public_review_readiness.sql
 
 CREATE OR REPLACE FUNCTION pg_temp.expect(cond boolean, label text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -338,6 +339,11 @@ BEGIN
     SELECT 1 FROM public.sports_venue_status_events
     WHERE venue_id = v_venue AND new_status = 'approved'),
     'review transition audited');
+  PERFORM pg_temp.expect((
+    SELECT NOT has_reviewable_booking
+    FROM public.list_public_sports_venue_review_readiness(ARRAY[v_venue])
+    WHERE venue_id = v_venue),
+    'venue without booking history has no pending review');
 
   -- manager scope: member without own owner profile manages the venue
   PERFORM public.set_sports_venue_member(v_owner, v_venue, v_mgr, 'manager');
@@ -369,6 +375,11 @@ BEGIN
     WHERE id = v_b1) = 'confirmed', 'instant booking confirmed');
   PERFORM pg_temp.expect((SELECT accepted_terms_version FROM public.sports_venue_bookings
     WHERE id = v_b1) = v_terms, 'terms version snapshotted');
+  PERFORM pg_temp.expect((
+    SELECT NOT has_reviewable_booking
+    FROM public.list_public_sports_venue_review_readiness(ARRAY[v_venue])
+    WHERE venue_id = v_venue),
+    'future confirmed booking is not reviewable');
 
   PERFORM pg_temp.expect_raise('overlapping booking rejected',
     format($$SELECT public.create_sports_venue_booking(%L, %L,
@@ -517,6 +528,11 @@ BEGIN
     SET starts_at = now() - interval '2 hours',
         ends_at = now() - interval '1 hour'
     WHERE id = v_b1;
+  PERFORM pg_temp.expect((
+    SELECT has_reviewable_booking
+    FROM public.list_public_sports_venue_review_readiness(ARRAY[v_venue])
+    WHERE venue_id = v_venue),
+    'ended successful booking is waiting for a review');
   PERFORM public.complete_sports_venue_bookings();
   PERFORM pg_temp.expect((SELECT status FROM public.sports_venue_bookings
     WHERE id = v_b1) = 'completed', 'booking auto-completed after slot');
@@ -524,6 +540,11 @@ BEGIN
   v_review := public.submit_sports_venue_review(
     v_cust, v_b1, 5, 'great', NULL, NULL);
   PERFORM pg_temp.expect(v_review IS NOT NULL, 'review accepted post-completion');
+  PERFORM pg_temp.expect((
+    SELECT NOT has_reviewable_booking
+    FROM public.list_public_sports_venue_review_readiness(ARRAY[v_venue])
+    WHERE venue_id = v_venue),
+    'reviewed booking no longer waits for a review');
 
   PERFORM pg_temp.expect_raise('duplicate review on same booking rejected',
     format($$SELECT public.submit_sports_venue_review(

@@ -19,6 +19,6 @@ CREATE INDEX IF NOT EXISTS idx_videos_category_type_created
     ON videos (category_id, type, created_at DESC);
 
 -- 3. Batch safe-thumbnail lookup for map points
---    (video_id = ANY(...) AND blur_status = 'completed' ORDER BY created_at DESC, id DESC).
+--    (video_id = ANY(...) AND blur_status IN ('completed','blurring'), with fair sender ranking).
 CREATE INDEX IF NOT EXISTS idx_thai_mhung_photos_video_completed
     ON thai_mhung_photos (video_id, blur_status, created_at DESC, id DESC);

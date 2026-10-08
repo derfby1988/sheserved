@@ -623,6 +623,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           }
         });
       }
+      _refreshIncidentMapForPhotoCompletion(incidentId);
     });
   }
 

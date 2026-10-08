@@ -231,6 +231,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   IncidentMapRepository? _incidentMapRepository;
   int _incidentMapNewCount = 0;
   StreamSubscription? _incidentMapRealtimeSub;
+  /// §22.19: global blur-complete event + debounce/poll ระหว่างมีภาพค้างเบลอ
+  StreamSubscription? _incidentMapPhotoSub;
+  Timer? _incidentMapPhotoRefreshDebounce;
+  Timer? _incidentMapPendingPollTimer;
+  int _incidentMapPendingPollAttempts = 0;
   final GlobalKey<LiveViewWidgetState> _liveViewKey =
       GlobalKey<LiveViewWidgetState>();
 
@@ -340,6 +345,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     }
     _incidentMapRealtimeSub?.cancel(); // ✅ Phase 22
+    _incidentMapPhotoSub?.cancel(); // ✅ Phase 22 (§22.19)
+    _incidentMapPhotoRefreshDebounce?.cancel();
+    _incidentMapPendingPollTimer?.cancel();
     _videoPlayerController?.removeListener(_syncGpsWithVideo);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();

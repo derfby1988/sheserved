@@ -103,6 +103,18 @@ class BookCourtRepository {
     final ids = venues.map((v) => v.id).toList();
     if (ids.isEmpty) return venues;
 
+    Future<List<dynamic>> loadReviewReadiness() async {
+      try {
+        final rows = await _client.rpc(
+          'list_public_sports_venue_review_readiness',
+          params: {'p_venue_ids': ids},
+        );
+        return (rows as List).cast<dynamic>();
+      } catch (_) {
+        return const [];
+      }
+    }
+
     final results = await Future.wait([
       _client
           .from('sports_venue_review_summary')
@@ -125,6 +137,7 @@ class BookCourtRepository {
           .from('sports_venue_sports_public')
           .select('venue_id, sport_id')
           .inFilter('venue_id', ids),
+      loadReviewReadiness(),
     ]);
 
     final startingPriceByVenue = <String, double>{};
@@ -142,39 +155,47 @@ class BookCourtRepository {
       }
     } catch (_) {}
 
-    final ratingByVenue = <String, (double, int)>{};
-    for (final row in (results[0] as List)) {
+    final ratingByVenue = <String, (double?, int)>{};
+    for (final row in results[0]) {
       final m = Map<String, dynamic>.from(row);
+      final rating10 = (m['average_rating_10'] as num?)?.toDouble();
+      // 10-point ratings are authoritative; cards use their 5-point equivalent.
+      // Older summaries fall back to the legacy 1–5 average.
       ratingByVenue[m['venue_id']?.toString() ?? ''] = (
-        // 10-point scale is authoritative; fall back to the folded
-        // legacy 1–5 average only while the pre-21.7.14 view is live.
-        (m['average_rating_10'] as num?)?.toDouble() ??
-            ((m['average_rating'] as num?)?.toDouble() ?? 0) * 2,
+        rating10 == null
+            ? (m['average_rating'] as num?)?.toDouble()
+            : rating10 / 2,
         (m['review_count'] as num?)?.toInt() ?? 0,
       );
     }
+    final reviewReadinessByVenue = <String, bool>{};
+    for (final row in results[5]) {
+      final m = Map<String, dynamic>.from(row);
+      reviewReadinessByVenue[m['venue_id']?.toString() ?? ''] =
+          m['has_reviewable_booking'] == true;
+    }
     final amenitiesByVenue = <String, Set<String>>{};
-    for (final row in (results[1] as List)) {
+    for (final row in results[1]) {
       final m = Map<String, dynamic>.from(row);
       amenitiesByVenue
           .putIfAbsent(m['venue_id']?.toString() ?? '', () => {})
           .add(m['amenity_key']?.toString() ?? '');
     }
     final photosByVenue = <String, List<String>>{};
-    for (final row in (results[2] as List)) {
+    for (final row in results[2]) {
       final m = Map<String, dynamic>.from(row);
       photosByVenue
           .putIfAbsent(m['venue_id']?.toString() ?? '', () => [])
           .add(m['url']?.toString() ?? '');
     }
     final courtCountByVenue = <String, int>{};
-    for (final row in (results[3] as List)) {
+    for (final row in results[3]) {
       final m = Map<String, dynamic>.from(row);
       final vid = m['venue_id']?.toString() ?? '';
       courtCountByVenue[vid] = (courtCountByVenue[vid] ?? 0) + 1;
     }
     final sportsByVenue = <String, Set<String>>{};
-    for (final row in (results[4] as List)) {
+    for (final row in results[4]) {
       final m = Map<String, dynamic>.from(row);
       sportsByVenue
           .putIfAbsent(m['venue_id']?.toString() ?? '', () => {})
@@ -185,7 +206,9 @@ class BookCourtRepository {
         .map(
           (v) => v.copyWith(
             averageRating: ratingByVenue[v.id]?.$1,
+            clearAverageRating: ratingByVenue[v.id]?.$1 == null,
             reviewCount: ratingByVenue[v.id]?.$2 ?? 0,
+            hasReviewableBooking: reviewReadinessByVenue[v.id] ?? false,
             startingPriceAmount: startingPriceByVenue[v.id],
             courtCount: courtCountByVenue[v.id] ?? 0,
             amenityIds: amenitiesByVenue[v.id] ?? const {},

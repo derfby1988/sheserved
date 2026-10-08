@@ -34,7 +34,8 @@ const POINTS_ZOOM_THRESHOLD = 12; // zoom >= 12 → individual points
 const DEFAULT_PAGE_LIMIT = 300;
 const MAX_PAGE_LIMIT = 500;
 const MAX_CLUSTER_INPUT = 20_000; // safety cap before clustering
-const PHOTOS_PER_POINT = 3;
+// Preview cards per incident: 15, matching the Flutter two-ring layout.
+const PHOTOS_PER_POINT = 15;
 
 // ──────────────────────────────────────────────────────────────
 // Query parsing / validation (server is authoritative — §22.4.2)
@@ -179,7 +180,15 @@ function clusterPoints(points, zoom) {
     }));
 }
 
-/** Attach ≤ PHOTOS_PER_POINT completed photos per point (gallery order). */
+/**
+ * Attach ≤ PHOTOS_PER_POINT preview photos per point in sender-round-robin
+ * order: each sender's newest photo first, then the next newest per sender.
+ *
+ * Rows still `blurring` keep their slot but carry **no url** — the client shows
+ * the loading placeholder until the blur pipeline completes, so the reporter
+ * sees that the upload is still being processed instead of a missing photo.
+ * Never falls back to the raw/original url (§22.5 privacy rule).
+ */
 function attachPhotos(points, photoRows) {
     const byVideo = new Map();
     for (const row of photoRows || []) {
@@ -189,16 +198,30 @@ function attachPhotos(points, photoRows) {
             list = [];
             byVideo.set(videoId, list);
         }
-        if (list.length < PHOTOS_PER_POINT) {
-            list.push({
-                id: String(row.id),
-                url: typeof row.photo_url === 'string' ? row.photo_url : '',
-                createdAt: new Date(row.created_at).toISOString(),
-            });
-        }
+        list.push(row);
     }
     for (const p of points) {
-        p.photos = byVideo.get(p.id) || [];
+        p.photos = (byVideo.get(p.id) || [])
+            .filter((row) => ['completed', 'blurring'].includes(row.blur_status || 'completed'))
+            .sort((a, b) => {
+                const aRank = Number(a.preview_rank);
+                const bRank = Number(b.preview_rank);
+                if (Number.isFinite(aRank) && Number.isFinite(bRank) && aRank !== bRank) {
+                    return aRank - bRank;
+                }
+                const byTime = Date.parse(b.created_at) - Date.parse(a.created_at);
+                return byTime || String(b.id).localeCompare(String(a.id));
+            })
+            .slice(0, PHOTOS_PER_POINT)
+            .map((row) => {
+                const blurStatus = typeof row.blur_status === 'string' ? row.blur_status : 'completed';
+                return {
+                    id: String(row.id),
+                    url: blurStatus === 'completed' && typeof row.photo_url === 'string' ? row.photo_url : '',
+                    blurStatus,
+                    createdAt: new Date(row.created_at).toISOString(),
+                };
+            });
     }
     return points;
 }
@@ -357,12 +380,30 @@ const VIEWPORT_AGG_SQL = `
     ) fp
 `;
 
+// Selects in equal sender rounds, newest-first within each sender and round.
 const PHOTOS_SQL = `
-    SELECT video_id, id, photo_url, created_at
-    FROM thai_mhung_photos
-    WHERE video_id = ANY($1::uuid[]) AND blur_status = 'completed'
-    ORDER BY video_id, created_at DESC, id DESC
-    LIMIT $2
+    WITH sender_ranked AS (
+        SELECT video_id, id, photo_url, blur_status, created_at,
+               row_number() OVER (
+                   PARTITION BY video_id, user_id
+                   ORDER BY created_at DESC NULLS LAST, id DESC
+               ) AS sender_rank
+        FROM thai_mhung_photos
+        WHERE video_id = ANY($1::uuid[])
+          AND blur_status IN ('completed', 'blurring')
+    ), preview_ranked AS (
+        SELECT video_id, id, photo_url, blur_status, created_at,
+               row_number() OVER (
+                   PARTITION BY video_id
+                   ORDER BY sender_rank, created_at DESC NULLS LAST, id DESC
+               ) AS preview_rank
+        FROM sender_ranked
+        WHERE sender_rank <= $2
+    )
+    SELECT video_id, id, photo_url, blur_status, created_at, preview_rank
+    FROM preview_ranked
+    WHERE preview_rank <= $2
+    ORDER BY video_id, preview_rank
 `;
 
 async function fetchIncidentMapLocal(pool, params, nowMs) {
@@ -412,7 +453,7 @@ async function fetchIncidentMapLocal(pool, params, nowMs) {
     if (points.length > 0) {
         const photoRows = await pool.query(PHOTOS_SQL, [
             points.map((p) => p.id),
-            points.length * PHOTOS_PER_POINT,
+            PHOTOS_PER_POINT,
         ]);
         attachPhotos(points, photoRows.rows);
     }
@@ -450,6 +491,19 @@ async function fetchIncidentMapSupabase(supabase, params) {
     if (error) throw new Error(`Supabase incident map RPC failed: ${error.message}`);
     if (!data || typeof data !== 'object') throw new Error('Supabase incident map RPC returned no data');
     // The RPC returns the same shape; normalize numeric strings just in case.
+    // Older RPC versions omit blurStatus and never return pending slots — keep
+    // the client contract identical either way (§22.19).
+    if (Array.isArray(data.items)) {
+        for (const item of data.items) {
+            if (!Array.isArray(item?.photos)) continue;
+            item.photos = item.photos.slice(0, PHOTOS_PER_POINT).map((p) => ({
+                id: String(p?.id ?? ''),
+                url: typeof p?.url === 'string' ? p.url : '',
+                blurStatus: typeof p?.blurStatus === 'string' ? p.blurStatus : 'completed',
+                createdAt: p?.createdAt ?? null,
+            }));
+        }
+    }
     data.legend = _legendFromCounts(data.legend || {});
     data.excluded = {
         noUsableCoordinate: Number(data.excluded?.noUsableCoordinate) || 0,

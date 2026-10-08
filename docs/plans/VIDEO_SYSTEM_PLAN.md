@@ -6199,7 +6199,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - ทั้งสอง renderer ต้อง fit bounds ประเทศไทยเดียวกันในมุมมองเริ่มต้น และคืน/restore center+zoom เดียวกันเชิงภูมิศาสตร์; traffic/routing เป็น service แยกจาก basemap — OSM ไม่มี Google traffic overlay และแผนที่ภาพรวมไม่เรียก routing/place search โดยไม่จำเป็น
 - ในระดับประเทศ/จุดหนาแน่นให้ cluster หมุด; cluster แสดงจำนวนแยกตาม age bucket เพื่อไม่ระบายสี cluster ด้วยอายุเดียวเมื่อมีเหตุหลายช่วง. เมื่อถึง zoom threshold ให้แสดง event markers ตามสีใน §22.1
 - เมื่อซูมถึงระดับ gallery preview ให้ฉายตำแหน่ง incident เป็นพิกัดหน้าจอแล้วจัดวาง thumbnail หลายใบต่อเหตุจากภาพไทยมุงล่าสุด **เป็นวงแหวนรอบหมุด (radial ring)** — รายละเอียด §22.17: ศูนย์วงอยู่ที่ anchor ของหมุด, รัศมีวงรับประกันการ์ดไม่แตะวงกลม exclusion ของหมุด (pinRadius + cardHalfDiagonal + gap) และกระจายมุมเท่า ๆ กัน; ตรวจ collision ระหว่างกล่องภาพกับหมุด/ภาพเหตุอื่นทุกครั้งที่กล้องเปลี่ยน. แสดงเท่าที่วางได้โดยไม่ซ้อน; รูปที่วางไม่พอคงอยู่ใน full gallery และมี count/cluster affordance ที่ไม่ทำให้เหตุหาย
-- Map preview แสดงเฉพาะภาพไทยมุงที่ผ่านการประมวลผลพร้อมใช้งาน (`blur_status = completed`); pending/failed ไม่มี thumbnail จริงและห้าม fallback ไป raw/original. API สำหรับ map คืนเฉพาะ safe thumbnail/derivative ตามสิทธิเดิม ไม่เพิ่มการเปิดเผย `user_id` หรือ URL ต้นฉบับ
+- Map preview แสดงภาพจริงเฉพาะภาพไทยมุงที่ผ่านการประมวลผลพร้อมใช้งาน (`blur_status = completed`); ภาพ pending (`blurring`) ถูกส่งเป็น "ช่องรอ" ที่ **ไม่มี url** ให้ client แสดง placeholder จนกว่า blur จะเสร็จ (§22.19), ส่วน `failed` ยังซ่อน — ทุกกรณีห้าม fallback ไป raw/original. API สำหรับ map คืนเฉพาะ safe thumbnail/derivative ตามสิทธิเดิม ไม่เพิ่มการเปิดเผย `user_id` หรือ URL ต้นฉบับ
 - ห้าม mount `ThaiMhungRulerGalleryWidget` หนึ่ง instance ต่อ incident เพราะ widget ปัจจุบัน poll ทุก 5 วินาที; โหลด gallery เต็มเมื่อผู้ใช้แตะภาพเท่านั้น และใช้ API/realtime invalidation แบบมี rate budget
 - **Single-surface rule:** ใช้พื้นผิวแผนที่เดียวที่ mode เป็นตัวกำหนด props (markers/camera/traffic/myLocation/polylines) เพื่อไม่ให้มี platform view สองตัวพร้อมกัน; ถ้าจำเป็นต้องมีสองพื้นผิว ต้อง dispose ตัวเดิมให้เสร็จก่อนสร้างตัวใหม่ และต้องมี regression test บน iOS ว่าไม่เกิด `PlatformException(recreating_view)` (log อุปกรณ์จริงพบ view id '0'/'1' อยู่แล้ว)
 - ตรรกะของแผนที่สด (`_adjustMapBounds()`, `onMapCreated` → logMapLoad) ต้องถูก suspend ระหว่างโหมดแผนที่ และคำนวณใหม่ครั้งเดียวเมื่อกลับมา — อย่าให้สองกล้องแย่งกันตั้งค่า
@@ -6279,8 +6279,8 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 **Backend (websocket-server)**
 - `services/incident-map-policy.js` — age-bucket policy (ช่วงต่อเนื่อง 24h/7d/35d/365d) + `isValidCoordinate` (ตัด (0,0) sentinel/out-of-range/null)
-- `services/incident-map.js` — `parseMapQuery` (validate UUID/bounds/zoom/limit), cursor base64url, grid clustering (cell = 180/2^zoom, centroid + byBucket), photo cap 3/เหตุ, `fetchIncidentMapLocal` (LATERAL first-point + cursor pagination + aggregate legend) และ `fetchIncidentMapSupabase` (RPC fallback) — fail-closed
-- `routes/video.js` — `GET /api/videos/emergency/map` (auth parity กับ /emergency/list: guest-readable + ipLimiter), cacheAside key `video:emergency:map:v1:{cat}:{zoom}:{bounds 4dp}:{cursor}:{limit}` TTL.MAP=120s; invalidate `video:emergency:map:*` ที่จุดเดียวกับ emergency list (video ใหม่/emergency_photo ใหม่)
+- `services/incident-map.js` — `parseMapQuery` (validate UUID/bounds/zoom/limit), cursor base64url, grid clustering (cell = 180/2^zoom, centroid + byBucket), photo preview cap 15/เหตุ with fair per-sender rounds, `fetchIncidentMapLocal` (LATERAL first-point + cursor pagination + aggregate legend) และ `fetchIncidentMapSupabase` (RPC fallback) — fail-closed
+- `routes/video.js` — `GET /api/videos/emergency/map` (auth parity กับ /emergency/list: guest-readable + ipLimiter), cacheAside key `video:emergency:map:v2:{cat}:{zoom}:{bounds 4dp}:{cursor}:{limit}` TTL.MAP=120s; invalidate `video:emergency:map:*` เมื่อมี video ใหม่/emergency_photo ใหม่ และเมื่อ Thai Mhung photo insert/blur เปลี่ยนสถานะ (map preview แสดง completed จริงหรือ pending slot ที่ไม่มี URL)
 - `migrations/incident_map_indexes.sql` — btree: `video_gps_tracks(video_id, timestamp_offset)`, `videos(category_id, type, created_at DESC)`, `thai_mhung_photos(video_id, blur_status, created_at DESC, id DESC)` (EXPLAIN ก่อน/หลัง: videos เปลี่ยนเป็น Bitmap Index Scan; tracks ยัง seq scan เพราะตารางเล็ก 4 หน้า — planner จะสลับเองเมื่อโต)
 - Supabase: `supabase/migrations/20261010120000_incident_map_rpc.sql` — RPC `get_emergency_incident_map` (mirror เดียวกัน, SECURITY INVOKER) + เพิ่มคอลัมน์ `thai_mhung_photos.blur_status` ฝั่ง cloud (default 'completed') ให้ schema ตรงกับ local — apply แล้วและ smoke test ผ่านทั้งสอง path
 - Tests: `test/incident-map.test.js` (14 เคส — policy boundaries, validation, cursor, cluster, photo cap, route contract, Supabase fallback, fail-closed, gallery `created_at DESC, id DESC` tie-break) + `test/map-config.test.js` (+3 เคส features gate) — npm test 51/51 ผ่าน
@@ -6290,7 +6290,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - `data/repositories/incident_map_repository.dart` — Local API → Supabase RPC fallback, 4xx fail-closed ไม่ fallback, normalize URL ภาพ
 - `data/repositories/video_repository.dart` + `thai_mhung_ruler_gallery_widget.dart` — gallery เรียง `created_at DESC, id DESC` ทั้ง Local/Supabase และ resolve photo ID ภายในไม่เกิน 5 หน้าเพื่อโฟกัสรูปใน overlay; หากหาไม่พบเลือกภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้
 - `widgets/incident_map/incident_map_surface.dart` — พื้นผิวเดียวสอง renderer (GoogleMap marker bitmap จาก canvas / flutter_map widget markers), camera state ชุดเดียว + projector (Web Mercator สำหรับ Google, `projectAtZoom` สำหรับ OSM), cluster tap fit grid bounds ผ่าน renderer controller (fallback zoom เข้า centroid), photo overlay ตาม zoom ≥ 13, legend bar, state card
-- `widgets/incident_map/incident_map_photo_layout.dart` — collision layout pure function (ไม่ทับกัน/ไม่ทับหมุดเหตุอื่น/ไม่ล้นจอ, recency priority, cap 3/เหตุ)
+- `widgets/incident_map/incident_map_photo_layout.dart` — collision layout pure function (ไม่ทับกัน/ไม่ทับหมุดเหตุอื่น/ไม่ล้นจอ, recency priority, cap 15/เหตุและรองรับ ring สองชั้น)
 - `parts/emergency_incident_map_logic.dart` — `EmergencySurfaceMode` + `IncidentMapSession` + transition ตาม §22.3.1 (เข้า/เลือก marker/photo/category feed/back map/close normal/pause-resume), gate จาก `MapConfigService.resolveTarget(MapFeature.emergency)`, realtime pill กรองตาม `categoryId`
 - `emergency_live_page.dart` — layer 2.5, PopScope (map-playback back = map; map-mode close = normal), top bar ซ่อน filter ใน map-playback, map mode ใช้ปุ่มสถานการณ์เปิด category dialog แทนปุ่ม "เปลี่ยน", feed คืน committed filter หลัง close
 - `emergency_navigation_logic.dart` — `trendingCategoryIdsForActiveScope`: map-return fetch/filter/load-more ทุก card ด้วย map category; pinned marker stays within category; close clears session then reloads committed sheet category IDs
@@ -6318,7 +6318,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 **ยังค้าง verify ตามลำดับ:**
 1. Re-verify 3 fixes บนเครื่องเดิม (legend ตัดบรรทัด, camera restore, overlay แสดงชัดเท่า server-blur)
-2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; map-playback back → โฟกัส incident ของ clip ล่าสุดที่ zoom 14 และเห็น preview album cards (สูงสุด 3 ตาม map contract); "ปิด" → normal Emergency คืน committed filter
+2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; map-playback back → โฟกัส incident ของ clip ล่าสุดที่ zoom 14 และเห็น preview album cards (สูงสุด 15 ตาม map contract ปัจจุบัน — §22.19; **verified 2026-10-18**: กลับแผนที่แล้วเห็นภาพครบ + ช่อง pending สลับเป็นภาพจริงอัตโนมัติที่ cap เดิม 9); ทดสอบ cap 15/two-ring บน device หลัง deploy migration; "ปิด" → normal Emergency คืน committed filter
 3. รอบ OSM renderer (admin สลับ Emergency → OSM + tile source) ทำ checklist §22.8 เดิมทั้งชุด
 4. iOS — เข้า-ออกโหมดแผนที่ ~10 รอบ เฝ้า `PlatformException(recreating_view)`
 5. realtime pill "มีเหตุใหม่" (แจ้งจากเครื่องอื่น), mission suspend, Web (CSP/attribution)
@@ -6327,7 +6327,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 8. แตะภาพจากแผนที่ → overlay เปิดภาพตรง photo ID; ทดสอบ fallback ภาพ completed ล่าสุดเมื่อหาไม่พบใน 5 หน้าและข้อความแจ้ง (implement แล้ว — resolver ผ่าน unit test, รอเช็กบนเครื่อง)
 9. ตัดสินใจ cluster `count=1` ตาม §22.3.4 ("ถือเป็นหมุด") — ปัจจุบันซูมเข้า cell เพราะ payload ไม่มี incident id; เลือกระหว่างขยาย response field หรือปรับ spec ให้ตรง v1
 
-### 22.12 ปรับ UI ทางเข้าแผนที่ (implement แล้ว — รอ device verify รวมกับข้อ 1 ของ §22.11)
+### 22.12 ปรับ UI ทางเข้าแผนที่ (implement + device verified 2026-10-18, Android)
 
 **1. ปุ่ม "แผนที่เกิดเหตุ" อยู่บรรทัดเดียวกับชื่อหมวด (§22.1)**
 - `NeumorphicSwitchTile` เพิ่ม param optional `titleAccessory` — widget ที่วางต่อจากชื่อหมวดในแถวเดียวกัน (ก่อน toggle); ชื่อหมวดอยู่ใน `Flexible` + `ellipsis` จึงหดได้เมื่อจอแคบ
@@ -6349,10 +6349,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - widget `lib/features/video/presentation/pages/widgets/incident_map/incident_category_picker_dialog.dart` ใช้ `GlassDialog.show` + `GlassActionButton`/`GlassIconButton` จาก `lib/shared/widgets/glass`; เลือกทีละหมวดและคืน `DonationCategory?`; หมวดปัจจุบันแสดง filled + ไอคอน map
 - รายการมาจาก `_emergencyCategories` ซึ่ง query ตารางจริง `donation_categories` ด้วย `is_emergency = true`, เรียง `display_order asc` เหมือน `trending_category_filter_sheet`; เลือกหมวดใหม่เริ่ม map session ใหม่และไม่ commit filter/draft ของ sheet
 - มี guard `_missionFilterSuspended` ตาม §22.3 ข้อ 7
-- กล้องเมื่อเปลี่ยนหมวดแล้ว renderer อาจคง camera เดิมเพราะ `IncidentMapSurface` เป็น widget ตัวเดิม; viewport/query จะถูกโหลดใหม่ — device verify ต่อใน §22.11
+- กล้องเมื่อเปลี่ยนหมวดแล้ว renderer อาจคง camera เดิมเพราะ `IncidentMapSurface` เป็น widget ตัวเดิม; viewport/query ถูกโหลดใหม่ — device verified 2026-10-18 (เปลี่ยนหมวดระหว่างใช้แผนที่บนเครื่องจริง)
 - Tests: `test/features/incident_category_picker_dialog_test.dart` ครอบคลุมลำดับปุ่ม / เลือกและปิด / current category / empty categories / จอ 320dp
 
-### 22.14 Map-category Trending feed และ navigation (implement แล้ว — รอ device verify)
+### 22.14 Map-category Trending feed และ navigation (implement แล้ว — back→map + photo flow device verified 2026-10-18)
 
 **1. กล่องยอดนิยมระหว่างเล่นเหตุที่เลือกจากแผนที่**
 - เมื่อแตะ marker หรือ photo ใน map session ให้ `_incidentMapSession.categoryId` เป็น **temporary feed scope**: fetch หน้าแรกด้วย `categoryIdsOverride: {categoryId}`; client filter และ `_loadMoreTrendingVideos` ใช้ effective scope เดียวกัน จึงแสดงทุก card ในหมวดเดียวกันแบบ pagination และยังแตะเล่น card ใดก็ได้
@@ -6361,7 +6361,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - mission/reporter suspension ยังคง override category filtering ตาม policy เดิม (§22.3 ข้อ 7)
 
 **2. Back/close และการคืน Emergency ปกติ**
-- map-return playback: back ซ้าย / hardware back → กลับ incident map และโฟกัส incident ของ clip ที่เล่นล่าสุดที่ zoom 14 (photo preview threshold = 13); บังคับ refetch viewport เมื่อ camera settle และจัด photo cards ของ incident ที่โฟกัสก่อน เพื่อให้เห็น preview album cards ที่ map API ส่งมา (ปัจจุบันสูงสุด 3 ใบ/incident); ซ่อนปุ่มตัวกรองใน context นี้
+- map-return playback: back ซ้าย / hardware back → กลับ incident map และโฟกัส incident ของ clip ที่เล่นล่าสุดที่ zoom 14 (photo preview threshold = 13); บังคับ refetch เมื่อ camera settle (ถ้ามี focus) หรือ fetch ซ้ำด้วย bounds/zoom ล่าสุด (ถ้าไม่มี focus), เพื่อให้เห็น photo preview ล่าสุดหลังกลับมา; ถ้า `photo-blur-complete` มาถึงขณะ map แสดง incident นั้น ให้ refetch viewport อีกครั้ง; จัด photo cards ของ incident ที่โฟกัสก่อน (เพดาน 15 ใบ/incident ตาม §22.19); ซ่อนปุ่มตัวกรองใน context นี้
 - ปุ่มวงกลม `close` (semantics "ปิด") → clear map context แล้วกลับ Emergency ปกติ
 - incident map surface: ปุ่มปิด/ hardware back / ปุ่มปิดใน state card → Emergency ปกติ; ปุ่มสถานการณ์เปิด glass dialog; ไม่มีปุ่มตัวกรองหรือปุ่ม "เปลี่ยน" แยกบนแผนที่
 - เมื่อปิด map context โหลด Trending ใหม่ด้วย `_selectedTrendingCategoryIds` ที่ commit ไว้ใน sheet (หรือ unfiltered เมื่อว่าง), คืนปุ่มตัวกรองและไม่เอา map category ไป commit; ถ้า video ปัจจุบันอยู่นอก committed scope ใช้ auto-switch policy เดิม
@@ -6372,16 +6372,16 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - ป้าย trailing ใช้ `Flexible` + ellipsis เพื่อไม่ให้ล้นที่ 320 dp
 - Tests: scope policy ตรวจ map-category filter ทุก card/restore committed scope/mission suspension; camera-focus test ตรวจ incident/พิกัด/zoom photo overview; photo-layout test ให้เหตุที่เพิ่งเล่นได้ priority และวางครบ 3 preview cards เมื่อพื้นที่พอ; top-bar test ตรวจ back→map, circular close→normal, semantics และขนาด 42×42; focused map/top-bar suites ผ่าน 48/48
 
-### 22.16 Gradient indicator ต่อภาพระหว่างโหลด thumbnail บนแผนที่ (implement แล้ว — รอ device verify)
+### 22.16 Gradient indicator ต่อภาพระหว่างโหลด thumbnail บนแผนที่ (implement + device verified 2026-10-18, Android)
 
 - widget ใหม่ `lib/shared/widgets/gradient_progress_bar.dart` — `GradientProgressBar` เป็น indeterminate loading bar: segment กว้าง 45% ของแถบกวาดจากนอกซ้ายไปนอกขวา (`Align` alignment ±(1+w)/(1−w) = ±2.636) แล้ววนซ้ำ, gradient จางหัว-ท้ายด้วย alpha 0 จึงไม่กระตุกตอนเริ่มรอบใหม่; ปรับ `height`/`colors`/`trackColor`/`period`/`borderRadius` ได้; export ผ่าน `lib/shared/widgets/widgets.dart`
 - **indicator ต่อภาพเท่านั้น (per-image):** thumbnail ของเหตุการณ์บนแผนที่ (`_PhotoCard`) เดิมใช้ placeholder เป็นกล่องดำนิ่ง `Colors.black26` ที่แยกไม่ออกว่ากำลังโหลดหรือโหลดไม่สำเร็จ → เปลี่ยนเป็น `IncidentPhotoLoadingPlaceholder` (public ใน `incident_map_surface.dart`) = พื้นดำ + `GradientProgressBar(height: 3, trackColor: Colors.white24)` **วางกึ่งกลางการ์ด 64dp** (padding แนวนอน 10dp); `errorWidget` ยังเป็นไอคอน `broken_image` เหมือนเดิม จึงแยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ได้ — ภาพที่ cache แล้วจะไม่แสดงแถบ
 - **ไม่มี indicator ระดับหน้าแล้ว:** แถบ gradient ใต้แถวบน (ที่เคยผูกกับ `_incidentMapFetching`) และ state flag นั้นถูกถอดออกตาม requirement — indicator ระดับหน้าของโหมดแผนที่เหลือเฉพาะ `CircularProgressIndicator` กลางจอตอนโหลดครั้งแรก (`IncidentMapUiState.loading`) ซึ่งผู้ใช้เลือกให้คงไว้
 - เหตุผลเชิงพฤติกรรม: การรอที่ผู้ใช้รับรู้จริงคือ **ภาพของแต่ละเหตุ** (โหลดผ่าน `CachedNetworkImage` แยกใบ) ส่วนการ refetch viewport/cluster หลังกล้อง settle เร็วและมักใช้ response เดิม จึงไม่ต้องมีแถบระดับหน้า
 - Tests: `test/shared/widgets/gradient_progress_bar_test.dart` ตรวจความสูง, การเคลื่อนซ้าย→ขวา + วนรอบ, จุดเริ่ม/จบที่หลุดจอ, สี gradient จางหัวท้าย, `trackColor` และความกว้าง 320dp — ผ่าน 6/6; `test/features/incident_map_photo_loading_placeholder_test.dart` ตรวจว่ามี gradient bar ต่อใบ, track จาง, เคลื่อนไหวจริง, ไม่ล้นการ์ด 64dp และ bar อยู่กึ่งกลางการ์ดทั้งแกน x/y — ผ่าน 4/4
-- ยังต้อง device verify: ความชัดของแถบบน tile เข้ม/ภาพสว่าง และความรู้สึกว่าแถบกลางภาพ 64dp มองเห็นพอหรือควรเพิ่มความสูงของแถบ
+- **Device verified (2026-10-18):** แถบใช้งานเป็นตัวบอกช่อง "กำลัง blur" ของภาพที่รอ processing ใน §22.19 — ผู้ใช้เห็นชัดว่าภาพยังอยู่ระหว่างประมวลผล
 
-### 22.17 Radial photo ring รอบหมุดเหตุการณ์ (implement แล้ว — รอ device verify)
+### 22.17 Radial photo ring รอบหมุดเหตุการณ์ (implement + device verified 2026-10-18, Android)
 
 - **ปัญหา:** layout เดิมวาง thumbnail เป็นแถวเหนือหมุด (`row above pin`) โดยอ้างแค่ padding 10px จาก anchor แต่หมุดวาดเป็น hitbox 44×44 ด้วยวงกลมรัศมี 22 จึงมีเฟรมที่การ์ดบังหมุด — ผู้ใช้แตะหมุดไม่ได้/มองไม่เห็นตำแหน่ง
 - **แนวทาง:** ยืม pattern จาก `lib/features/consultation/presentation/widgets/closed_ended/radial_question_layout.dart` (`angle = startAngle + 2π·i/n`, `offset = r·(cos,sin)`, เริ่มที่ −π/2) มาใช้กับ `layoutIncidentPhotoCards` ใน `incident_map_photo_layout.dart` — การ์ดแต่ละเหตุถูกกระจายเท่า ๆ กันบนวงแหวนที่มีศูนย์ตรงกับหมุด
@@ -6389,7 +6389,45 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
   1. `ringRadius = pinRadius(22) + cardHalfDiagonal + gap(6)` → การ์ดที่วางบนวงนี้ **ไม่มีทางแตะ** วงกลมหมุดรัศมี 22 (ระยะศูนย์การ์ด−ศูนย์หมุด ≥ ครึ่งเส้นทแยงการ์ด + ช่องว่าง)
   2. ทุก card rect ต้องหลุดวงกลม exclusion ของหมุด**อื่นทุกตัว** และไม่ overlap rect ที่วางไปแล้ว — ถ้า ring rotation ปัจจุบันวางไม่ได้ทั้งใบ ให้หมุนเริ่มมุมใหม่ (8 เฟรม รอบละ π/4); หมุนครบยังไม่ได้ → เหตุนั้นไม่วาด (pin ยังมองเห็นและแตะได้เสมอ)
   3. Rect ต้องอยู่ใน viewport เต็มใบ (margin 0) — หมุดชิดมุมจอจะถูกหมุนวงไปทางด้านที่ว่าง ไม่ใช่ดันการ์ดทะลุจอ
-  4. คง max 3 ใบ/เหตุ (ตาม contract gallery API) และ `preferredIncidentId` (map-return) ได้จัดวางก่อน
-- **ข้อจำกัดที่ยอมรับ:** เหตุที่อยู่ชิดกันมาก (< ~150px) อาจวางการ์ดได้เฉพาะบางเหตุ — เลือกตาม priority (map-return > recency) และการ์ดที่วางไม่ได้ไม่ถูกบีบลงมาบังหมุดอีกต่อไป (ดีกว่าของเดิมที่ยอมบังหมุดเพื่อให้การ์ดครบแถว)
-- Tests: `test/features/incident_map_photo_layout_test.dart` เขียนใหม่เป็น 10 เคส — ring radius ตรง invariant, เริ่มด้านบนหมุด, ไม่ทับหมุดตัวเอง/หมุดเหตุอื่น, ไม่ overlap กัน, มุมจอหมุนหาด้านว่าง, หลุดจอไกลไม่วาด, max 3 ใบ, recency และ map-return priority — ผ่าน 10/10
-- ยังต้อง device verify: ความรู้สึกการ์ดล้อมหมุดบน tile จริง, ระยะวง 73px เทียบขนาดจอ 320dp และพฤติกรรมเมื่อเหตุหนาแน่น (zoom ต่ำกว่า threshold กลับเป็น cluster เดิม)
+  4. cap ต่อเหตุ = `kIncidentMapMaxPhotosPerIncident` (15; รอบก่อน device verify ที่ cap 9 ตาม §22.19) และ `preferredIncidentId` (map-return) ได้จัดวางก่อน
+- **Adaptive strategy chain** (`_RingLayout.forCount` — ผู้ใช้สั่งให้รองรับ "ทุกทางเลือก" อัตโนมัติตามจำนวนภาพ; เรียงจากบิดเบือนภาพน้อยไปมาก, วัดจริงบน cardSize 64/gap 6/pinRadius 22):
+  | จำนวนภาพ | กลยุทธ์ | ผลลัพธ์ที่วัดจริง |
+  |---|---|---|
+  | ≤5 | วงฐาน r≈73px | เหมือนเดิม การ์ด 64dp |
+  | 6–9 | **ขยายวง** (`expandedRingLimit=140`) | r = 95→139px, การ์ดคง 64dp; r ขั้นต่ำต่อ n = `spacing·√2/(2·sin(π/n))` — รับประกันไม่ชนกันทุก rotation |
+  | 10–15 | **วงแหวน 2 ชั้น** | ชั้นใน ≤5 ใบบนวงฐาน + ชั้นนอก r≈168px (ห่างชั้นใน `spacing·√2` → ชั้นไม่ชนกันแน่นอน; ชั้นนอก phase-offset ครึ่งช่องให้การ์ดอยู่กลางช่องว่างชั้นใน) |
+  | ≥16 | **ย่อยการ์ด** (fallback สุดท้าย, scale ≥ `minCardScale=0.5`) | scale 0.7 → 44.8dp (n=16–18), scale 0.55 → 35.2dp (n≥19) บนวงที่ขยายตาม spacing ใหม่ (≤ `maxRingRadius=200`) |
+  | เกินเพดานทุกกลยุทธ์ | ไม่วาดการ์ดของเหตุนั้น | pin ยังมองเห็น/แตะได้เสมอ |
+- **ข้อจำกัดที่ยอมรับ:** เหตุที่อยู่ชิดกันมาก (< ~150px) อาจวางการ์ดได้เฉพาะบางเหตุ — เลือกตาม priority (map-return > recency) และการ์ดที่วางไม่ได้ไม่ถูกบีบลงมาบังหมุดอีกต่อไป (ดีกว่าของเดิมที่ยอมบังหมุดเพื่อให้การ์ดครบแถว); วงที่ขยาย/2 ชั้นมีโอกาสชนเหตุข้างเคียงมากขึ้นแต่กฎชนเดิมคุมไว้เหมือนกัน
+- Tests: `test/features/incident_map_photo_layout_test.dart` 14 เคส — ring radius ตรง invariant, เริ่มด้านบนหมุด, ไม่ทับหมุดตัวเอง/หมุดเหตุอื่น, ไม่ overlap กัน, มุมจอหมุนหาด้านว่าง, หลุดจอไกลไม่วาด, cap 15 ใบ/เหตุ, map-return priority และครบ 3 กลยุทธ์ (n=6 ขยายวง, n=10 สองชั้น, n=15 สองชั้นครบ 5+10 บน viewport 390×800, n=16 fallback ย่อการ์ด) — ผ่าน 14/14
+- **Device verified (2026-10-18, cap เดิม 9):** วงแหวนอ่านชัดบน tile จริงและหมุดไม่ถูกบัง. cap 15 / วง 2 ชั้นผ่าน unit test บน viewport มือถือ 390×800 แล้ว แต่ยังรอ device verify หลัง apply migration §22.19; การ์ดย่อสำหรับ >15 ยังเป็น readiness (API cap 15) และยังไม่ทดสอบกับเหตุหนาแน่นมาก
+
+### 22.18 Refresh ภาพแผนที่เมื่อกลับจาก playback และเมื่อ blur เสร็จ (implement + device verified 2026-10-18, Android)
+
+- **ต้นเหตุ:** `GET /api/videos/emergency/map` cache response รวม `photos` ใน Redis 120 วินาที แต่การอัปโหลด Thai Mhung เดิม invalidated แค่ `video:gallery:*`; เมื่อกลับเข้า map client fetch ใหม่จริงแต่ได้ map response เก่าจาก Redis จึงไม่เห็นภาพใหม่จน cache หมดอายุ
+- **Backend:** invalidate `video:emergency:map:*` หลัง DB เปลี่ยน `thai_mhung_photos.blur_status` เป็น `completed` และก่อน broadcast `photo-blur-complete`; ตั้งแต่เพิ่ม pending preview ใน §22.19 ยัง invalidate ตอน insert `blurring` ด้วย เพื่อให้ map แสดงช่องรอทันที
+- **Flutter return:** `_returnToIncidentMap()` บังคับ refresh ทุกครั้ง — มี `returnFocus` ให้รอกล้อง settle เพื่อใช้ viewport ของจุดที่เพิ่งเล่น; ไม่มี focus ใช้ `lastCameraBounds/lastCameraZoom` ดึง viewport เดิมทันที ไม่พึ่ง callback กล้องอย่างเดียว
+- **Blur เสร็จหลัง map กลับมาแล้ว:** listener ของ `photo-blur-complete` เรียก refresh เพิ่มเมื่อ incident เป็น pinned/point ที่อยู่ใน map ปัจจุบัน; generation guard ของ fetch ทิ้ง response เก่าที่กลับมาช้ากว่า
+- Tests: `websocket-server/test/incident-map.test.js` integration route จำลอง Thai Mhung upload+blur completion และยืนยันว่ามีการ invalidate `video:emergency:map:*`; focused server test ผ่าน 15/15; **device verified (2026-10-18)** — กลับจาก playback แล้วเห็นชุดภาพล่าสุด (ต่อด้วย §22.19)
+
+### 22.19 Photo preview ถึง 15 ใบ + โควตาเป็นธรรมต่อผู้ส่ง + ช่องรอ blur/auto reload (cap 9 เดิม device verified; cap 15 implementation — รอ device verify)
+
+- **อาการที่รายงาน:** gallery มีภาพไทยมุง 6 ใบ แต่แผนที่แสดง 3 ใบ และไม่เห็นว่าภาพที่เพิ่งอัปโหลดกำลังรอ blur อยู่
+- **ต้นเหตุเดิม 3 ชั้น:** (1) `PHOTOS_PER_POINT = 3` ฝั่ง server cap ต่อเหตุ (2) layout ฝั่ง Flutter `maxPerIncident` default 3 ตัดซ้ำอีกชั้น (3) `PHOTOS_SQL`/RPC กรอง `blur_status = 'completed'` จึงไม่มี "ช่อง" ของภาพที่กำลัง blur ให้ผู้ใช้เห็นว่า upload ยังไม่เสร็จ
+- **Backend (`services/incident-map.js`):**
+  - `PHOTOS_PER_POINT` ปรับจาก 9 เป็น **15** เพื่อให้ API cap ตรงกับวงแหวน 2 ชั้นของ Flutter (5 ชั้นใน + 10 ชั้นนอก)
+  - `PHOTOS_SQL` คัดเลือกเป็นรอบเท่ากันต่อผู้ส่ง: `row_number()` แยก `PARTITION BY video_id, user_id` เรียงภาพของแต่ละคนใหม่→เก่า แล้วเรียงผลรวมด้วย `sender_rank, created_at DESC NULLS LAST, id DESC` จนครบ 15
+  - ผู้ส่งทุกคนได้ภาพตัวแทนล่าสุดก่อน 1 ใบ; รอบถัดไปเติมใบที่ 2, 3, ... ตามจำนวนภาพที่แต่ละคนมี (สัดส่วนต่างกันไม่เกิน 1 เมื่อทุกคนมีภาพพอ); ถ้ามีผู้ส่งเกิน 15 คน เลือกตัวแทนล่าสุดจาก 15 คนที่ส่งล่าสุด; ภาพใหม่จะอยู่ในรอบแรกและแทนภาพเก่าของผู้ส่งนั้น หรือดันตัวแทนผู้ส่งที่เก่าสุดออกเมื่อเกินจำนวนคน
+  - `user_id` ใช้ภายใน query เพื่อจัดโควตาเท่านั้น ไม่ส่งใน response (ตาม privacy contract)
+  - รวม `blur_status IN ('completed','blurring')` และ **mask url ของแถวที่ยัง blur เป็น `''`** (ไม่ fallback ไป raw/original ตามกฎ §22.5); `failed` ยังถูกซ่อน
+  - `attachPhotos` คงลำดับ fair rank และแนบ `blurStatus` โดยไม่ส่ง `user_id`; `fetchIncidentMapSupabase` normalize รูปจาก RPC ให้ contract เดียวกัน (กัน RPC เวอร์ชันเก่า)
+  - cache key เปลี่ยน `video:emergency:map:v1` → `v2` เพื่อไม่เสิร์ฟ response เก่าที่ cap 9/เรียงแบบเดิมระหว่าง TTL 120 วินาที
+- **Supabase:** `supabase/migrations/20261019100000_incident_map_fair_photo_previews.sql` อัปเดต CTE `photos` ให้ rank รอบละ 1 ต่อ `user_id` จนครบ LIMIT 15 พร้อม mask url/status เหมือน Local API; rollback `supabase/rollbacks/20261019100000_incident_map_fair_photo_previews.sql` คืน contract 9 ภาพเดิม — **ต้อง apply migration ใหม่กับ Supabase project** สำหรับ fallback path (local API ใช้ query ใหม่หลัง Node restart)
+- **Flutter:** `IncidentMapPhoto` มี `blurStatus` + `isPending` (url ว่างหรือ status ไม่ completed); `IncidentPhotoCard` แสดง `IncidentPhotoLoadingPlaceholder` + gradient bar เมื่อ `isPending` และ **ปิดการแตะ**; layout default cap = `kIncidentMapMaxPhotosPerIncident = 15`, วงสองชั้นจัด 5 ใบด้านใน + 10 ใบด้านนอก
+- **Auto reload:**
+  - server emit **global** `incident-map-photo-ready` ทั้งตอน insert (`blurring`) และตอน blur เสร็จ (`completed`) — แผนที่ไม่ join video room จึงไม่พลาด event แบบ room-scoped
+  - client (`_subscribeIncidentMapRealtime`) รับ event → debounce 700 ms → refetch viewport ถ้าเหตุนั้นอยู่บนแผนที่ปัจจุบัน
+  - **poll สำรอง** ทุก 8 วินาทีเมื่อยังมีภาพ `isPending` ใน viewport (สูงสุด ~2 นาที) กันกรณี WebSocket หลุด; หยุดเองเมื่อไม่มีภาพค้าง/ออกจากโหมดแผนที่
+  - invalidate `video:emergency:map:*` ทั้งตอน insert และตอน blur เสร็จ (ก่อน broadcast)
+- Tests: `websocket-server/test/incident-map.test.js` 18 เคส (fair rounds, cap 15, ผู้ส่ง >15 ได้ตัวแทนล่าสุดคนละใบ, pending slot ไม่มี url, PHOTOS_SQL และ Supabase migration contract, RPC fallback, upload→invalidate→global event); Flutter focused map suite 61/61 รวม layout cap 15 และวง 2 ชั้น 5+10 ที่ viewport 390×800; full `npm test` 62/62
+- **Device verified ก่อนหน้า (2026-10-18, cap 9):** incident gallery 6 ภาพแสดงครบ, ช่อง gradient bar สลับเป็นภาพจริงอัตโนมัติหลัง blur (Android). การขยาย cap 15/fair sender rounds ผ่าน unit tests แล้ว แต่ยังต้อง apply Supabase migration + restart Node และ device verify ภาพ 10–15 ภาพจริง; poll load เมื่อมีหลาย incident pending ก็ยังต้องทดสอบ

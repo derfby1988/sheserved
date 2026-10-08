@@ -91,6 +91,9 @@ class WebSocketService {
   // Phase 6.12: Async Thai Mhung Face Blur completion event
   final _photoBlurCompleteController =
       StreamController<Map<String, dynamic>>.broadcast();
+  // §22.19: global map-preview change (แผนที่ไม่ join video room)
+  final _incidentMapPhotoReadyController =
+      StreamController<Map<String, dynamic>>.broadcast();
   // ✅ [Yield Way] Stream สำหรับรับการแจ้งเตือนให้ทาง
   final _yieldWayAlertController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -161,6 +164,11 @@ class WebSocketService {
   /// Phase 6.12: รับ event เมื่อ face blur เสร็จสิ้น (background async processing)
   Stream<Map<String, dynamic>> get photoBlurCompleteStream =>
       _photoBlurCompleteController.stream;
+
+  /// §22.19: ภาพไทยมุงของเหตุการณ์ผ่าน blur แล้ว — global event สำหรับแผนที่
+  /// เกิดเหตุ (แผนที่ไม่ join video room จึงไม่ได้รับ `photo-blur-complete`)
+  Stream<Map<String, dynamic>> get incidentMapPhotoReadyStream =>
+      _incidentMapPhotoReadyController.stream;
 
   /// ✅ [Yield Way] การแจ้งเตือนให้ทางแบบ Real-time
   Stream<Map<String, dynamic>> get yieldWayAlertStream =>
@@ -589,6 +597,11 @@ class WebSocketService {
       _socket!.on('photo-blur-complete', (data) {
         debugPrint('WebSocket: photo-blur-complete received: $data');
         _photoBlurCompleteController.add(Map<String, dynamic>.from(data));
+      });
+
+      // §22.19: Global map-preview change (blur เสร็จ) — แผนที่ reload preview
+      _socket!.on('incident-map-photo-ready', (data) {
+        _incidentMapPhotoReadyController.add(Map<String, dynamic>.from(data));
       });
 
       // ✅ [Yield Way] รับการแจ้งเตือนให้ทางจาก Server (คัดกรองแล้วโดย route-based filter)

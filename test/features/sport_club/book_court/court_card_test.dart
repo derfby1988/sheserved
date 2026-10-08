@@ -157,9 +157,69 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey(CourtCardCubeArt.lottieKey)), findsOne);
-    // No rating -> the score block falls back to the court count.
-    expect(find.text('6'), findsOneWidget);
-    expect(find.text('รายการ'), findsOneWidget);
+    // No rating -> the court count is conveyed by the cube stack and
+    // stepper track, so no text repeats it.
+    expect(find.text('6'), findsNothing);
+    expect(find.text('6 รายการ'), findsNothing);
+    expect(find.text('รายการ'), findsNothing);
+  });
+
+  testWidgets('shows waiting for review after an eligible booking ends', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    const venue = VenueSummary(
+      id: 'venue-1',
+      name: 'สนามทดสอบ',
+      courtCount: 3,
+      hasReviewableBooking: true,
+    );
+
+    for (final style in [CourtCardStyle.classic, CourtCardStyle.painter3d]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtCard(venue: venue, styleOverride: style),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('รอรีวิว'), findsOneWidget);
+      expect(find.text('คะแนนสนาม'), findsNothing);
+      expect(find.text('/5'), findsNothing);
+    }
+  });
+
+  testWidgets('hides unbacked rating without a reviewable booking', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    const venue = VenueSummary(
+      id: 'venue-1',
+      name: 'สนามทดสอบ',
+      courtCount: 3,
+      averageRating: 4.3,
+    );
+
+    for (final style in [CourtCardStyle.classic, CourtCardStyle.painter3d]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CourtCard(venue: venue, styleOverride: style),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('รอรีวิว'), findsNothing);
+      expect(find.text('4.3'), findsNothing);
+      expect(find.text('คะแนนสนาม'), findsNothing);
+    }
   });
 
   testWidgets(

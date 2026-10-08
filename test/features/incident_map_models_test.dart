@@ -226,31 +226,67 @@ void main() {
     });
   });
 
-  group('gallery photo page resolution', () {
-    test('finds the photo and absolute index within a bounded page scan', () async {
-      final requestedPages = <int>[];
-      final result = await VideoRepository.resolveThaiMhungGalleryPhotoPages(
-        photoId: 'p4',
-        limit: 3,
-        loadPage: (page, limit) async {
-          requestedPages.add(page);
-          if (page == 1) {
-            return List.generate(
-              limit,
-              (index) => <String, dynamic>{'id': 'p${index + 1}'},
-            );
-          }
-          return [<String, dynamic>{'id': 'p4'}];
-        },
-      );
-
-      expect(result.found, isTrue);
-      expect(result.page, 2);
-      expect(result.index, 3);
-      expect(result.pagesFetched, 2);
-      expect(result.photos.last['id'], 'p4');
-      expect(requestedPages, [1, 2]);
+  group('IncidentMapPhoto blur status (§22.19)', () {
+    test('completed photo is ready and keeps its url', () {
+      final photo = IncidentMapPhoto.fromJson({
+        'id': 'p1',
+        'url': 'https://example.test/1',
+        'blurStatus': 'completed',
+      });
+      expect(photo.isPending, isFalse);
+      expect(photo.blurStatus, 'completed');
     });
+
+    test('blurring photo keeps its slot but is pending with no url', () {
+      final photo = IncidentMapPhoto.fromJson({
+        'id': 'p2',
+        'url': '',
+        'blurStatus': 'blurring',
+      });
+      expect(photo.isPending, isTrue);
+      expect(photo.blurStatus, 'blurring');
+    });
+
+    test('missing blurStatus defaults to completed (older server payload)', () {
+      final photo = IncidentMapPhoto.fromJson({
+        'id': 'p3',
+        'url': 'https://example.test/3',
+      });
+      expect(photo.blurStatus, 'completed');
+      expect(photo.isPending, isFalse);
+    });
+  });
+
+  group('gallery photo page resolution', () {
+    test(
+      'finds the photo and absolute index within a bounded page scan',
+      () async {
+        final requestedPages = <int>[];
+        final result = await VideoRepository.resolveThaiMhungGalleryPhotoPages(
+          photoId: 'p4',
+          limit: 3,
+          loadPage: (page, limit) async {
+            requestedPages.add(page);
+            if (page == 1) {
+              return List.generate(
+                limit,
+                (index) => <String, dynamic>{'id': 'p${index + 1}'},
+              );
+            }
+            return [
+              <String, dynamic>{'id': 'p4'},
+            ];
+          },
+        );
+
+        expect(result.found, isTrue);
+        expect(result.page, 2);
+        expect(result.index, 3);
+        expect(result.pagesFetched, 2);
+        expect(result.photos.last['id'], 'p4');
+        expect(requestedPages, [1, 2]);
+      },
+    );
 
     test('stops at maxPages when the target cannot be resolved', () async {
       final requestedPages = <int>[];

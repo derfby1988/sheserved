@@ -435,12 +435,20 @@ module.exports = (pool, supabase = null) => {
                             blur_status: 'blurring',
                             photo_id: photoId,
                         });
+                        // §22.19: แผนที่แสดง "ช่องรอ" ของภาพที่ยัง blur อยู่ —
+                        // emit global ให้แผนที่ reload แล้วเห็นช่องนี้ทันที
+                        socketService.broadcastIncidentMapPhotoReady(validatedIncidentId, {
+                            photoId,
+                            blurStatus: 'blurring',
+                        });
                     } catch (insertErr) {
                         console.error('[ThaiMhung] Failed to insert thai_mhung_photos:', insertErr);
                     }
                 }
                 // ✅ Invalidate gallery cache so fresh data appears immediately
                 invalidateCachePattern(`video:gallery:${sanitizeCacheKey(validatedIncidentId)}:*`);
+                // §22.19: map preview cache holds the photo slots too
+                invalidateCachePattern('video:emergency:map:*');
             }
 
             // 5. ✅ Respond immediately — ไม่รอ blur/watermark
@@ -508,15 +516,19 @@ module.exports = (pool, supabase = null) => {
                                 `UPDATE thai_mhung_photos SET photo_url = $1, blur_status = $2 WHERE id = $3`,
                                 [blurredUrl, 'completed', photoId]
                             );
+                            await invalidateCachePattern('video:emergency:map:*');
                         } catch (updateErr) {
                             console.error('[ThaiMhung] Failed to update photo_url after blur:', updateErr);
                         }
 
-                        // 5. Broadcast blur complete
+                        // 5. Broadcast blur complete (room) + global map refresh
                         socketService.broadcastPhotoBlurComplete(validatedIncidentId, {
                             photoId: photoId,
                             url: blurredUrl,
                             blurStatus: 'completed',
+                        });
+                        socketService.broadcastIncidentMapPhotoReady(validatedIncidentId, {
+                            photoId: photoId,
                         });
                     }
 
@@ -661,7 +673,7 @@ module.exports = (pool, supabase = null) => {
         try {
             const params = incidentMapService.parseMapQuery(req.query);
             const cacheKey = [
-                'video:emergency:map:v1',
+                'video:emergency:map:v2',
                 params.categoryId,
                 params.zoom,
                 `${params.bounds.south.toFixed(4)},${params.bounds.west.toFixed(4)},${params.bounds.north.toFixed(4)},${params.bounds.east.toFixed(4)}`,

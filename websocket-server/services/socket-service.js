@@ -199,6 +199,21 @@ function broadcastPhotoBlurComplete(incidentId, data) {
     });
 }
 
+/**
+ * Global map-preview change — แผนที่เกิดเหตุไม่ join video room จึงไม่ได้รับ
+ * photo-blur-complete; emit แบบ global ให้แผนที่ reload preview ของเหตุนั้น
+ * (client กรองเองว่า incident อยู่ใน viewport ปัจจุบันหรือไม่) (§22.19)
+ * @param {string} incidentId
+ * @param {object} data - { photoId }
+ */
+function broadcastIncidentMapPhotoReady(incidentId, data = {}) {
+    if (!io) return;
+    io.emit('incident-map-photo-ready', {
+        incidentId,
+        ...data,
+    });
+}
+
 module.exports = {
     init,
     sendProgress,
@@ -214,6 +229,7 @@ module.exports = {
     broadcastFitnessBookingStatus,
     broadcastApplicationNotification,
     broadcastPhotoBlurComplete,
+    broadcastIncidentMapPhotoReady,
     /// คืน io instance สำหรับ services อื่นที่ต้องการ emit events โดยตรง
     getIO: () => io,
 };

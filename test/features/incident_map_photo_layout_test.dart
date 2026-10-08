@@ -76,23 +76,18 @@ void main() {
       expect(c.dy, closeTo(300 - _ringRadius, 0.5));
     });
 
-    test('จำกัด 3 ใบต่อเหตุ — ส่วนที่เหลือไม่วาด (ยังอยู่ใน gallery เต็ม)', () {
-      final placements = layoutIncidentPhotoCards(
-        anchorByIncidentId: {'a': const Offset(200, 300)},
-        photosByIncidentId: {
-          'a': [
-            _photo('p1'),
-            _photo('p2'),
-            _photo('p3'),
-            _photo('p4'),
-            _photo('p5'),
-          ],
-        },
-        viewport: _viewport,
-        cardSize: _cardSize,
-      );
-      expect(placements.length, 3);
-    });
+    test(
+      'จำกัด 15 ใบต่อเหตุ (เพดานเดียวกับ PHOTOS_PER_POINT) — ที่เหลือไม่วาด',
+      () {
+        final placements = layoutIncidentPhotoCards(
+          anchorByIncidentId: {'a': const Offset(400, 400)},
+          photosByIncidentId: {'a': List.generate(20, (i) => _photo('p$i'))},
+          viewport: const Size(800, 800),
+        );
+        expect(placements.length, kIncidentMapMaxPhotosPerIncident);
+        expect(kIncidentMapMaxPhotosPerIncident, 15);
+      },
+    );
 
     test('สองเหตุใกล้กัน → วงที่วางไม่ได้ถูกข้าม ไม่ทับหมุดเหตุอื่น', () {
       final placements = layoutIncidentPhotoCards(
@@ -214,36 +209,130 @@ void main() {
       expect(placements.first.incidentId, 'new-i');
     });
 
-    test(
-      'map-return incident photos take layout priority and keep all 3 cards',
-      () {
-        final placements = layoutIncidentPhotoCards(
-          anchorByIncidentId: {
-            'selected': const Offset(150, 400),
-            'newer': const Offset(450, 400),
-          },
-          photosByIncidentId: {
-            'selected': [
-              _photo('selected-1', createdAt: DateTime.utc(2026, 1, 1)),
-              _photo('selected-2', createdAt: DateTime.utc(2026, 1, 2)),
-              _photo('selected-3', createdAt: DateTime.utc(2026, 1, 3)),
-            ],
-            'newer': [_photo('newer-1', createdAt: DateTime.utc(2026, 10, 6))],
-          },
-          viewport: const Size(600, 800),
-          cardSize: _cardSize,
-          preferredIncidentId: 'selected',
+    test('ภาพ 6 ใบ → กลยุทธ์ "ขยายวง" (ring > วงฐาน, การ์ดขนาดเดิม)', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'a': const Offset(400, 400)},
+        photosByIncidentId: {'a': List.generate(6, (i) => _photo('p$i'))},
+        viewport: const Size(800, 800),
+        cardSize: _cardSize,
+        maxPerIncident: 6,
+      );
+      expect(placements, hasLength(6));
+      for (final p in placements) {
+        // วงขยาย ≥ spacing·√2/(2 sin π/6) ≈ 94.8 และการ์ดไม่ย่อ
+        expect(
+          (p.center - const Offset(400, 400)).distance,
+          greaterThan(_ringRadius + 10),
         );
+        expect(p.size, _cardSize);
+      }
+      final rects = placements.map((p) => p.rect).toList();
+      for (var i = 0; i < rects.length; i++) {
+        for (var j = i + 1; j < rects.length; j++) {
+          expect(rects[i].overlaps(rects[j]), isFalse);
+        }
+      }
+    });
 
+    test('ภาพ 10 ใบ → กลยุทธ์ "วงแหวน 2 ชั้น" (5 ชั้นใน + 5 ชั้นนอก)', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'a': const Offset(400, 400)},
+        photosByIncidentId: {'a': List.generate(10, (i) => _photo('p$i'))},
+        viewport: const Size(800, 800),
+        cardSize: _cardSize,
+        maxPerIncident: 10,
+      );
+      expect(placements, hasLength(10));
+      final radii = placements
+          .map((p) => (p.center - const Offset(400, 400)).distance)
+          .toList();
+      final inner = radii.where((r) => r < 100).length;
+      final outer = radii.where((r) => r >= 100).length;
+      expect(inner, 5);
+      expect(outer, 5);
+      final rects = placements.map((p) => p.rect).toList();
+      for (var i = 0; i < rects.length; i++) {
+        for (var j = i + 1; j < rects.length; j++) {
+          expect(rects[i].overlaps(rects[j]), isFalse);
+        }
+      }
+    });
+
+    test('ภาพ 15 ใบ → วางครบ 5+10 ใบในวงแหวน 2 ชั้นบนจอมือถือ', () {
+      const viewport = Size(390, 800);
+      const anchor = Offset(195, 400);
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'a': anchor},
+        photosByIncidentId: {'a': List.generate(15, (i) => _photo('p$i'))},
+        viewport: viewport,
+      );
+
+      expect(placements, hasLength(15));
+      expect(placements.every((p) => p.size == _cardSize), isTrue);
+      final radii = placements.map((p) => (p.center - anchor).distance);
+      expect(radii.where((r) => r < 100), hasLength(5));
+      expect(radii.where((r) => r >= 100), hasLength(10));
+      for (final placement in placements) {
+        expect(viewport.contains(placement.rect.topLeft), isTrue);
+        expect(viewport.contains(placement.rect.bottomRight), isTrue);
         expect(
-          placements.take(3).map((placement) => placement.incidentId),
-          everyElement('selected'),
+          placement.rect.overlaps(Rect.fromCircle(center: anchor, radius: 22)),
+          isFalse,
         );
-        expect(
-          placements.where((placement) => placement.incidentId == 'selected'),
-          hasLength(3),
-        );
-      },
-    );
+      }
+      final rects = placements.map((p) => p.rect).toList();
+      for (var i = 0; i < rects.length; i++) {
+        for (var j = i + 1; j < rects.length; j++) {
+          expect(rects[i].overlaps(rects[j].inflate(3)), isFalse);
+        }
+      }
+    });
+
+    test('ภาพ 16 ใบ → กลยุทธ์ "ย่อยการ์ด" (ขนาดการ์ด < 64 แต่ยังวางครบ)', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {'a': const Offset(400, 400)},
+        photosByIncidentId: {'a': List.generate(16, (i) => _photo('p$i'))},
+        viewport: const Size(800, 800),
+        cardSize: _cardSize,
+        maxPerIncident: 16,
+      );
+      expect(placements, hasLength(16));
+      expect(placements.first.size.width, lessThan(64));
+      final rects = placements.map((p) => p.rect).toList();
+      for (var i = 0; i < rects.length; i++) {
+        for (var j = i + 1; j < rects.length; j++) {
+          expect(rects[i].overlaps(rects[j]), isFalse);
+        }
+      }
+    });
+
+    test('map-return incident photos take layout priority', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {
+          'selected': const Offset(150, 400),
+          'newer': const Offset(450, 400),
+        },
+        photosByIncidentId: {
+          'selected': [
+            _photo('selected-1', createdAt: DateTime.utc(2026, 1, 1)),
+            _photo('selected-2', createdAt: DateTime.utc(2026, 1, 2)),
+            _photo('selected-3', createdAt: DateTime.utc(2026, 1, 3)),
+          ],
+          'newer': [_photo('newer-1', createdAt: DateTime.utc(2026, 10, 6))],
+        },
+        viewport: const Size(600, 800),
+        cardSize: _cardSize,
+        preferredIncidentId: 'selected',
+      );
+
+      expect(
+        placements.take(3).map((placement) => placement.incidentId),
+        everyElement('selected'),
+      );
+      expect(
+        placements.where((placement) => placement.incidentId == 'selected'),
+        hasLength(3),
+      );
+    });
   });
 }

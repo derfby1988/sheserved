@@ -121,12 +121,25 @@ class IncidentMapPhoto {
   final String url;
   final DateTime? createdAt;
 
-  const IncidentMapPhoto({required this.id, required this.url, this.createdAt});
+  /// สถานะ blur ฝั่ง server: `completed` | `blurring` (§22.19)
+  final String blurStatus;
+
+  const IncidentMapPhoto({
+    required this.id,
+    required this.url,
+    this.blurStatus = 'completed',
+    this.createdAt,
+  });
+
+  /// ภาพที่ยังรอ blur — server ส่ง "ช่อง" มาโดยไม่มี url เพื่อไม่ให้เปิดเผย
+  /// ภาพต้นฉบับ; client แสดง loading placeholder จนกว่า blur จะเสร็จ (§22.19)
+  bool get isPending => blurStatus != 'completed' || url.isEmpty;
 
   factory IncidentMapPhoto.fromJson(Map<String, dynamic> json) =>
       IncidentMapPhoto(
         id: json['id']?.toString() ?? '',
         url: json['url']?.toString() ?? '',
+        blurStatus: json['blurStatus']?.toString() ?? 'completed',
         createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
       );
 }

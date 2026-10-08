@@ -52,8 +52,6 @@ class _CourtCardStylePanelState extends State<CourtCardStylePanel> {
     province: 'กรุงเทพฯ',
     timezone: 'Asia/Bangkok',
     courtCount: 6,
-    averageRating: 4.3,
-    reviewCount: 18,
     startingPriceAmount: 250,
     amenityIds: const {'parking', 'shower', 'lighting'},
   );

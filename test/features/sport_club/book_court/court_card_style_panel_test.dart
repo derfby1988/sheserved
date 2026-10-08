@@ -27,6 +27,8 @@ void main() {
       );
       expect(find.text(style.label), findsWidgets);
     }
+    expect(find.text('4.3'), findsNothing);
+    expect(find.text('คะแนนสนาม'), findsNothing);
     expect(find.text('ใช้อยู่'), findsOneWidget);
     expect(
       find.text('ใช้อยู่ตอนนี้: ${CourtCardStyle.classic.label}'),

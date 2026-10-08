@@ -225,7 +225,7 @@ class _CourtCardState extends State<CourtCard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (venue.averageRating != null) ...[
+                      if (_hasPublishedRating(venue)) ...[
                         const Icon(
                           Icons.star_rounded,
                           size: 16,
@@ -246,7 +246,16 @@ class _CourtCardState extends State<CourtCard> {
                             color: Colors.grey.shade600,
                           ),
                         ),
-                      ],
+                      ] else if (venue.reviewCount == 0 &&
+                          venue.hasReviewableBooking)
+                        const Text(
+                          'รอรีวิว',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFD91E28),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -426,22 +435,25 @@ class _CourtCardState extends State<CourtCard> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 6),
-                              // Big Score display
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  Text(
-                                    score.value,
-                                    style: const TextStyle(
-                                      fontSize: 32,
-                                      height: 1.05,
-                                      fontWeight: FontWeight.w900,
-                                      color: Color(0xFF111827),
-                                      letterSpacing: -0.6,
+                              // Big score only when it shows the venue
+                              // rating — the court-count fallback would
+                              // duplicate the cube stack + stepper track.
+                              if (score.suffix != null) ...[
+                                Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Text(
+                                      score.value,
+                                      style: const TextStyle(
+                                        fontSize: 32,
+                                        height: 1.05,
+                                        fontWeight: FontWeight.w900,
+                                        color: Color(0xFF111827),
+                                        letterSpacing: -0.6,
+                                      ),
                                     ),
-                                  ),
-                                  if (score.suffix != null)
                                     Text(
                                       score.suffix!,
                                       style: const TextStyle(
@@ -450,43 +462,54 @@ class _CourtCardState extends State<CourtCard> {
                                         color: Color(0xFF4B5563),
                                       ),
                                     ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              // Subtitle with red dot badge (matching prototype ● Individual)
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Color(0xFFD91E28),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Color(0x66D91E28),
-                                          blurRadius: 5,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                // Subtitle with red dot badge (matching prototype ● Individual)
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Color(0xFFD91E28),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Color(0x66D91E28),
+                                            blurRadius: 5,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    score.label,
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFFD91E28),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      score.label,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFFD91E28),
+                                      ),
                                     ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                              ] else if (score.label.isNotEmpty) ...[
+                                Text(
+                                  score.label,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFD91E28),
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
                               // Location and Rating Detail Row
                               Row(
                                 children: [
-                                  if (venue.averageRating != null) ...[
+                                  if (_hasPublishedRating(venue)) ...[
                                     const Icon(
                                       Icons.star_rounded,
                                       size: 14,
@@ -532,26 +555,12 @@ class _CourtCardState extends State<CourtCard> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              // Court count and amenities
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.sports_tennis_rounded,
-                                    size: 13,
-                                    color: Color(0xFF374151),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '${venue.courtCount} รายการ',
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF374151),
-                                    ),
-                                  ),
-                                  if (venue.amenityIds.isNotEmpty) ...[
-                                    const SizedBox(width: 6),
+                              // Amenities only — the cube stack already
+                              // conveys the listing count.
+                              if (venue.amenityIds.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
                                     for (final key in venue.amenityIds.take(3))
                                       Padding(
                                         padding: const EdgeInsets.only(
@@ -564,8 +573,8 @@ class _CourtCardState extends State<CourtCard> {
                                         ),
                                       ),
                                   ],
-                                ],
-                              ),
+                                ),
+                              ],
                               if (startingPriceText != null) ...[
                                 const SizedBox(height: 4),
                                 Text(
@@ -759,12 +768,14 @@ class _CourtCardState extends State<CourtCard> {
     );
   }
 
-  /// Big number shown on the 3D card: the venue rating when it has reviews,
-  /// otherwise its court count (both mapped onto a 1–5 band).
+  /// Review score is real and published; supply remains the fallback art level.
+  static bool _hasPublishedRating(VenueSummary venue) =>
+      venue.reviewCount > 0 && venue.averageRating != null;
+
   static ({String value, String? suffix, String label, int level}) _score(
     VenueSummary venue,
   ) {
-    final rating = venue.averageRating;
+    final rating = _hasPublishedRating(venue) ? venue.averageRating : null;
     if (rating != null) {
       return (
         value: rating.toStringAsFixed(1),
@@ -776,7 +787,9 @@ class _CourtCardState extends State<CourtCard> {
     return (
       value: '${venue.courtCount}',
       suffix: null,
-      label: 'รายการ',
+      label: venue.reviewCount == 0 && venue.hasReviewableBooking
+          ? 'รอรีวิว'
+          : '',
       level: _supplyLevel(venue.courtCount),
     );
   }

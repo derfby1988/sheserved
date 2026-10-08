@@ -3,6 +3,9 @@ import 'dart:ui';
 
 import '../../../../models/incident_map_models.dart';
 
+/// เพดาน preview cards ต่อเหตุ — ต้องตรงกับ `PHOTOS_PER_POINT` ฝั่ง server.
+const int kIncidentMapMaxPhotosPerIncident = 15;
+
 /// Screen-space collision layout for incident gallery thumbnails
 /// (VIDEO_SYSTEM_PLAN.md §22.5/§22.17).
 ///
@@ -14,9 +17,14 @@ import '../../../../models/incident_map_models.dart';
 ///     r·(cos θ, sin θ)`): cards orbit the anchor instead of sitting in a row
 ///     above it, so the pin face is always visible
 ///   * [ringRadius] defaults to `pinRadius + cardHalfDiagonal + pad` → a card
-///     is geometrically incapable of covering its own pin
-///   * a ring is committed all-or-none; up to 8 rotations are tried before
-///     the incident's cards are dropped (the pin itself remains on the map)
+///     is geometrically incapable of covering its own pin; the base ring fits
+///     up to 5 cards per incident at the default card size
+///   * when `n` exceeds the base ring's capacity the layout adapts
+///     automatically (least distortion first — see [_RingLayout.forCount]):
+///     expand the ring → split into two concentric rings → shrink the card
+///   * a layout is committed all-or-none; up to 8 rotations are tried per
+///     candidate before moving to the next strategy, and an incident whose
+///     cards all fail is dropped (the pin itself remains on the map)
 ///   * a card is placed only when it does not intersect any already-placed
 ///     card, any other incident's pin exclusion circle, or the viewport edge
 ///   * [preferredIncidentId] is placed first when returning from map playback;
@@ -53,7 +61,7 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   String? preferredIncidentId,
   Size cardSize = const Size(64, 64),
   double gap = 6,
-  int maxPerIncident = 3,
+  int maxPerIncident = kIncidentMapMaxPhotosPerIncident,
   double minZoomScale = 1.0,
 
   /// รัศมีของหมุดบนแผนที่ (รวมขอบขาว) — OSM widget ~22px box, Google
@@ -67,6 +75,16 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   /// ระยะจุดกลางการ์ดถึงหมุด — null = `pinRadius + cardHalfDiagonal + gap`
   /// (ค่าที่ทำให้การ์ดไม่มีทางทับหน้าหมุด)
   double? ringRadius,
+
+  /// เพดานรัศมีสำหรับกลยุทธ์ "ขยายวง" — วงที่ใหญ่กว่านี้ให้แตกเป็น 2 ชั้นแทน
+  /// (default 140 ≈ พอดี 9 ใบบนวงเดียว)
+  double expandedRingLimit = 140,
+
+  /// เพดานรัศมีสูงสุดที่ยอมให้การ์ดออกจากหมุด (ครอบคลุมชั้นนอก/วงที่ย่อการ์ด)
+  double maxRingRadius = 200,
+
+  /// สเกลการ์ดต่ำสุดสำหรับกลยุทธ์ "ย่อยการ์ด" — ต่ำกว่านี้เลิกวางเหตุนั้น
+  double minCardScale = 0.5,
 }) {
   if (minZoomScale <= 0) return const [];
   final effectiveCard = Size(
@@ -80,6 +98,9 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
       ) /
       2;
   final ring = ringRadius ?? (pinRadius + cardHalfDiag + gap);
+  // ระยะศูนย์การ์ดขั้นต่ำให้ไม่ชนกัน: rect ใหม่ถูก inflate gap/2 ก่อนเทียบ
+  // กับ rect เดิม → ต้องห่าง ≥ card + gap/2 บนแกนใดแกนหนึ่ง (64→67px)
+  final spacing = math.max(effectiveCard.width, effectiveCard.height) + gap / 2;
   final placements = <IncidentPhotoCardPlacement>[];
   final placedRects = <Rect>[];
   // Cards must never cover another incident's pin (§22.5) — radial rings
@@ -129,42 +150,45 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
     if (photos.isEmpty) continue;
     final n = photos.length;
 
-    bool tryRing(double rotation) {
+    bool tryLayout(_RingLayout layout, double rotation) {
       final rects = <Rect>[];
-      for (var i = 0; i < n; i++) {
-        final angle = startAngle + rotation + 2 * math.pi * i / n;
-        final center = Offset(
-          anchor.dx + ring * math.cos(angle),
-          anchor.dy + ring * math.sin(angle),
-        );
-        final rect = Rect.fromCenter(
-          center: center,
-          width: effectiveCard.width,
-          height: effectiveCard.height,
-        );
-        if (rect.left < 0 ||
-            rect.right > viewport.width ||
-            rect.top < 0 ||
-            rect.bottom > viewport.height) {
-          return false;
+      for (final spec in layout.rings) {
+        for (var i = 0; i < spec.count; i++) {
+          final angle =
+              startAngle + rotation + spec.phase + 2 * math.pi * i / spec.count;
+          final center = Offset(
+            anchor.dx + spec.radius * math.cos(angle),
+            anchor.dy + spec.radius * math.sin(angle),
+          );
+          final rect = Rect.fromCenter(
+            center: center,
+            width: layout.card.width,
+            height: layout.card.height,
+          );
+          if (rect.left < 0 ||
+              rect.right > viewport.width ||
+              rect.top < 0 ||
+              rect.bottom > viewport.height) {
+            return false;
+          }
+          for (final placed in [...placedRects, ...rects]) {
+            if (placed.overlaps(rect.inflate(gap / 2))) return false;
+          }
+          for (final entry in anchorExclusions.entries) {
+            if (entry.key == id) continue;
+            if (entry.value.overlaps(rect)) return false;
+          }
+          rects.add(rect);
         }
-        for (final placed in [...placedRects, ...rects]) {
-          if (placed.overlaps(rect.inflate(gap / 2))) return false;
-        }
-        for (final entry in anchorExclusions.entries) {
-          if (entry.key == id) continue;
-          if (entry.value.overlaps(rect)) return false;
-        }
-        rects.add(rect);
       }
-      // Commit
-      for (var i = 0; i < n; i++) {
+      // Commit — ภาพเรียงตามวง (ชั้นในก่อน) แล้วตามมุม
+      for (var i = 0; i < rects.length; i++) {
         placements.add(
           IncidentPhotoCardPlacement(
             incidentId: id,
             photo: photos[i],
             topLeft: rects[i].topLeft,
-            size: effectiveCard,
+            size: layout.card,
           ),
         );
         placedRects.add(rects[i]);
@@ -172,10 +196,101 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
       return true;
     }
 
-    for (final rotation in rotations) {
-      if (tryRing(rotation)) break;
+    var placed = false;
+    for (final layout in _RingLayout.forCount(
+      n,
+      card: effectiveCard,
+      baseRing: ring,
+      spacing: spacing,
+      pinRadius: pinRadius,
+      gap: gap,
+      expandedRingLimit: expandedRingLimit,
+      maxRingRadius: maxRingRadius,
+      minCardScale: minCardScale,
+    )) {
+      for (final rotation in rotations) {
+        if (tryLayout(layout, rotation)) {
+          placed = true;
+          break;
+        }
+      }
+      if (placed) break;
     }
-    // วงไม่มีที่วาง → ไม่แสดงการ์ดของเหตุนี้; หมุดยังอยู่บนแผนที่
+    // ทุกกลยุทธ์ไม่มีที่วาง → ไม่แสดงการ์ดของเหตุนี้; หมุดยังอยู่บนแผนที่
   }
   return placements;
+}
+
+/// วงแหวนชั้นเดียวใน [ _RingLayout ] — `phase` เลื่อนมุมเริ่ม (ใช้สลับช่อง
+/// ของชั้นนอกให้ตรงกลางช่องว่างชั้นใน)
+class _RingSpec {
+  final double radius;
+  final int count;
+  final double phase;
+
+  const _RingSpec(this.radius, this.count, {this.phase = 0});
+}
+
+/// ชุดผู้สมัคร layout ของเหตุหนึ่ง — `card` อาจถูกย่อในกลยุทธ์สุดท้าย
+class _RingLayout {
+  final Size card;
+  final List<_RingSpec> rings;
+
+  const _RingLayout(this.card, this.rings);
+
+  /// รัศมีขั้นต่ำที่รับประกันว่าการ์ด `count` ใบไม่ชนกัน **ทุกมุมหมุน** —
+  /// คู่ที่ชิดที่สุดต้องห่างกัน ≥ `spacing·√2` (worst case ทแยง 45°)
+  static double _minRingFor(int count, double spacing) =>
+      count < 2 ? 0 : (spacing * math.sqrt2) / (2 * math.sin(math.pi / count));
+
+  /// Candidate layouts เรียงจากบิดเบือนภาพน้อยไปมาก (§22.17):
+  ///   1. วงฐานเดิม — รองรับสูงสุด ~5 ใบ (rotation sweep ตัดสิน)
+  ///   2. ขยายวง — คงขนาดการ์ด เพิ่มรัศมีจนชนกันไม่ได้ทางเรขาคณิต (≤ limit)
+  ///   3. วงแหวน 2 ชั้น — ชั้นใน ≤5 ใบบนวงฐาน, ชั้นนอกห่างชั้นใน spacing·√2
+  ///   4. ย่อยการ์ด — เหตุสุดท้าย: ลดสเกลจนวงเดียวรับได้ภายใต้ maxRingRadius
+  static Iterable<_RingLayout> forCount(
+    int n, {
+    required Size card,
+    required double baseRing,
+    required double spacing,
+    required double pinRadius,
+    required double gap,
+    required double expandedRingLimit,
+    required double maxRingRadius,
+    required double minCardScale,
+  }) sync* {
+    yield _RingLayout(card, [_RingSpec(baseRing, n)]);
+    if (n < 2) return;
+
+    final expanded = math.max(baseRing, _minRingFor(n, spacing));
+    if (expanded > baseRing && expanded <= expandedRingLimit) {
+      yield _RingLayout(card, [_RingSpec(expanded, n)]);
+    }
+
+    const innerMax = 5; // เพดานเชิงประจักษ์ของวงฐาน (ดู §22.17)
+    final innerCount = n < innerMax ? n : innerMax;
+    final outerCount = n - innerCount;
+    if (outerCount > 0) {
+      final outerRadius = baseRing + spacing * math.sqrt2;
+      if (outerRadius <= maxRingRadius &&
+          _minRingFor(outerCount, spacing) <= outerRadius) {
+        yield _RingLayout(card, [
+          _RingSpec(baseRing, innerCount),
+          _RingSpec(outerRadius, outerCount, phase: math.pi / outerCount),
+        ]);
+      }
+    }
+
+    for (final scale in const [0.85, 0.7, 0.55]) {
+      if (scale < minCardScale) break;
+      final shrunk = Size(card.width * scale, card.height * scale);
+      final shrunkSpacing = math.max(shrunk.width, shrunk.height) + gap / 2;
+      final shrunkBase = pinRadius + shrunk.width * math.sqrt2 / 2 + gap;
+      final shrunkRing = math.max(shrunkBase, _minRingFor(n, shrunkSpacing));
+      if (shrunkRing <= maxRingRadius) {
+        yield _RingLayout(shrunk, [_RingSpec(shrunkRing, n)]);
+        break;
+      }
+    }
+  }
 }

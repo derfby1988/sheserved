@@ -181,6 +181,7 @@ class VenueSummary {
   final String? rejectionReason;
   final double? averageRating;
   final int reviewCount;
+  final bool hasReviewableBooking;
   final double? startingPriceAmount;
   final Set<String> amenityIds;
   final List<String> photoUrls;
@@ -210,6 +211,7 @@ class VenueSummary {
     this.rejectionReason,
     this.averageRating,
     this.reviewCount = 0,
+    this.hasReviewableBooking = false,
     this.startingPriceAmount,
     this.amenityIds = const {},
     this.photoUrls = const [],
@@ -241,7 +243,9 @@ class VenueSummary {
 
   VenueSummary copyWith({
     double? averageRating,
+    bool clearAverageRating = false,
     int? reviewCount,
+    bool? hasReviewableBooking,
     double? startingPriceAmount,
     int? courtCount,
     Set<String>? amenityIds,
@@ -260,8 +264,12 @@ class VenueSummary {
     status: status,
     courtCount: courtCount ?? this.courtCount,
     rejectionReason: rejectionReason,
-    averageRating: averageRating ?? this.averageRating,
+    averageRating: clearAverageRating
+        ? null
+        : averageRating ?? this.averageRating,
     reviewCount: reviewCount ?? this.reviewCount,
+    hasReviewableBooking:
+        hasReviewableBooking ?? this.hasReviewableBooking,
     startingPriceAmount: startingPriceAmount ?? this.startingPriceAmount,
     amenityIds: amenityIds ?? this.amenityIds,
     photoUrls: photoUrls ?? this.photoUrls,

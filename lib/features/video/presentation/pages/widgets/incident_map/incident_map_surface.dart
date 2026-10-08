@@ -17,7 +17,10 @@ import '../../../../../admin/models/map_provider_config.dart';
 import 'incident_map_photo_layout.dart';
 
 export 'incident_map_photo_layout.dart'
-    show IncidentPhotoCardPlacement, layoutIncidentPhotoCards;
+    show
+        IncidentPhotoCardPlacement,
+        kIncidentMapMaxPhotosPerIncident,
+        layoutIncidentPhotoCards;
 
 /// Zoom ที่เริ่มแสดงภาพตัวอย่างจาก gallery (§22.5)
 const double kIncidentMapPhotoZoomThreshold =
@@ -549,7 +552,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
             top: placement.topLeft.dy,
             width: placement.size.width,
             height: placement.size.height,
-            child: _PhotoCard(
+            child: IncidentPhotoCard(
               photo: placement.photo,
               onTap: () {
                 final point = pointsById[placement.incidentId];
@@ -774,16 +777,23 @@ class _ClusterDonutWidgetPainter extends CustomPainter {
       !mapEquals(old.byBucket, byBucket);
 }
 
-class _PhotoCard extends StatelessWidget {
+class IncidentPhotoCard extends StatelessWidget {
   final IncidentMapPhoto photo;
   final VoidCallback onTap;
 
-  const _PhotoCard({required this.photo, required this.onTap});
+  const IncidentPhotoCard({
+    super.key,
+    required this.photo,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // ภาพที่ยัง blur อยู่ = "ช่องรอ" ไม่มี url → แสดง gradient bar และไม่ให้แตะ
+    // (แตะได้เฉพาะภาพที่พร้อมเปิด gallery จริง — §22.19)
+    final pending = photo.isPending;
     return GestureDetector(
-      onTap: onTap,
+      onTap: pending ? null : onTap,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -792,15 +802,21 @@ class _PhotoCard extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(
-            imageUrl: photo.url,
-            fit: BoxFit.cover,
-            placeholder: (_, _) => const IncidentPhotoLoadingPlaceholder(),
-            errorWidget: (_, _, _) => const ColoredBox(
-              color: Colors.black26,
-              child: Icon(Icons.broken_image, color: Colors.white54, size: 18),
-            ),
-          ),
+          child: pending
+              ? const IncidentPhotoLoadingPlaceholder()
+              : CachedNetworkImage(
+                  imageUrl: photo.url,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => const IncidentPhotoLoadingPlaceholder(),
+                  errorWidget: (_, _, _) => const ColoredBox(
+                    color: Colors.black26,
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.white54,
+                      size: 18,
+                    ),
+                  ),
+                ),
         ),
       ),
     );

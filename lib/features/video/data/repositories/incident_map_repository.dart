@@ -142,6 +142,7 @@ class IncidentMapRepository {
               (p) => IncidentMapPhoto(
                 id: p.id,
                 url: normalizeUrl(p.url),
+                blurStatus: p.blurStatus,
                 createdAt: p.createdAt,
               ),
             )

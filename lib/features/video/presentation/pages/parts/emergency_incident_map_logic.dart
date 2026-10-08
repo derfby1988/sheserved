@@ -118,6 +118,79 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
           if (isSelfReport) return;
           setState(() => _incidentMapNewCount++);
         });
+
+    // §22.19: ภาพไทยมุงผ่าน blur แล้ว — แผนที่ไม่ได้ join video room จึงต้อง
+    // ใช้ global event นี้เพื่อ reload preview ของเหตุที่แสดงอยู่
+    _incidentMapPhotoSub?.cancel();
+    _incidentMapPhotoSub = WebSocketService().incidentMapPhotoReadyStream
+        .listen((data) {
+          final incidentId = data['incidentId']?.toString() ?? '';
+          if (incidentId.isEmpty) return;
+          _scheduleIncidentMapPhotoRefresh(incidentId);
+        });
+  }
+
+  /// หน่วงการ reload เมื่อมีหลายภาพเสร็จพร้อมกัน (blur ทำงานเป็นชุด)
+  void _scheduleIncidentMapPhotoRefresh(String incidentId) {
+    if (!mounted || !_isIncidentMapMode) return;
+    _incidentMapPhotoRefreshDebounce?.cancel();
+    _incidentMapPhotoRefreshDebounce = Timer(
+      const Duration(milliseconds: 700),
+      () {
+        if (mounted) _refreshIncidentMapForPhotoCompletion(incidentId);
+      },
+    );
+  }
+
+  /// ยังมีภาพของเหตุบนแผนที่ที่รอ blur อยู่หรือไม่ (§22.19)
+  bool get _incidentMapHasPendingPhotos =>
+      _incidentMapData?.items.any(
+        (item) =>
+            item is IncidentMapPointItem &&
+            item.photos.any((photo) => photo.isPending),
+      ) ??
+      false;
+
+  void _stopIncidentMapPendingPolling() {
+    _incidentMapPendingPollTimer?.cancel();
+    _incidentMapPendingPollTimer = null;
+    _incidentMapPendingPollAttempts = 0;
+    _incidentMapPhotoRefreshDebounce?.cancel();
+    _incidentMapPhotoRefreshDebounce = null;
+  }
+
+  /// Poll สำรองระหว่างรอ blur — กันกรณี WebSocket หลุดแล้วไม่ได้ global event
+  /// (หยุดเองเมื่อไม่มีภาพค้าง หรือครบ ~2 นาที)
+  void _ensureIncidentMapPendingPolling() {
+    if (!_incidentMapHasPendingPhotos) {
+      _incidentMapPendingPollAttempts = 0;
+      _incidentMapPendingPollTimer?.cancel();
+      _incidentMapPendingPollTimer = null;
+      return;
+    }
+    if (_incidentMapPendingPollTimer != null) return;
+    _incidentMapPendingPollTimer = Timer.periodic(const Duration(seconds: 8), (
+      timer,
+    ) {
+      if (!mounted || !_isIncidentMapMode) {
+        timer.cancel();
+        _incidentMapPendingPollTimer = null;
+        return;
+      }
+      if (!_incidentMapHasPendingPhotos ||
+          _incidentMapPendingPollAttempts >= 15) {
+        timer.cancel();
+        _incidentMapPendingPollTimer = null;
+        _incidentMapPendingPollAttempts = 0;
+        return;
+      }
+      _incidentMapPendingPollAttempts++;
+      final session = _incidentMapSession;
+      _fetchIncidentMapData(
+        bounds: session?.lastCameraBounds,
+        zoom: session?.lastCameraZoom?.toInt(),
+      );
+    });
   }
 
   void _refreshIncidentMapFromPill() {
@@ -126,6 +199,25 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     _fetchIncidentMapData(
       bounds: session?.lastCameraBounds,
       zoom: session?.lastCameraZoom?.toInt(),
+    );
+  }
+
+  void _refreshIncidentMapForPhotoCompletion(String incidentId) {
+    final session = _incidentMapSession;
+    if (!mounted || session == null || !_isIncidentMapMode) return;
+    final isOnCurrentMap =
+        session.pinnedVideoId == incidentId ||
+        (_incidentMapData?.items.any(
+              (item) =>
+                  item is IncidentMapPointItem &&
+                  item.id == incidentId &&
+                  item.categoryId == session.categoryId,
+            ) ??
+            false);
+    if (!isOnCurrentMap) return;
+    _fetchIncidentMapData(
+      bounds: session.lastCameraBounds,
+      zoom: session.lastCameraZoom?.toInt(),
     );
   }
 
@@ -193,6 +285,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
   /// คืนจาก incident map surface ไปยัง Emergency surface โดยไม่ pop หน้า
   void _exitIncidentMapMode() {
     setState(() => _surfaceMode = EmergencySurfaceMode.live);
+    _stopIncidentMapPendingPolling();
     _resumePlayerFromMap();
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _adjustMapBounds();
@@ -302,21 +395,20 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
         longitude: playingVideo?.longitude,
       );
     }
-    session.refreshOnNextCameraSettle = session.returnFocus != null;
+    final waitForCameraSettle = session.returnFocus != null;
+    session.refreshOnNextCameraSettle = waitForCameraSettle;
     setState(() {
       _isChatVisible = false;
       _isUiVisible = true;
       _surfaceMode = EmergencySurfaceMode.incidentMap;
-      _incidentMapUiState =
-          !session.refreshOnNextCameraSettle &&
-              session.lastResponse != null &&
-              _incidentMapData != null
-          ? IncidentMapUiState.ready
-          : IncidentMapUiState.loading;
+      _incidentMapUiState = IncidentMapUiState.loading;
     });
     _pausePlayerForMap();
-    if (session.lastResponse == null && session.returnFocus == null) {
-      _fetchIncidentMapData();
+    if (!waitForCameraSettle) {
+      _fetchIncidentMapData(
+        bounds: session.lastCameraBounds,
+        zoom: session.lastCameraZoom?.toInt(),
+      );
     }
   }
 
@@ -340,6 +432,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
       session.pendingOverlayPhotoId = null;
       session.pendingOverlayPhotoUrl = null;
     }
+    _stopIncidentMapPendingPolling();
     setState(() {
       _incidentMapSession = null;
       _incidentMapData = null;
@@ -399,6 +492,8 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
             ? IncidentMapUiState.empty
             : IncidentMapUiState.ready;
       });
+      // มีภาพค้างเบลอบนแผนที่ → เฝ้า poll สำรองจนกว่าจะครบ (§22.19)
+      _ensureIncidentMapPendingPolling();
     } catch (e) {
       debugPrint('[IncidentMap] fetch failed: $e');
       if (!mounted || generation != _incidentMapFetchGeneration) return;
