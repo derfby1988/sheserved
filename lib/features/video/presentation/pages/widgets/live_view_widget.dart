@@ -153,7 +153,7 @@ class LiveViewWidgetState extends State<LiveViewWidget>
 
   void _handleShareIncident() {
     if (widget.currentVideoId == null) return;
-    final shareUrl = EmergencyIncidentDeepLinkService.buildIncidentShareUrl(
+    final shareUrl = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
       widget.currentVideoId!,
       photoId: _selectedOverlayPhotoId,
     );

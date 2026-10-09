@@ -7,7 +7,7 @@ void main() {
       final url = SportClubDeepLinkService.buildGroupInviteUrl('g123');
       expect(
         url,
-        equals('https://sheserved.com/sport-club/group/g123?src=share'),
+        equals('https://sheserved.me/sport-club/group/g123?src=share'),
       );
     });
 
@@ -19,7 +19,7 @@ void main() {
       expect(
         url,
         equals(
-          'https://sheserved.com/sport-club/group/g123?session_id=s456&src=share',
+          'https://sheserved.me/sport-club/group/g123?session_id=s456&src=share',
         ),
       );
     });
@@ -34,7 +34,7 @@ void main() {
 
     test('parseDeepLink parses web link with group and session', () {
       final data = SportClubDeepLinkService.parseDeepLink(
-        'https://sheserved.com/sport-club/group/g-uuid-123?session_id=s-uuid-456',
+        'https://sheserved.me/sport-club/group/g-uuid-123?session_id=s-uuid-456',
       );
       expect(data, isNotNull);
       expect(data!.groupId, equals('g-uuid-123'));
@@ -64,7 +64,7 @@ void main() {
       expect(SportClubDeepLinkService.parseDeepLink(''), isNull);
       expect(
         SportClubDeepLinkService.parseDeepLink(
-          'https://sheserved.com/other-page',
+          'https://sheserved.me/other-page',
         ),
         isNull,
       );

@@ -401,6 +401,27 @@ flutter run \
 
 ---
 
+### 🌐 ทางลัด: ทดสอบ device ผ่าน Cloudflare Tunnel — เพิ่ม 2026-10-09
+
+ตั้งแต่ 2026-10-09 `api.sheserved.me` live ผ่าน Cloudflare Tunnel → Caddy `:8080` → Node `:3000` — device ทดสอบชี้ backend ผ่าน tunnel ได้แทน LAN IP:
+
+```bash
+flutter run -d <device-id> \
+  --dart-define=USE_BACKEND_AUTH=true \
+  --dart-define=BACKEND_API_URL=https://api.sheserved.me \
+  --dart-define=GOOGLE_SERVER_CLIENT_ID="$(grep '^GOOGLE_CLIENT_ID=' websocket-server/.env | cut -d= -f2-)"
+```
+
+**ข้อดี:** ไม่ต้องอยู่ Wi-Fi เดียวกับ Mac mini (เทสผ่าน cellular ได้), LAN IP เปลี่ยนก็ไม่กระทบ (ไม่ต้องทำ checklist เปลี่ยน IP ข้างบน), และเทส production path จริง (TLS + tunnel + CSP/CORS ของจริง) — verified 2026-10-09 บน `R8YYA0G5S6J` (SM X135G, Android 16): login backend ผ่านหลัง LAN path `192.168.1.167:8080` timeout
+
+**ข้อจำกัด/ข้อควรรู้:**
+- ต้องมี Node + Caddy + cloudflared (launchd agent `com.cloudflare.cloudflared`) รันบน Mac mini — เช็ค `curl https://api.sheserved.me/health`
+- `LOCAL_API_URL` ใน `.env` ยังชี้ LAN IP → URL สื่อที่ backend generate ลง DB ตอน upload ยังเป็น `192.168.x.x:8080` (client normalize ผ่าน `_normalizeLocalUrl()` ให้ชี้ `backendApiUrl` อยู่แล้ว); ถ้าอยากให้ URL ใหม่ใน DB เป็นโดเมนถาวร ค่อยชี้ `LOCAL_API_URL=https://api.sheserved.me` ตอน deploy จริง
+- WebSocket derive จาก `backendApiUrl` → ใช้ `wss://api.sheserved.me/socket.io` ผ่าน tunnel เดียวกัน ไม่ต้องตั้งเพิ่ม
+- LAN path (`http://<mainMachineIp>:8080`) ยังใช้ได้ตามเดิมเมื่ออยู่วงเดียวกัน — เลือกวิธีใดวิธีหนึ่งต่อรอบเทส; อาการ `Operation timed out` ชี้ `192.168.x.x` แต่ browser เครื่องเดียวกันเข้า `/health` ได้ = ปัญหา transient/ช่วงเวลา ไม่ใช่ config ผิด
+
+---
+
 ### 📋 ไฟล์ทั้งหมดที่ต้องแก้เมื่อเปลี่ยน IP
 
 | ไฟล์ | ค่าที่ต้องแก้ | หมายเหตุ |
@@ -6440,11 +6461,11 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 - **ผู้แชร์ไม่ได้ค้างภาพใดใน gallery (Normal Video State):**
   - ปุ่มแชร์แสดงสถานะปกติ: ไอคอน `Icons.share_rounded` + ข้อความ "แชร์เหตุการณ์"
-  - ลิงก์ที่สร้าง: `https://sheserved.com/emergency/incident/<videoId>?src=share` (หรือ `sheserved://emergency/incident/<videoId>`)
+  - ลิงก์ที่สร้าง: `https://sheserved.me/emergency/incident/<videoId>?src=share` (หรือ `sheserved://emergency/incident/<videoId>`)
   - ผู้รับเข้า **โหมด video player** — โหลดและเล่นวิดีโอเหตุการณ์ที่แชร์อัตโนมัติ
 - **ผู้แชร์ค้างภาพ overlay จาก gallery อยู่ (Photo Focused State):**
   - ปุ่มแชร์เปลี่ยนสถานะเป็น Dynamic Visual State อัตโนมัติ: สลับไอคอนเป็น `Icons.image_outlined` + ข้อความ **"แชร์ภาพนี้"** พร้อมเปล่งประกาย **Cyan Glow (`0xFF38BDF8`)** สะท้อนที่ขอบและเงา
-  - ลิงก์ที่สร้าง: แนบพารามิเตอร์รูปภาพ `https://sheserved.com/emergency/incident/<videoId>?src=share&photo=<photoId>` (หรือ `sheserved://emergency/incident/<videoId>?photo=<photoId>`)
+  - ลิงก์ที่สร้าง: แนบพารามิเตอร์รูปภาพ `https://sheserved.me/emergency/incident/<videoId>?src=share&photo=<photoId>` (หรือ `sheserved://emergency/incident/<videoId>?photo=<photoId>`)
   - ผู้รับเข้า **โหมดแสดงภาพเจาะจง** — เมื่อเปิดหน้าเหตุการณ์แล้ว ระบบจะเปิด overlay ภาพที่ระบุขึ้นมาทับวิดีโอโดยอัตโนมัติ, วิดีโอหยุดเล่นเบื้องหลังชั่วคราว, และ ruler gallery เลื่อนไปยังตำแหน่งภาพนั้นด้วยกลไก `focusPhotoById(photoId)`
 - **ระบบป้องกันและความปลอดภัย (Fail-Closed Guard):**
   - หากผู้รับมีภารกิจค้างอยู่ (`_currentResponseId != null` หรือ `_pendingMissionVideoId != null`) ระบบจะบล็อกการสลับเหตุการณ์ทันที พร้อมแจ้งเตือน SnackBar เพื่อความปลอดภัยและไม่ทำลาย context ของภารกิจ
@@ -6458,15 +6479,15 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 ### 23.2 สภาพปัจจุบันที่ตรวจสอบแล้ว (Verified Implementation — 2026-10-08)
 
 > **Implementation Status (2026-10-08 — สำเร็จสมบูรณ์ครบทั้ง 7 Steps ฝั่ง App Client):**
-> 1. ✅ **Deep Link Core & Service:** [EmergencyIncidentDeepLinkService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/services/emergency_incident_deep_link_service.dart) รองรับ parse/build ทั้ง Web Universal Link (`https://sheserved.com/emergency/incident/...`), Custom Scheme (`sheserved://emergency/incident/...`) และ Relative Route พร้อมระบบ pending store/consume/peek ครบถ้วน — ผ่าน Unit Tests 9/9 เคส ([emergency_incident_deep_link_service_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/services/emergency_incident_deep_link_service_test.dart))
-> 2. ✅ **OS Plumbing & App Links:** เพิ่ม `app_links: ^7.0.0` เป็น direct dependency ใน [pubspec.yaml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/pubspec.yaml), ตั้งค่า Android Intent Filters ใน [AndroidManifest.xml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/android/app/src/main/AndroidManifest.xml) สำหรับทั้ง `sheserved://` และ `https://sheserved.com`, ตั้งค่า iOS URL Scheme ใน [Info.plist](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Info.plist) และ Associated Domains ใน [Runner.entitlements](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Runner.entitlements)
+> 1. ✅ **Deep Link Core & Service:** [EmergencyIncidentDeepLinkService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/services/emergency_incident_deep_link_service.dart) รองรับ parse/build ทั้ง Web Universal Link (`https://sheserved.me/emergency/incident/...`), Custom Scheme (`sheserved://emergency/incident/...`) และ Relative Route พร้อมระบบ pending store/consume/peek ครบถ้วน — ผ่าน Unit Tests 9/9 เคส ([emergency_incident_deep_link_service_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/services/emergency_incident_deep_link_service_test.dart))
+> 2. ✅ **OS Plumbing & App Links:** เพิ่ม `app_links: ^7.0.0` เป็น direct dependency ใน [pubspec.yaml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/pubspec.yaml), ตั้งค่า Android Intent Filters ใน [AndroidManifest.xml](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/android/app/src/main/AndroidManifest.xml) สำหรับทั้ง `sheserved://` และ `https://sheserved.me`, ตั้งค่า iOS URL Scheme ใน [Info.plist](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Info.plist) และ Associated Domains ใน [Runner.entitlements](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/ios/Runner/Runner.entitlements)
 > 3. ✅ **App-level Deep Link Stream Intake:** ใน [main.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/main.dart) แปลง `SheservedApp` เป็น `StatefulWidget` เพื่อดักรับ `AppLinks.getInitialLink()` ตอน Cold Start และ `AppLinks.uriLinkStream` ตอน Warm Start พร้อม routing ผ่าน `onGenerateRoute` `/emergency/incident/...`
 > 4. ✅ **UI Component — IncidentShareButton:** สร้าง [incident_share_button.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart) สไตล์ LitGlassSurface Capsule (สูง 34dp, radius 17dp, blurSigma 10, fill 0.09–0.14, rim 1.2/1.1, shadow 0.25) ผสาน Neumorphic micro-bounce (`AnimatedScale` 0.96 ยุบตัวเมื่อกด) และ Dynamic Cyan Glow (`#38BDF8`) พร้อม `FittedBox` ป้องกัน text overflow — ผ่าน Widget Tests 7/7 เคส ([incident_share_button_test.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/test/features/video/presentation/widgets/incident_share_button_test.dart))
 > 5. ✅ **Gallery Callback Extension:** ขยาย [ThaiMhungRulerGalleryWidget](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/thai_mhung_ruler_gallery_widget.dart) ให้ส่ง `photoId` ใน `onPhotoTap: (int, String, String?)` และ `onPhotoChanged: (int, String, String?)`
 > 6. ✅ **LiveViewWidget Integration:** ใน [live_view_widget.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/live_view_widget.dart) ติดตั้ง `IncidentShareButton` เหนือ Gallery ใน `Column` เดียวกัน (ตรวจสอบความสูง `videoHeight - 40 >= 60`), จัดการ state `_selectedOverlayPhotoId`, เพิ่มฟังก์ชัน `closeOverlay()`, และเรียก `SharePlus.instance.share` พร้อมคำนวณ `sharePositionOrigin` สำหรับ iPad
 > 7. ✅ **Recipient Flow & Guard Protection:** ใน [emergency_live_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/emergency_live_page.dart) และ [emergency_navigation_logic.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart) เพิ่ม `_consumePendingDeepLink()` ใน `initState` เพื่อดึง videoId/photoId, ป้องกันด้วย Guard fail-closed หากมีภารกิจค้าง, โหลดวิดีโอเหตุการณ์, และสั่ง `_triggerSharedPhotoOverlay()` ผ่าน PostFrameCallback เพื่อเปิด overlay ภาพทันทีที่ gallery พร้อม
 >
-> **งาน Web/Infra แยก (Web Team):** เสิร์ฟ Landing page บน `sheserved.com/emergency/incident/*` และไฟล์ `assetlinks.json` / AASA สำหรับ Universal Links แบบสมบูรณ์บนโดเมนจริง
+> **งาน Web/Infra แยก (Web Team):** เสิร์ฟ Landing page บน `sheserved.me/emergency/incident/*` และไฟล์ `assetlinks.json` / AASA สำหรับ Universal Links บนโดเมนจริง — ✅ **ทำแล้ว 2026-10-09:** `sheserved.me` → tunnel → Caddy `:8081` (SPA fallback รับ path เดิม); `web/.well-known/apple-app-site-association` (+สำเนาที่ root path) และ `web/.well-known/assetlinks.json` ship ใน build เสิร์ฟ `application/json` ผ่าน `@linkfiles` matcher ใน `Caddyfile.dev` — verify ผ่าน `https://sheserved.me/.well-known/*` แล้ว
 
 ---
 
@@ -6487,7 +6508,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
      - ใช้ `AnimatedScale(scale: _isPressed ? 0.96 : 1.0, duration: 100ms)` ให้ความรู้สึกสัมผัสแบบ Micro-bounce ยุบตัวนุ่มนวลเมื่อกดแตะ
    - **FittedBox Safety:** ครอบเนื้อหาด้วย `FittedBox(fit: BoxFit.scaleDown)` ป้องกันปัญหา RenderFlex overflow บนหน้าจอแคบ (320dp)
 3. **Link Contract:**
-   - Universal Link: `https://sheserved.com/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
+   - Universal Link: `https://sheserved.me/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
    - Custom Scheme: `sheserved://emergency/incident/<videoId>[?photo=<photoId>]`
    - แนบพารามิเตอร์ `photo` เฉพาะเมื่อ overlay ภาพเปิดค้างอยู่ขณะกดแชร์ และต้องเป็นภาพที่ผ่านการ blur แล้ว (`blur_status = 'completed'`)
 4. **Service Isolation:** แยก [EmergencyIncidentDeepLinkService](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/services/emergency_incident_deep_link_service.dart) ออกจาก service กลุ่มกีฬา เพื่อความเป็นเอกเทศของโดเมนฉุกเฉิน
@@ -6522,7 +6543,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 5. ✅ เพิ่ม `_selectedOverlayPhotoId` state + `closeOverlay()` public method ใน `LiveViewWidgetState`
 6. ✅ ประกอบ `IncidentShareButton` เหนือ Ruler Gallery ใน `LiveViewWidget` (ความสูง 34dp + 6dp gap)
 7. ✅ Recipient flow logic: `_consumePendingDeepLink()` → Guard fail-closed → `_loadInitialData` → `_triggerSharedPhotoOverlay()` → `showOverlayPhoto`
-8. 🔲 Landing page บน `sheserved.com` + `assetlinks.json`/AASA (งาน web/infra ฝั่ง Server แยก)
+8. ✅ Landing/SPA บน `sheserved.me` + `assetlinks.json`/AASA เสิร์ฟแล้ว (2026-10-09) + **Android verified แล้ว (2026-10-09, `R8YYA0G5S6J`)** — `pm get-app-links` เห็น `sheserved.me: verified` (`sheserved.com: 1024` ตามคาด) และ `am start` ส่ง HTTPS intent เข้าแอปได้ — เหลือเฉพาะ iOS universal links เมื่อมี paid team
 9. 🔲 UI Verification ครบทุกหมวดหมู่บนเครื่องจริง (ดูรายละเอียดใน §23.8)
 
 ---
@@ -6593,8 +6614,8 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 | **UI-S7** | เปิด Overlay ภาพอีกครั้ง แล้วปัดนิ้วไปทางขวา (Swipe right to dismiss) | • Overlay ปิดลงตาม Gesture ปัดขวา<br>• วิดีโอกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State ทันที | [ ] |
 | **UI-S8** | กดนิ้วค้างลงบนปุ่มแชร์ (ยังไม่ปล่อยนิ้ว) | • สัมผัส Micro-bounce: ปุ่มหดตัวลงอย่างนุ่มนวล `AnimatedScale` ขนาด 0.96 (100ms) ให้ความรู้สึกกดทางกายภาพ | [ ] |
 | **UI-S9** | ปล่อยนิ้วออกจากปุ่มแชร์ | • ปุ่มขยายตัวกลับสู่ขนาดปกติ 1.0 (100ms)<br>• Native OS Share Sheet ปรากฏขึ้นมาบนหน้าจอ | [ ] |
-| **UI-S10** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดวิดีโอปกติ** (ไม่มี overlay) | • ข้อความระบุ: `"ดูเหตุการณ์นี้บน SheServed: https://sheserved.com/emergency/incident/<videoId>?src=share"`<br>• ไม่มีพารามิเตอร์ `&photo=` ต่อท้าย | [ ] |
-| **UI-S11** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดภาพเจาะจง** (เปิด overlay ภาพ) | • ข้อความระบุ: `"ดูภาพเหตุการณ์นี้บน SheServed: https://sheserved.com/emergency/incident/<videoId>?src=share&photo=<photoId>"`<br>• พารามิเตอร์ `photo` มีค่าตรงกับ ID ของรูปภาพที่กำลังเปิดอยู่จริง | [ ] |
+| **UI-S10** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดวิดีโอปกติ** (ไม่มี overlay) | • ข้อความระบุ: `"ดูเหตุการณ์นี้บน SheServed: https://sheserved.me/emergency/incident/<videoId>?src=share"`<br>• ไม่มีพารามิเตอร์ `&photo=` ต่อท้าย | [ ] |
+| **UI-S11** | ตรวจสอบข้อความใน Native Share Sheet เมื่อแชร์จาก **โหมดภาพเจาะจง** (เปิด overlay ภาพ) | • ข้อความระบุ: `"ดูภาพเหตุการณ์นี้บน SheServed: https://sheserved.me/emergency/incident/<videoId>?src=share&photo=<photoId>"`<br>• พารามิเตอร์ `photo` มีค่าตรงกับ ID ของรูปภาพที่กำลังเปิดอยู่จริง | [ ] |
 | **UI-S12** | ทดสอบบน iPad / Tablet (ถ้ามี) | • Share Sheet เปิดเป็น Popover ชี้มาที่ตำแหน่งปุ่มแชร์อย่างแม่นยำ ไม่แครช | [ ] |
 | **UI-S13** | ทดสอบบนหน้าจอขนาดแคบ (ความกว้าง ≤ 320dp) | • ตัวอักษรบนปุ่มถูกย่อสเกลด้วย `FittedBox` อย่างสวยงาม ไม่เกิดอาการ RenderFlex overflow | [ ] |
 
@@ -6669,6 +6690,26 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 3. **Recipient Status Indicator บน Top Bar:** เพิ่ม `GlassBadge` "เหตุการณ์ที่แชร์" บน `EmergencyTopBar` คู่กับปุ่ม "ดูเหตุการณ์ทั้งหมด"
 4. **Recipient Explanatory Glass Banner:** เพิ่มแบนเนอร์กระจกฝ้า (`LitGlassSurface.frosted`) ด้านล่างการ์ดเดี่ยวใน `TrendingPanelWidget` เพื่ออธิบายว่ากำลังรับชมเฉพาะเหตุการณ์ที่แชร์
 
+---
+
+### 23.11 ข้อกำหนด iOS: Universal Links vs. Custom Scheme (สถานะ 2026-10-09 — อัปเดตหลัง migrate → `.me`)
+
+**บริบท:** เดิมลิงก์แชร์ `https://sheserved.com/...` เปิดแล้วไป GoDaddy parked page (`.com` อยู่ใน account ที่ไม่ทราบเจ้าของ) — **ตัดสินใจ 2026-10-09: migrate โดเมนหลักเป็น `sheserved.me`** (ซื้อที่ Cloudflare Registrar + deploy ผ่าน tunnel แล้ว ตาม `flutter_web_enablement_plan.md` §W4) — `sheserved.com` เหลือ recover เป็น optional
+
+**✅ Infra พร้อมแล้ว (2026-10-09):**
+- `https://sheserved.me` → tunnel → Caddy `:8081` เสิร์ฟ web (SPA fallback รับ `/emergency/incident/*`, `/sport-club/*`)
+- `/.well-known/apple-app-site-association` (appID `8RVK9NG278.com.sheserved.app`, paths `/emergency/*`,`/sport-club/*`) + สำเนาที่ root path — เสิร์ฟ `application/json` ผ่าน `@linkfiles` matcher ใน `Caddyfile.dev`
+- `/.well-known/assetlinks.json` — `com.sheserved.app` + SHA-256 `2C:65:…:0E` ของ `~/.android/debug.keystore` (release ปัจจุบัน sign ด้วย debug key — `build.gradle.kts:54`; **ถ้าเปลี่ยน release signing ต้องเพิ่ม fingerprint ใหม่ใน assetlinks**)
+- Code: `baseWebUrl` → `sheserved.me` ทั้ง `emergency_incident_deep_link_service.dart` + `sport_club_deep_link_service.dart`; manifest เพิ่ม intent-filter `autoVerify` แยกสำหรับ `sheserved.me` (แยกจาก `.com` เพื่อกัน verification ล้มตาม); `Runner.entitlements` มี `applinks:sheserved.com`+`applinks:sheserved.me`
+
+**ข้อกำหนดการแชร์บน iOS (ปัจจุบัน — คงเดิม):**
+- `buildIncidentShareLink` — **iOS ยังใช้ `sheserved://` custom scheme** ต่อไป (personal team `8RVK9NG278` sign Associated Domains ไม่ได้ → `RunnerDebug.entitlements` จงใจไม่มี applinks ไม่งั้น debug build ล้ม; `Runner.entitlements` เตรียมไว้สำหรับ Release/Profile เมื่อมี paid team)
+- **ข้อจำกัดที่ยอมรับ:** ลิงก์ `sheserved://` ไม่มี web fallback; Android/desktop เชื่อม web link `sheserved.me` ที่มี landing จริงแล้ว
+
+**งานที่เหลือ:**
+1. ~~**Android device verify:**~~ ✅ **ทำแล้ว 2026-10-09** บน `R8YYA0G5S6J` — `adb shell pm get-app-links com.sheserved.app` ตอบ `sheserved.me: verified` / `sheserved.com: 1024` และ `adb shell am start -d "https://sheserved.me/emergency/incident/test123" com.sheserved.app` ส่ง intent เข้าแอปที่รันอยู่ (route guard เตะ anonymous ไป `/home`→`/login` ตาม design — เทสผู้รับจริงต้อง login ก่อน)
+2. **iOS universal links:** รอ paid Apple Developer — เมื่อได้ให้เพิ่ม `applinks:` ใน `RunnerDebug.entitlements` ด้วย + พิจารณาเปลี่ยน `buildIncidentShareLink` กลับ web link (หรือเก็บ custom scheme คู่กัน)
+3. **ข้อความแชร์ใน test expectations:** UI-S10/S11 อัปเดตเป็น `sheserved.me` แล้ว
 
 ---
 

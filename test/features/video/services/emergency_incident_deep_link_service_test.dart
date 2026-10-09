@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/video/services/emergency_incident_deep_link_service.dart';
 
@@ -16,7 +17,7 @@ void main() {
           EmergencyIncidentDeepLinkService.buildIncidentShareUrl('incident-123');
       expect(
         urlWithoutPhoto,
-        'https://sheserved.com/emergency/incident/incident-123?src=share',
+        'https://sheserved.me/emergency/incident/incident-123?src=share',
       );
 
       final urlWithPhoto =
@@ -26,7 +27,7 @@ void main() {
       );
       expect(
         urlWithPhoto,
-        'https://sheserved.com/emergency/incident/incident-123?src=share&photo=photo-456',
+        'https://sheserved.me/emergency/incident/incident-123?src=share&photo=photo-456',
       );
     });
 
@@ -37,7 +38,7 @@ void main() {
       );
       expect(
         url,
-        'https://sheserved.com/emergency/incident/inc%20id%2F1?src=share&photo=p%20id%2F2',
+        'https://sheserved.me/emergency/incident/inc%20id%2F1?src=share&photo=p%20id%2F2',
       );
     });
 
@@ -62,6 +63,48 @@ void main() {
       );
     });
 
+    test('buildIncidentShareLink uses custom scheme on iOS', () {
+      final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
+        'incident-123',
+        platform: TargetPlatform.iOS,
+      );
+      expect(url, 'sheserved://emergency/incident/incident-123');
+
+      final urlWithPhoto =
+          EmergencyIncidentDeepLinkService.buildIncidentShareLink(
+        'incident-123',
+        photoId: 'photo-456',
+        platform: TargetPlatform.iOS,
+      );
+      expect(
+        urlWithPhoto,
+        'sheserved://emergency/incident/incident-123?photo=photo-456',
+      );
+    });
+
+    test('buildIncidentShareLink uses web universal link on non-iOS', () {
+      final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
+        'incident-123',
+        platform: TargetPlatform.android,
+      );
+      expect(
+        url,
+        'https://sheserved.me/emergency/incident/incident-123?src=share',
+      );
+    });
+
+    test('buildIncidentShareLink round-trips through parseDeepLink', () {
+      final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
+        'incident-123',
+        photoId: 'photo-456',
+        platform: TargetPlatform.iOS,
+      );
+      final data = EmergencyIncidentDeepLinkService.parseDeepLink(url);
+      expect(data, isNotNull);
+      expect(data!.videoId, 'incident-123');
+      expect(data.photoId, 'photo-456');
+    });
+
     test('parseDeepLink correctly parses custom scheme URLs', () {
       final data = EmergencyIncidentDeepLinkService.parseDeepLink(
         'sheserved://emergency/incident/inc-789',
@@ -82,7 +125,7 @@ void main() {
 
     test('parseDeepLink correctly parses web universal links', () {
       final data = EmergencyIncidentDeepLinkService.parseDeepLink(
-        'https://sheserved.com/emergency/incident/inc-789?src=share',
+        'https://sheserved.me/emergency/incident/inc-789?src=share',
       );
       expect(data, isNotNull);
       expect(data!.videoId, 'inc-789');
@@ -90,7 +133,7 @@ void main() {
       expect(data.src, 'share');
 
       final dataWithPhoto = EmergencyIncidentDeepLinkService.parseDeepLink(
-        'https://sheserved.com/emergency/incident/inc-789?src=share&photo=p-888',
+        'https://sheserved.me/emergency/incident/inc-789?src=share&photo=p-888',
       );
       expect(dataWithPhoto, isNotNull);
       expect(dataWithPhoto!.videoId, 'inc-789');
@@ -112,12 +155,12 @@ void main() {
       expect(EmergencyIncidentDeepLinkService.parseDeepLink(''), isNull);
       expect(EmergencyIncidentDeepLinkService.parseDeepLink('   '), isNull);
       expect(
-        EmergencyIncidentDeepLinkService.parseDeepLink('https://sheserved.com/other/path'),
+        EmergencyIncidentDeepLinkService.parseDeepLink('https://sheserved.me/other/path'),
         isNull,
       );
       expect(
         EmergencyIncidentDeepLinkService.parseDeepLink(
-          'https://sheserved.com/emergency/incident/',
+          'https://sheserved.me/emergency/incident/',
         ),
         isNull,
       );

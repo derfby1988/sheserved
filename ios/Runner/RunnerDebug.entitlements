@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.background-delivery</key>
+	<true/>
+	<!-- ห้ามใส่ associated-domains ในไฟล์นี้ — personal team (free) sign
+	     capability นี้ไม่ได้และ debug build จะล้ม; ใส่ได้เฉพาะ
+	     Runner.entitlements (Release/Profile) เมื่อมี paid Developer Program -->
+</dict>
+</plist>

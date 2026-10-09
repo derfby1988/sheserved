@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "8RVK9NG278.com.sheserved.app",
+        "paths": [
+          "/emergency/*",
+          "/sport-club/*"
+        ]
+      }
+    ]
+  }
+}

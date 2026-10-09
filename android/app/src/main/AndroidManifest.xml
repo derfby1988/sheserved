@@ -61,6 +61,22 @@
                     android:host="sheserved.com"
                     android:pathPrefix="/sport-club" />
             </intent-filter>
+            <!-- Deep Link: Universal Links (https://sheserved.me) — domain หลัก
+                 แยก intent-filter จาก .com เพื่อให้ autoVerify ของ .me ไม่ถูก
+                 ล้มตาม .com ที่ยังเป็น parked page (ไม่มี assetlinks) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="sheserved.me"
+                    android:pathPrefix="/emergency" />
+                <data
+                    android:scheme="https"
+                    android:host="sheserved.me"
+                    android:pathPrefix="/sport-club" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

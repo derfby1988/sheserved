@@ -31,7 +31,7 @@ class GroupDetailDeepLinkData {
 
 /// Service for generating, parsing, and managing Sport Club deep links
 class SportClubDeepLinkService {
-  static const String baseWebUrl = 'https://sheserved.com/sport-club/group';
+  static const String baseWebUrl = 'https://sheserved.me/sport-club/group';
   static const String customScheme = 'sheserved://sport-club/group';
 
   static GroupDetailDeepLinkData? _pendingDeepLink;

@@ -31,7 +31,7 @@ class EmergencyIncidentDeepLinkData {
 
 /// Service for generating, parsing, and managing Emergency Incident deep links
 class EmergencyIncidentDeepLinkService {
-  static const String baseWebUrl = 'https://sheserved.com/emergency/incident';
+  static const String baseWebUrl = 'https://sheserved.me/emergency/incident';
   static const String customScheme = 'sheserved://emergency/incident';
 
   static EmergencyIncidentDeepLinkData? _pendingDeepLink;
@@ -45,6 +45,21 @@ class EmergencyIncidentDeepLinkService {
       buffer.write('&photo=$cleanPhotoId');
     }
     return buffer.toString();
+  }
+
+  /// Builds the share link for the given platform — iOS uses the custom scheme
+  /// (Universal Links need the paid Associated Domains capability), other
+  /// platforms keep the web universal link.
+  static String buildIncidentShareLink(
+    String videoId, {
+    String? photoId,
+    TargetPlatform? platform,
+  }) {
+    final target = platform ?? defaultTargetPlatform;
+    if (target == TargetPlatform.iOS) {
+      return buildIncidentCustomSchemeUrl(videoId, photoId: photoId);
+    }
+    return buildIncidentShareUrl(videoId, photoId: photoId);
   }
 
   /// Builds a custom scheme URL for deep linking inside mobile environments

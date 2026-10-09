@@ -75,7 +75,7 @@
 # เสิร์ฟ build/web ผ่าน HTTPS — TLS auto-provision เหมือน site บน
 # ตั้ง env ก่อน deploy: CADDY_WEB_DOMAIN (ชี้ A/CNAME มาเครื่องนี้),
 #   CADDY_WEB_ROOT (path ของ build/web บนเครื่องนี้)
-# dev ทดสอบด้วย admin.sheserved.com — เปลี่ยนเมื่อตัดสิน domain prod
+# domain จริง: admin.sheserved.me (deploy ผ่าน Cloudflare Tunnel 2026-10-09)
 # =============================================================
 {$CADDY_WEB_DOMAIN} {
 	log {

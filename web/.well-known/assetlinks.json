@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sheserved.app",
+      "sha256_cert_fingerprints": [
+        "2C:65:60:65:9B:12:1F:36:4F:BD:87:3B:1A:1F:DC:8A:16:F5:C9:15:8D:DD:91:7E:38:A2:5B:9F:7F:11:26:0E"
+      ]
+    }
+  }
+]
