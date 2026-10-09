@@ -46,11 +46,17 @@ http.Response _json(int status, Object body) =>
 
 /// Routes fake requests by path. [putStatus] controls the save outcome.
 class _FakeBackend {
-  _FakeBackend({this.putStatus = 200, this.publicStatus = 200, this.adminStatus = 200});
+  _FakeBackend({
+    this.putStatus = 200,
+    this.publicStatus = 200,
+    this.adminStatus = 200,
+    this.putUnreachable = false,
+  });
 
   int putStatus;
   final int publicStatus;
   final int adminStatus;
+  final bool putUnreachable;
   final List<Map<String, dynamic>> puts = [];
 
   Future<http.Response> request(
@@ -65,6 +71,7 @@ class _FakeBackend {
       return _json(200, _adminPayload());
     }
     if (path == '/api/admin/map-config' && method == 'PUT') {
+      if (putUnreachable) throw http.ClientException('connection refused');
       puts.add(jsonDecode(body as String) as Map<String, dynamic>);
       switch (putStatus) {
         case 200:
@@ -276,5 +283,53 @@ void main() {
     expect(find.textContaining('dev-only source not allowed'), findsOneWidget);
     // Draft not reset → save bar still present.
     expect(find.text('บันทึกการตั้งค่า'), findsOneWidget);
+  });
+
+  testWidgets('server down → save never reports success (no fake saved state)', (tester) async {
+    final backend = _FakeBackend(publicStatus: 500, adminStatus: 500, putUnreachable: true);
+    await _pumpSection(tester, backend);
+
+    await tester.tap(
+      find.byWidgetPredicate((w) => w is Switch && w.value == false).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึก').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('บันทึกการตั้งค่าแล้ว'), findsNothing);
+    expect(find.text('บันทึกการตั้งค่า'), findsOneWidget);
+  });
+
+  testWidgets('toggling platform enabled keeps renderer and tileSourceId unchanged in PUT', (tester) async {
+    final backend = _FakeBackend();
+    await _pumpSection(tester, backend);
+
+    await tester.tap(
+      find.byWidgetPredicate((w) => w is Switch && w.value == false).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึก').last);
+    await tester.pumpAndSettle();
+
+    final pd = (backend.puts.single['config'] as Map)['platformDefaults'] as Map;
+    for (final p in ['web', 'ios', 'android']) {
+      final target = pd[p] as Map;
+      expect(target['renderer'], 'google', reason: p);
+      expect(target['tileSourceId'], isNull, reason: p);
+    }
+    expect(((pd['web'] as Map)['enabled']), isTrue);
+    expect(((pd['ios'] as Map)['enabled']), isTrue);
   });
 }

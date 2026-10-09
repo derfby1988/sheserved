@@ -6669,3 +6669,109 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 3. **Recipient Status Indicator บน Top Bar:** เพิ่ม `GlassBadge` "เหตุการณ์ที่แชร์" บน `EmergencyTopBar` คู่กับปุ่ม "ดูเหตุการณ์ทั้งหมด"
 4. **Recipient Explanatory Glass Banner:** เพิ่มแบนเนอร์กระจกฝ้า (`LitGlassSurface.frosted`) ด้านล่างการ์ดเดี่ยวใน `TrendingPanelWidget` เพื่ออธิบายว่ากำลังรับชมเฉพาะเหตุการณ์ที่แชร์
 
+
+---
+
+## 24. Phase — Map Data Layers บนแผนที่เกิดเหตุ (Optional Overlay Layers — 📋 แผน ยังไม่ implement)
+
+### 24.1 เป้าหมายและขอบเขต
+
+ต่อยอด §22 ให้ผู้ใช้เปิด/ปิดชั้นข้อมูลภายนอก (ฝน, ระดับน้ำ, เขื่อน, เตือนภัยฉับพลัน, เรดาร์ฝน, พยากรณ์ ณ จุด, polygon จังหวัด/เส้นน้ำท่วม) ซ้อนทับแผนที่เหตุการณ์ได้ โดย:
+
+- **แอดมินเป็นผู้เปิดให้ใช้งาน** ต่อ layer ผ่านหน้า `donation_admin_page.dart` ด้วยปุ่ม **"Layer Map API"** ที่อยู่ในแถวของทุกหมวดเหตุฉุกเฉิน ถัดจากปุ่ม "Escrow & ค่าธรรมเนียม" (ไม่แสดงในหมวดปกติ)
+- **ค่าเริ่มต้นปิดทุก layer** ทั้งฝั่งแอดมินและผู้ใช้
+- ผู้ใช้เปิด/ปิดเองได้ในหน้าแผนที่ (legend chip เดียวกับ §22.3.4) ฝั่ง client โดยไม่ยิง request ซ้ำ และไม่เปลี่ยน committed filter ของ Phase 20
+- Layer ไม่กระทบแผนที่เหตุหลัก: layer ที่ล้มเหลวแสดงสถานะ degraded เฉพาะ layer นั้น
+
+ไม่รวม: การแจ้งเตือนจาก layer ภายนอก, การเก็บข้อมูลส่วนบุคคลจาก layer, และการเปลี่ยนสิทธิ์ mission/responder
+
+### 24.2 การตัดสินใจที่ยืนยันแล้ว
+
+| เรื่อง | ข้อสรุป |
+|---|---|
+| ตำแหน่งปุ่มแอดมิน | แถวเดียวกับ "Escrow & ค่าธรรมเนียม" ในการ์ดหมวดเหตุฉุกเฉิน (`_actionBtn`, `cat.isEmergency`) |
+| ที่เก็บค่าเปิด/ปิด | **map-config backend** (`PUT /api/admin/map-config`, revision lock, audit) ตาม §5.2 — ไม่เขียน `app_settings` โดยตรง (ต่างจาก court card style ที่เป็นข้อยกเว้นเดิม) |
+| RainViewer | ทดสอบก่อนใน dev/canary; ขอ commercial license ก่อนเปิดกว้าง (ToS ปัจจุบันจำกัด personal/educational/small community) |
+| ที่ตั้งแผน | Phase 24 ใหม่ แยกจาก Phase 22 เพื่อไม่ให้ §22 ยาวขึ้น |
+
+### 24.3 รูปแบบข้อมูลต่อ layer
+
+| Kind | แหล่ง | รูปแบบภายใน | Layer บนแผนที่ |
+|---|---|---|---|
+| `rain` | Thaiwater (สสน.) | point `{id, lat, lon, value_mm, observedAt}` | หมุด + cluster ตาม zoom |
+| `waterLevel` | Thaiwater, RID telerid (fallback) | point `{value_m, observedAt}` | หมุด |
+| `dam` | Thaiwater, RID reservoir | point `{storage_pct, inflow}` | หมุด |
+| `ews` | DWR EWS (~800 สถานี) | point `{status: normal\|watch\|critical}` | หมุดสีตามสถานะ + ไอคอน ไม่พึ่งสีอย่างเดียว |
+| `radar` | RainViewer (ก่อน), OpenTH-Radar (ทางเลือก) | `{tileUrlTemplate, frameTime}` ไม่มีพิกัด | Tile overlay ใต้หมุด |
+| `forecast` | TMD, Open-Meteo | `{lat, lon, rain, wind, temp, fetchedAt}` | ไม่ใช่ layer — bottom sheet เมื่อแตะจุด |
+| `province` / `floodRoute` | TMD รายจังหวัด, Thaiwater flood roads | GeoJSON polygon/polyline | Polygon/Polyline (ต้องมี GeoJSON ขอบเขตจังหวัดก่อน) |
+
+กฎร่วม: ทุก point ต้องผ่าน validation พิกัดเดียวกับ §22.4 (ตัด null, non-finite, นอกช่วง, `(0,0)`); ทุก response ต้องถูก bounded ด้วย viewport + zoom และมี cap; secret อยู่ฝั่ง server เท่านั้น
+
+### 24.4 ลำดับ sub-phase
+
+| Sub-phase | เนื้อหา | Exit gate |
+|---|---|---|
+| **24.A Admin toggle + config** | ปุ่ม "Layer Map API" ต่อหมวดฉุกเฉินใน `donation_admin_page.dart` (dialog เปิด/ปิดรายชั้น เรียก `PUT /api/admin/map-config` เดิม); ขยาย map-config ด้วย `features.<layer>.enabled` (ค่าเริ่มต้นปิด) โดย**เพิ่มชื่อทุก layer ใน `KNOWN_FEATURE_GATES`** (routes/map-config.js) และอ่าน/เขียนใน `MapProviderConfig.fromJson`/`toConfigJson` (ปัจจุบันรองรับเฉพาะ `incidentOverviewMap`) | แอดมินไม่ใช่สิทธิ์ผู้ใช้ทั่วไป; ค่าไม่เปลี่ยนเมื่อ conflict; ชื่อ layer ที่ไม่อยู่ใน allowlist ต้องถูก test จับ; ผู้ใช้เห็นเฉพาะ layer ที่เปิด |
+| **24.B Layer registry + renderer adapter** | โมเดลกลาง point/tile/polygon, single-surface rule, ทดสอบด้วยข้อมูลจำลองบน Google และ OSM | Golden/smoke test ทั้งสอง renderer; ไม่มี `recreating_view` บน iOS |
+| **24.C Point ฝน (`rain`)** | proxy Thaiwater, viewport + cluster, cache, rate budget | Contract test + ไม่มี request ต่อหมุด |
+| **24.D Point น้ำ/เขื่อน (`waterLevel`, `dam`)** | เพิ่มทีละ kind, fallback RID | ค่าตรงกับแหล่งต้นทาง ณ เวลาเดียวกัน |
+| **24.E Radar tile (`radar`)** | RainViewer tile overlay หลัง test; ขั้นต่อไปคือ license | Frame ล่าสุดโหลดได้; ปิด layer แล้ว tile หยุดโหลด |
+| **24.F เตือนภัย EWS (`ews`)** | proxy join ค่าล่าสุดของสถานี, refresh ทุก 15 นาที | สถานะ critical ไม่หายเมื่อ zoom ออก |
+| **24.G พยากรณ์ ณ จุด (`forecast`)** | bottom sheet เมื่อแตะ, cache ด้วย rounded coordinate | ไม่มี request ต่อหมุดหรือต่อการ pan |
+| **24.H Polygon (`province`, `floodRoute`)** | ท้ายสุด เพราะต้องมี GeoJSON ขอบเขต | Geometry validated; ขนาดไฟล์อยู่ในงบ |
+
+### 24.5 ความเสี่ยงหลัก
+
+- **Rate/cost ของแหล่งภายนอก** — ต้อง cache ฝั่ง server และ budget ต่อ layer; ห้ามทำซ้ำข้อผิดพลาดของ polling ใน §21.3
+- **License** — RainViewer และ Open-Meteo จำกัด non-commercial; ต้องยืนยันก่อน production
+- **ความถูกต้องของข้อมูล** — ระบุเวลาอัปเดตและแหล่งที่มาบน layer เสมอ ห้ามแสดงเหมือนการแจ้งเตือนทางการ
+- **ภาระ renderer** — layer มาก = marker มาก; ต้องมี cluster และ cap ต่อ layer
+
+### 24.6 สถานะ
+
+- [x] ยืนยัน schema ของ map-config backend สำหรับ layer flags — ยืนยันจากโค้ดแล้ว: map-config อยู่ใน Local PostgreSQL เท่านั้น (ไม่มีใน `supabase/`) จึง**ไม่มี Supabase parity ให้ตรวจ**; layer flags ต้องเพิ่มใน `KNOWN_FEATURE_GATES` (ดู 24.4)
+- [ ] ตรวจรัน backend จริงบน Primary (migration 04 + `GET /api/map-config` 200) — ยังไม่ผ่านในเครื่องที่ตรวจ
+- [ ] ยืนยัน endpoint จริงและเงื่อนไขการใช้งาน Thaiwater, DWR EWS, RainViewer ก่อนเริ่ม 24.C/24.E/24.F
+
+### 24.7 แผนการทดสอบแบบแยกเครื่อง (Primary vs Secondary) และการสลับ provider ผ่าน UI
+
+**บทบาทเครื่อง**
+
+| เครื่อง | หน้าที่ | ต้องรันอะไร |
+|---|---|---|
+| **Primary** (เครื่องหลัก, ผู้ถือ DB และ backend) | Node `:3000`, Caddy `:8080`, PostgreSQL ที่มี migration 04 | `npm run dev`, `./start-caddy.sh`, ตรวจ `GET /api/map-config` |
+| **Secondary** (เครื่องรอง, client) | Flutter app เท่านั้น ชี้ `BACKEND_API_URL=http://<primary-ip>:8080` | `flutter run`, unit/widget test |
+
+กฎ: เครื่องรองไม่ต้องรัน backend เอง ถ้าไม่ได้รัน `:3000`/`:8080` ให้ถือว่าเป็นสถานะปกติของเครื่องรอง ไม่ใช่ข้อผิดพลาด และห้ามเลือก fallback ไปที่ DB ท้องถิ่นโดยไม่บันทึก (ตาม §4.9)
+
+**ขั้นที่ 1 — ทดสอบที่ทำได้โดยไม่มี backend (รันบน Secondary ได้ทันที)**
+- `node --test test/map-config.test.js` (ผ่านแล้ว 18/18 ที่ websocket-server; ครอบคลุม validation เท่านั้น)
+- `flutter test test/features/admin/map_provider_config_test.dart test/shared/map/` (ผ่านแล้ว 47/47)
+- `flutter test test/features/admin/map_provider_settings_section_test.dart` (ผ่านแล้ว 10/10) ประกอบด้วย:
+  - server ไม่ตอบ → แสดง banner app-default และการบันทึกไม่แสดงความสำเร็จปลอม
+  - การเปิด platform ไม่เปลี่ยน `renderer`/`tileSourceId` ใน PUT
+  - 409 conflict, 422 validation, responsive layout 320/393/1280
+- **ข้อจำกัด:** ปุ่มบันทึกยังไม่ถูก disable ตอน app-default (โค้ดปัจจุบัน) — ถ้าต้องการพฤติกรรมนี้ต้องแก้ widget แยกต่างหาก
+
+**ขั้นที่ 2 — ทดสอบที่ต้องมี backend (รันบน Primary หรือชี้จาก Secondary ผ่าน Caddy)**
+- ตรวจ migration: `map_provider_config` และ `map_provider_config_audit` ต้องมีอยู่ใน DB ของ Primary (ปัจจุบันยังไม่มีในทุกฐานข้อมูลบนเครื่องที่ตรวจ)
+- `curl http://<primary-ip>:8080/api/map-config` → 200 พร้อม `revision`; ถ้า 404 = migration ยังไม่ถูก apply; ถ้า timeout = Caddy/Node/IP ผิด (ใช้ checklist ใน §"Network & Configuration Runbook")
+- PUT/409/rollback/audit **ยังไม่มี integration test** (test ปัจจุบันครอบคลุม validation อย่างเดียว) — ต้องเพิ่มก่อนพึ่งพาใน 24.A โดยชี้ไปที่ Primary
+- เมื่อ layer flags เพิ่มเข้า `KNOWN_FEATURE_GATES` ต้องทดสอบว่า save แล้วอ่านกลับได้ และไม่เกิด warning "unknown feature gate"
+
+**ขั้นที่ 3 — สลับ provider ผ่าน UI (ตาม rollout plan §4 และ §10)**
+- การเปลี่ยน renderer (Google/OSM) และ tile source ทำผ่าน `PlatformSettingsPage` → `MapProviderSettingsSection` เท่านั้น
+- การเปิด/ปิด layer map (§24) ทำผ่านปุ่ม "Layer Map API" ใน `donation_admin_page.dart` ซึ่งเขียน config เดียวกันผ่าน PUT เดิม — สองหน้าใช้ backend ร่วมกันแต่แก้คนละ key
+- การเปิด layer ต้องไม่เปลี่ยน `renderer`/`tileSourceId` (มี test ตรวจเฉพาะการเปิด platform; ยังไม่มี test สำหรับ layer ต้องเพิ่มใน 24.A) ห้ามแก้ค่าโดยตรงใน DB หรือ `app_settings` ทั้งสองทาง
+- ก่อนเปิด OSM ใน environment ใด ต้องผ่าน gate ใน §10 ของ rollout plan (Phase 0–2 เสร็จแล้ว, Phase 7 ยังไม่เริ่ม) — layer ใหม่ใช้ได้เฉพาะหลังแผนที่หลักผ่าน gate เดียวกัน
+- ทุกการบันทึกต้องมี `expectedRevision` และ reason (prod) และตรวจ audit ใหม่หลังบันทึกทุกครั้ง
+
+**ขั้นที่ 4 — ตรวจข้ามเครื่อง**
+- Secondary เปิดหน้า Platform Settings → ค่าที่แสดงต้องตรงกับ `GET /api/map-config` ของ Primary (revision เท่ากัน)
+- แก้ค่าจาก Secondary → Primary ต้องเห็น revision +1 และ audit row ใหม่
+- แก้พร้อมกันสองเครื่อง → ต้องได้ 409 conflict banner ไม่ทับกัน
+
+**เงื่อนไขหยุด**: ถ้าขั้น 2 หรือ 4 ไม่ผ่าน ห้ามเริ่ม 24.C ถึง 24.H
+
+**สิ่งที่ยังต้องยืนยันจากผู้ใช้**: IP LAN ปัจจุบันของ Primary, และ Primary มี migration 04 หรือยัง
