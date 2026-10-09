@@ -19,7 +19,18 @@ void main() {
   }
 
   group('IncidentShareButton Tests', () {
-    testWidgets('renders default state with LitGlassSurface and share icon',
+    Semantics buttonSemantics(WidgetTester tester) {
+      return tester.widget<Semantics>(
+        find.descendant(
+          of: find.byType(IncidentShareButton),
+          matching: find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label != null,
+          ),
+        ),
+      );
+    }
+
+    testWidgets('renders default state as round icon-only button (orange icon)',
         (tester) async {
       bool pressed = false;
       await tester.pumpWidget(
@@ -31,8 +42,11 @@ void main() {
       );
 
       expect(find.byType(LitGlassSurface), findsOneWidget);
-      expect(find.text('แชร์เหตุการณ์'), findsOneWidget);
-      expect(find.byIcon(Icons.share_rounded), findsOneWidget);
+      // Icon-only design — no text is rendered; the label lives in Semantics
+      expect(find.byType(Text), findsNothing);
+      expect(buttonSemantics(tester).properties.label, 'แชร์เหตุการณ์');
+      final icon = tester.widget<Icon>(find.byIcon(Icons.share_rounded));
+      expect(icon.color, const Color(0xFFFF6B35));
 
       await tester.tap(find.byType(IncidentShareButton));
       await tester.pump();
@@ -50,7 +64,8 @@ void main() {
         ),
       );
 
-      expect(find.text('แชร์ภาพนี้'), findsOneWidget);
+      expect(find.byType(Text), findsNothing);
+      expect(buttonSemantics(tester).properties.label, 'แชร์ภาพนี้');
       expect(find.byIcon(Icons.image_outlined), findsOneWidget);
 
       final surface = tester.widget<LitGlassSurface>(
@@ -60,7 +75,8 @@ void main() {
       expect(surface.accentColor, const Color(0xFF38BDF8));
     });
 
-    testWidgets('renders custom label when provided', (tester) async {
+    testWidgets('uses custom label for semantics when provided',
+        (tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           IncidentShareButton(
@@ -70,7 +86,7 @@ void main() {
         ),
       );
 
-      expect(find.text('แชร์คลิปนี้'), findsOneWidget);
+      expect(buttonSemantics(tester).properties.label, 'แชร์คลิปนี้');
     });
 
     testWidgets('shows loading spinner when isLoading is true and ignores tap',
@@ -86,7 +102,7 @@ void main() {
       );
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.text('แชร์เหตุการณ์'), findsNothing);
+      expect(find.byType(Icon), findsNothing);
 
       await tester.tap(find.byType(IncidentShareButton));
       await tester.pump();
@@ -136,7 +152,7 @@ void main() {
       expect(releasedScale.scale, 1.0);
     });
 
-    testWidgets('handles narrow column width without overflow via FittedBox',
+    testWidgets('renders as a 34dp-high round button without overflow',
         (tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
@@ -148,7 +164,15 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.byType(FittedBox), findsOneWidget);
+      // กล่องกระจกคงขนาด 34x34 ภายใต้ Align (Column ผู้ใช้ stretch ความกว้าง)
+      final boxFinder = find.byWidgetPredicate(
+        (w) => w is SizedBox && w.width == 34 && w.height == 34,
+      );
+      expect(boxFinder, findsOneWidget);
+      final surface = tester.widget<LitGlassSurface>(
+        find.byType(LitGlassSurface),
+      );
+      expect(surface.borderRadius, 17); // 34dp box + radius 17 = circle
     });
   });
 }

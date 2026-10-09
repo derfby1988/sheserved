@@ -489,8 +489,12 @@ resolution (ไม่เกี่ยวกับงานนี้)
 ขับ renderer จริงได้ แต่ surface นี้ **ไม่ได้ใช้ shared adapter ของ Phase 2**
 เพราะต้องการสิ่งที่ shared model ยังไม่มี: cluster markers ขนาดตาม count,
 canvas-generated bitmaps, photo-card overlay ที่วางตำแหน่งด้วย manual
-projection — งานค้าง: ตัดสินใจว่าจะย้ายมาใช้ shared layer (ขยาย model ให้รองรับ
-cluster/overlay) หรือบันทึกเป็น documented carve-out
+projection. **มติ Phase 24 ที่ยืนยันแล้ว:** ขยาย `lib/shared/map/` ให้รองรับ
+primitives ของ data layers (point/cluster, raster tile, polygon/polyline) และใช้
+shared layer path สำหรับ overlay ใหม่ทั้ง Google/OSM; คง incident cluster และ
+photo-card projection เฉพาะของ `IncidentMapSurface` ไว้ ไม่ refactor photo
+overlay เดิมหรือทำ rendering ของ data layer ซ้ำในแต่ละ renderer (รายละเอียดใน
+`VIDEO_SYSTEM_PLAN.md` §24.2, §24.4, §24.10).
 
 **งานค้างจาก Phase 0–2:**
 

@@ -6508,16 +6508,14 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 2. **Layout & Visual Styling ของปุ่มแชร์ ([IncidentShareButton](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/widgets/incident_share_button.dart)):**
    - วางเหนือ Ruler Gallery ใน `Column` ขวา: `Column([IncidentShareButton, SizedBox(height: 6), Expanded(ThaiMhungRulerGalleryWidget)])`
    - ขอบล่าง Gallery ตรงกับขอบล่างของ Video Player พอดี ไม่ดัน layout ส่วนอื่นเสียรูปทรง
-   - **Glass Capsule Styling (`lib/shared/widgets/glass`):**
-     - ความสูง: 34dp (กะทัดรัด ประหยัดพื้นที่)
-     - Border radius: 17dp (ทรงแคปซูล Pill shape สมบูรณ์แบบ)
+   - **Glass Circle Icon-Only Styling (`lib/shared/widgets/glass`) — ปรับ 2026-10-10:**
+     - ขนาด: วงกลม 34×34dp (Border radius 17dp) ไอคอนล้วน **ไม่มีข้อความ** — ครอบ `Align(center)` กัน Column `stretch` ขยายความกว้าง
      - พื้นผิว: `LitGlassSurface` (blurSigma 10, fillOpacity 0.09–0.14, rimWidth 1.2, rimBoost 1.1, shadowOpacity 0.25)
+     - ไอคอนปกติ: `Icons.share_rounded` (17dp) สีส้ม `#FF6B35` — โทนเดียวกับพื้นหลังป้าย "ยอดนิยม"
    - **Dynamic Visual State (Photo Focused State):**
-     - เมื่อมีภาพ overlay เปิดอยู่ (`isPhotoFocused = true`): เปล่งแสงสะท้อนขอบฟ้า **Cyan Glow (`#38BDF8`)** (accentStrength 0.6, glowOpacity 0.35), สลับไอคอนเป็น `Icons.image_outlined` (15dp), และข้อความเป็น "แชร์ภาพนี้" พร้อม drop shadow สีฟ้า
-     - เมื่อไม่มี overlay (`isPhotoFocused = false`): ไอคอน `Icons.share_rounded` + ข้อความ "แชร์เหตุการณ์" สไตล์ Glass สีขาวนวลตา
+     - เมื่อมีภาพ overlay เปิดอยู่ (`isPhotoFocused = true`): เปล่งแสงสะท้อนขอบฟ้า **Cyan Glow (`#38BDF8`)** (accentStrength 0.6, glowOpacity 0.35) และสลับไอคอนเป็น `Icons.image_outlined` สี `#E0F2FE` — ข้อความ "แชร์ภาพนี้"/"แชร์เหตุการณ์" เหลือเฉพาะใน Semantics label (accessibility)
    - **Tactile Physics สไตล์ Neumorphic (`lib/shared/widgets/neumorphic`):**
      - ใช้ `AnimatedScale(scale: _isPressed ? 0.96 : 1.0, duration: 100ms)` ให้ความรู้สึกสัมผัสแบบ Micro-bounce ยุบตัวนุ่มนวลเมื่อกดแตะ
-   - **FittedBox Safety:** ครอบเนื้อหาด้วย `FittedBox(fit: BoxFit.scaleDown)` ป้องกันปัญหา RenderFlex overflow บนหน้าจอแคบ (320dp)
 3. **Link Contract:**
    - Universal Link: `https://sheserved.me/emergency/incident/<videoId>?src=share[&photo=<photoId>]`
    - Custom Scheme: `sheserved://emergency/incident/<videoId>[?photo=<photoId>]`
@@ -6618,11 +6616,11 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 | รหัสทดสอบ | ขั้นตอนการกระทำ (Action) | ผลการทดสอบที่คาดหวัง (Expected Result) | สถานะ |
 |---|---|---|:---:|
 | **UI-S1** | เปิดหน้า Emergency โดยยังไม่มีเหตุการณ์ถูกเลือก | ปุ่มแชร์ **ไม่ปรากฏ** บนหน้าจอ (Gallery ไม่ render) | [ ] |
-| **UI-S2** | แตะเลือกการ์ดเหตุการณ์ที่มีภาพถ่ายไทยมุง | ปุ่มแชร์ปรากฏเหนือ Ruler Gallery ในคอลัมน์ขวา:<br>• ความสูง 34dp, ทรงแคปซูลมน (Pill Radius 17dp)<br>• ขอบล่าง Ruler Gallery ตรงกับขอบล่างของ Video Player พอดี<br>• ระยะห่างระหว่างปุ่มกับ Gallery คือ 6dp | [ ] |
-| **UI-S3** | สังเกตหน้าตาของปุ่มขณะ **ไม่มี** การเปิด Overlay ภาพ (Normal State) | • ไอคอน: `Icons.share_rounded` (ขนาด 15dp)<br>• ข้อความ: "แชร์เหตุการณ์" (SukhumvitSet ขนาด 12dp)<br>• สีพื้นผิว: LitGlassSurface ขาวโปร่งแสงตามระบบ Glassmorphism (ไม่มีแสง Cyan Glow) | [ ] |
-| **UI-S4** | แตะที่รูปภาพรูปแรกใน Ruler Gallery เพื่อเปิด Overlay ภาพ | • ภาพ Overlay ขยายขึ้นทับ Video Player และวิดีโอหยุดเล่นเบื้องหลังชั่วคราว<br>• **ปุ่มแชร์เปลี่ยนสถานะทันที:**<br>  - ขอบและเงาเปล่งแสง **Cyan Glow (`#38BDF8`)** สะท้อนสว่างขึ้น<br>  - ไอคอนเปลี่ยนเป็น `Icons.image_outlined`<br>  - ข้อความเปลี่ยนเป็น **"แชร์ภาพนี้"** พร้อมเงาตัวอักษรสีฟ้าอ่อน | [ ] |
+| **UI-S2** | แตะเลือกการ์ดเหตุการณ์ที่มีภาพถ่ายไทยมุง | ปุ่มแชร์ปรากฏเหนือ Ruler Gallery ในคอลัมน์ขวา:<br>• ทรงวงกลม 34×34dp ไอคอนล้วน (ไม่มีข้อความ)<br>• ขอบล่าง Ruler Gallery ตรงกับขอบล่างของ Video Player พอดี<br>• ระยะห่างระหว่างปุ่มกับ Gallery คือ 6dp | [ ] |
+| **UI-S3** | สังเกตหน้าตาของปุ่มขณะ **ไม่มี** การเปิด Overlay ภาพ (Normal State) | • ไอคอน: `Icons.share_rounded` (ขนาด 17dp) **สีส้ม `#FF6B35`** (โทนเดียวกับป้าย "ยอดนิยม")<br>• ไม่มีข้อความบนปุ่ม (label อยู่ใน Semantics สำหรับ accessibility)<br>• สีพื้นผิว: LitGlassSurface ขาวโปร่งแสงตามระบบ Glassmorphism (ไม่มีแสง Cyan Glow) | [ ] |
+| **UI-S4** | แตะที่รูปภาพรูปแรกใน Ruler Gallery เพื่อเปิด Overlay ภาพ | • ภาพ Overlay ขยายขึ้นทับ Video Player และวิดีโอหยุดเล่นเบื้องหลังชั่วคราว<br>• **ปุ่มแชร์เปลี่ยนสถานะทันที:**<br>  - ขอบและเงาเปล่งแสง **Cyan Glow (`#38BDF8`)** สะท้อนสว่างขึ้น<br>  - ไอคอนเปลี่ยนเป็น `Icons.image_outlined` สี `#E0F2FE` | [ ] |
 | **UI-S5** | เลื่อนนิ้วบน Ruler Gallery ไปยังภาพอื่นขณะที่ Overlay ยังเปิดอยู่ | • ภาพ Overlay สลับไปยังภาพใหม่ที่เลื่อนผ่าน<br>• ปุ่มแชร์ยังคงสถานะ "แชร์ภาพนี้" และมี Cyan Glow ต่อเนื่อง<br>• ระบบอัปเดต photoId ภายในให้ตรงกับภาพปัจจุบัน | [ ] |
-| **UI-S6** | ปิด Overlay ภาพโดยแตะปุ่มกากบาท (X) มุมขวาบน | • ภาพ Overlay ปิดลงอย่างราบรื่น<br>• วิดีโอเบื้องหลังกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State: ไอคอน `share_rounded` + ข้อความ "แชร์เหตุการณ์" + แสง Cyan Glow ดับลง | [ ] |
+| **UI-S6** | ปิด Overlay ภาพโดยแตะปุ่มกากบาท (X) มุมขวาบน | • ภาพ Overlay ปิดลงอย่างราบรื่น<br>• วิดีโอเบื้องหลังกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State: ไอคอน `share_rounded` สีส้ม `#FF6B35` + แสง Cyan Glow ดับลง | [ ] |
 | **UI-S7** | เปิด Overlay ภาพอีกครั้ง แล้วปัดนิ้วไปทางขวา (Swipe right to dismiss) | • Overlay ปิดลงตาม Gesture ปัดขวา<br>• วิดีโอกลับมาเล่นต่ออัตโนมัติ<br>• ปุ่มแชร์กลับสู่ Normal State ทันที | [ ] |
 | **UI-S8** | กดนิ้วค้างลงบนปุ่มแชร์ (ยังไม่ปล่อยนิ้ว) | • สัมผัส Micro-bounce: ปุ่มหดตัวลงอย่างนุ่มนวล `AnimatedScale` ขนาด 0.96 (100ms) ให้ความรู้สึกกดทางกายภาพ | [ ] |
 | **UI-S9** | ปล่อยนิ้วออกจากปุ่มแชร์ | • ปุ่มขยายตัวกลับสู่ขนาดปกติ 1.0 (100ms)<br>• Native OS Share Sheet ปรากฏขึ้นมาบนหน้าจอ | [ ] |
@@ -6733,15 +6731,15 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 ---
 
-## 24. Phase — Map Data Layers บนแผนที่เกิดเหตุ (Optional Overlay Layers — 📋 แผน ยังไม่ implement)
+## 24. Phase — Map Data Layers บนแผนที่เกิดเหตุ (Optional Overlay Layers — 📋 แผน ยังไม่ implement; ทบทวน 2026-10-10)
 
 ### 24.1 เป้าหมายและขอบเขต
 
 ต่อยอด §22 ให้ผู้ใช้เปิด/ปิดชั้นข้อมูลภายนอก (ฝน, ระดับน้ำ, เขื่อน, เตือนภัยฉับพลัน, เรดาร์ฝน, พยากรณ์ ณ จุด, polygon จังหวัด/เส้นน้ำท่วม) ซ้อนทับแผนที่เหตุการณ์ได้ โดย:
 
-- **แอดมินเป็นผู้เปิดให้ใช้งาน** ต่อ layer ผ่านหน้า `donation_admin_page.dart` ด้วยปุ่ม **"Layer Map API"** ที่อยู่ในแถวของทุกหมวดเหตุฉุกเฉิน ถัดจากปุ่ม "Escrow & ค่าธรรมเนียม" (ไม่แสดงในหมวดปกติ)
+- **แอดมินเป็นผู้เปิดให้ใช้งาน** ต่อ layer ในการ์ด **"ชั้นข้อมูลบนแผนที่"** ของ `MapProviderSettingsSection` (วางถัดจากการ์ด "แผนที่เกิดเหตุ" ที่มีอยู่แล้ว) — ไม่ใช่ปุ่มต่อหมวดใน `donation_admin_page.dart` เพราะค่าเป็น global ชุดเดียวสำหรับทุกหมวด (ดู 24.2)
 - **ค่าเริ่มต้นปิดทุก layer** ทั้งฝั่งแอดมินและผู้ใช้
-- ผู้ใช้เปิด/ปิดเองได้ในหน้าแผนที่ (legend chip เดียวกับ §22.3.4) ฝั่ง client โดยไม่ยิง request ซ้ำ และไม่เปลี่ยน committed filter ของ Phase 20
+- ผู้ใช้เปิด/ปิดเองได้ในหน้าแผนที่ผ่านปุ่ม "ชั้นข้อมูล" (แยกจาก legend chip ของ §22.3.4 — ดู 24.8) เปิดซ้ำภายใน TTL ใช้ cache เดิมโดยไม่ยิง request ซ้ำ และไม่เปลี่ยน committed filter ของ Phase 20
 - Layer ไม่กระทบแผนที่เหตุหลัก: layer ที่ล้มเหลวแสดงสถานะ degraded เฉพาะ layer นั้น
 
 ไม่รวม: การแจ้งเตือนจาก layer ภายนอก, การเก็บข้อมูลส่วนบุคคลจาก layer, และการเปลี่ยนสิทธิ์ mission/responder
@@ -6750,50 +6748,75 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 | เรื่อง | ข้อสรุป |
 |---|---|
-| ตำแหน่งปุ่มแอดมิน | แถวเดียวกับ "Escrow & ค่าธรรมเนียม" ในการ์ดหมวดเหตุฉุกเฉิน (`_actionBtn`, `cat.isEmergency`) |
+| ตำแหน่งปุ่มแอดมิน | **ยืนยันแล้ว:** global switches อยู่ในการ์ด "ชั้นข้อมูลบนแผนที่" ใน `MapProviderSettingsSection` ถัดจาก `_incidentMapGateCard()` — `features.*` เป็นค่า global ใน `map_provider_config` แถวเดียว จึงไม่วางปุ่มแยกตามหมวดและมี writer เพียงหน้าเดียว |
 | ที่เก็บค่าเปิด/ปิด | **map-config backend** (`PUT /api/admin/map-config`, revision lock, audit) ตาม §5.2 — ไม่เขียน `app_settings` โดยตรง (ต่างจาก court card style ที่เป็นข้อยกเว้นเดิม) |
-| RainViewer | ทดสอบก่อนใน dev/canary; ขอ commercial license ก่อนเปิดกว้าง (ToS ปัจจุบันจำกัด personal/educational/small community) |
-| ที่ตั้งแผน | Phase 24 ใหม่ แยกจาก Phase 22 เพื่อไม่ให้ §22 ยาวขึ้น |
+| RainViewer | **ปิดใน production จนกว่าจะมี license/permission เป็นลายลักษณ์อักษร**; dev/staging เปิดได้เมื่อ readiness อนุญาตและแสดง attribution; หน้า API ระบุ "personal and educational use only" และไม่รับประกันความพร้อมของข้อมูล → ต้อง degrade ได้เสมอ |
+| DWR EWS | **เลื่อนออกจากรอบแรก** จนได้สิทธิ์/credential อย่างเป็นทางการและยืนยัน contract ของข้อมูล; ห้ามเดา status หรือสร้างระดับ critical/watch เอง |
+| ขอบเขตการเลือก layer ของผู้ใช้ | **session-only:** เริ่มปิดทุก layer เมื่อเข้า map session ใหม่; คงค่าระหว่าง map-playback/resume; ไม่จำข้าม session |
+| Renderer/shared model | **ขยาย `lib/shared/map/` สำหรับ primitives ของ layer ใหม่** (point, cluster, tile, polygon) และให้ทั้ง Google/OSM adapters รองรับ; `IncidentMapSurface` ใช้ shared layer primitives สำหรับ data layers แต่คง cluster/photo overlay เฉพาะเหตุการณ์ไว้ได้ — ไม่รื้อ photo projection ที่มีอยู่และไม่ทำ renderer layer ซ้ำสองชุด |
+| ที่ตั้งแผน | Phase 24 แยกจาก Phase 22 เพื่อให้ §22 คงขอบเขต incident-map v1; Phase 24 ต้องรอ Phase 22 exit gate ก่อนแตะ shared surface |
+| การเขียน `features` (ช่องโหว่ที่พบ 2026-10-10) | PUT `/api/admin/map-config` เขียน `config` ทั้งก้อน (`SET config = $1`) และ `MapProviderConfig.toConfigJson()` สร้าง `features` จากฟิลด์ที่รู้จักเท่านั้น → client รุ่นปัจจุบันที่บันทึก platform config จะ**ลบ layer flags ที่เพิ่มในอนาคตโดยไม่รู้ตัว** (revision lock ไม่ช่วย เพราะ revision ไม่เปลี่ยน) → ก่อน 24.A ต้องมี (1) model เก็บ key ที่ไม่รู้จักไว้ (passthrough) และ (2) server merge `features` กับค่าปัจจุบันสำหรับ key ที่ client ไม่ส่งมา |
+| Readiness ของ layer | ใช้รูปแบบเดียวกับ `TILE_SOURCES.readiness` (`ready \| dev_only \| needs_key`) — registry ฝั่ง server เป็นต้นฉบับ; server **ปฏิเสธ (422)** เมื่อเปิด layer ที่ readiness ไม่ผ่านกับ environment นั้น ไม่ใช่แค่ warning; ปลดล็อก readiness ด้วยการ deploy registry หลังมีหลักฐาน ไม่ใช่ปุ่มใน admin |
+| ระดับ/สถานะที่แสดง | ใช้ค่าที่แหล่งต้นทางส่งมาเท่านั้น (เช่น `situation_level` ของ Thaiwater, สถานะ EWS ถ้าแหล่งส่ง) — **ห้ามคำนวณ normal/watch/critical เองจากค่าดิบ** |
+| สถานะ UI ต่อ layer | ใช้คำศัพท์เดียวกับ §22.3.3 และเพิ่ม `off` กับ `stale` (ดู 24.8) — error ของ layer ต้องไม่ล้าง session หรือ incident markers |
+| ปุ่มควบคุม layer | ปุ่มแยกชื่อ "ชั้นข้อมูล" ไม่ใช้ legend chip ของ §22.3.4 เพราะความหมายต่างกัน: legend = highlight/dim marker ฝั่ง client, layer = เปิด/ปิดและดึงข้อมูลจากเซิร์ฟเวอร์ |
+| ลำดับพึ่งพา | เริ่ม 24.B ได้หลัง §22.8 device verification ผ่านและปิด Phase 22; การเปิดใน prod ต้องผ่าน safety gate ของ rollout Phase 7 เพราะ §22 incident map อยู่ในขอบเขตนั้น (`docs/guides/map_provider_rollout_plan.md` §10) |
 
 ### 24.3 รูปแบบข้อมูลต่อ layer
 
 | Kind | แหล่ง | รูปแบบภายใน | Layer บนแผนที่ |
 |---|---|---|---|
-| `rain` | Thaiwater (สสน.) | point `{id, lat, lon, value_mm, observedAt}` | หมุด + cluster ตาม zoom |
-| `waterLevel` | Thaiwater, RID telerid (fallback) | point `{value_m, observedAt}` | หมุด |
+| `rain` | Thaiwater `public/rain_24h` (สสน.) | point `{id, lat, lon, rain1hMm, rain24hMm, observedAt}` | หมุด + cluster ตาม zoom; popup แสดงช่วงสะสมของค่าฝนให้ชัด |
+| `waterLevel` | Thaiwater `public/waterlevel`; RID fallback ยังไม่ยืนยัน | point `{waterLevelMsl, situationLevel, observedAt}` (ค่าระดับและ situation level ตามต้นทาง) | หมุด; แสดงหน่วย/เวลาชัดเจน ไม่คำนวณระดับเตือนเอง |
 | `dam` | Thaiwater, RID reservoir | point `{storage_pct, inflow}` | หมุด |
-| `ews` | DWR EWS (~800 สถานี) | point `{status: normal\|watch\|critical}` | หมุดสีตามสถานะ + ไอคอน ไม่พึ่งสีอย่างเดียว |
-| `radar` | RainViewer (ก่อน), OpenTH-Radar (ทางเลือก) | `{tileUrlTemplate, frameTime}` ไม่มีพิกัด | Tile overlay ใต้หมุด |
+| `ews` (deferred; ไม่รวม first release) | DWR EWS เมื่อได้สิทธิ์/credential | ค่าที่วัด `{rain12h, rain07h, temp, waterLevel, soil, observedAt}`; contract จริงต้องยืนยัน | ถ้าได้สิทธิ์และพิกัดสถานี: marker แสดงค่าดิบ/เวลาเท่านั้น; ไม่มี critical/watch หากต้นทางไม่ส่ง status |
+| `radar` | RainViewer (dev/staging; production หลัง license); OpenTH-Radar (candidate ยังไม่ verify) | `{tileUrlTemplate, frameTime}` ไม่มีพิกัด | Tile overlay ใต้หมุด |
 | `forecast` | TMD, Open-Meteo | `{lat, lon, rain, wind, temp, fetchedAt}` | ไม่ใช่ layer — bottom sheet เมื่อแตะจุด |
 | `province` / `floodRoute` | TMD รายจังหวัด, Thaiwater flood roads | GeoJSON polygon/polyline | Polygon/Polyline (ต้องมี GeoJSON ขอบเขตจังหวัดก่อน) |
 
 กฎร่วม: ทุก point ต้องผ่าน validation พิกัดเดียวกับ §22.4 (ตัด null, non-finite, นอกช่วง, `(0,0)`); ทุก response ต้องถูก bounded ด้วย viewport + zoom และมี cap; secret อยู่ฝั่ง server เท่านั้น
 
+กฎเพิ่มจากการตรวจแหล่งจริง (2026-10-10):
+
+- ทุก point ต้องมี `source` (ชื่อแหล่ง), `observedAt` (เวลาที่แหล่งวัด) และ `fetchedAt` (เวลาที่ server ดึง) — UI แสดงเวลาที่วัดเสมอ
+- Payload ต้นทางใหญ่: `public/rain_24h` ≈ 4.6 MB, `public/waterlevel` ≈ 1.35 MB, `analyst/dam` ≈ 1.05 MB ต่อ request (วัดจริง) → server ต้อง cache ระดับ kind ทั้งประเทศแบบ normalized แล้วกรอง bbox ใน memory; ห้าม cache ต่อ viewport และห้ามส่ง payload ดิบถึง client
+- `analyst/dam`: แถวแรกที่ได้จาก endpoint เป็นข้อมูลปี 2020 → กรองตามวันที่ก่อนแสดงเสมอ
+
 ### 24.4 ลำดับ sub-phase
 
 | Sub-phase | เนื้อหา | Exit gate |
 |---|---|---|
-| **24.A Admin toggle + config** | ปุ่ม "Layer Map API" ต่อหมวดฉุกเฉินใน `donation_admin_page.dart` (dialog เปิด/ปิดรายชั้น เรียก `PUT /api/admin/map-config` เดิม); ขยาย map-config ด้วย `features.<layer>.enabled` (ค่าเริ่มต้นปิด) โดย**เพิ่มชื่อทุก layer ใน `KNOWN_FEATURE_GATES`** (routes/map-config.js) และอ่าน/เขียนใน `MapProviderConfig.fromJson`/`toConfigJson` (ปัจจุบันรองรับเฉพาะ `incidentOverviewMap`) | แอดมินไม่ใช่สิทธิ์ผู้ใช้ทั่วไป; ค่าไม่เปลี่ยนเมื่อ conflict; ชื่อ layer ที่ไม่อยู่ใน allowlist ต้องถูก test จับ; ผู้ใช้เห็นเฉพาะ layer ที่เปิด |
-| **24.B Layer registry + renderer adapter** | โมเดลกลาง point/tile/polygon, single-surface rule, ทดสอบด้วยข้อมูลจำลองบน Google และ OSM | Golden/smoke test ทั้งสอง renderer; ไม่มี `recreating_view` บน iOS |
-| **24.C Point ฝน (`rain`)** | proxy Thaiwater, viewport + cluster, cache, rate budget | Contract test + ไม่มี request ต่อหมุด |
-| **24.D Point น้ำ/เขื่อน (`waterLevel`, `dam`)** | เพิ่มทีละ kind, fallback RID | ค่าตรงกับแหล่งต้นทาง ณ เวลาเดียวกัน |
-| **24.E Radar tile (`radar`)** | RainViewer tile overlay หลัง test; ขั้นต่อไปคือ license | Frame ล่าสุดโหลดได้; ปิด layer แล้ว tile หยุดโหลด |
-| **24.F เตือนภัย EWS (`ews`)** | proxy join ค่าล่าสุดของสถานี, refresh ทุก 15 นาที | สถานะ critical ไม่หายเมื่อ zoom ออก |
-| **24.G พยากรณ์ ณ จุด (`forecast`)** | bottom sheet เมื่อแตะ, cache ด้วย rounded coordinate | ไม่มี request ต่อหมุดหรือต่อการ pan |
-| **24.H Polygon (`province`, `floodRoute`)** | ท้ายสุด เพราะต้องมี GeoJSON ขอบเขต | Geometry validated; ขนาดไฟล์อยู่ในงบ |
+| **24.A Admin toggle + config safety** | เมื่อ migration 04 และ backend พร้อม: การ์ด global "ชั้นข้อมูลบนแผนที่" ใน `MapProviderSettingsSection` (Switch ต่อ layer; `MapConfigService.save` → PUT เดิม); เพิ่ม `features.<layer>.enabled` ค่าเริ่มต้นปิดสำหรับ layer keys ใน registry `MAP_LAYERS`; อัปเดต `MapProviderConfig` ให้ round-trip/passthrough keys ที่ไม่รู้จัก; merge `features` ฝั่ง server เพื่อให้ client เก่าไม่ลบ flags ใหม่; admin แก้ได้เฉพาะ flags ที่ registry อนุญาต | Auth admin เท่านั้น; ปิด Save เมื่อ config snapshot เป็น app-default/offline; config load→save คง key เดิมทั้งหมด; PUT จาก client ที่ไม่รู้จัก layer ต้องไม่ลบ flag; optimistic conflict ไม่ทับค่า; readiness ที่ไม่ผ่านใน prod เปิดไม่ได้ (422); ทดสอบ audit, save/reload, conflict และ regression renderer/tileSource ไม่เปลี่ยน |
+| **24.B Shared layer primitives + UI** | เริ่มหลังปิด Phase 22 (§22.8); ทำ `MapLayerKind`/`MapLayerRegistry` จาก registry server; ขยาย `lib/shared/map/` ให้รองรับ point/cluster, raster tile และ polygon/polyline ใน Google/OSM adapters; ต่อ `IncidentMapSurface` เข้ากับ shared primitives สำหรับ data layers แต่คง incident clusters/photo-card overlay เฉพาะของมันไว้; สร้างปุ่ม "ชั้นข้อมูล", bottom sheet, session state และ per-layer UI ตาม §24.8 | Unit/widget/golden tests ของ state machine และทั้งสอง renderer; layer ปิดเริ่มต้น; close/cancel ปิด network/tile; ไม่เกิด `recreating_view` บน iOS; 320/393 dp; ไม่บัง emergency controls; incident map regressions ผ่าน |
+| **24.C Point ฝน (`rain`)** | proxy Thaiwater `public/rain_24h` (เรียกจริงแล้ว HTTP 200 ไม่ต้องใช้ key; payload ≈ 4.6 MB → cache ทั้งประเทศ + กรอง bbox ใน server + cap), circuit breaker, rate budget; readiness = dev_only จนตรวจเงื่อนไขการอ้างอิงแหล่งกับ standard.thaiwater.net | Contract test กับ fixture ที่บันทึกจาก endpoint จริง; ขนาด response ถึง client ≤ งบใน registry; ไม่มี request ต่อหมุดหรือต่อการ pan |
+| **24.D Point น้ำ/เขื่อน (`waterLevel`, `dam`)** | เพิ่มทีละ kind; `public/waterlevel` (HTTP 200 ไม่ต้องใช้ key) แสดง `situation_level` จากแหล่งตรง ๆ; `analyst/dam` มีแถวเก่า (แถวแรกเป็นปี 2020) → กรองตามวันที่ก่อนแสดงและ mark stale; fallback RID ยังไม่ตรวจ endpoint | ค่าตรงกับแหล่งต้นทาง ณ เวลาเดียวกัน; แถวเก่าเกิน threshold ของ registry ต้องมีป้ายหรือถูกตัดออก |
+| **24.E Radar tile (`radar`)** | readiness = dev_only เท่านั้น; frame index จาก `api.rainviewer.com/public/weather-maps.json` (HTTP 200 ตรวจแล้ว; มี `host` และ `radar.past[]` ทุก 10 นาที ย้อนหลัง 2 ชม.) ผ่าน server proxy + cache สั้น; tile โหลดตรงจาก host ของผู้ให้บริการ; แสดง attribution RainViewer; ขั้นต่อไปคือ license ก่อน prod | Frame ล่าสุดโหลดได้; ปิด layer แล้ว tile หยุดโหลด; index ล้มเหลว = error เฉพาะ layer ไม่กระทบ incident markers |
+| **24.G พยากรณ์ ณ จุด (`forecast`)** | bottom sheet เมื่อแตะ marker เหตุการณ์/สถานีที่รองรับ; cache ด้วย grid coordinate ที่ปัดเศษและ TTL; เริ่มเมื่อยืนยัน terms, attribution และ limits ของผู้ให้บริการแล้ว; ไม่เป็น dependency ของ map renderer | ไม่มี request ต่อหมุดหรือต่อการ pan; request มี cache/rate budget; แสดง source + fetchedAt; เลือก marker ซ้ำใช้ cache เดิม |
+| **24.F เตือนภัย EWS (`ews`) — deferred** | **ไม่อยู่ใน first release / ห้ามเริ่มโดยไม่มีสิทธิ์:** EWS web service ของ DWR ต้องใช้ `uid`/`upass` ที่ออกให้ และ telemetry API ไม่เผยแพร่สถานี EWS; เมื่อมีสิทธิ์แล้วให้ยืนยัน contract และพิกัดก่อน — ถ้าไม่มี status จากต้นทางให้แสดงเฉพาะค่าที่วัด/เวลา ไม่สร้าง critical/watch เอง | ได้รับ permission/credential อย่างเป็นทางการ; contract + coordinate coverage ผ่าน; status ที่แสดงตรงกับต้นทาง; EWS ไม่เป็น dependency ของ 24.C/D/E/G/H |
+| **24.H Polygon (`province`, `floodRoute`)** | ทำหลังมี GeoJSON ทางการและยืนยันสิทธิ์/attribution; validate geometry, simplify ตาม zoom และ cap จุดยอด; ไม่ขวาง release ของ point/radar layers | GeoJSON ผ่าน bounds/geometry validation; ขนาดและจำนวน vertices อยู่ใน budget; Google/OSM draw และ dispose ถูกต้อง; attribution ชัด |
 
 ### 24.5 ความเสี่ยงหลัก
 
 - **Rate/cost ของแหล่งภายนอก** — ต้อง cache ฝั่ง server และ budget ต่อ layer; ห้ามทำซ้ำข้อผิดพลาดของ polling ใน §21.3
-- **License** — RainViewer และ Open-Meteo จำกัด non-commercial; ต้องยืนยันก่อน production
+- **License/ToS** — RainViewer Weather Maps API ระบุการใช้งาน personal/educational; ห้าม production จนได้ license/permission เป็นลายลักษณ์อักษร; ต้องตรวจเงื่อนไข TMD/Open-Meteo แยกก่อนเริ่ม 24.G และก่อน production
 - **ความถูกต้องของข้อมูล** — ระบุเวลาอัปเดตและแหล่งที่มาบน layer เสมอ ห้ามแสดงเหมือนการแจ้งเตือนทางการ
 - **ภาระ renderer** — layer มาก = marker มาก; ต้องมี cluster และ cap ต่อ layer
+- **Payload ต้นทางใหญ่** — `rain_24h` ≈ 4.6 MB ต่อ request; ถ้า proxy ส่งตรงถึง client จะช้าและเปลืองข้อมูลทั้งสองฝั่ง (ดู 24.3)
+- **สิทธิ์ข้อมูล EWS** — ต้องใช้ `uid`/`upass` ของ DWR; ห้าม commit credential ลง repo หรือ client — เก็บใน secret store ฝั่ง server เท่านั้น
+- **การสร้างระดับเอง** — การแสดง critical/watch ที่ไม่ได้มาจากหน่วยงานอาจถูกเข้าใจผิดเป็นการแจ้งเตือนทางการ (ขัดกับหลักความถูกต้องข้างบน)
+- **ความพร้อมของ RainViewer** — ผู้ให้บริการไม่รับประกันข้อมูลและเจ้าของข้อมูลอาจขอถอนได้ → ต้อง degrade เป็นสถานะ error/degraded ของ layer นั้นเท่านั้น
+- **Lossy PUT** — การบันทึก platform config จาก client รุ่นเก่าอาจลบ layer flags (ดู 24.2) → ต้องมี round-trip และ merge test ก่อนเปิด 24.A
 
 ### 24.6 สถานะ
 
-- [x] ยืนยัน schema ของ map-config backend สำหรับ layer flags — ยืนยันจากโค้ดแล้ว: map-config อยู่ใน Local PostgreSQL เท่านั้น (ไม่มีใน `supabase/`) จึง**ไม่มี Supabase parity ให้ตรวจ**; layer flags ต้องเพิ่มใน `KNOWN_FEATURE_GATES` (ดู 24.4)
+- [x] ยืนยัน schema ของ map-config backend สำหรับ layer flags — map-config อยู่ใน Local PostgreSQL เท่านั้น (ไม่มีใน `supabase/`) จึง**ไม่มี Supabase parity ให้ตรวจ**; เมื่อเริ่ม 24.A ให้ derive layer gate names จาก `MAP_LAYERS` และคง `incidentOverviewMap` ใน allowlist แยก (ดู 24.9)
 - [ ] ตรวจรัน backend จริงบน Primary (migration 04 + `GET /api/map-config` 200) — ยังไม่ผ่านในเครื่องที่ตรวจ
-- [ ] ยืนยัน endpoint จริงและเงื่อนไขการใช้งาน Thaiwater, DWR EWS, RainViewer ก่อนเริ่ม 24.C/24.E/24.F
+- [x] (ทบทวน 2026-10-10) ตรวจ endpoint จากเครื่องนี้แล้ว: Thaiwater `public/waterlevel`, `public/rain_24h`, `analyst/dam` และ RainViewer `weather-maps.json` ตอบ HTTP 200 โดย Thaiwater ไม่ต้องใช้ key
+- [x] (ทบทวน 2026-10-10) สถานะโค้ดจริง: **ยังไม่มี layer ใด implement** — ไม่มี route/service ของ layer ใน `websocket-server/routes/`, ไม่มี client ของ Thaiwater/RainViewer/DWR ใน `lib/`, `KNOWN_FEATURE_GATES` มีเพียง `incidentOverviewMap`, ไม่มี UI ชั้นข้อมูล (24.A ยังไม่เริ่ม)
+- [ ] ยืนยันสิทธิ์/เงื่อนไขต่อชุดข้อมูลก่อนเปิดให้ผู้ใช้จริง: Thaiwater (terms ของ endpoint), RainViewer (license ก่อน prod), TMD/Open-Meteo (terms ก่อน 24.G), OpenTH-Radar (ถ้าเลือกใช้); DWR EWS ถูกเลื่อนออกจาก first release จนได้สิทธิ์/credential และ contract
+- [ ] **Dependency ก่อน 24.B:** ปิด §22.8 device verification และ Phase 22 รวม decision cluster `count=1`
+- [ ] **Production gate:** rollout Phase 7 safety gate — §22 incident map อยู่ในขอบเขตนี้ (`docs/guides/map_provider_rollout_plan.md` §10); ห้าม prod rollout ของ layer ก่อนผ่าน gate
+- [x] มติทั้ง 5 ข้อใน §24.10 ยืนยันตามข้อเสนอ: admin config global ใน `MapProviderSettingsSection`; user selection session-only; RainViewer ปิด prod จนมี license; DWR EWS deferred; ขยาย shared map primitives โดยคง custom photo/cluster overlay
 
 ### 24.7 แผนการทดสอบแบบแยกเครื่อง (Primary vs Secondary) และการสลับ provider ผ่าน UI
 
@@ -6813,26 +6836,103 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
   - server ไม่ตอบ → แสดง banner app-default และการบันทึกไม่แสดงความสำเร็จปลอม
   - การเปิด platform ไม่เปลี่ยน `renderer`/`tileSourceId` ใน PUT
   - 409 conflict, 422 validation, responsive layout 320/393/1280
-- **ข้อจำกัด:** ปุ่มบันทึกยังไม่ถูก disable ตอน app-default (โค้ดปัจจุบัน) — ถ้าต้องการพฤติกรรมนี้ต้องแก้ widget แยกต่างหาก
+- **งานบังคับใน 24.A:** ปิดปุ่ม Save เมื่อ snapshot เป็น app-default/offline เพื่อไม่ให้ส่งค่า fallback ทับ backend; เพิ่ม widget test ยืนยัน disabled state
 
 **ขั้นที่ 2 — ทดสอบที่ต้องมี backend (รันบน Primary หรือชี้จาก Secondary ผ่าน Caddy)**
 - ตรวจ migration: `map_provider_config` และ `map_provider_config_audit` ต้องมีอยู่ใน DB ของ Primary (ปัจจุบันยังไม่มีในทุกฐานข้อมูลบนเครื่องที่ตรวจ)
 - `curl http://<primary-ip>:8080/api/map-config` → 200 พร้อม `revision`; ถ้า 404 = migration ยังไม่ถูก apply; ถ้า timeout = Caddy/Node/IP ผิด (ใช้ checklist ใน §"Network & Configuration Runbook")
 - PUT/409/rollback/audit **ยังไม่มี integration test** (test ปัจจุบันครอบคลุม validation อย่างเดียว) — ต้องเพิ่มก่อนพึ่งพาใน 24.A โดยชี้ไปที่ Primary
-- เมื่อ layer flags เพิ่มเข้า `KNOWN_FEATURE_GATES` ต้องทดสอบว่า save แล้วอ่านกลับได้ และไม่เกิด warning "unknown feature gate"
+- เมื่อ `MAP_LAYERS` และ `features.<layer>.enabled` เพิ่มแล้ว ต้องทดสอบ save→readback, ไม่มี warning `unknown feature gate`, และยังรักษา `incidentOverviewMap`
 
-**ขั้นที่ 3 — สลับ provider ผ่าน UI (ตาม rollout plan §4 และ §10)**
+**ขั้นที่ 3 — Admin layer config UI (24.A) และ provider settings (ตาม rollout plan §4 และ §10)**
+- เพิ่ม global switches ในการ์ด "ชั้นข้อมูลบนแผนที่"; แสดง/เปิดได้เฉพาะ layer ที่ server registry อนุญาต และสถานะ readiness ผ่าน
+- save ผ่าน `MapConfigService.save` ด้วย revision ล่าสุดเท่านั้น; เมื่อเป็น app-default/offline ให้ปิด Save; conflict ต้องโหลด snapshot ใหม่โดยไม่เขียนทับ draft เงียบ ๆ
 - การเปลี่ยน renderer (Google/OSM) และ tile source ทำผ่าน `PlatformSettingsPage` → `MapProviderSettingsSection` เท่านั้น
-- การเปิด/ปิด layer map (§24) ทำผ่านปุ่ม "Layer Map API" ใน `donation_admin_page.dart` ซึ่งเขียน config เดียวกันผ่าน PUT เดิม — สองหน้าใช้ backend ร่วมกันแต่แก้คนละ key
+- การเปิด/ปิด layer map (§24) ทำผ่านการ์ด "ชั้นข้อมูลบนแผนที่" ใน `MapProviderSettingsSection` (หน้าเดียวกับ gate incidentOverviewMap) ซึ่งเขียน config ผ่าน `MapConfigService.save` ตัวเดียวกับ platform settings — หน้าเดียวเป็น writer ของ `map_provider_config` (ไม่มี two-writer)
 - การเปิด layer ต้องไม่เปลี่ยน `renderer`/`tileSourceId` (มี test ตรวจเฉพาะการเปิด platform; ยังไม่มี test สำหรับ layer ต้องเพิ่มใน 24.A) ห้ามแก้ค่าโดยตรงใน DB หรือ `app_settings` ทั้งสองทาง
 - ก่อนเปิด OSM ใน environment ใด ต้องผ่าน gate ใน §10 ของ rollout plan (Phase 0–2 เสร็จแล้ว, Phase 7 ยังไม่เริ่ม) — layer ใหม่ใช้ได้เฉพาะหลังแผนที่หลักผ่าน gate เดียวกัน
 - ทุกการบันทึกต้องมี `expectedRevision` และ reason (prod) และตรวจ audit ใหม่หลังบันทึกทุกครั้ง
 
 **ขั้นที่ 4 — ตรวจข้ามเครื่อง**
-- Secondary เปิดหน้า Platform Settings → ค่าที่แสดงต้องตรงกับ `GET /api/map-config` ของ Primary (revision เท่ากัน)
-- แก้ค่าจาก Secondary → Primary ต้องเห็น revision +1 และ audit row ใหม่
-- แก้พร้อมกันสองเครื่อง → ต้องได้ 409 conflict banner ไม่ทับกัน
+- Secondary เปิดหน้า Platform Settings → map-config/feature gates ที่แสดงต้องตรงกับ `GET /api/map-config` ของ Primary (revision เท่ากัน)
+- เปิด/ปิด layer จาก Secondary → Primary ต้องเห็นค่า, revision +1 และ audit row ใหม่; renderer/tileSource ต้องไม่เปลี่ยน
+- แก้พร้อมกันสองเครื่อง → ต้องได้ 409 conflict; reload ได้ค่าปัจจุบันโดยไม่ทับ draft เงียบ ๆ
+- ยืนยัน client รุ่นเก่าที่ไม่รู้จัก layer flags บันทึก platform config แล้ว server ยังคงเก็บ flags เหล่านั้น
 
-**เงื่อนไขหยุด**: ถ้าขั้น 2 หรือ 4 ไม่ผ่าน ห้ามเริ่ม 24.C ถึง 24.H
+**เงื่อนไขหยุด:** ถ้าขั้น 2 ไม่ผ่าน ห้ามเปิด write path/mark 24.A ผ่าน; ถ้าขั้น 4 ไม่ผ่าน ห้ามเริ่ม 24.B และห้ามเชื่อมต่อ upstream/roll out 24.C–24.H; ถ้า §22.8 ยังไม่ผ่าน ห้ามต่อ 24.B เข้ากับ incident map; production ทุก layer ต้องรอ safety gate Phase 7
 
 **สิ่งที่ยังต้องยืนยันจากผู้ใช้**: IP LAN ปัจจุบันของ Primary, และ Primary มี migration 04 หรือยัง
+
+---
+
+### 24.8 UI flow และสถานะต่อ layer (แนวทาง implementation ตามมติ §24.2)
+
+**ทางเข้าและการควบคุม**
+
+1. ชั้นข้อมูลเปิดได้เฉพาะเมื่ออยู่ใน incident map session (§22.3.1) — ไม่มีใน live หรือ map-playback และไม่มีใน shared focus (ทางเข้าแผนที่ถูกซ่อนอยู่แล้วเมื่อ focus)
+2. ปุ่ม "ชั้นข้อมูล (N)" แยกจาก legend ของ §22.3.4 — กดแล้วเปิด bottom sheet: รายการ layer ที่เปิดให้ใช้ (Switch), คำอธิบายสั้น, เวลาที่แหล่งวัดล่าสุด และแหล่งที่มา; เปิดได้หลาย layer พร้อมกัน
+3. ตำแหน่งปุ่ม: มุมขวาบนใต้แถวปุ่มย้อนกลับ/ชื่อหมวด เรียงกับ chip "partial" และ pill "มีเหตุใหม่" ของ §22.3.3 โดยไม่ทับกัน — ต้อง mock-up บนจอ 320 dp
+4. Layer ที่แอดมินปิดหรือ readiness ไม่ผ่าน **ไม่แสดงในรายการ** (ไม่แสดงเป็นสีเทา) เพื่อไม่ให้ผู้ใช้เห็นฟีเจอร์ที่ใช้ไม่ได้
+5. ค่าเริ่มต้นปิดทุก layer; เก็บใน `IncidentMapSession.enabledLayers`; เปิดแผนที่ใหม่ = เริ่มปิดทั้งหมดตามมติ session-only ใน §24.2
+
+**กฎการดึงข้อมูล**
+
+- ไม่สร้าง camera listener ใหม่: ใช้ `onCameraSettled` เดิมของ `IncidentMapSurface` (debounce ของ viewport fetch ใน §22) ทุก layer ที่เปิดดึงด้วย viewport key เดียวกัน (bbox ปัดเศษ + zoom bucket)
+- เปิด layer = ดึงหนึ่งครั้งหรือใช้ cache ของ viewport key เดิม; ปิดแล้วเปิดซ้ำภายใน TTL **ไม่ยิง request ซ้ำ**
+- zoom ต่ำกว่า `minZoom` ของ layer → ไม่ดึงข้อมูล แสดงคำใบ้ "ซูมเข้าเพื่อดูชั้นนี้"
+- ปิด layer → ยกเลิก in-flight request และหยุด tile ทันที
+- mission/reporter lock หรือ suspend (§22.3 ข้อ 7) → ยกเลิก request, ซ่อน marker/tile, เก็บ `enabledLayers` ไว้
+
+**สถานะต่อ layer** (คำศัพท์เดียวกับ §22.3.3)
+
+| สถานะ | เงื่อนไข | UI |
+|---|---|---|
+| off | ผู้ใช้ปิด | ไม่มี marker/tile และไม่มี request |
+| loading | เปิดแล้วยังไม่มี response ของ viewport key นี้ | indicator เล็กที่แถว layer ใน sheet |
+| ready | มีข้อมูลอย่างน้อย 1 รายการ | marker/tile + เวลาที่วัดล่าสุดใน sheet |
+| empty | ไม่มีรายการในวิวปัจจุบัน | ข้อความเล็กในแถว "ไม่มีข้อมูลในพื้นที่นี้" (ไม่ใช้การ์ดกลางจอ) |
+| stale | `observedAt` เกินเกณฑ์ของ layer | ป้าย "ข้อมูลเก่า (เวลา …)" — ยังแสดงข้อมูลแต่มีป้ายชัด |
+| partial | ตัดรายการพิกัด/ค่าที่ใช้ไม่ได้ | chip "แสดงเฉพาะที่ใช้ได้ (ตัดออก N)" |
+| error | upstream/proxy ล้มเหลว | ป้าย "โหลดชั้นนี้ไม่สำเร็จ" + ลองใหม่; **ไม่ล้าง session และไม่กระทบ incident markers** |
+| degraded | circuit breaker เปิดหรือไม่มีสิทธิ์ | ป้าย "ชั้นนี้ไม่พร้อมใช้งานชั่วคราว" — ห้ามใช้แหล่งอื่นแทนแบบเงียบ ๆ |
+
+**กฎการโต้ตอบ**
+
+- แตะ marker ของชั้นข้อมูล → bottom sheet รายละเอียด (ค่า, เวลาที่วัด, แหล่ง) **ห้าม** เลือกการ์ด, สลับวิดีโอ, pause หรือยิง view/like event
+- cluster ของชั้นข้อมูล: แตะ = zoom เข้า bounds เสมอ — ชั้นข้อมูลไม่มี incident id จึงไม่มีกรณี "count=1 ถือเป็นหมุด" (เลี่ยงช่องว่างที่ค้างอยู่ใน §22.11)
+- attribution ของ layer ต่อท้าย attribution row เดิม (Google logo / OSM) ไม่สร้าง overlay ใหม่ทับ (§22.3.2)
+- ไม่บังปุ่มฉุกเฉิน (แชร์/ภารกิจ/ยกเลิก) — การบังปุ่มเป็น P0 ตาม rollout Phase 7
+- Radar: แสดงเฟรมล่าสุดเท่านั้นในรอบแรก; slider/animation อยู่นอกขอบเขต
+
+### 24.9 Server/client contract (ข้อกำหนด implementation ตามมติ §24.2)
+
+- **Registry เดียว (server canonical):** `MAP_LAYERS` ใน `routes/map-config.js` — ต่อ kind มี `readiness` (`ready | dev_only | needs_key`), `minZoom`, `maxPointsPerResponse`, `cacheTtlSeconds`, `staleAfterSeconds`, `attribution`, `source`; layer gate names derive จาก registry ส่วน `incidentOverviewMap` คงเป็น UI gate แยก — ห้ามทำให้ gate เดิมหลุดจาก `KNOWN_FEATURE_GATES`
+- **Mirror ฝั่ง Dart:** `MapLayerKind` + `MapLayerRegistry` ตาม `TileSourceRegistry` — readiness จาก server ทับค่า default; flags ของ layer อ่านจาก snapshot เดียวกับ `_loadIncidentMapGate()` (`emergency_incident_map_logic.dart`) ไม่เพิ่ม request ตอนเปิดหน้า; รายการ admin UI สร้างจาก registry ไม่รับชื่อที่ผู้ใช้กรอกเอง
+- **Effective gate:** render/fetch ได้เมื่อ `serverFeatureEnabled && readinessAllowed && sessionEnabled`; config/gate ที่ขาดหรือไม่รู้จัก = ปิดแบบ fail-closed; `incidentOverviewMap` ยังคงเป็น gate แยกจาก data layers
+- **Write (PUT เดิม):** ยังเป็น full document แต่ (1) `features` merge กับค่าปัจจุบันสำหรับ key ที่ไม่ถูกส่งมา; (2) เปิด layer ที่ readiness ไม่ผ่านกับ environment → 422; (3) ทุกการ save ยังมี audit row เดิม
+- **Read (ใหม่):** `GET /api/map-layers/:kind?minLat&minLng&maxLat&maxLng&zoom` — ตรวจช่วงและขนาด bbox สูงสุด, ปัดเศษพิกัดก่อนใช้เป็น cache key, มี rate budget ต่อ caller, ส่งเฉพาะข้อมูลที่ normalize/cap แล้ว, **ไม่บันทึก viewport ของผู้ใช้ลง DB หรือ log**
+- **Upstream:** ดึงทั้งชุด → normalize → cache ระดับ kind (TTL ตาม registry ตั้งจากรอบอัปเดตที่วัดได้) → กรอง bbox ใน memory → cap; refresh แบบ single-flight/stale-while-revalidate เพื่อกัน stampede; หาก refresh ล้มเหลวให้ส่ง cache เก่าพร้อม `stale` ได้เฉพาะใน grace window จากนั้นเป็น `degraded`; circuit breaker และ rate budget แยกต่อ kind
+- **ข้อมูลที่ส่งกลับ:** ทุก item มี `source`, `observedAt`, `fetchedAt`; ระดับ/สถานะเป็นค่าจากต้นทางเท่านั้น; พิกัดผ่าน validation ของ §22.4 (null, non-finite, นอกช่วง, `(0,0)`)
+- **ทดสอบ:** unit test ของ bbox validation และ cap; contract test กับ fixture จริงที่บันทึกไว้; test ว่า layer key ที่ไม่รู้จักไม่ render/ไม่ถูกเปิดใช้งานแต่ไม่ทำให้ known config fields สูญหาย; legacy round-trip/merge test ตาม 24.A
+
+### 24.10 มติที่ยืนยันแล้วและลำดับ implementation
+
+ผู้ใช้เห็นชอบแนวทางทั้ง 5 ข้อต่อไปนี้ — **ไม่มี design decision ในรายการนี้ค้างยืนยัน**; เงื่อนไขด้าน backend, data terms และ rollout ยังคงเป็น gates ตาม §24.6–24.7:
+
+1. **Admin controls:** global switches อยู่ใน `MapProviderSettingsSection` ข้าง `_incidentMapGateCard()`; ไม่มีปุ่มแยกต่อหมวดใน `donation_admin_page.dart`.
+2. **User selection:** session-only; ปิดทุก layer เมื่อเริ่ม map session ใหม่, รักษาค่าระหว่าง map-playback/resume, ไม่ persist ข้าม session.
+3. **RainViewer:** dev/staging เท่านั้น; ปิด production จนมี license/permission เป็นลายลักษณ์อักษรและ readiness server ถูกเปิดโดย deploy.
+4. **DWR EWS:** deferred — ไม่รวม first release; ห้ามเรียกก่อนมี permission/credentials อย่างเป็นทางการและ contract/พิกัดผ่านการยืนยัน.
+5. **Shared map rendering:** ขยาย `lib/shared/map/` ให้รองรับ primitives ของ data layers สำหรับ Google/OSM และใช้กับ `IncidentMapSurface`; คง custom incident cluster/photo projection ไว้ ไม่ทำ renderer ของ data layer ซ้ำ.
+
+**ลำดับ implementation และ release gates:**
+
+1. ตรวจ migration 04, `GET /api/map-config`, PUT/409/audit integration บน Primary ก่อนเปิด write path ของ 24.A.
+2. ทำ **24.A** (registry/config safety/admin switches); ทำควบคู่กับงานปิด Phase 22 ได้ เพราะยังไม่ต่อ data layer เข้าหน้า incident map.
+3. หลัง 24.A ผ่าน cross-device gate ใน §24.7 ขั้นที่ 4 และปิด §22.8/Phase 22 (รวมมติ cluster `count=1`) แล้ว จึงเริ่ม **24.B**; ทำ shared primitives + UI/session state แล้วผ่าน renderer/UI regression tests.
+4. ต่อ **24.C → 24.D** ทีละ kind ใน dev/staging; เปิดใช้จริงหลังยืนยัน source terms/attribution, ผ่าน payload/cache/rate/circuit-breaker tests.
+5. ทำ **24.E** ใน dev/staging หลัง 24.B; production ถูกปิดจนผ่าน license gate.
+6. ทำ **24.G** เมื่อยืนยัน terms, attribution, quota และ cache policy ของ provider แล้ว.
+7. ทำ **24.H** เมื่อมี GeoJSON ทางการพร้อมสิทธิ์ใช้; เป็นส่วนเสริม ไม่ขวาง point/radar release.
+8. **24.F** เป็น deferred backlog แยก ไม่เป็น dependency หรือ release blocker ของ 24.C/D/E/G/H; เริ่มได้เมื่อได้รับ permission/credentials และยืนยัน API contract.
+9. Production rollout ของทุก layer ต้องผ่าน safety gate Phase 7 (`docs/guides/map_provider_rollout_plan.md` §10) และผ่าน source-specific legal/readiness gate; การผ่าน dev/staging ไม่อนุญาต production โดยอัตโนมัติ.
