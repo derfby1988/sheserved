@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
@@ -57,6 +59,7 @@ class GoogleMapAdapter extends StatefulWidget {
     this.trafficEnabled = false,
     this.padding = EdgeInsets.zero,
     this.gesturesEnabled = true,
+    this.compassEnabled = true,
   });
 
   final MapCameraPosition initialCamera;
@@ -71,6 +74,7 @@ class GoogleMapAdapter extends StatefulWidget {
   final bool trafficEnabled;
   final EdgeInsets padding;
   final bool gesturesEnabled;
+  final bool compassEnabled;
 
   @override
   State<GoogleMapAdapter> createState() => _GoogleMapAdapterState();
@@ -109,6 +113,7 @@ class _GoogleMapAdapterState extends State<GoogleMapAdapter> {
       scrollGesturesEnabled: widget.gesturesEnabled,
       rotateGesturesEnabled: widget.gesturesEnabled,
       tiltGesturesEnabled: widget.gesturesEnabled,
+      compassEnabled: widget.compassEnabled,
     );
   }
 }
@@ -132,7 +137,7 @@ class GoogleAdapterController implements SheservedMapController {
     final update = zoom == null
         ? gm.CameraUpdate.newLatLng(toGoogleLatLng(target))
         : gm.CameraUpdate.newLatLngZoom(toGoogleLatLng(target), zoom);
-    _inner.moveCamera(update);
+    unawaited(_inner.moveCamera(update).catchError((_) {}));
   }
 
   @override
@@ -141,7 +146,13 @@ class GoogleAdapterController implements SheservedMapController {
     final update = zoom == null
         ? gm.CameraUpdate.newLatLng(toGoogleLatLng(target))
         : gm.CameraUpdate.newLatLngZoom(toGoogleLatLng(target), zoom);
-    _inner.animateCamera(update);
+    unawaited(_inner.animateCamera(update).catchError((_) {}));
+  }
+
+  @override
+  void zoomBy(double delta) {
+    if (_disposed) return;
+    unawaited(_inner.animateCamera(gm.CameraUpdate.zoomBy(delta)).catchError((_) {}));
   }
 
   @override
@@ -158,8 +169,12 @@ class GoogleAdapterController implements SheservedMapController {
       }
       return;
     }
-    _inner.animateCamera(
-      gm.CameraUpdate.newLatLngBounds(toGoogleBounds(bounds), padding),
+    unawaited(
+      _inner
+          .animateCamera(
+            gm.CameraUpdate.newLatLngBounds(toGoogleBounds(bounds), padding),
+          )
+          .catchError((_) {}),
     );
   }
 

@@ -28,6 +28,7 @@ class SheservedMap extends StatelessWidget {
     this.gesturesEnabled = true,
     this.zoomControlsEnabled = false,
     this.mapToolbarEnabled = false,
+    this.compassEnabled = true,
     this.tileProvider,
     this.unavailableBuilder,
   });
@@ -57,6 +58,9 @@ class SheservedMap extends StatelessWidget {
   final bool zoomControlsEnabled;
   final bool mapToolbarEnabled;
 
+  /// Google renderer flag — ignored by OSM (no compass overlay exists).
+  final bool compassEnabled;
+
   /// Injectable tile provider for OSM tests/goldens. Ignored by Google.
   final dynamic tileProvider;
 
@@ -65,7 +69,12 @@ class SheservedMap extends StatelessWidget {
 
   /// Renderer capabilities for the resolved target — lets callers hide
   /// Google-only UI (traffic toggle, my-location button) on OSM.
-  MapCapabilities get capabilities => switch (target.renderer) {
+  MapCapabilities get capabilities => capabilitiesFor(target.renderer);
+
+  /// Same lookup as [capabilities] for callers that only hold a renderer
+  /// kind (e.g. a dialog composing a SheservedMap plus overlay controls).
+  static MapCapabilities capabilitiesFor(MapRendererKind renderer) =>
+      switch (renderer) {
         MapRendererKind.google => MapCapabilities.google,
         MapRendererKind.osm => MapCapabilities.osm,
       };
@@ -89,6 +98,7 @@ class SheservedMap extends StatelessWidget {
           trafficEnabled: trafficEnabled,
           padding: padding,
           gesturesEnabled: gesturesEnabled,
+          compassEnabled: compassEnabled,
         ),
       MapRendererKind.osm => _buildOsm(),
     };

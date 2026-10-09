@@ -8,7 +8,6 @@
 	<true/>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:sheserved.com</string>
 		<string>applinks:sheserved.me</string>
 	</array>
 </dict>

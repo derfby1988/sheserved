@@ -87,7 +87,7 @@ class SportClubDeepLinkService {
       }
 
       // Handle HTTP/HTTPS or relative path:
-      // e.g., https://sheserved.com/sport-club/group/{groupId}
+      // e.g., https://sheserved.me/sport-club/group/{groupId}
       // or /sport-club/group/{groupId}
       // or /community/sport-club/group/{groupId}
       int groupSegmentIdx = -1;

@@ -75,6 +75,11 @@ class LiveViewWidget extends StatefulWidget {
   onApplyTrendingCategoryFilter;
   final int trendingFilterResetToken;
 
+  /// ✅ Phase 23: shared-link focus mode — กล่องยอดนิยมเหลือเฉพาะการ์ด
+  /// ที่แชร์ และแสดงปุ่ม "ดูเหตุการณ์ทั้งหมด" เพื่อออกจากโหมดนี้
+  final bool isSharedFocusMode;
+  final VoidCallback? onExitSharedFocus;
+
   const LiveViewWidget({
     super.key,
     required this.chewieController,
@@ -113,6 +118,8 @@ class LiveViewWidget extends StatefulWidget {
     this.selectedTrendingCategoryIds = const {},
     this.onApplyTrendingCategoryFilter,
     this.trendingFilterResetToken = 0,
+    this.isSharedFocusMode = false,
+    this.onExitSharedFocus,
   });
 
   @override
@@ -689,6 +696,8 @@ class LiveViewWidgetState extends State<LiveViewWidget>
                       onApplyCategoryFilter:
                           widget.onApplyTrendingCategoryFilter,
                       filterResetToken: widget.trendingFilterResetToken,
+                      isSharedFocusMode: widget.isSharedFocusMode,
+                      onExitSharedFocus: widget.onExitSharedFocus,
                     ),
                   ),
                 ),

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sheserved/features/video/services/emergency_incident_deep_link_service.dart';
 
@@ -63,33 +62,23 @@ void main() {
       );
     });
 
-    test('buildIncidentShareLink uses custom scheme on iOS', () {
+    test('buildIncidentShareLink returns the web universal link', () {
       final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
         'incident-123',
-        platform: TargetPlatform.iOS,
       );
-      expect(url, 'sheserved://emergency/incident/incident-123');
+      expect(
+        url,
+        'https://sheserved.me/emergency/incident/incident-123?src=share',
+      );
 
       final urlWithPhoto =
           EmergencyIncidentDeepLinkService.buildIncidentShareLink(
         'incident-123',
         photoId: 'photo-456',
-        platform: TargetPlatform.iOS,
       );
       expect(
         urlWithPhoto,
-        'sheserved://emergency/incident/incident-123?photo=photo-456',
-      );
-    });
-
-    test('buildIncidentShareLink uses web universal link on non-iOS', () {
-      final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
-        'incident-123',
-        platform: TargetPlatform.android,
-      );
-      expect(
-        url,
-        'https://sheserved.me/emergency/incident/incident-123?src=share',
+        'https://sheserved.me/emergency/incident/incident-123?src=share&photo=photo-456',
       );
     });
 
@@ -97,7 +86,6 @@ void main() {
       final url = EmergencyIncidentDeepLinkService.buildIncidentShareLink(
         'incident-123',
         photoId: 'photo-456',
-        platform: TargetPlatform.iOS,
       );
       final data = EmergencyIncidentDeepLinkService.parseDeepLink(url);
       expect(data, isNotNull);

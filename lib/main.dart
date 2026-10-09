@@ -228,6 +228,15 @@ class SheservedApp extends StatefulWidget {
 class _SheservedAppState extends State<SheservedApp> {
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  String? _lastHandledLinkUrl;
+  String? _lastHandledIncidentKey;
+  DateTime? _lastHandledLinkAt;
+
+  /// Phase 23 (§23.4): the incident route we pushed but whose page may not
+  /// have run initState yet — `openSharedIncidentLinkHandler` is still null
+  /// in that window, so without this guard a duplicate link delivery would
+  /// push a second EmergencyLivePage on top of the focused one.
+  Route<dynamic>? _pendingIncidentRoute;
 
   @override
   void initState() {
@@ -253,22 +262,90 @@ class _SheservedAppState extends State<SheservedApp> {
     });
   }
 
+  /// Returns false while the navigator is not ready yet — the caller must not
+  /// mark the URI as handled, so the duplicate web delivery can retry it.
+  bool _isDuplicateLink(String rawUrl) {
+    final lastAt = _lastHandledLinkAt;
+    return rawUrl == _lastHandledLinkUrl &&
+        lastAt != null &&
+        DateTime.now().difference(lastAt) < const Duration(seconds: 5);
+  }
+
+  void _markLinkHandled(String rawUrl) {
+    _lastHandledLinkUrl = rawUrl;
+    _lastHandledLinkAt = DateTime.now();
+  }
+
   void _handleIncomingUri(Uri uri) {
     debugPrint('[DeepLink] Incoming URI: $uri');
     final rawUrl = uri.toString();
 
+    // app_links on web delivers Uri.base via BOTH getInitialLink() and
+    // uriLinkStream — drop the duplicate so the target route isn't pushed
+    // twice on a cold start (mobile delivers each intent once).
+    if (_isDuplicateLink(rawUrl)) return;
+
+    // Web: the share-link landing page (web/landing/) bounces no-app
+    // recipients to `/?go=<route>` — unwrap it so the SPA routes in-app
+    // without depending on the server path (which serves the landing page).
+    final go = uri.queryParameters['go'];
+    if (go != null &&
+        go.trim().isNotEmpty &&
+        (uri.path.isEmpty || uri.path == '/')) {
+      _handleIncomingUri(Uri.parse(go.trim()));
+      return;
+    }
+
     // 1. Emergency Incident Deep Link
     final incidentData = EmergencyIncidentDeepLinkService.parseDeepLink(rawUrl);
     if (incidentData != null) {
+      // Semantic dedupe: the same shared incident can arrive twice as
+      // different raw URLs (https:// vs sheserved://, query order/encoding)
+      // when the landing-page bounce and the verified app link both fire —
+      // the raw-URL check above cannot catch those.
+      final incidentKey = incidentData.photoId != null
+          ? '${incidentData.videoId}|${incidentData.photoId}'
+          : incidentData.videoId;
+      final lastHandledAt = _lastHandledLinkAt;
+      if (incidentKey == _lastHandledIncidentKey &&
+          lastHandledAt != null &&
+          DateTime.now().difference(lastHandledAt) <
+              const Duration(seconds: 5)) {
+        debugPrint('[DeepLink] Duplicate incident link ignored: $incidentKey');
+        return;
+      }
       EmergencyIncidentDeepLinkService.storePendingDeepLink(incidentData);
+      // ✅ Phase 23 (§23.4): มีหน้า Emergency เปิดบนสุดอยู่แล้ว → สลับ
+      // เหตุการณ์ในหน้าเดิม ไม่ซ้อน route ใหม่ (หน้าเดิมคงวิดีโอ/ภารกิจเดิม)
+      final inPlaceHandler = EmergencyLivePage.openSharedIncidentLinkHandler;
+      if (inPlaceHandler != null && inPlaceHandler(incidentData)) {
+        _markLinkHandled(rawUrl);
+        _lastHandledIncidentKey = incidentKey;
+        return;
+      }
       final nav = NavigationService.navigatorKey.currentState;
       if (nav != null) {
+        _markLinkHandled(rawUrl);
+        _lastHandledIncidentKey = incidentKey;
+        // ✅ Phase 23 (§23.4): incident route pushed but page not built yet
+        // → handler is null here; the in-flight page consumes the pending
+        // link on init. Pushing again would stack a normal page on top.
+        if (_pendingIncidentRoute?.isActive == true) {
+          debugPrint('[DeepLink] Incident route already in flight — skip');
+          return;
+        }
         final queryPart = incidentData.photoId != null
             ? '?src=share&photo=${Uri.encodeComponent(incidentData.photoId!)}'
             : '?src=share';
-        nav.pushNamed(
-          '/emergency/incident/${Uri.encodeComponent(incidentData.videoId)}$queryPart',
+        final route = MaterialPageRoute<void>(
+          settings: RouteSettings(
+            name:
+                '/emergency/incident/${Uri.encodeComponent(incidentData.videoId)}$queryPart',
+          ),
+          builder: (context) => const EmergencyLivePage(),
         );
+        _pendingIncidentRoute = route;
+        nav.push(route);
       }
       return;
     }
@@ -279,6 +356,7 @@ class _SheservedAppState extends State<SheservedApp> {
       SportClubDeepLinkService.storePendingDeepLink(groupData);
       final nav = NavigationService.navigatorKey.currentState;
       if (nav != null) {
+        _markLinkHandled(rawUrl);
         nav.pushNamed('/sport-club/group/${groupData.groupId}');
       }
       return;

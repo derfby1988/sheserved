@@ -18,6 +18,11 @@ abstract class SheservedMapController {
   /// Animate the camera to [target]. [zoom] keeps the current zoom when null.
   void animateTo(MapLatLng target, {double? zoom});
 
+  /// Zoom relative to the current level (positive = in, negative = out).
+  /// Used by pickers that must provide zoom controls when the renderer has
+  /// none of its own (MapCapabilities.zoomControls == false).
+  void zoomBy(double delta);
+
   /// Fit [points] into view with screen [padding]. Empty → no-op.
   /// A single point or zero-area bounds → [animateTo] center at
   /// [fallbackZoom] (degenerate bounds are never forwarded to the renderer).
@@ -46,6 +51,7 @@ class FakeSheservedMapController implements SheservedMapController {
   final List<String> calls = [];
   MapLatLng? lastTarget;
   double? lastZoom;
+  double? lastZoomDelta;
   List<MapLatLng>? lastFitPoints;
   double? lastFitPadding;
   bool _disposed = false;
@@ -67,6 +73,13 @@ class FakeSheservedMapController implements SheservedMapController {
     calls.add('animateTo');
     lastTarget = target;
     lastZoom = zoom;
+  }
+
+  @override
+  void zoomBy(double delta) {
+    if (_disposed) return;
+    calls.add('zoomBy');
+    lastZoomDelta = delta;
   }
 
   @override

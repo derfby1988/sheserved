@@ -6488,6 +6488,17 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 > 7. ✅ **Recipient Flow & Guard Protection:** ใน [emergency_live_page.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/emergency_live_page.dart) และ [emergency_navigation_logic.dart](file:///Users/apisekpanyakong/ProjectFlutter/sheserved/lib/features/video/presentation/pages/parts/emergency_navigation_logic.dart) เพิ่ม `_consumePendingDeepLink()` ใน `initState` เพื่อดึง videoId/photoId, ป้องกันด้วย Guard fail-closed หากมีภารกิจค้าง, โหลดวิดีโอเหตุการณ์, และสั่ง `_triggerSharedPhotoOverlay()` ผ่าน PostFrameCallback เพื่อเปิด overlay ภาพทันทีที่ gallery พร้อม
 >
 > **งาน Web/Infra แยก (Web Team):** เสิร์ฟ Landing page บน `sheserved.me/emergency/incident/*` และไฟล์ `assetlinks.json` / AASA สำหรับ Universal Links บนโดเมนจริง — ✅ **ทำแล้ว 2026-10-09:** `sheserved.me` → tunnel → Caddy `:8081` (SPA fallback รับ path เดิม); `web/.well-known/apple-app-site-association` (+สำเนาที่ root path) และ `web/.well-known/assetlinks.json` ship ใน build เสิร์ฟ `application/json` ผ่าน `@linkfiles` matcher ใน `Caddyfile.dev` — verify ผ่าน `https://sheserved.me/.well-known/*` แล้ว
+>
+> **Recipient Focus Mode (เพิ่ม 2026-10-09 — แก้บั๊กผู้รับเห็น/เล่นการ์ดผิด):**
+> - `_sharedFocusVideoId` เป็น focus-mode state แยกจาก mission/map — ตั้งเมื่อ `_consumePendingDeepLink()` รับลิงก์; ลิงก์เป็น authoritative (`_currentVideoId` = shared id เสมอ ไม่ให้ auto-select เขียนทับ)
+> - `_trendingVideosForPanel()` สาขา focus คืนลิสต์การ์ดเดียวผ่าน `sharedFocusTrendingVideos()` (inject `_currentVideo` เมื่อการ์ดไม่อยู่ในหน้า pagination) → กล่องยอดนิยมและ `FullscreenVideoViewer` เห็นเฉพาะการ์ดที่แชร์; `_loadMoreTrendingVideos` + `hasMore` ถูกปิดใน focus
+> - ปุ่ม "ดูเหตุการณ์ทั้งหมด" ใต้ป้าย "ยอดนิยม" (`TrendingPanelWidget.isSharedFocusMode`/`onExitSharedFocus`) → `_exitSharedFocusMode()` ล้าง focus + `_deselectCurrentVideo()` (teardown player/streams ผ่าน `_teardownCurrentVideo`/`_resetPerVideoState` ที่ refactor จาก `_switchVideo`) กลับสถานะเริ่มต้น ไม่มีการ์ดถูกเลือก ปุ่มแชร์หาย
+> - `_canShowTrendingCategoryFilter` เพิ่มเงื่อนไข `!focus` → ซ่อนไอคอนตัวกรอง + ปุ่มแผนที่เกิดเหตุ (`_canShowIncidentMapEntry` derive มาเอง) โดยไม่แตะ committed filter
+> - **R6 fail-closed หลัง `_restoreActiveMissionIfNeeded()`:** mission state resolve จาก network ทีหลัง consume — ถ้าพบภารกิจค้างและลิงก์ชี้เหตุการณ์อื่น → ล้าง focus, SnackBar "ไม่สามารถเปิดลิงก์แชร์ขณะมีภารกิจค้างอยู่", `_switchVideo` กลับภารกิจเดิม; ลิงก์ที่ชี้ภารกิจเดิมเองยังใช้งานได้
+> - **Warm link ไม่ซ้อน route (§23.4):** `EmergencyLivePage.openSharedIncidentLinkHandler` (static, ลงทะเบียนใน initState) ให้ `main.dart` สลับเหตุการณ์ในหน้าเดิมผ่าน `_tryOpenSharedIncidentLink` — pop route ที่คลุมอยู่กลับมาหน้า Emergency แล้ว `_switchVideo` + เข้า focus; บล็อก fail-closed ขณะรายงาน/ภารกิจค้าง; หน้าเดิมวิดีโอเดิมไม่เล่นซ้อนกัน (ก่อนหน้านี้ทุกลิงก์ push หน้าใหม่ → เครื่องรับที่เปิดหน้า Emergency อยู่แล้วเจอหน้าซ้อน + การ์ด/เสียงเพี้ยน)
+> - **Duplicate delivery ไม่ซ้อนหน้า (§23.4) — ✅ verified บน Android 2026-10-10:** ลิงก์เดียวกันมาถึงซ้ำด้วย URL ต่างกัน (`https://sheserved.me/...` vs `sheserved://...` จาก landing-page bounce ใน LINE in-app browser + verified app link) → dedupe ด้วย semantic key `videoId|photoId` (5s) นอกเหนือ raw-URL; `_pendingIncidentRoute` ติดตาม route ที่ push ไปแล้ว — ถ้ายัง active (หน้ายังไม่ init → handler ยัง null) ข้ามการ push ซ้ำเพราะหน้า in-flight จะ consume pending เองตอน init; safety net `_popSelfIfDuplicateIncidentRoute()` ในหน้า: incident-route page ที่ init แล้วไม่พบ pending (sibling consume ไปก่อน) จะ pop ตัวเอง ไม่ให้หน้า Emergency ปกติบังหน้า focus — แก้บั๊ก Android เจอหน้า emergency ธรรมดาซ้อนบนหน้า focus ต้องกด back ถึงเห็นการ์ด
+> - **Fail-closed เหตุการณ์ไม่พร้อมใช้งาน:** `getVideoById` คืน null ใน focus → SnackBar + ออกจาก focus กลับหน้าปกติ (ตาม Risk Register §23.7)
+> - Tests: `test/features/trending_panel_filter_test.dart` กลุ่ม "Phase 23 shared-incident focus mode" — focus list การ์ดเดียว / ปุ่มแสดงเฉพาะ focus mode / tap เรียก exit
 
 ---
 
@@ -6529,6 +6540,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - **ผู้รับมีภารกิจค้างอยู่:** Guard ป้องกันการสลับเหตุการณ์แบบ fail-closed ทันที ไม่สูญเสีย GPS tracking หรือ context ของภารกิจเดิม
 - **ผู้รับกำลังรายงานเหตุการณ์หรือบันทึกภาพค้าง:** บล็อกการสลับเหตุการณ์เช่นเดียวกันเพื่อป้องกันภาพที่ถ่ายไว้สูญหาย
 - **ผู้ใช้เปิดลิงก์ขณะอยู่ในหน้า Emergency อยู่แล้ว:** ระบบสลับเหตุการณ์ด้วย `_switchVideo(videoId)` ภายในหน้าเดิมโดยไม่ต้องเปิด route ทับซ้อน
+- **ลิงก์เดียวกันถูกส่งเข้าแอปซ้ำ (duplicate delivery):** เกิดได้จริงบน Android — LINE in-app browser bounce ผ่าน landing page ยิง `sheserved://` intent ขณะที่ verified App Link อาจส่ง `https://` intent ของลิงก์เดียวกัน ทำให้ raw-URL dedupe พลาดเพราะ string ต่างกัน; หรือลิงก์มาถึงซ้ำในช่วงที่ route แรก push แล้วแต่ page ยังไม่ build (`openSharedIncidentLinkHandler` ยัง null) → push ซ้ำแล้วหน้าที่สอง consume pending ไม่ได้ → render เป็นหน้า Emergency ปกติบังหน้า focus (root cause ของบั๊ก "ต้องกด back ถึงเห็นการ์ด"). ป้องกัน 3 ชั้นใน `main.dart` + หน้า: (1) semantic dedupe `videoId|photoId` 5s จับทุก URL variant; (2) `_pendingIncidentRoute.isActive` ข้าม push ขณะ route เดิมยังอยู่ใน stack รวมถึงช่วง in-flight; (3) `_popSelfIfDuplicateIncidentRoute()` — incident-route page ที่ init แล้วไม่มี pending/focus ปิดตัวเองทิ้ง กฎเหล็ก: **deep-link push ต้อง dedupe ด้วย semantic key เสมอ อย่าเทียบ raw URL** และต้องไม่ push route ซ้ำเมื่อยังมี instance active อยู่
 - **ผู้ใช้เปิดลิงก์ขณะอยู่ในโหมดแผนที่ (`_isIncidentMapMode == true`):** ระบบจะปิดโหมดแผนที่อย่างปลอดภัยก่อน (`_closeIncidentMapContext()`) แล้วจึงสลับมายังเหตุการณ์ที่แชร์
 - **หน้าจอขนาดเล็กมาก / จอแนวนอน:** หาก `videoHeight - 40 < 60` ปุ่มแชร์จะซ่อนตัวเองอัตโนมัติ เพื่อให้แน่ใจว่า Ruler Gallery มีพื้นที่แสดงผลเพียงพอเสมอ
 
@@ -6626,8 +6638,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 > **ชุดคำสั่งสำหรับทดสอบเปิด Deep Link ผ่าน Terminal:**
 > ```bash
 > # 1. โหมดวิดีโอ (Video Mode)
-> # Android:
+> # Android (custom scheme):
 > adb shell am start -a android.intent.action.VIEW -d "sheserved://emergency/incident/<videoId>" com.sheserved.app
+> # Android (verified App Link — เหมือนผู้รับกดลิงก์จริง):
+> adb shell am start -a android.intent.action.VIEW -d "https://sheserved.me/emergency/incident/<videoId>?src=share" com.sheserved.app
 > # iOS Simulator:
 > xcrun simctl openurl booted "sheserved://emergency/incident/<videoId>"
 >
@@ -6636,6 +6650,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 > adb shell am start -a android.intent.action.VIEW -d "sheserved://emergency/incident/<videoId>?photo=<photoId>" com.sheserved.app
 > # iOS Simulator:
 > xcrun simctl openurl booted "sheserved://emergency/incident/<videoId>?photo=<photoId>"
+>
+> # 3. Web fallback (landing → เว็บแอป):
+> # open "https://sheserved.me/emergency/incident/<videoId>" ในเบราว์เซอร์
+> # → เจอ landing page → ปุ่ม "เปิดในเว็บ" = /?go=/emergency/incident/<videoId>
 > ```
 
 | รหัสทดสอบ | ขั้นตอนการกระทำ (Action) | ผลการทดสอบที่คาดหวัง (Expected Result) | สถานะ |
@@ -6700,15 +6718,17 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - `https://sheserved.me` → tunnel → Caddy `:8081` เสิร์ฟ web (SPA fallback รับ `/emergency/incident/*`, `/sport-club/*`)
 - `/.well-known/apple-app-site-association` (appID `8RVK9NG278.com.sheserved.app`, paths `/emergency/*`,`/sport-club/*`) + สำเนาที่ root path — เสิร์ฟ `application/json` ผ่าน `@linkfiles` matcher ใน `Caddyfile.dev`
 - `/.well-known/assetlinks.json` — `com.sheserved.app` + SHA-256 `2C:65:…:0E` ของ `~/.android/debug.keystore` (release ปัจจุบัน sign ด้วย debug key — `build.gradle.kts:54`; **ถ้าเปลี่ยน release signing ต้องเพิ่ม fingerprint ใหม่ใน assetlinks**)
-- Code: `baseWebUrl` → `sheserved.me` ทั้ง `emergency_incident_deep_link_service.dart` + `sport_club_deep_link_service.dart`; manifest เพิ่ม intent-filter `autoVerify` แยกสำหรับ `sheserved.me` (แยกจาก `.com` เพื่อกัน verification ล้มตาม); `Runner.entitlements` มี `applinks:sheserved.com`+`applinks:sheserved.me`
+- Code: `baseWebUrl` → `sheserved.me` ทั้ง `emergency_incident_deep_link_service.dart` + `sport_club_deep_link_service.dart`; manifest มี intent-filter `autoVerify` เฉพาะ `sheserved.me` (filter `.com` ลบออกแล้ว — parked page ไม่มี assetlinks); `Runner.entitlements` เหลือ `applinks:sheserved.me` ตัวเดียว
+- **Share-link landing page (2026-10-09):** `web/landing/` (static `index.html`+`landing.js` — JS ต้องแยกไฟล์เพราะ CSP `script-src` ไม่มี `unsafe-inline`) + Caddy rewrite `/emergency/*`+`/sport-club/*` → `/landing/index.html` ทั้ง `Caddyfile.dev`/`.staging`; ปุ่ม "เปิดในเว็บ" ชี้ `/?go=<route>` → `_handleIncomingUri` แกะ `go` param แล้ว route เข้า SPA (เลี่ยง server path ที่ถูก rewrite เป็น landing)
 
-**ข้อกำหนดการแชร์บน iOS (ปัจจุบัน — คงเดิม):**
-- `buildIncidentShareLink` — **iOS ยังใช้ `sheserved://` custom scheme** ต่อไป (personal team `8RVK9NG278` sign Associated Domains ไม่ได้ → `RunnerDebug.entitlements` จงใจไม่มี applinks ไม่งั้น debug build ล้ม; `Runner.entitlements` เตรียมไว้สำหรับ Release/Profile เมื่อมี paid team)
-- **ข้อจำกัดที่ยอมรับ:** ลิงก์ `sheserved://` ไม่มี web fallback; Android/desktop เชื่อม web link `sheserved.me` ที่มี landing จริงแล้ว
+**ข้อกำหนดการแชร์ (อัปเดต 2026-10-09 — เปลี่ยนแล้ว):**
+- `buildIncidentShareLink` — **ใช้ `https://sheserved.me/...` ทุก platform แล้ว** เพราะ `sheserved://` เป็น plain text คลิกไม่ได้ใน LINE/แชท; universal link เปิดเข้าแอปตรงบน Android (verified App Links) และ fallback เป็น web app บน `sheserved.me` (SPA fallback + `app_links_web` ส่ง `Uri.base` เข้า `_handleIncomingUri` เดิม) สำหรับ iOS debug/desktop/เครื่องที่ไม่มีแอป
+- **ข้อจำกัดที่ยอมรับ:** iOS debug build (personal team `8RVK9NG278` sign Associated Domains ไม่ได้ → `RunnerDebug.entitlements` จงใจไม่มี applinks ไม่งั้น build ล้ม) ผู้รับจะถูกเปิดใน Safari → web app แทนการเด้งเข้าแอป; `Runner.entitlements` (Release/Profile) มี `applinks:sheserved.me` พร้อมแล้วเมื่อมี paid team
+- **`main.dart` dedupe:** `app_links_web` ส่ง `Uri.base` มาทั้ง `getInitialLink()` และ `uriLinkStream` → `_handleIncomingUri` กัน push ซ้ำด้วย `_isDuplicateLink` (window 5 วิ; mark เฉพาะตอน push สำเร็จเพื่อให้ delivery ที่มาก่อน navigator พร้อมถูก retry โดย stream event)
 
 **งานที่เหลือ:**
 1. ~~**Android device verify:**~~ ✅ **ทำแล้ว 2026-10-09** บน `R8YYA0G5S6J` — `adb shell pm get-app-links com.sheserved.app` ตอบ `sheserved.me: verified` / `sheserved.com: 1024` และ `adb shell am start -d "https://sheserved.me/emergency/incident/test123" com.sheserved.app` ส่ง intent เข้าแอปที่รันอยู่ (route guard เตะ anonymous ไป `/home`→`/login` ตาม design — เทสผู้รับจริงต้อง login ก่อน)
-2. **iOS universal links:** รอ paid Apple Developer — เมื่อได้ให้เพิ่ม `applinks:` ใน `RunnerDebug.entitlements` ด้วย + พิจารณาเปลี่ยน `buildIncidentShareLink` กลับ web link (หรือเก็บ custom scheme คู่กัน)
+2. **iOS universal links (auto-open เข้าแอป):** รอ paid Apple Developer — เมื่อได้ให้เพิ่ม `applinks:` ใน `RunnerDebug.entitlements`; share link ใช้ web URL อยู่แล้วไม่ต้องแก้ code
 3. **ข้อความแชร์ใน test expectations:** UI-S10/S11 อัปเดตเป็น `sheserved.me` แล้ว
 
 ---

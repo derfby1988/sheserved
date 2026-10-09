@@ -117,6 +117,15 @@
 	@static path /canvaskit/* /assets/* /icons/*
 	header @static Cache-Control "public, max-age=86400"
 
+	# ── Deep-link landing (Phase 23 share links) ──
+	# ลิงก์แชร์ https://<domain>/emergency/* และ /sport-club/* ที่ผู้รับเปิดใน
+	# เบราว์เซอร์ต้องเจอหน้า landing (ปุ่มเปิดแอปผ่าน sheserved:// + ปุ่มเปิดเว็บ
+	# ผ่าน /?go=<route>) ไม่ใช่ Flutter shell เปล่า — เครื่องที่มีแอปจะถูก
+	# Android App Links / iOS Universal Links intercept ก่อนถึงจุดนี้อยู่แล้ว
+	# หน้า landing อยู่ใน web/landing/ (JS แยกไฟล์เพราะ CSP ไม่มี unsafe-inline)
+	@deeplinkLanding path /emergency/* /sport-club/*
+	rewrite @deeplinkLanding /landing/index.html
+
 	# SPA fallback — route ทั้งหมดตกไป index.html
 	try_files {path} /index.html
 	file_server

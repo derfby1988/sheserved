@@ -107,6 +107,11 @@
 	@static path /canvaskit/* /assets/* /icons/*
 	header @static Cache-Control "public, max-age=86400"
 
+	# ── Deep-link landing (Phase 23 share links) — เหมือน Caddyfile.dev ──
+	# /emergency/* + /sport-club/* → /landing/index.html (มีปุ่มเปิดแอป/เปิดเว็บ)
+	@deeplinkLanding path /emergency/* /sport-club/*
+	rewrite @deeplinkLanding /landing/index.html
+
 	try_files {path} /index.html
 	file_server
 }

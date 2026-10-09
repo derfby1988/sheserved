@@ -57,9 +57,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     try {
       final snapshot = await MapConfigService().load();
       if (!mounted) return;
-      final platform = kIsWeb
-          ? MapPlatform.web
-          : (PlatformService.isIOS ? MapPlatform.ios : MapPlatform.android);
+      final platform = PlatformService.mapPlatform;
       final target = snapshot.config.resolveTarget(
         MapFeature.emergency,
         platform,

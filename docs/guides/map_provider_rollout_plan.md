@@ -1,7 +1,7 @@
 # แผนรองรับ Google Maps และ OSM-based Tiles สำหรับ Sheserved
 
 > **วันที่สร้าง:** 2026-10-04
-> **สถานะ:** อยู่ระหว่าง rollout — Phase 0/1/2 เสร็จแล้ว (หลักฐาน: `docs/evidence/map_provider_phase0..2/`); Phase 3–8 ยังไม่เริ่ม
+> **สถานะ:** อยู่ระหว่าง rollout — Phase 0/1/2 เสร็จแล้ว (หลักฐาน: `docs/evidence/map_provider_phase0..2/`); Phase 3 implement + test แล้ว รอ device smoke ([รายงาน](../evidence/map_provider_phase3/phase3_report.md)); Phase 4–8 ยังไม่เริ่ม
 > **ขอบเขต:** Web, iOS, Android และระบบย่อยที่มีหรือจะมีแผนที่ใน Sheserved
 > **เอกสารอ้างอิงที่ต้อง reconcile:** `docs/plans/Match_Sport_PLAN.md`, `docs/plans/VIDEO_SYSTEM_PLAN.md`, `docs/plans/Delivery_PLAN.md`, `docs/guides/ui_rendering_standards.md`, `docs/plans/ui_rendering_standards.md`, `docs/guides/flutter_web_enablement_plan.md`, `docs/secure/google_maps_key_restriction_guide.md`
 
@@ -463,7 +463,7 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 | 0. Baseline + เลือก tile-source profile | P0 / ง่ายมาก | ✅ เสร็จ 2026-10-06 — commit `0226c9f` ([รายงาน](../evidence/map_provider_phase0/phase0_report.md)) | ยืนยันตัวเลือก provider, key restrictions, attribution, CSP/CORS, privacy, defaults; เก็บ screenshot/behavior baseline ของ Google; เลือก production source จากหลายตัวเลือก (ไม่ hardcode OSM Standard) |
 | 1. Settings model + persistence | P0 / ง่าย | ✅ เสร็จ 2026-10-06 — commits `0226c9f`, `13fc938` ([รายงาน](../evidence/map_provider_phase1/phase1_report.md)) | config resolver, platform defaults, feature overrides, validation, revision, backend admin path; UI เลือก Google/OSM + source; unit/API/widget tests พิสูจน์ save/reload, permission, fallback config ก่อนเปลี่ยน renderer |
 | 2. Shared adapter + fake tile harness | P0 / ปานกลาง | ✅ เสร็จ 2026-10-06 — commit `0d952b7` ([รายงาน](../evidence/map_provider_phase2/phase2_report.md)) | map model/controller facade + Google/OSM adapter; automated tests ใช้ fake/local tiles; Google behavior เดิมผ่าน regression |
-| 3. Group Create Map | P1 / ง่ายสุดในกลุ่มแผนที่จริง | ⬜ ยังไม่เริ่ม | tap/drag pin, use location, fullscreen, restore พิกัด, สร้างก๊วนได้ `lat/lng` เดิม; Nominatim/Places flow ไม่เปลี่ยน |
+| 3. Group Create Map | P1 / ง่ายสุดในกลุ่มแผนที่จริง | 🟡 implement + widget tests ผ่านแล้ว ([รายงาน](../evidence/map_provider_phase3/phase3_report.md)) — รอ device smoke ทั้งสอง renderer | tap/drag pin, use location, fullscreen, restore พิกัด, สร้างก๊วนได้ `lat/lng` เดิม; Nominatim/Places flow ไม่เปลี่ยน |
 | 4. Home Map | P1 / ง่าย–ปานกลาง | ⬜ ยังไม่เริ่ม | initial camera, user location, nearest emergency, event markers, re-center, route polyline; permission denied + network interruption |
 | 5. Yield Way Dialog | P1 / ปานกลาง | ⬜ ยังไม่เริ่ม | inherit จาก Emergency; alert fixtures, fit bounds, route line, marker, ปุ่มให้ทาง/ไม่สะดวก, callback |
 | 6. Rescue Map | P1 / ยาก | ⬜ ยังไม่เริ่ม | แยก renderer จาก Directions; native Directions/polyline ไม่เปลี่ยน; Web route ตามสถานะจริงจนมี routing backend; loading/error + zero-area bounds |
@@ -506,7 +506,8 @@ cluster/overlay) หรือบันทึกเป็น documented carve-out
   `padding` ไม่ propagate นอก `fitToBounds`, ไม่มี tilt — ต้องตัดสินใจว่าพอหรือ
   เพิ่ม `flutter_map_animations` ก่อน Phase 6–7 (Rescue/Emergency)
 - Google adapter ยังไม่เคย render จริงบนอุปกรณ์ (smoke เฉพาะ OSM) — Phase 3
-  ต้อง smoke ทั้งสอง renderer หลัง config flag
+  migrate `create_group_page` มาใช้ shared adapter แล้ว ([รายงาน](../evidence/map_provider_phase3/phase3_report.md))
+  แต่ยังต้อง smoke ทั้งสอง renderer บนอุปกรณ์หลัง config flag ก่อนถือว่า phase ปิดสนิท
 - Semantics/keyboard-traversal test ของ settings UI ยัง partial → Phase 8
 - ยืนยัน deploy path ของ `database/migrations/04_create_map_provider_config.sql`
   เมื่อจะเปิด staging/prod

@@ -47,18 +47,14 @@ class EmergencyIncidentDeepLinkService {
     return buffer.toString();
   }
 
-  /// Builds the share link for the given platform — iOS uses the custom scheme
-  /// (Universal Links need the paid Associated Domains capability), other
-  /// platforms keep the web universal link.
-  static String buildIncidentShareLink(
-    String videoId, {
-    String? photoId,
-    TargetPlatform? platform,
-  }) {
-    final target = platform ?? defaultTargetPlatform;
-    if (target == TargetPlatform.iOS) {
-      return buildIncidentCustomSchemeUrl(videoId, photoId: photoId);
-    }
+  /// Builds the share link. Always returns the `https://sheserved.me` web
+  /// universal link because the `sheserved://` custom scheme renders as
+  /// non-clickable plain text in chat apps (LINE, Messenger). The web link
+  /// opens the app directly on Android (verified App Links) and falls back to
+  /// the deployed web app everywhere else — including iOS debug builds that
+  /// cannot sign Associated Domains (personal team), where the SPA at
+  /// sheserved.me still routes `/emergency/incident/<id>` to the incident view.
+  static String buildIncidentShareLink(String videoId, {String? photoId}) {
     return buildIncidentShareUrl(videoId, photoId: photoId);
   }
 
@@ -99,7 +95,7 @@ class EmergencyIncidentDeepLinkService {
       }
 
       // Case 2: Web Universal Link or relative path
-      // e.g., https://sheserved.com/emergency/incident/{videoId}
+      // e.g., https://sheserved.me/emergency/incident/{videoId}
       // or /emergency/incident/{videoId}
       int incidentSegmentIdx = -1;
       for (int i = 0; i < pathSegments.length; i++) {

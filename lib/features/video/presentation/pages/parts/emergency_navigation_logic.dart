@@ -335,10 +335,12 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
       _pendingMissionVideoId != null ||
       (_isReporterLocked && _reporterActiveMissionVideoIds.isNotEmpty);
 
-  /// ไอคอนตัวกรองแสดงเมื่อ: ไม่ suspend + ผ่าน initial load + มีหมวดฉุกเฉิน
+  /// ไอคอนตัวกรองแสดงเมื่อ: ไม่ suspend + ไม่อยู่ใน focus mode +
+  /// ผ่าน initial load + มีหมวดฉุกเฉิน
   /// (last-known-good snapshot — รีเฟรชหมวดล้มเหลวจึงยังใช้ไอคอนได้)
   bool get _canShowTrendingCategoryFilter =>
       !_missionFilterSuspended &&
+      _sharedFocusVideoId == null &&
       _missionFilterReady &&
       !_isLoadingTrending &&
       _emergencyCategories.isNotEmpty;
@@ -359,7 +361,18 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   /// ลิสต์การ์ดที่ส่งเข้ากล่องยอดนิยม = role filter เดิม + category scope
   /// ปัจจุบัน (ตัวกรองที่ commit หรือหมวดชั่วคราวจากแผนที่)
   /// การ์ดที่แตะบนแผนที่ยังถูกปักไว้บนสุด ถ้าอยู่นอกหน้า pagination ปัจจุบัน
+  ///
+  /// ✅ Phase 23 Focus Mode: ระหว่าง focus ลิสต์เหลือเฉพาะการ์ดที่แชร์ —
+  /// การ์ดอื่นถูกซ่อนจากกล่องยอดนิยมและ fullscreen จนกว่าจะกดออกจาก focus
   List<Video> _trendingVideosForPanel() {
+    final focusId = _sharedFocusVideoId;
+    if (focusId != null) {
+      return sharedFocusTrendingVideos(
+        focusVideoId: focusId,
+        currentVideo: _currentVideo,
+        trendingVideos: _trendingVideos,
+      );
+    }
     final categoryIds = _effectiveTrendingCategoryIds();
     final result = filterTrendingVideosByCategoryIds(
       _filteredTrendingVideos(),
@@ -486,6 +499,26 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     if (switchedToMission || !mounted || generation != _initDataGeneration) {
       return;
     }
+    // ✅ Phase 23 R6 (§23.8): ลิงก์ชี้เหตุการณ์อื่นขณะมีภารกิจค้างต้องบล็อก
+    // fail-closed และคงอยู่ที่ภารกิจเดิม — mission state เพิ่ง resolve จาก
+    // network จึงเช็คใน _consumePendingDeepLink ไม่ทัน ต้องเช็คซ้ำหลัง restore
+    if (_sharedFocusVideoId != null &&
+        (_currentResponseId != null || _pendingMissionVideoId != null)) {
+      final sharedId = _sharedFocusVideoId!;
+      setState(() {
+        _pendingSharedIncidentId = null;
+        _pendingSharedPhotoId = null;
+        _sharedFocusVideoId = null;
+      });
+      if (sharedId != _pendingMissionVideoId) {
+        _showSharedLinkMissionBlockedSnackBar();
+        final missionVideoId = _pendingMissionVideoId;
+        if (missionVideoId != null && _currentVideoId == sharedId) {
+          _switchVideo(missionVideoId);
+          return;
+        }
+      }
+    }
     if (_currentVideoId != null) {
       // หมายเหตุ: ไม่เรียก _recordView() แล้ว เพราะ WebSocket Server นับ unique viewers ผ่าน room membership
       final summary = await ServiceLocator.instance.videoRepository
@@ -519,6 +552,20 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
           }
         });
         _checkPrivacyPermissions();
+      }
+      // ✅ Phase 23: ลิงก์ชี้เหตุการณ์ที่ไม่พร้อมใช้งาน (ถูกลบ/ไม่มีสิทธิ์)
+      // → fail-closed แจ้งเตือนแล้วออกจาก focus mode กลับสู่หน้าปกติ (§23.7)
+      if (video == null &&
+          _sharedFocusVideoId != null &&
+          _sharedFocusVideoId == _currentVideoId) {
+        setState(() {
+          _pendingSharedIncidentId = null;
+          _pendingSharedPhotoId = null;
+          _sharedFocusVideoId = null;
+        });
+        _showSharedIncidentUnavailableSnackBar();
+        _deselectCurrentVideo();
+        return;
       }
       if (video != null && _currentVideoId == video.id) {
         _updateIncidentMapReturnFocusForVideo(
@@ -997,6 +1044,8 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   }
 
   Future<void> _loadMoreTrendingVideos() async {
+    // ✅ Phase 23 Focus Mode: ห้ามขยายลิสต์ — ลิสต์เหลือเฉพาะการ์ดที่แชร์
+    if (_sharedFocusVideoId != null) return;
     if (!_hasMoreTrending || _isLoadingMoreTrending) return;
     if (mounted) setState(() => _isLoadingMoreTrending = true);
     final fetchGeneration = ++_trendingFetchGeneration;
@@ -1588,8 +1637,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     }
   }
 
-  void _switchVideo(String newVideoId, {bool refreshTrending = true}) {
-    _updateIncidentMapReturnFocusForVideo(newVideoId);
+  /// ปล่อยทรัพยากรของการ์ดปัจจุบัน (leave room, ยกเลิก subscriptions,
+  /// dispose player) — ใช้ร่วมกันโดย _switchVideo และ _deselectCurrentVideo
+  void _teardownCurrentVideo() {
     if (_currentVideoId != null)
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     _interactionSub?.cancel();
@@ -1605,25 +1655,84 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     _videoPlayerController = null;
     _chewieController?.dispose();
     _chewieController = null;
+  }
+
+  /// รีเซ็ต state ระดับการ์ดเหตุการณ์ (ตัวเลข/แผนที่/คำร้อง/ภาพที่ถ่ายค้าง)
+  /// ใช้ร่วมกันโดย _switchVideo และ _deselectCurrentVideo — เรียกใน setState
+  void _resetPerVideoState() {
+    _highlightVideoId = null;
+    _currentVideo = null;
+    _dbGpsTracks.clear();
+    _routePoints.clear();
+    _responders.clear();
+    _lastSyncedVideoTrack = null;
+    _likeCount = 0;
+    _viewerCount = 0;
+    // ✅ Reset รายการคำร้องบริจาคเมื่อสลับวิดีโอ
+    _activeDonationRequests = [];
+    _requestTotals = {};
+    _activeRequestIndex = 0;
+    _capturedPhotos.clear(); // ✅ เคลียร์รูปภาพไทยมุงที่ถ่ายค้างไว้
+  }
+
+  void _switchVideo(String newVideoId, {bool refreshTrending = true}) {
+    _updateIncidentMapReturnFocusForVideo(newVideoId);
+    _teardownCurrentVideo();
     setState(() {
       _currentVideoId = newVideoId;
-      _highlightVideoId = null;
-      _currentVideo = null;
-      _dbGpsTracks.clear();
-      _routePoints.clear();
-      _responders.clear();
-      _lastSyncedVideoTrack = null;
-      _likeCount = 0;
-      _viewerCount = 0;
-      // ✅ Reset รายการคำร้องบริจาคเมื่อสลับวิดีโอ
-      _activeDonationRequests = [];
-      _requestTotals = {};
-      _activeRequestIndex = 0;
-      _capturedPhotos.clear(); // ✅ เคลียร์รูปภาพไทยมุงที่ถ่ายค้างไว้
+      _resetPerVideoState();
     });
     _setupWebSocketStreams();
     _loadInitialData(refreshTrending: refreshTrending);
     _loadDonationRequests(); // ✅ โหลดคำร้องใหม่สำหรับวิดีโอใหม่
+  }
+
+  /// ✅ Phase 23: ยกเลิกการเลือกการ์ดทั้งหมด — กลับสถานะเดียวกับเปิดหน้า
+  /// Emergency ใหม่โดยไม่มีวิดีโอเล่น (ปุ่มแชร์หาย, overlay ปิด)
+  void _deselectCurrentVideo() {
+    _liveViewKey.currentState?.closeOverlay();
+    _teardownCurrentVideo();
+    setState(() {
+      _currentVideoId = null;
+      _resetPerVideoState();
+      _isOverlayVisible = false;
+      _thaiMhungPhotos.clear();
+    });
+    // คืน subscriptions ระดับหน้า (แจ้งเตือนเหตุใหม่/สถานะสตรีม) ให้เหมือน
+    // สถานะตอนเปิดหน้าใหม่ที่ยังไม่มีการ์ดถูกเลือก
+    _setupWebSocketStreams();
+  }
+
+  /// ✅ Phase 23: ออกจาก Focus Mode ("ดูเหตุการณ์ทั้งหมด") —
+  /// กล่องยอดนิยมกลับมาแสดงทุกการ์ดตามตัวกรองหมวดที่ commit ไว้ และ
+  /// กลับสู่สถานะเริ่มต้น (ไม่มีการ์ดถูกเลือก ไม่มีวิดีโอ ปุ่มแชร์หาย)
+  void _exitSharedFocusMode() {
+    if (_sharedFocusVideoId == null) return;
+    // ภารกิจยังค้าง → ออกจาก focus แต่คงการ์ดภารกิจไว้ตาม mission lock
+    final missionActive =
+        _currentResponseId != null || _pendingMissionVideoId != null;
+    setState(() {
+      _pendingSharedIncidentId = null;
+      _pendingSharedPhotoId = null;
+      _sharedFocusVideoId = null;
+    });
+    if (missionActive) return;
+    _deselectCurrentVideo();
+    _loadTrendingVideos(forceRefresh: true);
+  }
+
+  /// §23.7 — เหตุการณ์ในลิงก์ไม่พร้อมใช้งานแล้ว (ถูกลบ/ไม่มีสิทธิ์)
+  void _showSharedIncidentUnavailableSnackBar() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ไม่สามารถเปิดเหตุการณ์ในลิงก์นี้ได้แล้ว'),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.black54,
+        ),
+      );
+    });
   }
 
   /// เปิด Fullscreen Video Viewer ตามแผน VIDEO_SYSTEM_PLAN.md ส่วน 3.1
@@ -1651,7 +1760,9 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
             FullscreenVideoViewer(
               videos: fullscreenVideos,
               initialIndex: initialIndex,
-              hasMore: _hasMoreTrending,
+              // ✅ Phase 23 Focus Mode: ลิสต์มีการ์ดเดียว — ไม่มีหน้าถัดไป
+              hasMore:
+                  _hasMoreTrending && _sharedFocusVideoId == null,
               onLoadMore: () async {
                 await _loadMoreTrendingVideos();
               },
@@ -2234,27 +2345,131 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   /// ค้างอยู่ — ล้าง pending link ทิ้งแล้วกลับสู่โหมดปกติทันที
   void _consumePendingDeepLink() {
     final link = EmergencyIncidentDeepLinkService.consumePendingDeepLink();
-    if (link == null) return;
+    if (link == null) {
+      _popSelfIfDuplicateIncidentRoute();
+      return;
+    }
 
     // Guard §23.8: มีภารกิจค้าง → fail-closed (ไม่รับ shared view)
     if (_currentResponseId != null || _pendingMissionVideoId != null) {
       debugPrint(
         '[Phase23] Deep link ignored — active mission/response present',
       );
+      _showSharedLinkMissionBlockedSnackBar();
       return;
     }
 
     _pendingSharedIncidentId = link.videoId;
     _pendingSharedPhotoId = link.photoId;
+    // ✅ §23.7: เข้าสู่ Focus Mode — กล่องยอดนิยมเหลือเฉพาะการ์ดที่แชร์
+    _sharedFocusVideoId = link.videoId;
     debugPrint(
       '[Phase23] Pending deep link: videoId=${link.videoId}, photoId=${link.photoId}',
     );
 
-    // หากหน้าเปิดโดยไม่มีวิดีโอ → สลับไปยังเหตุการณ์ในลิงก์
-    // (กรณีมีวิดีโออยู่แล้วจะ consume ใน _triggerSharedPhotoOverlay ตอน _loadInitialData เสร็จ)
-    if (_currentVideoId == null) {
-      _currentVideoId = link.videoId;
+    // ✅ §23.7: ลิงก์เป็น authoritative — เลือกเหตุการณ์ที่แชร์เสมอ
+    // ไม่ให้ auto-selection อื่นเขียนทับ (_restoreActiveMissionIfNeeded
+    // จะบล็อก fail-closed เองถ้าพบภารกิจค้าง — R6)
+    _currentVideoId = link.videoId;
+  }
+
+  /// ✅ Phase 23 (§23.4) safety net: หน้าที่ถูก push ด้วย route
+  /// `/emergency/incident/...` แต่ตอน init ไม่พบ pending link แปลว่ามี sibling
+  /// consume ไปก่อนแล้ว (ลิงก์ส่งซ้ำก่อน handler ของหน้าแรกลงทะเบียน) —
+  /// หน้านี้คือ duplicate ที่จะ render เป็น Emergency ปกติบังหน้า focus
+  /// อยู่ → ปิดตัวเองทิ้ง
+  void _popSelfIfDuplicateIncidentRoute() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // ลิงก์อุ่นอาจเข้ามา focus หน้านี้ระหว่าง initState กับ post-frame —
+      // ปิดเฉพาะเมื่อไม่ได้รับเหตุการณ์ใดมาเลย
+      if (_sharedFocusVideoId != null || _pendingSharedIncidentId != null) {
+        return;
+      }
+      final route = ModalRoute.of(context);
+      final routeName = route?.settings.name ?? '';
+      if (route != null &&
+          route.isCurrent &&
+          routeName.startsWith('/emergency/incident/')) {
+        debugPrint('[Phase23] Dropping duplicate incident route: $routeName');
+        Navigator.of(context).maybePop();
+      }
+    });
+  }
+
+  /// ✅ Phase 23 (§23.4): warm link ขณะหน้านี้เปิดอยู่ → สลับเหตุการณ์ใน
+  /// หน้าเดิมโดยไม่ซ้อน route (ลงทะเบียนผ่าน
+  /// `EmergencyLivePage.openSharedIncidentLinkHandler`)
+  ///
+  /// คืน true = handled แล้ว (สลับ/บล็อกไว้แล้ว ไม่ต้อง push หน้าใหม่)
+  /// คืน false = จัดการในหน้านี้ไม่ได้ → caller push หน้าใหม่ตามเดิม
+  bool _tryOpenSharedIncidentLink(EmergencyIncidentDeepLinkData link) {
+    if (!mounted) return false;
+    // §23.4: กำลังถ่ายภาพ/รายงานเหตุค้าง → บล็อกลิงก์ fail-closed เพื่อไม่ให้
+    // ภาพที่ถ่ายไว้สูญหาย (เช่นเดียวกับ guard ภารกิจ — consume แล้วทิ้ง)
+    if (_isThaiMhungReporting) {
+      EmergencyIncidentDeepLinkService.consumePendingDeepLink();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ไม่สามารถเปิดลิงก์แชร์ขณะกำลังรายงานเหตุการณ์'),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.black54,
+        ),
+      );
+      return true;
     }
+    // มี route อื่นคลุมอยู่ (fullscreen/dialog/หน้าอื่น) → pop กลับมาหน้านี้
+    // แล้วสลับในหน้าเดิม ไม่ซ้อน EmergencyLivePage ซ้ำซ้อน (§23.4)
+    final ownRoute = ModalRoute.of(context);
+    if (ownRoute == null) return false;
+    if (!ownRoute.isCurrent) {
+      Navigator.of(context).popUntil((r) => identical(r, ownRoute));
+    }
+
+    final data =
+        EmergencyIncidentDeepLinkService.consumePendingDeepLink() ?? link;
+
+    // §23.8 R6: ภารกิจค้าง → ลิงก์ที่ชี้เหตุการณ์อื่นต้องบล็อก fail-closed
+    // และคงอยู่ภารกิจเดิม (ลิงก์ที่ชี้เหตุการณ์ภารกิจเองยังเปิดได้)
+    if ((_currentResponseId != null || _pendingMissionVideoId != null) &&
+        data.videoId != _currentVideoId &&
+        data.videoId != _pendingMissionVideoId) {
+      _showSharedLinkMissionBlockedSnackBar();
+      return true;
+    }
+
+    // §23.4: ปิดโหมดแผนที่อย่างปลอดภัยก่อนสลับมายังเหตุการณ์ที่แชร์
+    if (_isIncidentMapMode) {
+      _closeIncidentMapContext();
+    }
+
+    _pendingSharedIncidentId = data.videoId;
+    _pendingSharedPhotoId = data.photoId;
+    setState(() => _sharedFocusVideoId = data.videoId);
+
+    if (_currentVideoId == data.videoId) {
+      // เหตุการณ์เดียวกันอยู่แล้ว → เข้า focus ใหม่และ trigger overlay ภาพถ้ามี
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _triggerSharedPhotoOverlay();
+      });
+    } else {
+      _switchVideo(data.videoId);
+    }
+    return true;
+  }
+
+  /// §23.8 R6 — แจ้งผู้ใช้ว่าลิงก์แชร์ถูกบล็อกเพราะมีภารกิจค้างอยู่
+  void _showSharedLinkMissionBlockedSnackBar() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ไม่สามารถเปิดลิงก์แชร์ขณะมีภารกิจค้างอยู่'),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.black54,
+        ),
+      );
+    });
   }
 
   /// §23.5 – เรียกหลัง _loadInitialData โหลด video data และ gallery พร้อมแล้ว

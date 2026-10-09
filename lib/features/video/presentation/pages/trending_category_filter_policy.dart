@@ -16,6 +16,20 @@ Set<String> trendingCategoryIdsForActiveScope({
   return Set<String>.of(committedCategoryIds);
 }
 
+/// ✅ Phase 23 Focus Mode: ลิสต์การ์ดสำหรับกล่องยอดนิยมขณะเปิดผ่านลิงก์แชร์ —
+/// เหลือเฉพาะการ์ดที่แชร์ (ใช้ [currentVideo] ที่ดึงมาเองถ้าการ์ดไม่อยู่ใน
+/// หน้า pagination ของ trending)
+List<Video> sharedFocusTrendingVideos({
+  required String focusVideoId,
+  required Video? currentVideo,
+  required List<Video> trendingVideos,
+}) {
+  if (currentVideo != null && currentVideo.id == focusVideoId) {
+    return [currentVideo];
+  }
+  return trendingVideos.where((video) => video.id == focusVideoId).toList();
+}
+
 List<Video> filterTrendingVideosByCategoryIds(
   Iterable<Video> videos,
   Set<String> categoryIds,

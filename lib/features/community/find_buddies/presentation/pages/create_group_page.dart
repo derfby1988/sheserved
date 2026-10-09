@@ -2,20 +2,24 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../../config/app_config.dart';
 import '../../../../../../services/auth_service.dart';
+import '../../../../../../services/map_config_service.dart';
 import '../../../../../../services/platform_service.dart';
+import '../../../../../../shared/map/map_controller.dart';
+import '../../../../../../shared/map/map_types.dart';
 import '../../../../../../shared/widgets/image_upload_field.dart';
 import '../../../../../../core/constants/app_colors.dart';
+import '../../../../admin/models/map_provider_config.dart';
 import '../../../find_buddies/data/fitness_buddies_repository.dart';
 import '../../../find_buddies/domain/models/sport_skill_level.dart';
 import '../../../find_buddies/presentation/widgets/cost_editors.dart';
 import '../../../find_buddies/presentation/widgets/position_lineup.dart';
 import '../../../find_buddies/presentation/widgets/skill_level_chips.dart';
+import '../../../find_buddies/presentation/widgets/venue_location_picker.dart';
 import '../../../../../../shared/widgets/thai_address_picker/thai_address_picker.dart';
 import '../../../../../../shared/widgets/neumorphic/neumorphic.dart';
 
@@ -64,8 +68,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   final _skillNoteCtrl = TextEditingController();
   // Phase 15: draft player positions on field
   List<Map<String, dynamic>> _positionDrafts = [];
-  gm.GoogleMapController? _mapController;
+  SheservedMapController? _mapController;
   bool _mapLoadLogged = false;
+  // Phase 3 (map provider rollout): resolved provider config for group_create.
+  MapConfigSnapshot? _mapSnapshot;
   final _searchPlaceCtrl = TextEditingController();
 
   bool _isSearchingPlace = false;
@@ -168,7 +174,27 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     _loadSports();
     _loadRecentNames();
     _restoreDraft();
+    _loadMapConfig();
   }
+
+  /// Phase 3: the venue map is driven by the persisted provider config.
+  /// Until it loads — or when the server is unreachable — the embedded app
+  /// default applies (web disabled, mobile Google), matching the old
+  /// `PlatformService.shouldShowLiveMap` behaviour.
+  Future<void> _loadMapConfig() async {
+    try {
+      final snapshot = await MapConfigService().load();
+      if (mounted) setState(() => _mapSnapshot = snapshot);
+    } catch (_) {
+      // MapConfigService already falls back to the app default.
+    }
+  }
+
+  MapTarget get _mapTarget =>
+      (_mapSnapshot?.config ?? MapProviderConfig.appDefault()).resolveTarget(
+        MapFeature.groupCreate,
+        PlatformService.mapPlatform,
+      );
 
   @override
   void dispose() {
@@ -235,40 +261,50 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     }
   }
 
-  Future<void> _getCurrentLocation() async {
-    setState(() => _isGettingLocation = true);
+  /// Permission + position fix shared by the card button and the fullscreen
+  /// picker's my-location overlay. Returns null when permission is denied.
+  Future<MapLatLng?> _acquireUserLocation() async {
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return null;
+    }
+    final pos = await Geolocator.getCurrentPosition();
+    return MapLatLng(pos.latitude, pos.longitude);
+  }
+
+  Future<MapLatLng?> _resolveUserLocation() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (!mounted) return;
+      final point = await _acquireUserLocation();
+      if (point == null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง')),
         );
-        return;
       }
-      final pos = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
-      setState(() {
-        _lat = pos.latitude;
-        _lng = pos.longitude;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController?.animateCamera(
-          gm.CameraUpdate.newLatLngZoom(
-            gm.LatLng(pos.latitude, pos.longitude),
-            15,
-          ),
-        );
-      });
+      return point;
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ไม่สามารถดึงตำแหน่ง: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ไม่สามารถดึงตำแหน่ง: $e')));
+      }
+      return null;
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isGettingLocation = true);
+    try {
+      final point = await _resolveUserLocation();
+      if (point == null || !mounted) return;
+      setState(() {
+        _lat = point.latitude;
+        _lng = point.longitude;
+      });
+      _animateMapTo(point, zoom: 15);
     } finally {
       if (mounted) setState(() => _isGettingLocation = false);
     }
@@ -1731,7 +1767,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _lat = lat;
         _lng = lng;
       });
-      _animateMapTo(gm.LatLng(lat, lng), zoom: 14);
+      _animateMapTo(MapLatLng(lat, lng), zoom: 14);
     } catch (_) {
       // Silently ignore geocoding errors; user can still pick manually.
     } finally {
@@ -1739,20 +1775,14 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     }
   }
 
-  void _animateMapTo(gm.LatLng target, {required double zoom}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _mapController == null) return;
-      try {
-        await _mapController!.animateCamera(
-          gm.CameraUpdate.newLatLngZoom(target, zoom),
-        );
-      } catch (_) {
-        // The map can be unavailable while its Android SurfaceView is rebuilt.
-      }
+  void _animateMapTo(MapLatLng target, {required double zoom}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _mapController?.animateTo(target, zoom: zoom);
     });
   }
 
-  gm.LatLng? _tryParseCoordinates(String text) {
+  MapLatLng? _tryParseCoordinates(String text) {
     final cleaned = text.trim();
     // ตรวจสอบรูปแบบ: "13.7563, 100.5018" หรือ "13.7563 100.5018"
     final match = RegExp(
@@ -1768,7 +1798,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           lat <= 90 &&
           lng >= -180 &&
           lng <= 180) {
-        return gm.LatLng(lat, lng);
+        return MapLatLng(lat, lng);
       }
     }
     return null;
@@ -1959,7 +1989,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
         _placeSearchMessage = 'ระบุพิกัดสำเร็จ: $name';
       });
 
-      _animateMapTo(gm.LatLng(lat, lng), zoom: 16);
+      _animateMapTo(MapLatLng(lat, lng), zoom: 16);
     }
   }
 
@@ -2282,9 +2312,10 @@ class _CreateGroupPageState extends State<CreateGroupPage>
   }
 
   Widget _buildModernMapCard() {
-    final showLiveMap = PlatformService.shouldShowLiveMap(
-      pageName: 'group_create',
-    );
+    // Phase 3: resolved provider config drives this map (feature override →
+    // platform default → embedded app default).
+    final mapTarget = _mapTarget;
+    final showLiveMap = mapTarget.enabled;
 
     return NeumorphicContainer(
       color: NeumorphicTheme.baseColor,
@@ -2459,7 +2490,7 @@ class _CreateGroupPageState extends State<CreateGroupPage>
               height: 180,
               child: KeyedSubtree(
                 key: const ValueKey('create_group_map_subtree'),
-                child: showLiveMap ? _buildGoogleMap() : _buildWebMapFallback(),
+                child: showLiveMap ? _buildVenueMap() : _buildWebMapFallback(),
               ),
             ),
           ),
@@ -2526,14 +2557,16 @@ class _CreateGroupPageState extends State<CreateGroupPage>
     );
   }
 
-  Widget _buildGoogleMap() {
-    final initialTarget = _lat != null && _lng != null
-        ? gm.LatLng(_lat!, _lng!)
-        : const gm.LatLng(13.7563, 100.5018);
-    final initialZoom = _lat != null ? 15.0 : 6.0;
-
-    return gm.GoogleMap(
-      key: const ValueKey('create_group_google_map'),
+  Widget _buildVenueMap() {
+    return VenueLocationMap(
+      key: const ValueKey('create_group_venue_map'),
+      target: _mapTarget,
+      registry: _mapSnapshot?.registry,
+      picked: _lat != null && _lng != null ? MapLatLng(_lat!, _lng!) : null,
+      onPicked: (pos) => setState(() {
+        _lat = pos.latitude;
+        _lng = pos.longitude;
+      }),
       onMapCreated: (controller) {
         _mapController = controller;
         if (!_mapLoadLogged) {
@@ -2541,44 +2574,18 @@ class _CreateGroupPageState extends State<CreateGroupPage>
           PlatformService.logMapLoad(pageName: 'group_create');
         }
       },
-      initialCameraPosition: gm.CameraPosition(
-        target: initialTarget,
-        zoom: initialZoom,
-      ),
-      markers: _buildMarkers(),
-      onTap: (pos) => setState(() {
-        _lat = pos.latitude;
-        _lng = pos.longitude;
-      }),
-      myLocationButtonEnabled: false,
-      myLocationEnabled: false,
-      zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
-      compassEnabled: false,
     );
   }
 
-  Set<gm.Marker> _buildMarkers() {
-    if (_lat == null || _lng == null) return const <gm.Marker>{};
-    return {
-      gm.Marker(
-        markerId: const gm.MarkerId('venue'),
-        position: gm.LatLng(_lat!, _lng!),
-        icon: gm.BitmapDescriptor.defaultMarkerWithHue(
-          gm.BitmapDescriptor.hueRed,
-        ),
-      ),
-    };
-  }
-
   Future<void> _showFullscreenMapPicker() async {
-    if (!PlatformService.shouldShowLiveMap(pageName: 'group_create')) {
+    final target = _mapTarget;
+    if (!target.enabled) {
       await showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('ไม่รองรับบนเว็บ'),
+          title: const Text('ไม่รองรับบนแพลตฟอร์มนี้'),
           content: const Text(
-            'การปักหมุดบนแผนที่โต้ตอบไม่รองรับในเบราว์เซอร์ กรุณาใช้งานผ่านแอปพลิเคชันมือถือ',
+            'การปักหมุดบนแผนที่โต้ตอบถูกปิดสำหรับแพลตฟอร์มนี้ กรุณาใช้งานผ่านแอปพลิเคชันมือถือ',
           ),
           actions: [
             TextButton(
@@ -2591,80 +2598,19 @@ class _CreateGroupPageState extends State<CreateGroupPage>
       return;
     }
 
-    gm.LatLng? picked;
-    gm.LatLng? tempPicked;
-    if (_lat != null && _lng != null) {
-      picked = gm.LatLng(_lat!, _lng!);
-      tempPicked = picked;
-    }
-
-    await showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      pageBuilder: (ctx, anim1, anim2) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final markers = tempPicked == null
-                ? const <gm.Marker>{}
-                : <gm.Marker>{
-                    gm.Marker(
-                      markerId: const gm.MarkerId('picked'),
-                      position: tempPicked!,
-                      icon: gm.BitmapDescriptor.defaultMarkerWithHue(
-                        gm.BitmapDescriptor.hueRed,
-                      ),
-                    ),
-                  };
-
-            return Scaffold(
-              appBar: AppBar(
-                title: const Text('เลือกตำแหน่งสนาม'),
-                leading: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                ),
-              ),
-              body: gm.GoogleMap(
-                onMapCreated: (controller) {
-                  // controller retained by GoogleMap widget
-                },
-                initialCameraPosition: gm.CameraPosition(
-                  target: picked ?? const gm.LatLng(13.7563, 100.5018),
-                  zoom: picked != null ? 17 : 13,
-                ),
-                markers: markers,
-                onTap: (pos) => setSheetState(() => tempPicked = pos),
-                myLocationButtonEnabled: true,
-                myLocationEnabled: true,
-                zoomControlsEnabled: true,
-                mapToolbarEnabled: false,
-              ),
-              floatingActionButton: tempPicked != null
-                  ? FloatingActionButton.extended(
-                      onPressed: () {
-                        setState(() {
-                          _lat = tempPicked!.latitude;
-                          _lng = tempPicked!.longitude;
-                        });
-                        Navigator.of(ctx).pop();
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _mapController?.animateCamera(
-                            gm.CameraUpdate.newLatLngZoom(
-                              gm.LatLng(_lat!, _lng!),
-                              17,
-                            ),
-                          );
-                        });
-                      },
-                      icon: const Icon(Icons.check),
-                      label: const Text('เลือกพิกัดนี้'),
-                    )
-                  : null,
-            );
-          },
-        );
-      },
+    final picked = await VenueLocationPicker.show(
+      context,
+      target: target,
+      registry: _mapSnapshot?.registry,
+      initial: _lat != null && _lng != null ? MapLatLng(_lat!, _lng!) : null,
+      getUserLocation: _resolveUserLocation,
     );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _lat = picked.latitude;
+      _lng = picked.longitude;
+    });
+    _animateMapTo(picked, zoom: 17);
   }
 
   Widget _buildSubmitButton() {

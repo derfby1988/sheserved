@@ -197,13 +197,28 @@ class OsmAdapterController implements SheservedMapController {
   @override
   void moveTo(MapLatLng target, {double? zoom}) {
     if (_disposed) return;
-    _inner.move(toOsmLatLng(target), zoom ?? _inner.camera.zoom);
+    try {
+      _inner.move(toOsmLatLng(target), zoom ?? _inner.camera.zoom);
+    } catch (_) {
+      // MapController.camera throws while the map has no layout yet.
+    }
   }
 
   @override
   void animateTo(MapLatLng target, {double? zoom}) {
     // flutter_map has no built-in animated move; `move` is the same command.
     moveTo(target, zoom: zoom);
+  }
+
+  @override
+  void zoomBy(double delta) {
+    if (_disposed) return;
+    try {
+      final camera = _inner.camera;
+      _inner.move(camera.center, (camera.zoom + delta).clamp(2.0, 20.0));
+    } catch (_) {
+      // Camera not readable before first layout — treat as no-op.
+    }
   }
 
   @override
@@ -220,12 +235,16 @@ class OsmAdapterController implements SheservedMapController {
       }
       return;
     }
-    _inner.fitCamera(
-      fm.CameraFit.bounds(
-        bounds: toOsmBounds(bounds),
-        padding: EdgeInsets.all(padding),
-      ),
-    );
+    try {
+      _inner.fitCamera(
+        fm.CameraFit.bounds(
+          bounds: toOsmBounds(bounds),
+          padding: EdgeInsets.all(padding),
+        ),
+      );
+    } catch (_) {
+      // fitCamera throws while the map has no layout yet.
+    }
   }
 
   @override

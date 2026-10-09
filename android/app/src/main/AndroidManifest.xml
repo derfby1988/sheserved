@@ -47,23 +47,9 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sheserved" />
             </intent-filter>
-            <!-- Deep Link: Universal Links (https://sheserved.com) -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="sheserved.com"
-                    android:pathPrefix="/emergency" />
-                <data
-                    android:scheme="https"
-                    android:host="sheserved.com"
-                    android:pathPrefix="/sport-club" />
-            </intent-filter>
-            <!-- Deep Link: Universal Links (https://sheserved.me) — domain หลัก
-                 แยก intent-filter จาก .com เพื่อให้ autoVerify ของ .me ไม่ถูก
-                 ล้มตาม .com ที่ยังเป็น parked page (ไม่มี assetlinks) -->
+            <!-- Deep Link: Universal Links (https://sheserved.me) — โดเมนเดียว
+                 (sheserved.com เป็น GoDaddy parked page ไม่มี assetlinks → ลบ
+                 filter ออกแล้ว; autoVerify ของ .me verify ผ่านบนเครื่องจริง) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

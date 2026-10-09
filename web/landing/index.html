@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SheServed — เปิดลิงก์แชร์</title>
+  <meta name="description" content="ลิงก์แชร์จากแอป SheServed — เปิดในแอปหรือดูผ่านเว็บเบราว์เซอร์">
+  <meta property="og:title" content="SheServed — ลิงก์แชร์">
+  <meta property="og:description" content="มีคนแชร์เนื้อหาจาก SheServed ถึงคุณ — แตะเพื่อเปิดในแอปหรือดูผ่านเว็บ">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/icons/Icon-192.png">
+  <link rel="icon" href="/favicon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sukhumvit Set",
+        "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(160deg, #0f2027 0%, #1a3a4a 55%, #14555a 100%);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 24px;
+      padding: 36px 28px 28px;
+      text-align: center;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    .logo {
+      width: 76px;
+      height: 76px;
+      border-radius: 20px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.3px; }
+    .subtitle {
+      margin-top: 8px;
+      font-size: 15px;
+      color: rgba(255, 255, 255, 0.75);
+      line-height: 1.5;
+    }
+    .ref {
+      margin: 14px auto 0;
+      display: inline-block;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(0, 0, 0, 0.25);
+      padding: 4px 12px;
+      border-radius: 999px;
+      word-break: break-all;
+      max-width: 100%;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, #2dd4bf, #0ea5e9);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(45, 212, 191, 0.35);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: #fff;
+    }
+    .hint {
+      margin-top: 18px;
+      font-size: 12.5px;
+      color: rgba(255, 255, 255, 0.55);
+      line-height: 1.6;
+    }
+    #status { margin-top: 14px; font-size: 13px; color: #7dd3fc; min-height: 18px; }
+    .invalid .only-valid { display: none; }
+    .only-invalid { display: none; }
+    .invalid .only-invalid { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <img class="logo" src="/icons/Icon-192.png" alt="SheServed">
+    <h1>SheServed</h1>
+    <p class="subtitle only-valid" id="subtitle">มีคนแชร์เนื้อหาถึงคุณจากแอป SheServed</p>
+    <p class="subtitle only-invalid">ลิงก์นี้ไม่สมบูรณ์หรือถูกตัดตอน<br>กรุณาขอลิงก์ใหม่จากผู้ส่ง</p>
+    <div class="ref only-valid" id="ref"></div>
+    <a class="btn btn-primary only-valid" id="openApp" href="#">เปิดในแอป SheServed</a>
+    <a class="btn btn-secondary only-valid" id="openWeb" href="#">เปิดในเว็บเบราว์เซอร์</a>
+    <p id="status" class="only-valid"></p>
+    <p class="hint">
+      ผู้ใช้แอป: แตะ “เปิดในแอป” เพื่อดูเนื้อหาใน SheServed โดยตรง<br>
+      ไม่มีแอป / ใช้คอมพิวเตอร์: เลือก “เปิดในเว็บเบราว์เซอร์”
+    </p>
+  </div>
+  <script src="/landing/landing.js" defer></script>
+</body>
+</html>

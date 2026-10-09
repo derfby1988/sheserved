@@ -9,11 +9,13 @@ void main() {
       const p = MapLatLng(13.7, 100.5);
       c.moveTo(p, zoom: 12);
       c.animateTo(p);
+      c.zoomBy(-1);
       c.fitToBounds(const [p, MapLatLng(14, 101)], padding: 40);
 
-      expect(c.calls, ['moveTo', 'animateTo', 'fitToBounds']);
+      expect(c.calls, ['moveTo', 'animateTo', 'zoomBy', 'fitToBounds']);
       expect(c.lastTarget, p);
       expect(c.lastZoom, isNull);
+      expect(c.lastZoomDelta, -1);
       expect(c.lastFitPoints, hasLength(2));
       expect(c.lastFitPadding, 40);
     });
@@ -23,6 +25,7 @@ void main() {
       c.dispose();
       expect(c.isDisposed, isTrue);
       c.moveTo(const MapLatLng(1, 1));
+      c.zoomBy(1);
       c.fitToBounds(const [MapLatLng(1, 1)]);
       expect(c.calls, isEmpty);
     });

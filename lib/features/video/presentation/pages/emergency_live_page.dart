@@ -75,6 +75,13 @@ class EmergencyLivePage extends StatefulWidget {
   final String? responseId;
   final bool autoOpenChat;
 
+  /// ✅ Phase 23 (§23.4): handler ของ instance ที่สร้างล่าสุด — main.dart
+  /// เรียกเมื่อลิงก์แชร์เข้ามาขณะหน้านี้เปิดอยู่แล้ว เพื่อสลับเหตุการณ์ใน
+  /// หน้าเดิมแทนการซ้อน route ใหม่ (คืน true = handled แล้ว ไม่ต้อง push;
+  /// คืน false = ให้ push หน้าใหม่ตามเดิม)
+  static bool Function(EmergencyIncidentDeepLinkData link)?
+      openSharedIncidentLinkHandler;
+
   const EmergencyLivePage({
     super.key,
     this.videoId,
@@ -283,6 +290,12 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   String? _pendingSharedIncidentId;
   String? _pendingSharedPhotoId;
 
+  /// ✅ Phase 23 Recipient Focus Mode (§23.4–§23.8)
+  /// ตั้งค่าเมื่อรับลิงก์แชร์ที่ถูกยอมรับ — กล่องยอดนิยมเหลือเฉพาะการ์ดที่แชร์,
+  /// ซ่อนตัวกรองหมวด/ปุ่มแผนที่เกิดเหตุ, fullscreen ปัดไม่เจอการ์ดอื่น,
+  /// และแสดงปุ่ม "ดูเหตุการณ์ทั้งหมด" เพื่อออกจากโหมดนี้
+  String? _sharedFocusVideoId;
+
   @override
   void initState() {
     super.initState();
@@ -302,6 +315,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _checkPermissions();
     _ensureWebSocketConnected();
     _setupWebSocketStreams();
+    // ✅ Phase 23 (§23.4): ลงทะเบียน instance ล่าสุดให้ main.dart สลับ
+    // เหตุการณ์ in-place ได้เมื่อลิงก์เข้ามาขณะหน้านี้เปิดอยู่แล้ว
+    EmergencyLivePage.openSharedIncidentLinkHandler =
+        _tryOpenSharedIncidentLink;
     _consumePendingDeepLink(); // ✅ Phase 23: ตั้งค่า pending link ก่อน _loadInitialData
     _loadInitialData();
     _loadDeadManCheckinState();
@@ -348,6 +365,10 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
 
   @override
   void dispose() {
+    if (EmergencyLivePage.openSharedIncidentLinkHandler ==
+        _tryOpenSharedIncidentLink) {
+      EmergencyLivePage.openSharedIncidentLinkHandler = null;
+    }
     if (_currentVideoId != null) {
       WebSocketService().leaveVideoRoom(_currentVideoId!);
     }
@@ -1211,13 +1232,23 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
               ? _incidentMapSession?.pinnedVideoId
               : null,
           onLoadMoreTrending: _loadMoreTrendingVideos,
-          isLoadingTrending: _isLoadingTrending || !_missionFilterReady,
+          // ✅ Phase 23: ระหว่าง focus ที่เหตุการณ์ยังดึงไม่สำเร็จ
+          // ให้แสดง skeleton ต่อ ไม่ใช่ "ไม่มีข้อมูล"
+          isLoadingTrending:
+              _isLoadingTrending ||
+              !_missionFilterReady ||
+              (_sharedFocusVideoId != null && _currentVideo == null),
           selectedTrendingCategoryIds: _effectiveTrendingCategoryIds(),
           onApplyTrendingCategoryFilter:
-              _hasIncidentMapPlaybackContext || _missionFilterSuspended
+              _hasIncidentMapPlaybackContext ||
+                  _missionFilterSuspended ||
+                  _sharedFocusVideoId != null
               ? null
               : _applyTrendingCategoryFilter,
           trendingFilterResetToken: _trendingFilterResetToken,
+          // ✅ Phase 23: focus mode จากลิงก์แชร์ — แสดงปุ่ม "ดูเหตุการณ์ทั้งหมด"
+          isSharedFocusMode: _sharedFocusVideoId != null,
+          onExitSharedFocus: _exitSharedFocusMode,
           highlightVideoId: _highlightVideoId,
           canViewUnblurred: _canViewUnblurred,
           yieldWayCount: '$_yieldWayCount คน',

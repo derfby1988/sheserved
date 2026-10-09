@@ -21,6 +21,8 @@ Widget _panel({
   List<Video>? videos,
   Set<String> selectedCategoryIds = const {},
   Future<bool> Function(Set<String>)? onApplyCategoryFilter,
+  bool isSharedFocusMode = false,
+  VoidCallback? onExitSharedFocus,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -35,6 +37,8 @@ Widget _panel({
             onSwitchVideo: (_) {},
             selectedCategoryIds: selectedCategoryIds,
             onApplyCategoryFilter: onApplyCategoryFilter,
+            isSharedFocusMode: isSharedFocusMode,
+            onExitSharedFocus: onExitSharedFocus,
           ),
         ),
       ),
@@ -218,6 +222,69 @@ void main() {
       expect(find.text('ไม่พบเหตุในประเภทที่เลือก'), findsNothing);
       expect(find.text('ล้างตัวกรอง'), findsNothing);
       expect(find.text('ไม่มีข้อมูล'), findsOneWidget);
+    });
+  });
+
+  group('Phase 23 shared-incident focus mode', () {
+    test('focus list contains only the shared incident', () {
+      final shared = _video('shared', categoryId: 'cat-flood');
+      final other = _video('other', categoryId: 'cat-accident');
+
+      // เหตุการณ์ที่แชร์โหลดเป็น _currentVideo → inject เป็นการ์ดเดียวเสมอ
+      expect(
+        sharedFocusTrendingVideos(
+          focusVideoId: 'shared',
+          currentVideo: shared,
+          trendingVideos: [other, shared],
+        ).map((video) => video.id).toList(),
+        ['shared'],
+      );
+
+      // ยังโหลดไม่เสร็จ → fallback หาใน trending list
+      expect(
+        sharedFocusTrendingVideos(
+          focusVideoId: 'shared',
+          currentVideo: null,
+          trendingVideos: [other, shared],
+        ).map((video) => video.id).toList(),
+        ['shared'],
+      );
+
+      // การ์ดที่แชร์ไม่อยู่ใน trending page ปัจจุบัน → ลิสต์ว่างจนกว่าจะโหลด
+      expect(
+        sharedFocusTrendingVideos(
+          focusVideoId: 'missing',
+          currentVideo: null,
+          trendingVideos: [other],
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('"ดูเหตุการณ์ทั้งหมด" appears only in focus mode and exits', (
+      tester,
+    ) async {
+      var exited = false;
+      await tester.pumpWidget(
+        _panel(isSharedFocusMode: true, onExitSharedFocus: () => exited = true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 700));
+
+      expect(find.text('ยอดนิยม'), findsOneWidget);
+      expect(find.text('ดูเหตุการณ์ทั้งหมด'), findsOneWidget);
+
+      await tester.tap(find.text('ดูเหตุการณ์ทั้งหมด'));
+      await tester.pump();
+      expect(exited, isTrue);
+    });
+
+    testWidgets('"ดูเหตุการณ์ทั้งหมด" hidden in normal mode', (tester) async {
+      await tester.pumpWidget(_panel());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(find.text('ยอดนิยม'), findsOneWidget);
+      expect(find.text('ดูเหตุการณ์ทั้งหมด'), findsNothing);
     });
   });
 }

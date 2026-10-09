@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../features/admin/models/map_provider_config.dart';
+
 /// PlatformService - จัดการ Logic เกี่ยวกับความแตกต่างของแต่ละแพลตฟอร์ม (Web/iOS/Android)
 /// ช่วยให้การบำรุงรักษาโค้ดทำได้จากที่เดียว (Centralized Logic)
 class PlatformService {
@@ -14,6 +16,12 @@ class PlatformService {
   /// ตรวจสอบว่าเป็น Android หรือไม่
   static bool get isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// แพลตฟอร์มปัจจุบันในมุม map provider config
+  /// (ใช้กับ `MapProviderConfig.resolveTarget` — แหล่งเดียวทุกหน้าแผนที่)
+  static MapPlatform get mapPlatform => kIsWeb
+      ? MapPlatform.web
+      : (isIOS ? MapPlatform.ios : MapPlatform.android);
 
   // สวิตช์หลักสำหรับเปิด/ปิดแผนที่บน Web
   static bool _isWebMapEnabled = false;

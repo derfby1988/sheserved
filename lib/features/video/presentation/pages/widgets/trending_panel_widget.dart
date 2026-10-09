@@ -30,6 +30,11 @@ class TrendingPanelWidget extends StatefulWidget {
   /// เปลี่ยนค่าเมื่อ filter ที่ commit เปลี่ยน — panel เลื่อนกลับบนสุด
   final int filterResetToken;
 
+  /// ✅ Phase 23: shared-link focus mode — ลิสต์เหลือเฉพาะการ์ดที่แชร์
+  /// และแสดงปุ่ม "ดูเหตุการณ์ทั้งหมด" ใต้ป้าย "ยอดนิยม" เพื่อออกจากโหมดนี้
+  final bool isSharedFocusMode;
+  final VoidCallback? onExitSharedFocus;
+
   const TrendingPanelWidget({
     super.key,
     required this.trendingVideos,
@@ -43,6 +48,8 @@ class TrendingPanelWidget extends StatefulWidget {
     this.onApplyCategoryFilter,
     this.filterResetToken = 0,
     this.pinnedFromMapVideoId,
+    this.isSharedFocusMode = false,
+    this.onExitSharedFocus,
   });
 
   /// ✅ Phase 22: เหตุการณ์ที่เลือกจากแผนที่ — แสดงป้าย "จากแผนที่" บนการ์ด
@@ -290,6 +297,31 @@ class _TrendingPanelWidgetState extends State<TrendingPanelWidget>
                 ),
               ),
             ),
+            // ✅ Phase 23: ปุ่มออกจาก focus mode — แสดงเฉพาะขณะเปิดผ่าน
+            // ลิงก์แชร์ เพื่อกลับสู่กล่องยอดนิยมปกติ (แสดงทุกการ์ด)
+            if (widget.isSharedFocusMode) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFF6B35),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 2,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: widget.onExitSharedFocus,
+                child: const Text(
+                  'ดูเหตุการณ์ทั้งหมด',
+                  style: TextStyle(
+                    fontFamily: 'SukhumvitSet',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Flexible(
               child: Builder(
