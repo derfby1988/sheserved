@@ -114,6 +114,10 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
               (reporterId != null && currentUserId != null) &&
               (reporterId.trim() == currentUserId.trim());
           if (isSelfReport) return;
+          debugPrint(
+            '[IncidentMap] new-incident event → count '
+            '${_incidentMapNewCount + 1}',
+          );
           setState(() => _incidentMapNewCount++);
         });
 
@@ -193,7 +197,20 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
 
   void _refreshIncidentMapFromPill() {
     final session = _incidentMapSession;
-    setState(() => _incidentMapNewCount = 0);
+    debugPrint(
+      '[IncidentMap] pill tapped → refetch '
+      '(newCount=$_incidentMapNewCount, '
+      'zoom=${session?.lastCameraZoom}, '
+      'bounds=${session?.lastCameraBounds})',
+    );
+    setState(() {
+      _incidentMapNewCount = 0;
+      // แสดง spinner ระหว่าง refresh ที่ผู้ใช้กดเอง — เดิม fetch เงียบ
+      // ทั้งหมดจึงดูเหมือนไม่มีอะไรเกิดขึ้น (ข้อมูลเดิมยังแสดงอยู่ใต้ spinner)
+      if (_incidentMapData != null) {
+        _incidentMapUiState = IncidentMapUiState.loading;
+      }
+    });
     _fetchIncidentMapData(
       bounds: session?.lastCameraBounds,
       zoom: session?.lastCameraZoom?.toInt(),
@@ -483,6 +500,10 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
         categoryId: session.categoryId,
         bounds: fetchBounds,
         zoom: fetchZoom,
+      );
+      debugPrint(
+        '[IncidentMap] fetch ok items=${response.items.length} '
+        'zoom=$fetchZoom',
       );
       if (!mounted || generation != _incidentMapFetchGeneration) return;
       session.lastResponse = response;
@@ -801,6 +822,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                             _incidentMapData!.excluded.total > 0))
                       const SizedBox(height: 8),
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: _refreshIncidentMapFromPill,
                       child: Container(
                         padding: const EdgeInsets.symmetric(

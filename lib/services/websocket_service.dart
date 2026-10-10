@@ -47,6 +47,14 @@ class WebSocketService {
   int _authRetryCount = 0;
   static const int _maxAuthRecoveries = 3;
 
+  /// Dedup `emergency-notification` — เคยเจอ payload เดิมส่งถึง 2 ครั้งเมื่อ
+  /// socket เก่าค้างอยู่หลัง rebuild/reconnect (room emit ถึงทั้ง 2 socket)
+  /// กัน listener ทุกตัวทำงานซ้ำ (pill นับเกิน, home/trending reload ซ้ำ)
+  final _seenEmergencyNotificationKeys = <String, DateTime>{};
+  static const Duration _emergencyNotificationDedupWindow = Duration(
+    seconds: 30,
+  );
+
   // Stream Controllers
   final _connectionController = StreamController<bool>.broadcast();
   final _locationController =
@@ -548,8 +556,27 @@ class WebSocketService {
 
       // Emergency Event
       _socket!.on('emergency-notification', (data) {
-        // debugPrint('Emergency notification received: $data'); // Reduced logging
-        _emergencyNotificationController.add(Map<String, dynamic>.from(data));
+        if (!identical(socket, _socket)) {
+          debugPrint(
+            'WebSocket: emergency-notification on stale socket '
+            '${socket.id} (current: ${_socket?.id})',
+          );
+        }
+        final payload = Map<String, dynamic>.from(data);
+        final key =
+            '${payload['videoId']}|${payload['userId']}|${payload['timestamp']}';
+        final now = DateTime.now();
+        _seenEmergencyNotificationKeys.removeWhere(
+          (_, at) => now.difference(at) > _emergencyNotificationDedupWindow,
+        );
+        if (_seenEmergencyNotificationKeys.containsKey(key)) {
+          debugPrint(
+            'WebSocket: duplicate emergency-notification suppressed ($key)',
+          );
+          return;
+        }
+        _seenEmergencyNotificationKeys[key] = now;
+        _emergencyNotificationController.add(payload);
       });
 
       _socket!.on('rescue-incoming', (data) {
