@@ -428,6 +428,25 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
         bounds: session.lastCameraBounds,
         zoom: session.lastCameraZoom?.toInt(),
       );
+    } else {
+      // Fallback: ถ้ากล้องคืนไปที่ตำแหน่งเดิมแล้ว platform ไม่ยิง settle
+      // event (ไม่มีการขยับ → onCameraIdle เงียบ) refresh จะค้างตลอดจน
+      // ผู้ใช้ขยับเอง — ภาพที่เพิ่งอัปโหลด/เปลี่ยน blur จะไม่โหลดขึ้นมา
+      Timer(const Duration(milliseconds: 1200), () {
+        final s = _incidentMapSession;
+        if (!mounted ||
+            s == null ||
+            !identical(s, session) ||
+            !_isIncidentMapMode ||
+            !s.refreshOnNextCameraSettle) {
+          return;
+        }
+        s.refreshOnNextCameraSettle = false;
+        _fetchIncidentMapData(
+          bounds: s.lastCameraBounds ?? s.lastFetchedBounds,
+          zoom: (s.lastCameraZoom ?? s.lastFetchedZoom?.toDouble())?.toInt(),
+        );
+      });
     }
   }
 

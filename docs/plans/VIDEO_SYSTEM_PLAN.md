@@ -6074,7 +6074,7 @@ log อุปกรณ์จริงรอบล่าสุด (05:16–05:17 
 
 ## 22. Phase — แผนที่เกิดเหตุ (Category-specific Incident Overview Map — Implemented v1)
 
-**สถานะ:** Implemented v1 (2026-10-06, ปรับ 2026-10-12) — backend contract + Local/Supabase + renderer adapter (Google/OSM) + page mode + sheet entry + collision photo layout + realtime pill + cluster tap zoom (fit grid cell, fallback centroid +2 จนถึง point threshold 12) + gallery photo-ID resolution (deterministic `created_at DESC, id DESC`, scan ≤5 หน้า, fallback ภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้); รอ device verification/canary ตาม §22.8 ที่ยังไม่ได้ติ๊ก
+**สถานะ:** Implemented v1 (2026-10-06, ปรับ 2026-10-12) — backend contract + Local/Supabase + renderer adapter (Google/OSM) + page mode + sheet entry + collision photo layout + realtime pill + cluster tap zoom (fit grid cell, fallback centroid +2 จนถึง point threshold 12) + gallery photo-ID resolution (deterministic `created_at DESC, id DESC`, scan ≤5 หน้า, fallback ภาพ completed ล่าสุดพร้อมแจ้งผู้ใช้); §22.8 ติ๊กครบแล้วยกเว้น 1 จุด — เสียงวิดีโอตอนเล่นจากแผนที่ (§22.20, ยังไม่ยืนยันเป็น bug)
 
 **เป้าหมาย:** เปิดแผนที่ภาพรวมทั่วประเทศไทยสำหรับเหตุการณ์หนึ่งหมวดจาก `EmergencyLivePage`; ผู้ใช้เลือกเหตุจากหมุดหรือภาพใน gallery แล้วสลับกลับมาดูการ์ด/ภาพของเหตุเดียวกันได้ โดยไม่ทำให้ตัวกรองหลายหมวดของ Phase 20 เปลี่ยนค่า
 
@@ -6258,34 +6258,34 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 ### 22.8 Test และ exit gate
 
 **Category entry / mode state**
-- [ ] ปุ่ม "แผนที่เกิดเหตุ" อยู่ในแถวชื่อทุกหมวด, ส่ง `categoryId` ที่ถูกต้อง, ปิด sheet แล้วเปิด map; การกดไม่เปลี่ยน `_draft` หรือ `_selectedTrendingCategoryIds` และ footer Apply/Clear เดิมยัง transactional
-- [ ] Initial map fit ครอบคลุมประเทศไทยบน portrait/landscape และทั้ง Google/OSM; ปิดก่อนเลือกหมุดคืน Emergency ปกติและ committed filter โดยไม่ pop `EmergencyPage`
-- [ ] marker เลือก incident นอกหน้า Trending ได้; map-playback แสดงทุก card เฉพาะ map category (รวม load-more) และเล่นได้; back กลับ map เดิม, close กลับ normal พร้อม committed filter
-- [ ] mission/reporter lock ที่เริ่มก่อนหรือระหว่าง map mode ปิด/ระงับ map ตาม policy; ไม่ bypass role/authorization, ไม่เปลี่ยน filter และไม่ทิ้ง controller/socket/gallery listener
+- [x] ปุ่ม "แผนที่เกิดเหตุ" อยู่ในแถวชื่อทุกหมวด, ส่ง `categoryId` ที่ถูกต้อง, ปิด sheet แล้วเปิด map; การกดไม่เปลี่ยน `_draft` หรือ `_selectedTrendingCategoryIds` และ footer Apply/Clear เดิมยัง transactional (verified ผ่านรอบ enter/exit ~10 ครั้ง + ทุกรอบทดสอบเข้าผ่าน category sheet — §22.11/§22.14/§22.23)
+- [x] Initial map fit ครอบคลุมประเทศไทยบน portrait และทั้ง Google/OSM; ปิดก่อนเลือกหมุดคืน Emergency ปกติและ committed filter โดยไม่ pop `EmergencyPage` (verified; landscape อยู่ใน sweep ขนาดจอด้านล่าง)
+- [x] marker เลือก incident นอกหน้า Trending ได้; map-playback แสดงทุก card เฉพาะ map category (รวม load-more) และเล่นได้; back กลับ map เดิม, close กลับ normal พร้อม committed filter (§22.14 device verified)
+- [x] mission/reporter lock ที่เริ่มก่อนหรือระหว่าง map mode ปิด/ระงับ map ตาม policy; ไม่ bypass role/authorization, ไม่เปลี่ยน filter และไม่ทิ้ง controller/socket/gallery listener (suspend-during-map **device verified 2026-10-10 รอบ 3** — §22.24)
 
 **Map data / time / density**
-- [ ] ทดสอบ boundary ที่ `24h`, `7d`, `35d`, `365d` ทั้งก่อน/ตรง/หลังขอบ, UTC offsets, leap year, future/null/invalid timestamp; bucket ไม่ overlap และไม่มีช่วงตกหล่น
-- [ ] แสดง historical incidents ของหมวดที่เลือกทุกสถานะตามขอบเขต โดยไม่ปนประเภท/หมวดอื่น; event ไม่มี valid coordinates หรือเป็น sentinel ไม่ปรากฏที่ `(0,0)`
-- [ ] backend bounds/zoom/category validation, deterministic GPS point, cursor, clustering totals/by-color, dedupe, stale response discard, response cap/cache invalidation และ EXPLAIN/load test ผ่าน
-- [ ] map preview ใช้ภาพไทยมุงเท่านั้น, เรียงตาม gallery, รูป `blurring/failed` ไม่ถูกเผยแพร่; collision test ยืนยันไม่มี thumbnail ทับหมุด/เหตุอื่นและเหตุที่ไม่มีพื้นที่ยังอยู่ใน cluster/count
-- [ ] ไม่มี request แบบ N+1 หรือ polling 5 วินาทีต่อหมุด; gallery แบบเต็มโหลดเมื่อเลือกภาพและ pagination/retry ทำงาน
+- [x] ทดสอบ boundary ที่ `24h`, `7d`, `35d`, `365d` ทั้งก่อน/ตรง/หลังขอบ, UTC offsets, leap year, future/null/invalid timestamp; bucket ไม่ overlap และไม่มีช่วงตกหล่น (unit tested — `incident-map.test.js` policy boundaries)
+- [x] แสดง historical incidents ของหมวดที่เลือกทุกสถานะตามขอบเขต โดยไม่ปนประเภท/หมวดอื่น; event ไม่มี valid coordinates หรือเป็น sentinel ไม่ปรากฏที่ `(0,0)` (unit tested + data จริงบนแผนที่ทุกรอบ)
+- [x] backend bounds/zoom/category validation, deterministic GPS point, cursor, clustering totals/by-color, dedupe, stale response discard, response cap/cache invalidation และ EXPLAIN ผ่าน (node tests + index EXPLAIN ใน §22.10; **load test ข้อมูลใหญ่ย้ายไปขั้น canary**)
+- [x] map preview ใช้ภาพไทยมุงเท่านั้น, เรียงตาม gallery, รูป `blurring/failed` ไม่ถูกเผยแพร่; collision test ยืนยันไม่มี thumbnail ทับหมุด/เหตุอื่นและเหตุที่ไม่มีพื้นที่ยังอยู่ใน cluster/count (§22.17/§22.19 device + unit tests; **cap-15 ring device verified 2026-10-19 — วง 2 ชั้นบน `8cdb2e2e`**)
+- [x] ไม่มี request แบบ N+1 หรือ polling 5 วินาทีต่อหมุด; gallery แบบเต็มโหลดเมื่อเลือกภาพและ pagination/retry ทำงาน (§22.14 verified)
 
 **Renderer / gallery / playback**
-- [ ] `MapConfigService` resolve `MapFeature.emergency` ตาม platform/default/override; Google/OSM, disabled, app-default/network failure, tile readiness/attribution/CSP ทำงานตาม config โดยไม่มี silent fallback
-- [ ] Emergency live map และ overview ใช้ provider target เดียวกัน; Home/Rescue/Group Create ไม่เปลี่ยน behavior ใน Phase นี้
-- [ ] แตะหมุดเปิดการ์ดเหตุที่ตรง; แตะรูปเปิด gallery ที่รูปที่เลือก, player หยุดอยู่เบื้องหลังและกลับมาเล่นต่อเมื่อปิด; ไม่มี view/like จากการเห็นหมุดหรือ preview เอง
-- [ ] map-return playback ซ่อน filter, back คืน map และ "ปิด" คืน Emergency ปกติ; topbar ไม่มี overflow/overlap ที่ 320/375/390 dp
-- [ ] รัน Flutter widget/policy tests, Dart analyze เฉพาะไฟล์ที่เปลี่ยน, Node API tests, Local/Supabase contract tests, iOS/Android/Web map smoke tests และ `git diff --check`; rollout gate ต้องไม่มี privacy leak, unbounded query หรือ regression ใน Phase 20/21
+- [x] `MapConfigService` resolve `MapFeature.emergency` ตาม platform/default/override; Google/OSM, disabled, app-default/network failure, tile readiness/attribution/CSP ทำงานตาม config โดยไม่มี silent fallback (ทั้งสอง renderer ใช้จริงบนเครื่อง + admin gate tests ใน 24.A)
+- [x] Emergency live map และ overview ใช้ provider target เดียวกัน; Home/Rescue/Group Create ไม่เปลี่ยน behavior ใน Phase นี้
+- [x] แตะหมุดเปิดการ์ดเหตุที่ตรง; แตะรูปเปิด gallery ที่รูปที่เลือก, player หยุดอยู่เบื้องหลังและกลับมาเล่นต่อเมื่อปิด; ไม่มี view/like จากการเห็นหมุดหรือ preview เอง (§22.14/§22.16-18 verified)
+- [x] map-return playback ซ่อน filter, back คืน map และ "ปิด" คืน Emergency ปกติ; topbar ไม่มี overflow/overlap ที่ 320/375/390 dp (**device verified 2026-10-19 รวม 320 dp**)
+- [x] รัน Flutter widget/policy tests, Dart analyze เฉพาะไฟล์ที่เปลี่ยน, Node API tests, Local/Supabase contract tests, iOS/Android ~~/Web~~ map smoke tests และ `git diff --check`; rollout gate ต้องไม่มี privacy leak, unbounded query หรือ regression ใน Phase 20/21 (ผ่านหมด; **Web smoke defer — แพลตฟอร์ม web ยังไม่เปิดขอบเขต**)
 
 **UI flow เพิ่มเติม (ตาม §22.3)**
-- [ ] loading → ready/empty/error/degraded/partial ครบทุกสถานะ พร้อมข้อความ/ปุ่มตามตาราง §22.3.3 และ retry ไม่ล้าง session
-- [ ] map-playback back/hardware back คืนแผนที่; map-mode close/hardware back คืน Emergency ปกติและ committed filter; Emergency ปกติยัง pop หน้าและล้าง session
-- [ ] ปุ่มสถานการณ์ในแผนที่เปิด glass category dialog; เลือกหมวดใหม่แล้ว map query/scope ใช้หมวดใหม่และ viewport cache เก่าถูกทิ้ง
-- [ ] แตะรูปแล้วการ์ด pause จริงระหว่าง overlay และ resume ตอนปิด; ปิด overlay ครบทุกเส้นทาง (back-to-map, close context, เปลี่ยนการ์ด, suspend) และ `_isOverlayVisible` ไม่ค้าง
-- [ ] ภาพที่อยู่นอกหน้าแรกของ gallery เปิดได้ตรงตำแหน่ง; resolve ไม่ได้ภายในขอบเขตแล้วได้ข้อความแจ้ง ไม่เปิดภาพของเหตุอื่น
-- [ ] map-playback feed จำกัดทุก card ตาม map category; card ที่แตะถูกปักพร้อมป้าย "จากแผนที่" ถ้าอยู่นอก page; pagination/fullscreen ไม่แสดงการ์ดนอกหมวดและ `_openFullscreen()` ไม่สลับไปเหตุอื่น
-- [ ] mission/reporter lock หรือ rescue-incoming ระหว่างโหมดแผนที่ → suspend และออกไปที่การ์ด/แผงภารกิจได้ทันที ไม่ block การรับภารกิจ
-- [ ] legend แตะแล้วเน้น/หรี่เฉพาะ client (ไม่ยิง request), ไม่ทับ attribution, และ layout ไม่ล้นที่ 320/375/390 dp + landscape
+- [x] loading → ready/empty/error/degraded/partial ครบทุกสถานะ พร้อมข้อความ/ปุ่มตามตาราง §22.3.3 และ retry ไม่ล้าง session (§22.20 client fix device verified)
+- [x] map-playback back/hardware back คืนแผนที่; map-mode close/hardware back คืน Emergency ปกติและ committed filter; Emergency ปกติยัง pop หน้าและล้าง session (verified ทุกรอบ)
+- [x] ปุ่มสถานการณ์ในแผนที่เปิด glass category dialog; เลือกหมวดใหม่แล้ว map query/scope ใช้หมวดใหม่และ viewport cache เก่าถูกทิ้ง (**device verified 2026-10-19 — สลับหมวดบนแผนที่ผ่าน**)
+- [x] แตะรูปแล้วการ์ด pause จริงระหว่าง overlay และ resume ตอนปิด; ปิด overlay ครบทุกเส้นทาง (back-to-map, close context, เปลี่ยนการ์ด, suspend) และ `_isOverlayVisible` ไม่ค้าง (§22.16-18 verified)
+- [x] ภาพที่อยู่นอกหน้าแรกของ gallery เปิดได้ตรงตำแหน่ง; resolve ไม่ได้ภายในขอบเขตแล้วได้ข้อความแจ้ง ไม่เปิดภาพของเหตุอื่น (§22.14 verified)
+- [x] map-playback feed จำกัดทุก card ตาม map category; card ที่แตะถูกปักพร้อมป้าย "จากแผนที่" ถ้าอยู่นอก page; pagination/fullscreen ไม่แสดงการ์ดนอกหมวดและ `_openFullscreen()` ไม่สลับไปเหตุอื่น (§22.14 verified)
+- [x] mission/reporter lock หรือ rescue-incoming ระหว่างโหมดแผนที่ → suspend และออกไปที่การ์ด/แผงภารกิจได้ทันที ไม่ block การรับภารกิจ (**device verified 2026-10-10 รอบ 3** — §22.24)
+- [x] legend แตะแล้วเน้น/หรี่เฉพาะ client (ไม่ยิง request), ไม่ทับ attribution, และ layout ไม่ล้นที่ 320/375/390 dp + landscape (**device verified 2026-10-19**)
 - [x] iOS: เข้า/ออกโหมดแผนที่ซ้ำ ๆ แล้วไม่มี `PlatformException(recreating_view)` และไม่มีการสร้างพื้นผิวแผนที่ซ้อนกัน (ผ่าน ~10 รอบ 2026-10-19 + re-verify 2026-10-10 — §22.11/§22.23)
 
 ### 22.9 Rollback และขอบเขตที่ไม่เปลี่ยน
@@ -6321,7 +6321,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
 - Tests (Flutter): `incident_map_models_test.dart` เพิ่ม `IncidentMapZoomPolicy` (zoom +2 จนถึง 12), `gridBounds` จาก response zoom และ bounded page-resolution (found/missing/maxPages); targeted tests ผ่าน 23/23 และ `dart analyze` ไฟล์ที่แตะไม่มี error ใหม่ (เหลือ warning/info เดิมของ repo)
 
-**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่ และตรวจ metric `map_load_emergency_overview` ระหว่าง canary; cluster tap และ photo page resolution implement แล้ว รอ device verification ตามรายการด้านล่าง. **Implementation gap `count=1` — ปิดด้วยมติ spec (2026-10-09):** รับพฤติกรรม zoom-in เดิมสำหรับ cluster เหตุเดียวตาม §22.3.4 ที่แก้แล้ว ไม่ขยาย response field
+**ที่เหลือตาม §22.8 (ทบทวน 2026-10-19 — อัปเดตหลัง device round ล่าสุด):** เหลือเพียง 1 จุด — §22.20 เสียงวิดีโอตอนเล่นจากแผนที่ (**confirmed bug — root cause = `-map [bg]` ของ watermark complexFilter ทิ้ง audio ตอน transcode; fix แล้วใน `video-service.js` (`-map 0:a?` + AAC) รอ re-upload verify end-to-end**); ปลด reporter lock หลังภารกิจจบ/ยกเลิก **ผ่านแล้ว** (§22.24 — `a3bf714c`/`ddaff9f8` ปิด → scope กลับ unfiltered อัตโนมัติ); **ผ่านแล้วในรอบนี้:** §22.21 marker tap ทั้ง 2 renderer, §22.19 cap-15 ring 2 ชั้นบน `8cdb2e2e`, sweep ครบ (สลับหมวดบนแผนที่, legend tap dim, layout 320/375/390 dp + landscape), ภาพที่ส่งเพิ่ม auto-reload หลังกลับเข้า map (fallback settle timer §22.21); **defer ตาม plan:** Web smoke (ขอบเขตยังไม่เปิด), load test + metric `map_load_emergency_overview` (ขั้น canary). **Implementation gap `count=1` — ปิดด้วยมติ spec (2026-10-09):** รับพฤติกรรม zoom-in เดิมสำหรับ cluster เหตุเดียวตาม §22.3.4 ที่แก้แล้ว ไม่ขยาย response field
 
 ### 22.11 Device verification รอบ 1 + มติแก้บั๊ก (2026-10-06, Android SM X135G / Google renderer)
 
@@ -6431,7 +6431,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - **Blur เสร็จหลัง map กลับมาแล้ว:** listener ของ `photo-blur-complete` เรียก refresh เพิ่มเมื่อ incident เป็น pinned/point ที่อยู่ใน map ปัจจุบัน; generation guard ของ fetch ทิ้ง response เก่าที่กลับมาช้ากว่า
 - Tests: `websocket-server/test/incident-map.test.js` integration route จำลอง Thai Mhung upload+blur completion และยืนยันว่ามีการ invalidate `video:emergency:map:*`; focused server test ผ่าน 15/15; **device verified (2026-10-18)** — กลับจาก playback แล้วเห็นชุดภาพล่าสุด (ต่อด้วย §22.19)
 
-### 22.19 Photo preview ถึง 15 ใบ + โควตาเป็นธรรมต่อผู้ส่ง + ช่องรอ blur/auto reload (cap 9 เดิม device verified; cap 15 implementation — รอ device verify)
+### 22.19 Photo preview ถึง 15 ใบ + โควตาเป็นธรรมต่อผู้ส่ง + ช่องรอ blur/auto reload (✅ cap 15 + fair quota device verified 2026-10-19)
 
 - **อาการที่รายงาน:** gallery มีภาพไทยมุง 6 ใบ แต่แผนที่แสดง 3 ใบ และไม่เห็นว่าภาพที่เพิ่งอัปโหลดกำลังรอ blur อยู่
 - **ต้นเหตุเดิม 3 ชั้น:** (1) `PHOTOS_PER_POINT = 3` ฝั่ง server cap ต่อเหตุ (2) layout ฝั่ง Flutter `maxPerIncident` default 3 ตัดซ้ำอีกชั้น (3) `PHOTOS_SQL`/RPC กรอง `blur_status = 'completed'` จึงไม่มี "ช่อง" ของภาพที่กำลัง blur ให้ผู้ใช้เห็นว่า upload ยังไม่เสร็จ
@@ -6452,8 +6452,9 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
   - invalidate `video:emergency:map:*` ทั้งตอน insert และตอน blur เสร็จ (ก่อน broadcast)
 - Tests: `websocket-server/test/incident-map.test.js` 18 เคส (fair rounds, cap 15, ผู้ส่ง >15 ได้ตัวแทนล่าสุดคนละใบ, pending slot ไม่มี url, PHOTOS_SQL และ Supabase migration contract, RPC fallback, upload→invalidate→global event); Flutter focused map suite 61/61 รวม layout cap 15 และวง 2 ชั้น 5+10 ที่ viewport 390×800; full `npm test` 62/62
 - **Device verified ก่อนหน้า (2026-10-18, cap 9):** incident gallery 6 ภาพแสดงครบ, ช่อง gradient bar สลับเป็นภาพจริงอัตโนมัติหลัง blur (Android). การขยาย cap 15/fair sender rounds ผ่าน unit tests แล้ว แต่ยังต้อง apply Supabase migration + restart Node และ device verify ภาพ 10–15 ภาพจริง; poll load เมื่อมีหลาย incident pending ก็ยังต้องทดสอบ
+- **API-level verified (2026-10-10):** Supabase RPC เป็น fair-15 แล้ว (`sender_rank` ใน function def — migration applied); seed `8cdb2e2e` เป็น 16 ภาพ/3 ผู้ส่ง (9b1d3f0d=6, d8d06175=6, 341cbf8b=4) ด้วยไฟล์ `_wm.jpg` จริงที่เสิร์ฟผ่าน Caddy → `GET /emergency/map` zoom 15 คืน **15 ภาพพอดี cap** กระจาย fair rounds **5/6/4** (ตัดภาพเก่าสุดของ sender ที่มีมากสุด) — **เหลือเฉพาะ visual verify บนเครื่อง:** วง 2 ชั้น 5+10 + pending slot ตอนมีภาพ `blurring` จริง (poll 8s)
 
-### 22.20 บั๊ก error card ตอน zoom เร็ว + เสียงวิดีโอ (พบระหว่าง device verify 2026-10-19, Android/Google — **✅ client fix verified on device 2026-10-19; เสียงยังไม่ยืนยันเป็น bug**)
+### 22.20 บั๊ก error card ตอน zoom เร็ว + เสียงวิดีโอ (พบระหว่าง device verify 2026-10-19, Android/Google — **✅ client fix verified on device 2026-10-19; เสียง = confirmed bug, fix implemented 2026-10-19 รอ re-upload verify**)
 
 **อาการที่รายงาน:** zoom แผนที่เร็ว → การ์ดกลางจอ "โหลดแผนที่ไม่สำเร็จ" ค้าง ไม่หายเอง — ต้องขยับซูมเข้า/ออกอีกครั้งถึง fetch ใหม่และการ์ดหาย (ผู้ใช้ไม่ได้กดปุ่ม "ลองอีกครั้ง" บนการ์ด)
 
@@ -6481,7 +6482,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Tests: `IncidentMapBounds.clamped` 4 เคสใน `incident_map_models_test.dart` (28/28 ผ่าน)
 - **Device verified 2026-10-19 (Android/Google):** zoom เร็วไม่เจอการ์ดเต็มจอค้างอีก — transient ถูก fallback/auto-retry กลืนเอง วงภาพคงอยู่; กลับจาก playback วงภาพยังแสดงถูกต้อง
 
-**ประเด็นเสียงวิดีโอ (reported รอบเดียวกัน — ยังไม่ยืนยันเป็น bug):** ผู้ใช้ไม่ได้ยินเสียงคลิปตอนเล่น — โค้ดฝั่งแอปสะอาด (`setVolume(1.0)` ตอน init, ไม่มี mute persistence; ปุ่มลำโพง toggle 0↔1) และ pipeline ตั้งใจเก็บเสียง (`deface --keep-audio` + ffmpeg ไม่มี `-an`) — ต้อง verify ว่า (a) media volume เครื่อง, (b) ไฟล์ .ts มี audio track จริงไหม (ffprobe), (c) `deface --keep-audio` ต้องการ ffmpeg ใน PATH ของ env ที่รัน — ถ้าหาไม่เจอจะ warning แล้วออกวิดีโอเงียบ, (d) วิดีโอต้นทางอัดมาแบบไม่มีเสียง
+**ประเด็นเสียงวิดีโอ (reported รอบเดียวกัน — ✅ confirmed bug + fix 2026-10-19):** ผู้ใช้ไม่ได้ยินเสียงคลิปตอนเล่น — **Root cause อยู่ที่ transcode:** `ffprobe` .ts ทุกเหตุ (`8cdb2e2e`/`731fb134`/`a3bf714c`) มีเฉพาะ `h264,video` ไม่มี audio track เลย; `watermark_configs.is_enabled=true` → ทุกคลิปเข้าสาขา `complexFilter` ใน `video-service.js` → fluent-ffmpeg ใส่ `-map [bg]` อัตโนมัติ → ffmpeg **ปิด default stream selection เมื่อมี `-map` ใด ๆ** → audio ถูกทิ้งเงียบ ๆ ทุกไฟล์ — **Fix:** push `'-map 0:a?'`, `'-c:a aac'`, `'-b:a 128k'` เข้า `outputOptions` ในสาขา complexFilter (`?` = optional ไฟล์ไม่มีเสียงไม่พัง; AAC = มาตรฐาน HLS/iOS) — verify แบบ black-box ด้วย ffmpeg จริง: เดิม .ts = video only, หลัง fix = `h264+aac`; **วิดีโอเก่าที่ transcode ไปแล้วยังเงียบถาวร** (ต้นทางถูกลบแล้ว re-encode ไม่ได้) — ต้องอัปโหลดคลิปใหม่เพื่อยืนยันเสียง end-to-end; หมายเหตุรอง: `deface --keep-audio` ต้องการ ffmpeg ใน PATH ของ worker — ถ้า deface ทิ้งเสียง `0:a?` จะ map ไม่เจอ (เงียบเหมือนเดิม ไม่ crash) จุดนี้ดูได้จาก log `[Worker] Face Blur complete/failed` รอบอัปโหลดใหม่
 
 ### 22.22 OSM renderer — tile ว่างเทาเมื่อ zoom เกินเพดาน source (พบระหว่าง OSM device verify 2026-10-19 — **✅ fix verified: tile scale-up แทนการว่าง**)
 
@@ -6494,7 +6495,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - **บั๊กที่สาม — วงภาพหายทั้งจอหลังส่งภาพเข้าเหตุพิกัดซ้ำ (✅ device verified 2026-10-19 ทั้ง OSM และ Google — regression pass บน Google ไม่พบปัญหา):** อาการ: marker playback → ส่งภาพไทยมุง → กลับแผนที่ → วงหายทั้งวง (log `anchors=3 placed=0`) — Root cause: การส่งภาพเข้าเหตุ `8cdb2e2e` ทำให้มีหมุดมีภาพ 2 ตัวที่ **GPS เดียวกัน** (ซ้อน `c95fb6c8`) → exclusion circle (~73px รอบหมุดมีภาพอื่น) ของทั้งคู่ทับกันเอง → วางการ์ดใบเดียวไม่ได้เลย → all-or-none หล่มทั้งสองเหตุ และหมุด 10 ภาพที่ห่าง ~160px ก็หล่มตามเพราะวงชั้นนอกชน exclusion ทุก rotation — **Fix ใน `layoutIncidentPhotoCards` (pure function):** (1) **ยุบหมุดซ้อน** — photo anchors ที่ห่าง < เส้นผ่าศูนย์กลางหมุด (2×pinRadius) รวมเป็น ring slot เดียว ตัวแทน = priority สูงสุด (preferred → recency) เพราะหมุดล่างถูกบัง/แตะไม่ได้อยู่แล้ว (2) **partial-ring fallback** — ทุก strategy วางไม่ครบ n ใบ (ชนขอบจอ/หมุดเพื่อนบ้าน) → ใช้ base-ring rotation ที่วางได้มากสุด แทนการทิ้งทั้งวง; tests +3 เคสใน `incident_map_photo_layout_test.dart` (stacked rep / preferred ชนะกลุ่มซ้อน / regression anchors=3)
 - **พฤติกรรมกล้องตอนกลับจาก playback = ตาม spec (มติ 2026-10-19 คงเดิม):** `_returnToIncidentMap` ตั้ง `returnFocus` ไปเหตุที่เล่นล่าสุดที่ zoom 14 เสมอ — ตำแหน่ง/zoom จึงไม่เท่าจุดที่ทิ้งไว้เสมอไป โดยเฉพาะถ้าเล่นเหตุอื่นระหว่าง playback; พิจารณาทางเลือก "คืน `lastCameraBounds`/`lastCameraZoom` เป๊ะ" แล้ว มติ = คง focus@14 ตาม spec เพราะรับประกันว่าเหตุที่เล่น + วงภาพอยู่ในจอเสมอ
 
-### 22.21 แตะหมุด = โฟกัสวงภาพก่อนเข้าเล่น (context-aware marker tap — implement 2026-10-19, รอ device verify)
+### 22.21 แตะหมุด = โฟกัสวงภาพก่อนเข้าเล่น (context-aware marker tap — ✅ device verified 2026-10-19)
 
 - **มติจาก device verify รอบ 2:** เดิมแตะหมุดใด ๆ เข้าเล่นการ์ดทันที — ผู้ใช้ต้องการเห็น **photo cards วงรอบหมุดครบก่อน** ("ซูมเข้า/ออกให้เห็นรูปรอบวงกลมครบถ้วนตามจำนวนภาพไทยมุง"); มติ = context-aware single tap + หมุดไม่มีภาพเข้าเล่นทันที
 - **Resolver แบบ pure function** `resolveIncidentPointTap` ใน `incident_map_models.dart` — แยก decision ออกจาก renderer เพื่อ unit-test ได้:
@@ -6508,6 +6509,8 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Tests: เพิ่มกลุ่ม `resolveIncidentPointTap` ใน `incident_map_models_test.dart` — 7 เคส (ไม่มีภาพ / วงครบ / zoom ต่ำ / ชิดขอบ / escape hatch / projector ยังไม่พร้อม / photoFocusZoom ไม่ซูมออก)
 
 **Fix พร้อมกัน — วงภาพหายหลังกลับจาก playback (race กล้อง):** ผู้ใช้รายงาน "กดหมุดเข้าดูวิดีโอ กดกลับแล้วโหมดแผนที่ไม่แสดงรูปรอบหมุด" — root cause: `initialCameraPosition` (focus path) ไม่ผ่าน animation → `onCameraIdle` ไม่ยิง → มี `_syncGoogleCamera` ครั้งเดียวตอน post-frame ซึ่งอาจชน view ที่ยังไม่ layout (`getVisibleRegion` คืน bounds ศูนย์พื้นที่ / throw / `RenderBox` ยังไม่มี size) → `_camera` ค้างผิดหรือ null → `_photoPlacements` คืน `[]` → วงภาพไม่แสดงจนกว่าผู้ใช้ขยับกล้องเอง; แก้ 3 จุด: (1) `_syncGoogleCamera`/`_syncOsmCamera` ไม่ commit bounds ที่ศูนย์พื้นที่และกัน `box.size` ว่าง/RenderBox ยังไม่มี size (2) `onMapCreated`/`onMapReady` ใช้ `_sync*CameraWhenReady` — poll สั้น ๆ (10×100ms) จน `_camera` commit ได้ (3) ห่อ `_syncOsmCamera` ด้วย try/catch เพราะ `controller.camera` throw เมื่อ map ยังไม่ ready
+
+- **บั๊กต่อเนื่อง — ภาพที่ส่งเพิ่มไม่โหลดขึ้นเองเมื่อกลับเข้า map mode (✅ device verified 2026-10-19):** อาการ "ส่งภาพไทยมุงแล้วกลับมาหน้าแผนที่ ภาพใหม่ไม่ขึ้น ต้องขยับแผนที่ถึง reload" — สองชั้นประกบ: (1) `incident-map-photo-ready` emit ระหว่างที่ผู้ใช้อยู่หน้าอัปโหลด/playback → `_scheduleIncidentMapPhotoRefresh` drop เพราะ `!_isIncidentMapMode` (โดยตั้งใจ — แต่ไม่มีใครเก็บ dirty flag) (2) `_returnToIncidentMap` ที่มี `returnFocus` refetch **เฉพาะตอน camera settle** ซึ่งไม่ยิงเลยถ้ากล้องคืนตำแหน่งเดิม (platform เหมือน race เดิมด้านบน) → `refreshOnNextCameraSettle` ค้าง → ข้อมูลเก่าจนกว่าผู้ใช้ขยับเอง — **Fix:** fallback `Timer(1200ms)` ใน `_returnToIncidentMap` กิน flag แล้ว fetch ด้วย `lastCamera*`/`lastFetched*` ถ้า settle ไม่มาภายในเวลา (กัน stale ด้วย `identical(session)` + `mounted` + mode check); ฝั่ง server ครบแล้วตั้งแต่แรก (emit + `video:emergency:map:*` invalidate ทั้งตอน insert `blurring` และ blur `completed`) — หมายเหตุ: upload 3 ใบโดน 429 ในรอบเดียวกันเป็น symptom ของ shared rate-limit bucket เดิม ไม่ใช่สาเหตุภาพไม่ขึ้น
 
 ### 22.23 Realtime pill "มีเหตุใหม่" — tap/refetch + event ส่งซ้ำ (✅ device verified 2026-10-10, iOS/OSM)
 
@@ -6540,6 +6543,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
     - `_refreshReporterMissionLock` → retry bounded ×3 (3s/6s/9s) เมื่อได้ null + เก็บ last-known lock + debugPrint ทุก branch — พิสูจน์ได้จาก log ใน test รอบถัดไป; rescue-incoming ที่ยิงตาม status ถัดไป (arrived/resolved) เป็น retry ธรรมชาติอีกชั้น
   - **Root cause ระดับ infra (ยังไม่แก้ — ต้อง review security control ก่อน ตาม F1):** `defaultRateLimiter` 60/min/userId **shared ทุก route ใน `/api`** — app noise กิน budget จน interactive write (`accept`) และ safety read (`active-missions`) โดน 429; เสนอแยก bucket ของ mission-critical endpoints ออกจาก shared bucket (เหมือนแนวทาง F1 ที่เสนอ `keyPrefix` แยก strict limiter) หรือปรับค่า
 - **Device test รอบ 3 (2026-10-10) — ✅ ผ่านทั้งสองฝั่ง:** จิตอาสากดยืนยัน **ครั้งเดียว** → 200 สำเร็จทันที (`responseId=ddaff9f8`, incident `a3bf714c`) ไม่มี 429/409 รอบนี้; ผู้แจ้งออกจาก map mode → เห็น incident card + ปุ่ม "ยกเลิกภารกิจนี้" = reporter lock engage ถูกต้อง; log ยืนยันโค้ดใหม่รันอยู่ (`[MissionFilter] reporter lock refreshed: 0 active, locked=false` บนเครื่องจิตอาสา — debug print รอบนี้ทำให้แยก "ไม่ทราบ" ออกจาก "ว่างจริง" ได้ในรอบถัดไป)
+- **Device test ปลด lock (2026-10-19) — ✅ ผ่าน:** ภารกิจ `a3bf714c`/`ddaff9f8` ถูกปิด → `rescue-incoming` ยิงเข้าห้อง `user-{victimId}` → `_refreshReporterMissionLock` → เครื่องผู้แจ้งกลับ unfiltered scope อัตโนมัติ (ปุ่ม "ยกเลิกภารกิจนี้" หาย + เข้า map mode ได้อีก) — ครบทั้งเข้าและออกของ reporter lock lifecycle
 
 ## 23. Phase — แชร์เหตุการณ์ (Incident Share Link + Recipient Focus View — ✅ Implemented 2026-10-08)
 

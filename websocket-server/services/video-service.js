@@ -263,6 +263,11 @@ const worker = new Worker(QUEUE_NAME, async (job) => {
             if (inputIdx > 1) {
                 let filterStr = inputs.join(';');
                 ffCommand.complexFilter(filterStr, currentBg.replace(/\[|\]/g, ''));
+                // -map [bg] ที่ fluent-ffmpeg ใส่ให้ ปิด default stream selection
+                // ทั้งหมด → audio ถูกทิ้งเงียบ ๆ (bug: วิดีโอที่ watermark เปิด
+                // เงียบหมด) — map audio จาก input 0 กลับ (? = optional ไฟล์
+                // ไม่มีเสียงก็ไม่พัง) + บังคับ AAC สำหรับ HLS/iOS
+                outputOptions.push('-map 0:a?', '-c:a aac', '-b:a 128k');
             } else {
                 outputOptions.unshift('-vf', 'scale=-2:360');
             }
