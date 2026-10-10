@@ -260,9 +260,12 @@ extension EmergencyWebSocketLogic on _EmergencyLivePageState {
 
     _rescueIncomingSub?.cancel();
     _rescueIncomingSub = ws.rescueIncomingStream.listen((data) {
-      if (!mounted || data['videoId']?.toString() != _currentVideoId) {
-        return;
-      }
+      if (!mounted) return;
+      // ✅ Phase 22 §22.3 ข้อ 7: event นี้ถูกยิงเข้าห้องผู้แจ้ง
+      // (user-{victimId}) เสมอ ไม่ว่ากำลังดูเหตุไหน → refresh reporter
+      // lock ทุกครั้งเพื่อให้ suspension ทำงานรวมถึงตอนอยู่ใน map mode
+      unawaited(_refreshReporterMissionLock());
+      if (data['videoId']?.toString() != _currentVideoId) return;
       if (mounted) {
         final status = data['status'];
         String msg = '';

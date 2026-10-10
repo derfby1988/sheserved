@@ -254,7 +254,11 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
       _surfaceMode == EmergencySurfaceMode.incidentMap;
 
   bool get _hasIncidentMapPlaybackContext =>
-      !_isIncidentMapMode && _incidentMapSession?.pinnedVideoId != null;
+      isIncidentMapPlaybackContextActive(
+        isIncidentMapMode: _isIncidentMapMode,
+        pinnedVideoId: _incidentMapSession?.pinnedVideoId,
+        missionFilterSuspended: _missionFilterSuspended,
+      );
 
   int _prepCountdown = 0;
   int _recordingTimeLeft = SyncConfig.maxEmergencyRecordingSeconds;

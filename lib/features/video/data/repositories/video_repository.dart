@@ -605,6 +605,42 @@ class VideoRepository {
 
         return responseId;
       }
+      if (response.statusCode == 409) {
+        // Duplicate guard หรือภารกิจถูกปิดไปแล้ว — ตรวจว่าภารกิจของเราถูก
+        // บันทึกไปแล้วหรือยัง (idempotent accept): ถ้ามีให้ adopt
+        // responseId เดิม แทนการแสดง error ทั้งที่รับงานสำเร็จไปแล้ว
+        debugPrint(
+          'VideoRepository: Local acceptIncident returned 409 — '
+          'reconcile via active-rescues: ${response.body}',
+        );
+        try {
+          final active = await getActiveRescues(responderId);
+          for (final mission in active) {
+            if (mission['video_id']?.toString() == videoId) {
+              debugPrint(
+                'VideoRepository: ♻️ accept already recorded — '
+                'adopting responseId=${mission['id']}',
+              );
+              return mission['id']?.toString();
+            }
+          }
+        } catch (e) {
+          debugPrint(
+            'VideoRepository: acceptIncident 409 reconcile failed: $e',
+          );
+        }
+        return null;
+      }
+
+      // ✅ Definitive non-2xx (429/4xx/5xx) = Local ตอบกลับแล้ว — ห้ามเขียน
+      // เฉพาะ Supabase เพราะ responseId จะไม่มีใน Local DB → status update
+      // 404 ตลอด ("จบภารกิจ" พัง) — fail closed ให้ผู้ใช้ลองใหม่แทน
+      debugPrint(
+        'VideoRepository: Local acceptIncident returned '
+        '${response.statusCode} — fail closed, no Supabase write: '
+        '${response.body}',
+      );
+      return null;
     } catch (e) {
       debugPrint(
         'VideoRepository: Local acceptIncident failed → fallback to Supabase: $e',
@@ -1395,10 +1431,13 @@ class VideoRepository {
   /// Trending panel to their own pending-mission cards.
   /// ✅ Primary Path: Local API
   /// ✅ Fallback Path: Supabase Cloud
-  Future<Set<String>> getReporterActiveIncidentVideoIds(
+  /// คืน `null` เมื่อตอบไม่ได้ว่ามีภารกิจค้างหรือไม่ (Local ตอบ non-200
+  /// หรือทุก path ล้มเหลว) — caller แยก "ไม่ทราบ" ออกจาก "ว่างจริง" ได้
+  /// เพื่อไม่ให้ mission lock หลุดผิดพลาดจากคำตอบว่างปลอม
+  Future<Set<String>?> getReporterActiveIncidentVideoIds(
     String reporterId,
   ) async {
-    // ---- Primary Path: Local API ----
+    // ---- Primary Path: Local API (source of truth) ----
     try {
       final response = await AuthenticatedHttpClient.instance
           .request(
@@ -1411,6 +1450,13 @@ class VideoRepository {
         final List<dynamic> ids = jsonDecode(response.body);
         return ids.map((e) => e.toString()).toSet();
       }
+      // ✅ Server ตอบแล้วแต่ไม่ใช่ 200 (เช่น 429) — Supabase copy ไม่ครบ
+      // (dual-write ล้มเหลวเงียบๆได้) → คืน "ไม่ทราบ" แทน empty หลอก
+      debugPrint(
+        'VideoRepository: Local getReporterActiveIncidentVideoIds '
+        'returned ${response.statusCode} — unknown, no Supabase fallback',
+      );
+      return null;
     } catch (e) {
       debugPrint(
         'VideoRepository: Local getReporterActiveIncidentVideoIds failed → fallback to Supabase: $e',
@@ -1442,7 +1488,7 @@ class VideoRepository {
           .toSet();
     } catch (e) {
       debugPrint('Error in getReporterActiveIncidentVideoIds: $e');
-      return {};
+      return null;
     }
   }
 

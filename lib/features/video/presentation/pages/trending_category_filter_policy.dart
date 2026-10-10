@@ -16,6 +16,20 @@ Set<String> trendingCategoryIdsForActiveScope({
   return Set<String>.of(committedCategoryIds);
 }
 
+/// ✅ Phase 22 §22.3 ข้อ 7: map-return playback context ไม่ active ระหว่าง
+/// mission/reporter suspension — session และ pin ยังถูกเก็บไว้เพื่อกลับมา
+/// (context จะ active อีกครั้งเองเมื่อปลดล็อก) แต่ navigation/UI ต้อง
+/// ทำตัวเหมือน live ปกติเพื่อไม่ให้ back/topbar ติดค้างหรือพากลับเข้าแผนที่
+/// ระหว่างล็อกภารกิจ
+bool isIncidentMapPlaybackContextActive({
+  required bool isIncidentMapMode,
+  required String? pinnedVideoId,
+  required bool missionFilterSuspended,
+}) =>
+    !isIncidentMapMode &&
+    !missionFilterSuspended &&
+    pinnedVideoId != null;
+
 /// ✅ Phase 23 Focus Mode: ลิสต์การ์ดสำหรับกล่องยอดนิยมขณะเปิดผ่านลิงก์แชร์ —
 /// เหลือเฉพาะการ์ดที่แชร์ (ใช้ [currentVideo] ที่ดึงมาเองถ้าการ์ดไม่อยู่ใน
 /// หน้า pagination ของ trending)

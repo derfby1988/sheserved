@@ -54,7 +54,8 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
         final active = await ServiceLocator.instance.videoRepository
             .getReporterActiveIncidentVideoIds(userId);
         if (!mounted) return;
-        if (active.isNotEmpty) {
+        // null = ตรวจไม่ได้ (Local ไม่ตอบ) → fail-open อนุญาตแจ้งเหตุต่อ
+        if (active != null && active.isNotEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text(
@@ -190,7 +191,8 @@ extension EmergencyReportingLogic on _EmergencyLivePageState {
           final active = await ServiceLocator.instance.videoRepository
               .getReporterActiveIncidentVideoIds(userId);
           if (!mounted) return;
-          if (active.isNotEmpty) {
+          // null = ตรวจไม่ได้ (Local ไม่ตอบ) → fail-open อนุญาตแจ้งเหตุต่อ
+          if (active != null && active.isNotEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text(

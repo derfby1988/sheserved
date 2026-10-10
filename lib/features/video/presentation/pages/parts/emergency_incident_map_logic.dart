@@ -400,6 +400,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
 
   /// ปุ่มย้อนกลับใน video map-return context → คืนแผนที่เดิมพร้อม camera/cache
   void _returnToIncidentMap() {
+    if (_missionFilterSuspended) return; // §22.3 ข้อ 7
     final session = _incidentMapSession;
     if (session == null) return;
     final playingVideo = _currentVideo;

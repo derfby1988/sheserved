@@ -180,6 +180,28 @@ void main() {
         );
       },
     );
+
+    test(
+      'map playback context deactivates during mission lock but is kept',
+      () {
+        bool active({
+          bool inMapMode = false,
+          String? pinned = 'v1',
+          bool suspended = false,
+        }) => isIncidentMapPlaybackContextActive(
+          isIncidentMapMode: inMapMode,
+          pinnedVideoId: pinned,
+          missionFilterSuspended: suspended,
+        );
+
+        expect(active(), isTrue);
+        expect(active(inMapMode: true), isFalse);
+        expect(active(pinned: null), isFalse);
+        // §22.3 ข้อ 7 — suspension ปิด context ชั่วคราวโดยไม่ลบ pin/session
+        expect(active(suspended: true), isFalse);
+        expect(active(suspended: true, pinned: null), isFalse);
+      },
+    );
   });
 
   group('TrendingPanelWidget — Phase 20 category filter', () {

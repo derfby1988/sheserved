@@ -739,9 +739,10 @@ module.exports = (pool, supabase = null) => {
                           LEFT JOIN LATERAL (
                               SELECT ugr2.profession_id
                               FROM user_group_roles ugr2
+                              LEFT JOIN professions pv2 ON pv2.id = ugr2.profession_id
                               WHERE ugr2.user_id = $2
-                              ORDER BY ugr2.is_volunteer DESC NULLS LAST,
-                                       ugr2.display_order ASC NULLS LAST
+                              ORDER BY COALESCE(pv2.is_volunteer, false) DESC,
+                                       pv2.display_order ASC NULLS LAST
                               LIMIT 1
                           ) ugr2 ON true
                           WHERE u2.id = $2

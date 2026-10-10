@@ -183,7 +183,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
 
   /// Phase 16: เริ่มตรวจภารกิจค้างของผู้แจ้งตั้งแต่ต้นหน้า (ใช้แค่ userId —
   /// ไม่ต้องรอ categories หรือลิสต์) เพื่อให้ filter พร้อมเกือบพร้อมกับ trending
-  Future<Set<String>> _loadReporterActiveMissionVideoIds() {
+  Future<Set<String>?> _loadReporterActiveMissionVideoIds() {
     final user = AuthService.instance.currentUser;
     if (user == null) return Future.value(<String>{});
     return ServiceLocator.instance.videoRepository
@@ -199,7 +199,7 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   /// [reporterMissions] — future ที่ยิงขนานไว้ล่วงหน้า (Phase 16);
   /// ถ้าไม่ส่งมาจะ fetch ที่นี่เหมือนเดิม
   Future<void> _computeMissionTrendingFilter([
-    Future<Set<String>>? reporterMissions,
+    Future<Set<String>?>? reporterMissions,
   ]) async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
@@ -261,20 +261,61 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
     // หากมีจะล็อกกล่องยอดนิยมให้เห็นเฉพาะการ์ดของตนเองที่ภารกิจค้าง
     // หมายเหตุ: ไม่จำกัดเฉพาะการที่ผู้ใช้มีการ์ดใน _trendingVideos เพราะ
     // เหตุการณ์ของผู้ใช้อาจอยู่นอก 20 อันดับแรก แต่ยังมีภารกิจค้างอยู่
+    // Phase 16: ใช้ future ที่ยิงขนานไว้ตั้งแต่ต้นหน้า ถ้ามี
+    await _refreshReporterMissionLock(reporterMissions);
+  }
+
+  /// refresh เฉพาะ reporter active-mission lock — เบากว่า
+  /// [_computeMissionTrendingFilter] (ไม่แตะ volunteer eligibility)
+  /// ใช้จาก realtime event เช่น rescue-incoming ที่ยิงถึงห้องผู้แจ้งเสมอ
+  /// ไม่ว่าผู้ใช้จะกำลังดูเหตุไหน หรืออยู่ในโหมดแผนที่ (§22.3 ข้อ 7)
+  Future<void> _refreshReporterMissionLock([
+    Future<Set<String>?>? reporterMissions,
+  ]) async {
+    Set<String>? active;
     try {
-      // Phase 16: ใช้ future ที่ยิงขนานไว้ตั้งแต่ต้นหน้า ถ้ามี
-      final active = await (reporterMissions ??
-          _loadReporterActiveMissionVideoIds());
-      if (mounted) {
-        setState(() {
-          _reporterActiveMissionVideoIds
-            ..clear()
-            ..addAll(active);
-          _isReporterLocked = active.isNotEmpty;
-        });
-      }
+      active =
+          await (reporterMissions ?? _loadReporterActiveMissionVideoIds());
     } catch (e) {
       debugPrint('[MissionFilter] reporter active missions check failed: $e');
+    }
+    // null = ตอบไม่ได้ว่าภารกิจค้างหรือไม่ (เช่น Local โดน 429) — retry
+    // แบบ bounded ก่อนยอมแพ้; rescue-incoming รอบถัดไปจะ refresh อีกเอง
+    var retries = 0;
+    while (active == null && mounted && retries < 3) {
+      retries++;
+      await Future.delayed(Duration(seconds: retries * 3));
+      if (!mounted) break;
+      try {
+        active = await _loadReporterActiveMissionVideoIds();
+      } catch (e) {
+        debugPrint(
+          '[MissionFilter] reporter missions retry #$retries failed: $e',
+        );
+      }
+    }
+    final resolved = active;
+    if (resolved == null) {
+      // ตอบไม่ได้ → เก็บสถานะล็อกล่าสุดไว้ (fail-closed: ห้ามถือว่าว่าง)
+      debugPrint(
+        '[MissionFilter] reporter missions unknown — keep last-known lock '
+        '(${_reporterActiveMissionVideoIds.length} ids, '
+        'locked=$_isReporterLocked)',
+      );
+      _syncTrendingFilterSuspension();
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _reporterActiveMissionVideoIds
+          ..clear()
+          ..addAll(resolved);
+        _isReporterLocked = resolved.isNotEmpty;
+      });
+      debugPrint(
+        '[MissionFilter] reporter lock refreshed: '
+        '${resolved.length} active, locked=$_isReporterLocked',
+      );
     }
     // ✅ Phase 20: reporter lock / volunteer state อาจเปลี่ยน → sync
     // การพักตัวกรองประเภทเหตุของกล่องยอดนิยม
@@ -402,12 +443,17 @@ extension EmergencyNavigationLogic on _EmergencyLivePageState {
   /// - เข้า: ต้องดึงลิสต์แบบไม่กรองเพื่อคืนการ์ดภารกิจที่ตัวกรองอาจตัดทิ้ง
   /// - ออก: ดึงลิสต์ด้วยหมวดที่เลือกไว้เดิม
   void _syncTrendingFilterSuspension() {
+    if (!mounted) return;
     final suspended = _missionFilterSuspended;
     // null ถือว่าเท่ากับ false (ค่าเริ่มต้น) — กันยิง fetch ซ้ำตอน initial load
     final previous = _lastMissionFilterSuspended ?? false;
     _lastMissionFilterSuspended = suspended;
     _missionSuspendSignal.value = suspended;
     if (previous == suspended) return;
+    // ✅ Phase 22 §22.3 ข้อ 7: mission/reporter lock ระหว่างโหมดแผนที่ →
+    // suspend session (เก็บไว้เพื่อกลับมา) แล้วออกไปที่การ์ด/แผงภารกิจ
+    // ห้าม block การรับภารกิจและห้าม commit filter
+    if (suspended && _isIncidentMapMode) _exitIncidentMapMode();
     _loadTrendingVideos(forceRefresh: true);
   }
 

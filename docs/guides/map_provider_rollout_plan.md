@@ -1,7 +1,7 @@
 # แผนรองรับ Google Maps และ OSM-based Tiles สำหรับ Sheserved
 
 > **วันที่สร้าง:** 2026-10-04
-> **สถานะ:** อยู่ระหว่าง rollout — Phase 0/1/2 เสร็จแล้ว (หลักฐาน: `docs/evidence/map_provider_phase0..2/`); Phase 3 implement + test แล้ว รอ device smoke ([รายงาน](../evidence/map_provider_phase3/phase3_report.md)); Phase 4–8 ยังไม่เริ่ม
+> **สถานะ:** อยู่ระหว่าง rollout — Phase 0/1/2 เสร็จแล้ว (หลักฐาน: `docs/evidence/map_provider_phase0..2/`); Phase 3 implement + test แล้ว รอ device smoke ([รายงาน](../evidence/map_provider_phase3/phase3_report.md)); Phase 4–8 ยังไม่เริ่ม — **ยกเว้นส่วนย่อย §22 incident map (Phase 7)** ที่ implement + device-verified ทั้ง Google/OSM บน Android/iOS แล้ว (VIDEO_SYSTEM_PLAN §22.11–§22.23); ค้าง mission-suspend/Web/load-test ก่อนปิด §22.8
 > **ขอบเขต:** Web, iOS, Android และระบบย่อยที่มีหรือจะมีแผนที่ใน Sheserved
 > **เอกสารอ้างอิงที่ต้อง reconcile:** `docs/plans/Match_Sport_PLAN.md`, `docs/plans/VIDEO_SYSTEM_PLAN.md`, `docs/plans/Delivery_PLAN.md`, `docs/guides/ui_rendering_standards.md`, `docs/plans/ui_rendering_standards.md`, `docs/guides/flutter_web_enablement_plan.md`, `docs/secure/google_maps_key_restriction_guide.md`
 
@@ -467,7 +467,7 @@ model กลางสำหรับ: พิกัด/initial camera, marker (id
 | 4. Home Map | P1 / ง่าย–ปานกลาง | ⬜ ยังไม่เริ่ม | initial camera, user location, nearest emergency, event markers, re-center, route polyline; permission denied + network interruption |
 | 5. Yield Way Dialog | P1 / ปานกลาง | ⬜ ยังไม่เริ่ม | inherit จาก Emergency; alert fixtures, fit bounds, route line, marker, ปุ่มให้ทาง/ไม่สะดวก, callback |
 | 6. Rescue Map | P1 / ยาก | ⬜ ยังไม่เริ่ม | แยก renderer จาก Directions; native Directions/polyline ไม่เปลี่ยน; Web route ตามสถานะจริงจนมี routing backend; loading/error + zero-area bounds |
-| 7. Emergency Live Map | P0 safety / ยากสุด | ⬜ ยังไม่เริ่ม (ส่วนย่อย §22 incident map ทำแล้ว — ดู §10.3) | markers, responder routes, profession colors, live location, camera fit, overlays; ผ่าน Mission Lock, websocket, response state, controller lifecycle; OSM แสดงว่าไม่มี traffic; ห้าม production rollout ก่อน safety gate |
+| 7. Emergency Live Map | P0 safety / ยากสุด | ⬜ ยังไม่เริ่ม — ยกเว้นส่วนย่อย §22 incident map: implement + device-verified ทั้งสอง renderer (Android 2026-10-09/19, iOS 2026-10-10) แล้ว รอปิด §22.8 — ดู §10.3 | markers, responder routes, profession colors, live location, camera fit, overlays; ผ่าน Mission Lock, websocket, response state, controller lifecycle; OSM แสดงว่าไม่มี traffic; ห้าม production rollout ก่อน safety gate |
 | 8. Map systems อนาคต | P2 / ง่ายต่อระบบ | ⬜ ยังไม่เริ่ม | register feature key + ใช้ selector/config เดียวกันเมื่อมี map จริง; ไม่ reintroduce Sport Club Map View เพียงเพราะมี OSM |
 
 ### 10.3 สถานะจริงหลัง Phase 0–2 และงานที่ค้าง (อัปเดต 2026-10-07)
@@ -515,9 +515,13 @@ overlay เดิมหรือทำ rendering ของ data layer ซ้ำ�
 - Semantics/keyboard-traversal test ของ settings UI ยัง partial → Phase 8
 - ยืนยัน deploy path ของ `database/migrations/04_create_map_provider_config.sql`
   เมื่อจะเปิด staging/prod
-- Incident map (§22) ค้างตามแผนของมันเอง: device verification ทั้งสอง
-  renderer, load test, canary metric `map_load_emergency_overview`, cluster
-  tap zoom-in animation
+- Incident map (§22) — **device verification ทั้งสอง renderer ผ่านแล้ว:**
+  Android/Google (2026-10-09/19), Android/OSM (2026-10-19), iOS/OSM
+  (2026-10-10 — รวม realtime pill tap→refetch→reset, dedup ของ
+  `emergency-notification`, และ enter/exit ~10 รอบไม่มี `recreating_view`);
+  ค้างตาม §22.8: mission/reporter-lock suspend ใน map mode, Web smoke
+  (CSP/attribution), load test ข้อมูลขนาดใหญ่, canary metric
+  `map_load_emergency_overview` และเสียงวิดีโอ (§22.20 ยังไม่ยืนยันเป็น bug)
 
 ### เงื่อนไข rollout ทั่วไป
 
