@@ -319,4 +319,128 @@ void main() {
       expect(IncidentMapBounds.thailand.toQueryParam(), '5.5,97.5,20.5,105.5');
     });
   });
+
+  group('resolveIncidentPointTap — แตะหมุดโฟกัสวงภาพก่อน (§22.3.4)', () {
+    IncidentPointTapAction call({
+      int photoCount = 3,
+      double? cameraZoom = 11,
+      bool ringPlaced = false,
+      double? anchorCenterDistance = 300,
+      double viewportShortestSide = 390,
+    }) => resolveIncidentPointTap(
+      photoCount: photoCount,
+      cameraZoom: cameraZoom,
+      ringPlaced: ringPlaced,
+      anchorCenterDistance: anchorCenterDistance,
+      viewportShortestSide: viewportShortestSide,
+    );
+
+    test('หมุดไม่มีภาพ → เล่นทันที ไม่ว่าสถานะกล้องไหน', () {
+      expect(call(photoCount: 0), IncidentPointTapAction.playIncident);
+      expect(
+        call(photoCount: 0, cameraZoom: null, anchorCenterDistance: null),
+        IncidentPointTapAction.playIncident,
+      );
+    });
+
+    test('วงภาพถูกวางครบบนจอแล้ว → เล่นทันที', () {
+      expect(
+        call(ringPlaced: true, cameraZoom: 14),
+        IncidentPointTapAction.playIncident,
+      );
+    });
+
+    test('zoom ต่ำกว่า threshold + มีภาพ → focus วงภาพ', () {
+      expect(call(cameraZoom: 11), IncidentPointTapAction.focusPhotoRing);
+      expect(
+        call(cameraZoom: 12.9),
+        IncidentPointTapAction.focusPhotoRing,
+      );
+    });
+
+    test('zoom ผ่าน threshold แต่หมุดชิดขอบจอ (วงยังไม่ลง) → focus', () {
+      expect(
+        call(cameraZoom: 14, anchorCenterDistance: 300),
+        IncidentPointTapAction.focusPhotoRing,
+      );
+    });
+
+    test('หมุดกลางจอ + zoom ผ่านแล้วแต่วงยังวางไม่ลง → เล่น (escape)', () {
+      expect(
+        call(
+          cameraZoom: 15,
+          anchorCenterDistance: 390 * 0.2, // ใต้เพดาน 0.25 × shortestSide
+        ),
+        IncidentPointTapAction.playIncident,
+      );
+    });
+
+    test('zoom ผ่านแล้วแต่ projector ยังไม่พร้อม (anchor null) → focus', () {
+      expect(
+        call(cameraZoom: 14, anchorCenterDistance: null),
+        IncidentPointTapAction.focusPhotoRing,
+      );
+    });
+
+    test('photoFocusZoom ไม่ซูมออกเมื่ออยู่ลึกกว่า overview', () {
+      expect(
+        IncidentMapZoomPolicy.photoFocusZoom(11),
+        IncidentMapZoomPolicy.photoOverviewZoom,
+      );
+      expect(IncidentMapZoomPolicy.photoFocusZoom(18), 18);
+    });
+  });
+
+  group('IncidentMapBounds.clamped — กัน 400 จาก viewport เกินช่วง (§22.20)', () {
+    test('ค่าในช่วง → คงเดิม', () {
+      const b = IncidentMapBounds(
+        south: 5,
+        west: 97,
+        north: 20,
+        east: 105,
+      );
+      final c = b.clamped();
+      expect(c.south, 5);
+      expect(c.west, 97);
+      expect(c.north, 20);
+      expect(c.east, 105);
+    });
+
+    test('lat/lng เกินช่วง → clamp เป็น ±90/±180', () {
+      final c = const IncidentMapBounds(
+        south: -95,
+        west: -200,
+        north: 95,
+        east: 200,
+      ).clamped();
+      expect(c.south, -90);
+      expect(c.west, -180);
+      expect(c.north, 90);
+      expect(c.east, 180);
+    });
+
+    test('คร่อม antimeridian (west > east) → กว้างเต็มแกน lng', () {
+      final c = const IncidentMapBounds(
+        south: 10,
+        west: 170,
+        north: 20,
+        east: -170,
+      ).clamped();
+      expect(c.west, -180);
+      expect(c.east, 180);
+      expect(c.south, 10);
+      expect(c.north, 20);
+    });
+
+    test('south > north → สลับให้ถูกลำดับ', () {
+      final c = const IncidentMapBounds(
+        south: 20,
+        west: 97,
+        north: 10,
+        east: 105,
+      ).clamped();
+      expect(c.south, 10);
+      expect(c.north, 20);
+    });
+  });
 }

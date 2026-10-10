@@ -26,6 +26,28 @@ Map<String, dynamic> _configDoc() => {
       },
     };
 
+/// Mirrors the server's MAP_LAYERS payload (routes/map-config.js).
+Map<String, dynamic> _mapLayersPayload() => {
+      'rain': {
+        'readiness': 'dev_only',
+        'type': 'points',
+        'label': 'ปริมาณฝน 24 ชม.',
+        'source': 'Thaiwater (HII)',
+      },
+      'waterLevel': {
+        'readiness': 'dev_only',
+        'type': 'points',
+        'label': 'ระดับน้ำ',
+        'source': 'Thaiwater (HII)',
+      },
+      'ews': {
+        'readiness': 'needs_key',
+        'type': 'points',
+        'label': 'สถานีเตือนภัย (DWR EWS)',
+        'source': 'DWR',
+      },
+    };
+
 Map<String, dynamic> _adminPayload({int revision = 3}) => {
       'revision': revision,
       'environment': 'dev',
@@ -39,6 +61,7 @@ Map<String, dynamic> _adminPayload({int revision = 3}) => {
         'carto_light': {'readiness': 'needs_key'},
         'carto_voyager': {'readiness': 'needs_key'},
       },
+      'mapLayers': _mapLayersPayload(),
     };
 
 http.Response _json(int status, Object body) =>
@@ -98,7 +121,8 @@ class _FakeBackend {
       return _json(200, {
         'items': [
           {
-            'id': 9,
+            // bigint id arrives as a string from node-postgres (real API).
+            'id': '9',
             'revision': 2,
             'environment': 'dev',
             'old_config': null,
@@ -285,7 +309,8 @@ void main() {
     expect(find.text('บันทึกการตั้งค่า'), findsOneWidget);
   });
 
-  testWidgets('server down → save never reports success (no fake saved state)', (tester) async {
+  testWidgets('server down → app-default snapshot disables save (no fake saved state)',
+      (tester) async {
     final backend = _FakeBackend(publicStatus: 500, adminStatus: 500, putUnreachable: true);
     await _pumpSection(tester, backend);
 
@@ -295,15 +320,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('บันทึกการตั้งค่า'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('บันทึก').last);
-    await tester.pumpAndSettle();
 
+    // §24.A — writing the embedded default would fabricate a revision the
+    // server never produced, so the button must be disabled, not just fail.
+    final saveButton = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('บันทึกการตั้งค่า'),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    expect(saveButton.onPressed, isNull);
+    expect(backend.puts, isEmpty);
     expect(find.text('บันทึกการตั้งค่าแล้ว'), findsNothing);
-    expect(find.text('บันทึกการตั้งค่า'), findsOneWidget);
   });
 
   testWidgets('toggling platform enabled keeps renderer and tileSourceId unchanged in PUT', (tester) async {
@@ -331,5 +359,60 @@ void main() {
     }
     expect(((pd['web'] as Map)['enabled']), isTrue);
     expect(((pd['ios'] as Map)['enabled']), isTrue);
+  });
+
+  // ── Phase 24.A — map data layers card ──────────────────────────────
+
+  testWidgets('layers card renders one switch per registry layer; needs_key disabled',
+      (tester) async {
+    final backend = _FakeBackend();
+    await _pumpSection(tester, backend);
+
+    expect(find.text('ชั้นข้อมูลบนแผนที่ (Map Data Layers)'), findsOneWidget);
+    for (final id in ['rain', 'waterLevel', 'ews']) {
+      expect(find.byKey(Key('map-layer-switch-$id')), findsOneWidget);
+    }
+    // needs_key stays off until the server deploys the missing asset.
+    final ews = tester.widget<Switch>(
+      find.byKey(const Key('map-layer-switch-ews')),
+    );
+    expect(ews.onChanged, isNull);
+    // dev_only is toggleable while the config environment is dev.
+    final rain = tester.widget<Switch>(
+      find.byKey(const Key('map-layer-switch-rain')),
+    );
+    expect(rain.onChanged, isNotNull);
+  });
+
+  testWidgets('toggling a layer switch writes features.<id> into the PUT doc',
+      (tester) async {
+    final backend = _FakeBackend();
+    await _pumpSection(tester, backend);
+
+    await tester.ensureVisible(find.byKey(const Key('map-layer-switch-rain')));
+    await tester.tap(find.byKey(const Key('map-layer-switch-rain')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึกการตั้งค่า'));
+    await tester.pumpAndSettle();
+
+    expect(backend.puts, hasLength(1));
+    final features = (backend.puts[0]['config'] as Map)['features'] as Map;
+    expect((features['rain'] as Map)['enabled'], isTrue);
+    // Sibling gate untouched.
+    expect((features['incidentOverviewMap'] as Map)['enabled'], isFalse);
+    expect(find.text('บันทึกการตั้งค่าแล้ว'), findsOneWidget);
+  });
+
+  testWidgets('layer switches stay off while showing the app default', (tester) async {
+    final backend = _FakeBackend(publicStatus: 500, adminStatus: 500);
+    await _pumpSection(tester, backend);
+
+    final rain = tester.widget<Switch>(
+      find.byKey(const Key('map-layer-switch-rain')),
+    );
+    expect(rain.onChanged, isNull);
   });
 }

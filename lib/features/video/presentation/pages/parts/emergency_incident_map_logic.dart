@@ -230,6 +230,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
 
   Future<void> _enterIncidentMapMode(DonationCategory category) async {
     if (_missionFilterSuspended) return; // §22.3 ข้อ 7
+    _stopIncidentMapFetchRetry();
     final isNewCategory = _incidentMapSession?.categoryId != category.id;
     setState(() {
       _isChatVisible = false; // §22.3.2
@@ -284,6 +285,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
   void _exitIncidentMapMode() {
     setState(() => _surfaceMode = EmergencySurfaceMode.live);
     _stopIncidentMapPendingPolling();
+    _stopIncidentMapFetchRetry();
     _resumePlayerFromMap();
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _adjustMapBounds();
@@ -395,6 +397,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     }
     final waitForCameraSettle = session.returnFocus != null;
     session.refreshOnNextCameraSettle = waitForCameraSettle;
+    _stopIncidentMapFetchRetry();
     setState(() {
       _isChatVisible = false;
       _isUiVisible = true;
@@ -431,6 +434,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
       session.pendingOverlayPhotoUrl = null;
     }
     _stopIncidentMapPendingPolling();
+    _stopIncidentMapFetchRetry();
     setState(() {
       _incidentMapSession = null;
       _incidentMapData = null;
@@ -484,6 +488,9 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
       session.lastResponse = response;
       session.lastFetchedZoom = fetchZoom;
       session.lastFetchedBounds = fetchBounds;
+      _incidentMapFetchRetryCount = 0;
+      _incidentMapFetchRetryTimer?.cancel();
+      _incidentMapFetchRetryTimer = null;
       setState(() {
         _incidentMapData = response;
         _incidentMapUiState = response.items.isEmpty
@@ -495,8 +502,62 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
     } catch (e) {
       debugPrint('[IncidentMap] fetch failed: $e');
       if (!mounted || generation != _incidentMapFetchGeneration) return;
-      setState(() => _incidentMapUiState = IncidentMapUiState.error);
+      // §22.20 — มีข้อมูลอยู่แล้ว: เก็บ marker/วงภาพเดิมไว้ + indicator เล็ก
+      // (degraded) แทนการ์ดเต็มจอ; การ์ด error เหลือเฉพาะตอนยังไม่มีข้อมูล
+      setState(() {
+        _incidentMapUiState = _incidentMapData != null
+            ? IncidentMapUiState.degraded
+            : IncidentMapUiState.error;
+      });
+      _scheduleIncidentMapFetchRetry(generation);
     }
+  }
+
+  /// Auto-retry ด้วย backoff หลัง fetch พลาด — transient (429/timeout/5xx)
+  /// หายเองโดยผู้ใช้ไม่ต้องขยับกล้อง (§22.20); หยุดหลัง retry ครบแล้ว
+  /// รอให้ผู้ใช้กดเองผ่าน chip/การ์ด
+  void _scheduleIncidentMapFetchRetry(int generation) {
+    const delays = [
+      Duration(milliseconds: 1500),
+      Duration(milliseconds: 3000),
+    ];
+    if (_incidentMapFetchRetryCount >= delays.length) return;
+    _incidentMapFetchRetryTimer?.cancel();
+    final delay = delays[_incidentMapFetchRetryCount];
+    _incidentMapFetchRetryCount++;
+    _incidentMapFetchRetryTimer = Timer(delay, () {
+      _incidentMapFetchRetryTimer = null;
+      final session = _incidentMapSession;
+      if (!mounted ||
+          session == null ||
+          !_isIncidentMapMode ||
+          generation != _incidentMapFetchGeneration) {
+        return;
+      }
+      _fetchIncidentMapData(
+        bounds: session.lastCameraBounds ?? session.lastFetchedBounds,
+        zoom: (session.lastCameraZoom ?? session.lastFetchedZoom?.toDouble())
+            ?.toInt(),
+      );
+    });
+  }
+
+  void _stopIncidentMapFetchRetry() {
+    _incidentMapFetchRetryTimer?.cancel();
+    _incidentMapFetchRetryTimer = null;
+    _incidentMapFetchRetryCount = 0;
+  }
+
+  /// Retry จากการกดปุ่ม/chip — ใช้ viewport ล่าสุดของ session ไม่ใช่
+  /// Thailand default (§22.20 ข้อ 6)
+  void _retryIncidentMapFetch() {
+    final session = _incidentMapSession;
+    _incidentMapFetchRetryCount = 0;
+    _fetchIncidentMapData(
+      bounds: session?.lastCameraBounds ?? session?.lastFetchedBounds,
+      zoom: (session?.lastCameraZoom ?? session?.lastFetchedZoom?.toDouble())
+          ?.toInt(),
+    );
   }
 
   /// camera settled → refetch เมื่อ viewport เปลี่ยนพอสมควร (§22.4.3)
@@ -649,7 +710,7 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                 icon: Icons.cloud_off_outlined,
                 title: 'โหลดแผนที่ไม่สำเร็จ',
                 actionLabel: 'ลองอีกครั้ง',
-                onAction: () => _fetchIncidentMapData(),
+                onAction: _retryIncidentMapFetch,
               ),
             // Legend (§22.3.4) — แตะช่วง = เน้น/หรี่ client-side
             // right:16 บังคับ Wrap ตัดบรรทัด (§22.11 fix 1 — เดิมล้นจอ)
@@ -676,8 +737,45 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // §22.20: fetch พลาดแต่ยังมีข้อมูลเดิม → chip เล็ก ๆ แทน
+                  // การ์ดเต็มจอ (แตะเพื่อ retry ทันที)
+                  if (_incidentMapUiState == IncidentMapUiState.degraded)
+                    GestureDetector(
+                      onTap: _retryIncidentMapFetch,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.cloud_off_outlined,
+                              size: 13,
+                              color: Colors.white70,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'เชื่อมต่อไม่ได้ — แตะเพื่อลองใหม่',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (_incidentMapData != null &&
-                      _incidentMapData!.excluded.total > 0)
+                      _incidentMapData!.excluded.total > 0) ...[
+                    if (_incidentMapUiState == IncidentMapUiState.degraded)
+                      const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -696,9 +794,11 @@ extension EmergencyIncidentMapLogic on _EmergencyLivePageState {
                         ),
                       ),
                     ),
+                  ],
                   if (_incidentMapNewCount > 0) ...[
-                    if (_incidentMapData != null &&
-                        _incidentMapData!.excluded.total > 0)
+                    if (_incidentMapUiState == IncidentMapUiState.degraded ||
+                        (_incidentMapData != null &&
+                            _incidentMapData!.excluded.total > 0))
                       const SizedBox(height: 8),
                     GestureDetector(
                       onTap: _refreshIncidentMapFromPill,

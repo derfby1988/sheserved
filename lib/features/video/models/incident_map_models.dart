@@ -110,6 +110,25 @@ class IncidentMapBounds {
   bool contains(double lat, double lng) =>
       lat >= south && lat <= north && lng >= west && lng <= east;
 
+  /// Clamp ให้อยู่ในช่วงที่ server รับ (lat ±90, lng ±180) — Google
+  /// `getVisibleRegion` ตอน zoom out สุดอาจคืนค่าเกินช่วงจน server ตอบ 400
+  /// (§22.20). ถ้าหลัง clamp แล้ว west > east (คร่อม antimeridian — server
+  /// ไม่รองรับ wrap-around) ให้ส่งกว้างเต็มแกน lng แทน
+  IncidentMapBounds clamped() {
+    final s = south.clamp(-90.0, 90.0).toDouble();
+    final n = north.clamp(-90.0, 90.0).toDouble();
+    var w = west.clamp(-180.0, 180.0).toDouble();
+    var e = east.clamp(-180.0, 180.0).toDouble();
+    if (w > e) {
+      w = -180;
+      e = 180;
+    }
+    if (s > n) {
+      return IncidentMapBounds(south: n, west: w, north: s, east: e);
+    }
+    return IncidentMapBounds(south: s, west: w, north: n, east: e);
+  }
+
   String toQueryParam() => '$south,$west,$north,$east';
 
   @override
@@ -292,10 +311,60 @@ class IncidentMapZoomPolicy {
   static const double photoOverviewZoom = photoPreviewThreshold + 1;
   static const double clusterTapStep = 2;
 
+  /// สัดส่วนของ `shortestSide` ที่ถือว่าหมุด "อยู่กลางจอพอ" — เกินกว่านี้
+  /// การจัดกล้องกลางหมุดยังช่วยให้วงภาพมีที่วาง (§22.21)
+  static const double photoFocusCenterFactor = 0.25;
+
   static double zoomAfterClusterTap(double currentZoom) {
     final safeZoom = currentZoom.isFinite ? currentZoom : 5.5;
     return (safeZoom + clusterTapStep).clamp(0.0, pointsThreshold).toDouble();
   }
+
+  /// Zoom เป้าหมายตอนโฟกัสวงภาพ — การ์ดวางใน screen-space ไม่ขึ้นกับ
+  /// zoom เกิน threshold จึงไม่ซูมออกเมื่ออยู่ลึกกว่า overview อยู่แล้ว
+  static double photoFocusZoom(double currentZoom) {
+    final safeZoom = currentZoom.isFinite ? currentZoom : 5.5;
+    return safeZoom > photoOverviewZoom ? safeZoom : photoOverviewZoom;
+  }
+}
+
+/// ผลของการแตะหมุดเหตุการณ์ (§22.3.4 — มติ 2026-10-19)
+enum IncidentPointTapAction {
+  /// ซูม/จัดกล้องกลางหมุดให้เห็นวง photo cards ครบก่อน
+  focusPhotoRing,
+
+  /// เข้าโหมดเล่นวิดีโอของเหตุนั้นทันที
+  playIncident,
+}
+
+/// ตัดสินการแตะหมุดแบบ context-aware — pure function เพื่อ test ได้:
+///   * หมุดไม่มีภาพ → เล่นทันที (ไม่มีอะไรให้ดูบนแผนที่)
+///   * วงภาพถูกวางครบบนจอแล้ว → เล่นทันที (layout เป็น all-or-none ต่อเหตุ
+///     จึงเช็คแค่ว่ามีการ์ดของเหตุนั้นปรากฏอยู่หรือไม่)
+///   * กล้องอยู่ระดับวาดการ์ดแล้ว + หมุดอยู่กลางจอพอ แต่วงยังวางไม่ลง
+///     (viewport แน่น/หมุดอื่นเบียด) → เล่นเลย เพราะจัดกล้องซ้ำไม่ช่วย —
+///     กันผู้ใช้ตันบนหมุดที่วงภาพไม่มีทางครบ
+///   * นอกนั้น → focus วงภาพ (ซูมเข้า threshold/จัดกล้องกลางหมุด)
+IncidentPointTapAction resolveIncidentPointTap({
+  required int photoCount,
+  required double? cameraZoom,
+  required bool ringPlaced,
+  required double? anchorCenterDistance,
+  required double viewportShortestSide,
+}) {
+  if (photoCount == 0 || ringPlaced) {
+    return IncidentPointTapAction.playIncident;
+  }
+  final zoom = cameraZoom;
+  if (zoom != null &&
+      zoom >= IncidentMapZoomPolicy.photoPreviewThreshold &&
+      anchorCenterDistance != null &&
+      anchorCenterDistance <
+          viewportShortestSide *
+              IncidentMapZoomPolicy.photoFocusCenterFactor) {
+    return IncidentPointTapAction.playIncident;
+  }
+  return IncidentPointTapAction.focusPhotoRing;
 }
 
 class IncidentMapResponse {

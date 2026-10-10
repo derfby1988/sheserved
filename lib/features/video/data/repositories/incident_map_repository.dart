@@ -33,13 +33,16 @@ class IncidentMapRepository {
     int limit = 300,
   }) async {
     // ── 1. Local API ──────────────────────────────────────────────
+    // Clamp bounds ก่อนส่ง — Google getVisibleRegion อาจคืนค่าเกิน ±90/±180
+    // หรือคร่อม antimeridian จน server ตอบ 400 (§22.20)
+    final safeBounds = bounds.clamped();
     String? localError;
     try {
       final uri = Uri.parse('${AppConfig.localApiUrl}/api/videos/emergency/map')
           .replace(
             queryParameters: {
               'category_id': categoryId,
-              'bounds': bounds.toQueryParam(),
+              'bounds': safeBounds.toQueryParam(),
               'zoom': '$zoom',
               if (cursor != null) 'cursor': cursor,
               'limit': '$limit',
@@ -53,8 +56,10 @@ class IncidentMapRepository {
         }
         throw StateError('incident map response is not an object');
       }
-      // 4xx = contract violation (bad params) — fail-closed, no fallback.
-      if (response.statusCode >= 400 && response.statusCode < 500) {
+      // 400 = contract violation (bad params) — fail-closed, no fallback.
+      // 4xx/5xx อื่น (โดยเฉพาะ 429 rate limit / 5xx) เป็น transient →
+      // ตกไป Supabase fallback แทนที่จะ fail-closed (§22.20)
+      if (response.statusCode == 400) {
         throw StateError(
           'incident map request rejected (${response.statusCode})',
         );
@@ -73,10 +78,10 @@ class IncidentMapRepository {
         'get_emergency_incident_map',
         params: {
           'p_category_id': categoryId,
-          'p_south': bounds.south,
-          'p_west': bounds.west,
-          'p_north': bounds.north,
-          'p_east': bounds.east,
+          'p_south': safeBounds.south,
+          'p_west': safeBounds.west,
+          'p_north': safeBounds.north,
+          'p_east': safeBounds.east,
           'p_zoom': zoom,
           'p_cursor_created_at': _cursorCreatedAt(cursor),
           'p_cursor_id': _cursorId(cursor),

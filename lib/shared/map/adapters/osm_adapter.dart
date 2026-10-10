@@ -100,6 +100,7 @@ class _OsmMapAdapterState extends State<OsmMapAdapter> {
           urlTemplate: widget.tileSource.urlTemplate,
           userAgentPackageName: kOsmUserAgent,
           tileProvider: widget.tileProvider ?? CancellableNetworkTileProvider(),
+          maxNativeZoom: widget.tileSource.maxNativeZoom,
           keepBuffer: 4,
           panBuffer: 1,
         ),

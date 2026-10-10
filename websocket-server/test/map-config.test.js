@@ -62,13 +62,13 @@ function seedConfig(overrides = {}) {
  * In-memory emulation of map_provider_config (+audit) — pattern-matches the
  * SQL issued by the route so transaction semantics (conflict → 0 rows) hold.
  */
-function makeFakePool({ environment = 'dev', revision = 3 } = {}) {
+function makeFakePool({ environment = 'dev', revision = 3, config } = {}) {
   const state = {
     row: {
       id: 1,
       revision,
       environment,
-      config: seedConfig(),
+      config: config ?? seedConfig(),
       reason: 'seed',
       updated_by: 'seed',
       updated_at: new Date().toISOString(),
@@ -514,4 +514,135 @@ test('validateMapConfig: features must be an object when present', () => {
   cfg.features = 'on';
   const { errors } = validateMapConfig(cfg, { environment: 'dev' });
   assert.equal(errors.some((e) => e.includes('features: must be an object')), true);
+});
+
+// ── Phase 24.A — map data-layer feature gates ─────────────────────────
+
+test('GET /api/map-config exposes the canonical MAP_LAYERS registry', async () => {
+  const ctx = setup();
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/map-config`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.mapLayers.rain.readiness, 'dev_only');
+    assert.equal(body.mapLayers.ews.readiness, 'needs_key');
+    assert.equal(body.mapLayers.radar.type, 'raster_tile');
+  });
+});
+
+test('PUT can enable a dev_only layer in dev; the flag persists in config.features', async () => {
+  const ctx = setup();
+  const cfg = seedConfig();
+  cfg.features = { rain: { enabled: true } };
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: cfg, expectedRevision: 3 }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(ctx.pool._state.row.config.features.rain.enabled, true);
+  });
+});
+
+test('PUT enabling a dev_only layer in prod is rejected with 422', async () => {
+  const ctx = setup({ environment: 'prod' });
+  const cfg = seedConfig();
+  cfg.features = { rain: { enabled: true } };
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: cfg, expectedRevision: 3, reason: 'enable rain' }),
+    });
+    assert.equal(res.status, 422);
+    assert.match((await res.json()).details.join(' '), /features\.rain.*dev-only/);
+    assert.equal(ctx.pool._state.row.revision, 3);
+  });
+});
+
+test('PUT enabling a needs_key layer is rejected in every environment', async () => {
+  const ctx = setup();
+  const cfg = seedConfig();
+  cfg.features = { ews: { enabled: true } };
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: cfg, expectedRevision: 3 }),
+    });
+    assert.equal(res.status, 422);
+    assert.match((await res.json()).details.join(' '), /features\.ews.*not configured/);
+  });
+});
+
+test('features merge: a client missing newer gates cannot delete them', async () => {
+  // Stored config already carries gates an older client does not know.
+  const seeded = seedConfig({
+    features: { rain: { enabled: true }, futureGate: { enabled: true } },
+  });
+  const ctx = setup({ config: seeded });
+  await withServer(ctx, async (base) => {
+    // The "old" client round-trips only the gates it knows.
+    const cfg = seedConfig();
+    cfg.features = { incidentOverviewMap: { enabled: true } };
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: cfg, expectedRevision: 3 }),
+    });
+    assert.equal(res.status, 200);
+    const saved = ctx.pool._state.row.config;
+    assert.equal(saved.features.incidentOverviewMap.enabled, true);
+    assert.equal(saved.features.rain.enabled, true);
+    assert.equal(saved.features.futureGate.enabled, true);
+  });
+});
+
+test('features merge: PUT without a features key keeps stored gates', async () => {
+  const seeded = seedConfig({ features: { rain: { enabled: true } } });
+  const ctx = setup({ config: seeded });
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: seedConfig(), expectedRevision: 3 }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(ctx.pool._state.row.config.features.rain.enabled, true);
+  });
+});
+
+test('features merge: explicit disable still wins over the stored gate', async () => {
+  const seeded = seedConfig({ features: { rain: { enabled: true } } });
+  const ctx = setup({ config: seeded });
+  const cfg = seedConfig();
+  cfg.features = { rain: { enabled: false } };
+  await withServer(ctx, async (base) => {
+    const res = await fetch(`${base}/api/admin/map-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...ADMIN },
+      body: JSON.stringify({ config: cfg, expectedRevision: 3 }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(ctx.pool._state.row.config.features.rain.enabled, false);
+  });
+});
+
+test('validateMapConfig: dev_only layer gate blocked in prod, allowed in dev', () => {
+  const { validateMapConfig } = require('../routes/map-config');
+  const cfg = seedConfig();
+  cfg.features = { rain: { enabled: true } };
+  assert.deepEqual(validateMapConfig(cfg, { environment: 'dev' }).errors, []);
+  const prod = validateMapConfig(cfg, { environment: 'prod', reason: 'x' }).errors;
+  assert.equal(prod.some((e) => e.includes('features.rain')), true);
+});
+
+test('validateMapConfig: needs_key layer cannot be enabled; disabling is fine', () => {
+  const { validateMapConfig } = require('../routes/map-config');
+  const cfg = seedConfig();
+  cfg.features = { ews: { enabled: true } };
+  assert.match(validateMapConfig(cfg, { environment: 'dev' }).errors.join(' '), /features\.ews/);
+  cfg.features = { ews: { enabled: false } };
+  assert.deepEqual(validateMapConfig(cfg, { environment: 'dev' }).errors, []);
 });

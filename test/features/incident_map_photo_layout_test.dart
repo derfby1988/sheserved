@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -93,7 +92,7 @@ void main() {
       final placements = layoutIncidentPhotoCards(
         anchorByIncidentId: {
           'a': const Offset(100, 300),
-          'b': const Offset(130, 300),
+          'b': const Offset(160, 300),
         },
         photosByIncidentId: {
           'a': [_photo('p1'), _photo('p2'), _photo('p3')],
@@ -107,7 +106,7 @@ void main() {
       for (final p in placements) {
         if (p.incidentId == 'a') {
           expect(
-            p.rect.overlaps(_pinCircle(const Offset(130, 300))),
+            p.rect.overlaps(_pinCircle(const Offset(160, 300))),
             isFalse,
             reason: 'card ของ a ทับหมุดของ b',
           );
@@ -305,6 +304,106 @@ void main() {
         }
       }
     });
+
+    test('หมุดมีภาพซ้อนกัน (พิกัดเดียวกัน) → วงเดียวให้ตัวที่ priority สูงสุด', () {
+      // ส่งภาพเข้าเหตุที่พิกัดซ้ำกับเหตุที่มีภาพอยู่แล้ว — หมุดล่างถูกบังและ
+      // แตะไม่ได้อยู่แล้ว จึงรวมเป็น ring slot เดียว ไม่ปล่อยให้ exclusion
+      // ทับกันเองจนวงหล่มทั้งคู่ (§22.22)
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {
+          'older': const Offset(200, 400),
+          'newer': const Offset(204, 402),
+        },
+        photosByIncidentId: {
+          'older': List.generate(
+            5,
+            (i) => _photo('o$i', createdAt: DateTime.utc(2026, 10, 1)),
+          ),
+          'newer': List.generate(
+            4,
+            (i) => _photo('n$i', createdAt: DateTime.utc(2026, 10, 6)),
+          ),
+        },
+        viewport: _viewport,
+        cardSize: _cardSize,
+      );
+      expect(placements, isNotEmpty);
+      expect(
+        placements.map((p) => p.incidentId).toSet(),
+        {'newer'},
+        reason: 'ตัวแทนกลุ่มซ้อนต้องเป็นเหตุที่ภาพใหม่กว่า',
+      );
+    });
+
+    test('preferred incident ชนะตัวแทนกลุ่มหมุดซ้อนแม้ภาพเก่ากว่า', () {
+      final placements = layoutIncidentPhotoCards(
+        anchorByIncidentId: {
+          'preferred': const Offset(200, 400),
+          'newer': const Offset(203, 401),
+        },
+        photosByIncidentId: {
+          'preferred': [
+            _photo('p1', createdAt: DateTime.utc(2026, 1, 1)),
+          ],
+          'newer': [
+            _photo('n1', createdAt: DateTime.utc(2026, 10, 6)),
+          ],
+        },
+        viewport: _viewport,
+        cardSize: _cardSize,
+        preferredIncidentId: 'preferred',
+      );
+      expect(placements, hasLength(1));
+      expect(placements.single.incidentId, 'preferred');
+    });
+
+    test(
+      'regression §22.22: กลุ่มซ้อน + หมุดใกล้ → วงไม่หล่มทั้งจอ (partial ring)',
+      () {
+        // เคสที่เจอบนเครื่อง: anchors=3 placed=0 — หมุดมีภาพ 2 ตัวซ้อนกัน
+        // + อีกตัวห่าง ~160px → exclusion ทับกันเองทำวงหล่มหมด
+        final placements = layoutIncidentPhotoCards(
+          anchorByIncidentId: {
+            'stacked-a': const Offset(150, 400),
+            'stacked-b': const Offset(152, 401),
+            'near': const Offset(310, 400),
+          },
+          photosByIncidentId: {
+            'stacked-a': List.generate(
+              5,
+              (i) => _photo('a$i', createdAt: DateTime.utc(2026, 10, 1)),
+            ),
+            'stacked-b': List.generate(
+              4,
+              (i) => _photo('b$i', createdAt: DateTime.utc(2026, 10, 6)),
+            ),
+            'near': List.generate(
+              10,
+              (i) => _photo('n$i', createdAt: DateTime.utc(2026, 9, 1)),
+            ),
+          },
+          viewport: _viewport,
+          cardSize: _cardSize,
+        );
+
+        expect(placements, isNotEmpty);
+        final ids = placements.map((p) => p.incidentId).toSet();
+        expect(ids, contains('near'), reason: 'หมุดเพื่อนบ้านต้องยังมีการ์ด');
+        expect(ids, contains('stacked-b'), reason: 'ตัวแทนกลุ่มซ้อน = ภาพใหม่สุด');
+        expect(
+          ids.contains('stacked-a'),
+          isFalse,
+          reason: 'กลุ่มซ้อนเหลือตัวแทนเดียว',
+        );
+        // ไม่มี card ทับกันเอง
+        final rects = placements.map((p) => p.rect).toList();
+        for (var i = 0; i < rects.length; i++) {
+          for (var j = i + 1; j < rects.length; j++) {
+            expect(rects[i].overlaps(rects[j]), isFalse);
+          }
+        }
+      },
+    );
 
     test('map-return incident photos take layout priority', () {
       final placements = layoutIncidentPhotoCards(

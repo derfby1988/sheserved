@@ -48,6 +48,8 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
   MapProviderConfig? get _saved => _snapshot?.config;
   TileSourceRegistry get _registry =>
       _snapshot?.registry ?? TileSourceRegistry.defaults();
+  MapLayerRegistry get _layerRegistry =>
+      _snapshot?.mapLayers ?? MapLayerRegistry.defaults();
   bool get _dirty =>
       _draft != null && _saved != null && !_draft!.isSameConfig(_saved!);
 
@@ -105,6 +107,7 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
     final draft = _draft;
     final saved = _saved;
     if (draft == null || saved == null || _saving) return;
+    if (_snapshot?.isAppDefault == true) return;
 
     final validation = draft.validate(_registry);
     if (!validation.isValid) {
@@ -152,6 +155,7 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
           _snapshot = MapConfigSnapshot(
             config: result.config,
             registry: _snapshot!.registry,
+            mapLayers: _snapshot!.mapLayers,
           );
           _draft = result.config;
           _reasonCtrl.clear();
@@ -251,6 +255,7 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
           _snapshot = MapConfigSnapshot(
             config: result.config,
             registry: _snapshot!.registry,
+            mapLayers: _snapshot!.mapLayers,
           );
           _draft = result.config;
         });
@@ -284,6 +289,7 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
                     TileLayer(
                       urlTemplate: src.urlTemplate,
                       userAgentPackageName: 'com.sheserved.mapsmoke',
+                      maxNativeZoom: src.maxNativeZoom,
                     ),
                     RichAttributionWidget(
                       attributions: [TextSourceAttribution(src.attribution)],
@@ -356,6 +362,7 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
         _sectionTitle('ฟีเจอร์แผนที่ (Feature Gates)', Icons.extension),
         const SizedBox(height: 8),
         _incidentMapGateCard(),
+        _mapLayersCard(),
         const SizedBox(height: 20),
         _sectionTitle('บริการประกอบ (เส้นทาง / ค้นหา / จราจร)', Icons.alt_route),
         const SizedBox(height: 8),
@@ -725,6 +732,89 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
     );
   }
 
+  /// §24.A — global switches for the optional incident-map data layers.
+  /// The server registry (`snapshot.mapLayers`) decides which layers exist
+  /// and where they may be enabled; saving still goes through the normal
+  /// config PUT so revision lock + audit apply. Layers the registry marks
+  /// needs_key stay disabled until the server deploys the missing asset.
+  Widget _mapLayersCard() {
+    final locked = _saving || _snapshot?.isAppDefault == true;
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.layers_outlined, size: 18, color: AppColors.primary),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'ชั้นข้อมูลบนแผนที่ (Map Data Layers)',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'ชั้นข้อมูลเสริมบนแผนที่เกิดเหตุ — เมื่อเปิด ผู้ใช้เลือกแสดงเองเป็นราย session',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 6),
+          for (final layer in _layerRegistry.layers.values)
+            _layerRow(layer, locked: locked),
+        ],
+      ),
+    );
+  }
+
+  Widget _layerRow(MapLayer layer, {required bool locked}) {
+    final enabled = _draft!.featureGateEnabled(layer.id);
+    final String? blockedNote;
+    if (layer.readiness == TileSourceReadiness.needsKey) {
+      blockedNote = 'ต้องมี credential/license จากผู้ให้ข้อมูล — server ยังไม่พร้อม';
+    } else if (layer.prodBlocked(_draft!.environment)) {
+      blockedNote = 'ใช้ได้เฉพาะ dev/staging';
+    } else {
+      blockedNote = null;
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  layer.label,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  blockedNote ??
+                      '${layer.source} · ${layer.type}${layer.minZoom > 0 ? ' · zoom ${layer.minZoom}+' : ''}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: blockedNote != null
+                        ? Colors.orange.shade800
+                        : Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            key: Key('map-layer-switch-${layer.id}'),
+            value: enabled,
+            onChanged: locked || blockedNote != null
+                ? null
+                : (v) => _edit(_draft!.withFeatureGate(layer.id, v)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Services / fallback ──────────────────────────────────────────────
 
   Widget _servicesCard() {
@@ -985,7 +1075,11 @@ class _MapProviderSettingsSectionState extends State<MapProviderSettingsSection>
   Widget _saveBar() {
     final validation = _draft!.validate(_registry);
     final errors = {..._saveErrors, ...validation.errors}.toList();
-    final canSave = validation.isValid && !_saving;
+    // §24.A — never allow a save while showing the embedded app default:
+    // writing it would fabricate a revision the server never produced.
+    final canSave = validation.isValid &&
+        !_saving &&
+        _snapshot?.isAppDefault != true;
     return _card(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

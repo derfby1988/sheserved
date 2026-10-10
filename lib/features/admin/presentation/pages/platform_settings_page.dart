@@ -243,12 +243,15 @@ class _PlatformSettingsPageState extends State<PlatformSettingsPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'สถิติการใช้งานแผนที่ (Real-time Usage)',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+              const Expanded(
+                child: Text(
+                  'สถิติการใช้งานแผนที่ (Real-time Usage)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(

@@ -155,12 +155,24 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
   Future<void> _syncGoogleCamera() async {
     final controller = _googleController;
     final box = context.findRenderObject() as RenderBox?;
-    if (controller == null || box == null || !mounted) return;
+    if (controller == null ||
+        box == null ||
+        !box.hasSize ||
+        box.size.isEmpty ||
+        !mounted) {
+      return;
+    }
     try {
       final zoom = await controller.getZoomLevel();
       final region = await controller.getVisibleRegion();
       final sw = region.southwest;
       final ne = region.northeast;
+      // getVisibleRegion ตอน view เพิ่ง attach (ก่อนเฟรมแรก layout) อาจ
+      // คืน bounds ศูนย์พื้นที่ — commit แล้ว projector เพี้ยนและวงภาพ
+      // ไม่แสดงจนกว่าผู้ใช้ขยับกล้อง (§22.21 fix: วงภาพหายหลัง playback)
+      if (sw.latitude == ne.latitude || sw.longitude == ne.longitude) {
+        return;
+      }
       final bounds = IncidentMapBounds(
         south: math.min(sw.latitude, ne.latitude),
         west: math.min(sw.longitude, ne.longitude),
@@ -188,24 +200,57 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
     }
   }
 
+  /// Sync ซ้ำสั้น ๆ จน `_camera` commit ได้ — path ที่ไม่มี camera
+  /// animation (initialCameraPosition) ไม่มี onCameraIdle มาช่วย และ
+  /// sync แรกอาจชน view ที่ยังไม่ layout
+  Future<void> _syncGoogleCameraWhenReady() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (!mounted || _googleController == null) return;
+      await _syncGoogleCamera();
+      if (_camera != null) return;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  /// OSM เวอร์ชันเดียวกัน — `onMapReady`/`onPositionChanged` อาจยิง
+  /// ก่อน layout เสร็จ
+  Future<void> _syncOsmCameraWhenReady() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (!mounted || _osmController == null) return;
+      _syncOsmCamera();
+      if (_camera != null) return;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
   void _syncOsmCamera() {
     final controller = _osmController;
     if (controller == null || !mounted) return;
-    final cam = controller.camera;
-    final vb = cam.visibleBounds;
-    final bounds = IncidentMapBounds(
-      south: vb.south,
-      west: vb.west,
-      north: vb.north,
-      east: vb.east,
-    );
-    _commitCamera(
-      IncidentMapCameraState(
-        zoom: cam.zoom,
-        bounds: bounds,
-        projector: (lat, lng) => cam.projectAtZoom(ll.LatLng(lat, lng)),
-      ),
-    );
+    try {
+      final cam = controller.camera;
+      final vb = cam.visibleBounds;
+      // bounds ศูนย์พื้นที่ = map ยังไม่ layout — อย่า commit
+      if (vb.south == vb.north || vb.west == vb.east) return;
+      final bounds = IncidentMapBounds(
+        south: vb.south,
+        west: vb.west,
+        north: vb.north,
+        east: vb.east,
+      );
+      _commitCamera(
+        IncidentMapCameraState(
+          zoom: cam.zoom,
+          bounds: bounds,
+          // getOffsetFromOrigin = screen-space; projectAtZoom คืน world
+          // pixels ทำให้ anchor โดน filter เป็น offscreen → วงภาพไม่วาด
+          // และ tap resolver เห็นว่าหมุดไกลจากศูนย์จอเสมอ (§22.22)
+          projector: (lat, lng) =>
+              cam.getOffsetFromOrigin(ll.LatLng(lat, lng)),
+        ),
+      );
+    } catch (_) {
+      // controller.camera throws ถ้า map ยังไม่ ready
+    }
   }
 
   /// Web-Mercator projection from the visible region — exact for Google Maps
@@ -325,6 +370,60 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
     );
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Point tap → โฟกัสวงภาพก่อนเข้าเล่น (§22.3.4 มติ 2026-10-19)
+  // ──────────────────────────────────────────────────────────────
+
+  void _handlePointTap(IncidentMapPointItem point) {
+    final box = context.findRenderObject() as RenderBox?;
+    final camera = _camera;
+    if (box == null || camera == null) {
+      widget.onPointTap?.call(point);
+      return;
+    }
+    final viewport = box.size;
+    final anchor = camera.projector?.call(point.lat, point.lng);
+    final action = resolveIncidentPointTap(
+      photoCount: point.photos.length,
+      cameraZoom: camera.zoom,
+      // layout เป็น all-or-none ต่อเหตุ — มีการ์ดของเหตุนี้ = วงครบ
+      ringPlaced: _photoPlacements(
+        viewport,
+      ).any((p) => p.incidentId == point.id),
+      anchorCenterDistance: anchor == null
+          ? null
+          : (anchor - viewport.center(Offset.zero)).distance,
+      viewportShortestSide: viewport.shortestSide,
+    );
+    if (action == IncidentPointTapAction.playIncident) {
+      widget.onPointTap?.call(point);
+      return;
+    }
+    _focusPhotoRing(point);
+  }
+
+  void _focusPhotoRing(IncidentMapPointItem point) {
+    final targetZoom = IncidentMapZoomPolicy.photoFocusZoom(
+      _camera?.zoom ?? 5.5,
+    );
+    if (widget.availability.renderer == MapRendererKind.osm) {
+      _osmController?.move(ll.LatLng(point.lat, point.lng), targetZoom);
+      return;
+    }
+    final controller = _googleController;
+    if (controller == null) return;
+    unawaited(
+      controller
+          .animateCamera(
+            CameraUpdate.newLatLngZoom(
+              LatLng(point.lat, point.lng),
+              targetZoom,
+            ),
+          )
+          .catchError((_) {}),
+    );
+  }
+
   Future<BitmapDescriptor?> _googleIconFor(IncidentMapItem item) async {
     final String key;
     if (item is IncidentMapClusterItem) {
@@ -397,7 +496,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
           consumeTapEvents: true,
           onTap: () {
             if (item is IncidentMapPointItem) {
-              widget.onPointTap?.call(item);
+              _handlePointTap(item);
             } else if (item is IncidentMapClusterItem) {
               _zoomToCluster(item);
             }
@@ -419,12 +518,15 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
       ),
       onMapCreated: (controller) {
         _googleController = controller;
+        // initialCameraPosition (focus path) ไม่ผ่าน camera animation →
+        // ไม่มี onCameraIdle ช่วย sync — poll สั้น ๆ จน region สมบูรณ์
+        // (_syncGoogleCamera ข้าม bounds ศูนย์พื้นที่และ swallow platform
+        // error ที่เกิดก่อนเฟรมแรก) — กันวงภาพหายหลังกลับจาก playback
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_syncGoogleCameraWhenReady());
+        });
         if (focus == null) {
           _fitInitialGoogleBounds();
-        } else {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) unawaited(_syncGoogleCamera());
-          });
         }
       },
       onCameraIdle: _syncGoogleCamera,
@@ -463,13 +565,14 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
                 padding: const EdgeInsets.all(16),
               )
             : null,
-        onMapReady: _syncOsmCamera,
+        onMapReady: () => unawaited(_syncOsmCameraWhenReady()),
         onPositionChanged: (_, _) => _syncOsmCamera(),
       ),
       children: [
         fm.TileLayer(
           urlTemplate: source.urlTemplate,
           userAgentPackageName: 'com.sheserved.app',
+          maxNativeZoom: source.maxNativeZoom,
         ),
         fm.MarkerLayer(
           markers: [
@@ -491,7 +594,7 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
                   final IncidentMapPointItem point => _OsmPointMarker(
                     point: point,
                     dimmed: _isDimmedPoint(point),
-                    onTap: () => widget.onPointTap?.call(point),
+                    onTap: () => _handlePointTap(point),
                   ),
                 },
               ),
@@ -528,7 +631,9 @@ class _IncidentMapSurfaceState extends State<IncidentMapSurface> {
       anchors[item.id] = anchor;
       photos[item.id] = item.photos;
     }
-    if (anchors.isEmpty) return const [];
+    if (anchors.isEmpty) {
+      return const [];
+    }
     return layoutIncidentPhotoCards(
       anchorByIncidentId: anchors,
       photosByIncidentId: photos,

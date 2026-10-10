@@ -245,12 +245,18 @@ class TileSource {
   final String attribution;
   final TileSourceReadiness readiness;
 
+  /// เพดาน zoom ของ tile pyramid จริงของ source — เกินนี้ flutter_map
+  /// จะ scale tile จากระดับนี้แทนที่จะขอ z ที่ไม่มี (เช่น OSM ให้ถึง z19
+  /// เท่านั้น การขอ z20 ได้ 400 แล้วจอเทา — บั๊กที่พบใน OSM verify 2026-10-19)
+  final int maxNativeZoom;
+
   const TileSource({
     required this.id,
     required this.label,
     required this.urlTemplate,
     required this.attribution,
     required this.readiness,
+    this.maxNativeZoom = 19,
   });
 
   bool get selectable => readiness != TileSourceReadiness.needsKey;
@@ -267,6 +273,7 @@ class TileSourceRegistry {
       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       attribution: '© OpenStreetMap contributors',
       readiness: TileSourceReadiness.devOnly,
+      maxNativeZoom: 19,
     ),
     TileSource(
       id: 'opentopo',
@@ -274,6 +281,7 @@ class TileSourceRegistry {
       urlTemplate: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
       attribution: '© OpenStreetMap contributors, SRTM | style: © OpenTopoMap (CC-BY-SA)',
       readiness: TileSourceReadiness.devOnly,
+      maxNativeZoom: 18,
     ),
     TileSource(
       id: 'carto_light',
@@ -281,6 +289,7 @@ class TileSourceRegistry {
       urlTemplate: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
       attribution: '© OpenStreetMap contributors © CARTO',
       readiness: TileSourceReadiness.needsKey,
+      maxNativeZoom: 21,
     ),
     TileSource(
       id: 'carto_voyager',
@@ -288,6 +297,7 @@ class TileSourceRegistry {
       urlTemplate: 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       attribution: '© OpenStreetMap contributors © CARTO',
       readiness: TileSourceReadiness.needsKey,
+      maxNativeZoom: 21,
     ),
   ];
 
@@ -318,6 +328,7 @@ class TileSourceRegistry {
           urlTemplate: existing.urlTemplate,
           attribution: existing.attribution,
           readiness: readiness,
+          maxNativeZoom: existing.maxNativeZoom,
         );
       }
     });
@@ -325,6 +336,190 @@ class TileSourceRegistry {
   }
 
   TileSource? operator [](String? id) => id == null ? null : sources[id];
+}
+
+/// An optional external data layer for the incident map (Phase 24 —
+/// VIDEO_SYSTEM_PLAN.md §24.9). The `features.<id>` gate in the config
+/// document controls availability; [readiness] (server-canonical) decides
+/// where the layer may be switched on. Reuses [TileSourceReadiness] —
+/// the vocabulary is identical by design (§24.2).
+class MapLayer {
+  final String id;
+  final String label;
+
+  /// 'points' | 'raster_tile' | 'polygon' | 'polyline'
+  final String type;
+  final int minZoom;
+  final int maxPoints;
+  final int cacheTtlSec;
+  final int staleAfterSec;
+  final String source;
+  final String attribution;
+  final TileSourceReadiness readiness;
+
+  const MapLayer({
+    required this.id,
+    required this.label,
+    required this.type,
+    this.minZoom = 0,
+    this.maxPoints = 0,
+    this.cacheTtlSec = 0,
+    this.staleAfterSec = 0,
+    this.source = '',
+    this.attribution = '',
+    required this.readiness,
+  });
+
+  /// needs_key layers cannot be enabled until the server deploys the
+  /// credential/license/data asset — the switch stays off everywhere.
+  bool get selectable => readiness != TileSourceReadiness.needsKey;
+
+  /// dev_only/needs_key layers stay off in prod (the server also rejects
+  /// the save with HTTP 422 — this mirrors it for the admin UI).
+  bool prodBlocked(String environment) =>
+      readiness != TileSourceReadiness.ready && environment == 'prod';
+
+  factory MapLayer.fromJson(String id, Map<String, dynamic> json) => MapLayer(
+        id: id,
+        label: json['label'] as String? ?? id,
+        type: json['type'] as String? ?? 'points',
+        minZoom: (json['minZoom'] as num?)?.toInt() ?? 0,
+        maxPoints: (json['maxPoints'] as num?)?.toInt() ?? 0,
+        cacheTtlSec: (json['cacheTtlSec'] as num?)?.toInt() ?? 0,
+        staleAfterSec: (json['staleAfterSec'] as num?)?.toInt() ?? 0,
+        source: json['source'] as String? ?? '',
+        attribution: json['attribution'] as String? ?? '',
+        // Unknown readiness defaults to the most restrictive state.
+        readiness: switch (json['readiness']) {
+          'ready' => TileSourceReadiness.ready,
+          'dev_only' => TileSourceReadiness.devOnly,
+          _ => TileSourceReadiness.needsKey,
+        },
+      );
+}
+
+/// Client-side mirror of MAP_LAYERS in websocket-server/routes/map-config.js
+/// — keep ids and readiness in sync. The embedded catalog backs the
+/// app-default snapshot; the server's `mapLayers` payload replaces it
+/// entirely at load time (server is canonical — newer layer kinds unknown
+/// to this client still parse so they get a toggle).
+class MapLayerRegistry {
+  static const defaultLayers = <MapLayer>[
+    MapLayer(
+      id: 'rain',
+      label: 'ปริมาณฝน 24 ชม.',
+      type: 'points',
+      minZoom: 6,
+      maxPoints: 400,
+      cacheTtlSec: 900,
+      staleAfterSec: 86400,
+      source: 'Thaiwater (HII)',
+      attribution: 'ข้อมูล สสนก. (Thaiwater)',
+      readiness: TileSourceReadiness.devOnly,
+    ),
+    MapLayer(
+      id: 'waterLevel',
+      label: 'ระดับน้ำ (Thaiwater)',
+      type: 'points',
+      minZoom: 6,
+      maxPoints: 400,
+      cacheTtlSec: 900,
+      staleAfterSec: 43200,
+      source: 'Thaiwater (HII)',
+      attribution: 'ข้อมูล สสนก. (Thaiwater)',
+      readiness: TileSourceReadiness.devOnly,
+    ),
+    MapLayer(
+      id: 'dam',
+      label: 'เขื่อน/อ่างเก็บน้ำ',
+      type: 'points',
+      minZoom: 5,
+      maxPoints: 100,
+      cacheTtlSec: 3600,
+      staleAfterSec: 604800,
+      source: 'Thaiwater (HII)',
+      attribution: 'ข้อมูล สสนก. (Thaiwater)',
+      readiness: TileSourceReadiness.devOnly,
+    ),
+    MapLayer(
+      id: 'ews',
+      label: 'สถานีเตือนภัย (DWR EWS)',
+      type: 'points',
+      minZoom: 7,
+      maxPoints: 300,
+      cacheTtlSec: 600,
+      staleAfterSec: 7200,
+      source: 'DWR',
+      attribution: 'กรมชลประทาน (DWR)',
+      readiness: TileSourceReadiness.needsKey,
+    ),
+    MapLayer(
+      id: 'radar',
+      label: 'เรดาร์ฝน (RainViewer)',
+      type: 'raster_tile',
+      minZoom: 4,
+      cacheTtlSec: 600,
+      staleAfterSec: 3600,
+      source: 'RainViewer',
+      attribution: 'RainViewer',
+      readiness: TileSourceReadiness.devOnly,
+    ),
+    MapLayer(
+      id: 'forecast',
+      label: 'พยากรณ์รายจุด',
+      type: 'points',
+      minZoom: 6,
+      maxPoints: 300,
+      cacheTtlSec: 1800,
+      staleAfterSec: 21600,
+      source: 'Open-Meteo',
+      attribution: 'Open-Meteo',
+      readiness: TileSourceReadiness.devOnly,
+    ),
+    MapLayer(
+      id: 'province',
+      label: 'ขอบเขตจังหวัด',
+      type: 'polygon',
+      minZoom: 5,
+      cacheTtlSec: 86400,
+      staleAfterSec: 2592000,
+      source: 'official GeoJSON (pending)',
+      readiness: TileSourceReadiness.needsKey,
+    ),
+    MapLayer(
+      id: 'floodRoute',
+      label: 'เส้นทางลุ่มน้ำ',
+      type: 'polyline',
+      minZoom: 8,
+      cacheTtlSec: 3600,
+      staleAfterSec: 86400,
+      source: 'official dataset (pending)',
+      readiness: TileSourceReadiness.needsKey,
+    ),
+  ];
+
+  final Map<String, MapLayer> layers;
+
+  const MapLayerRegistry(this.layers);
+
+  factory MapLayerRegistry.defaults() =>
+      MapLayerRegistry({for (final l in defaultLayers) l.id: l});
+
+  /// Parse the server's `mapLayers` payload. Absent → embedded defaults
+  /// (older server); present → the server is canonical.
+  factory MapLayerRegistry.fromServer(Map<String, dynamic>? serverLayers) {
+    if (serverLayers == null) return MapLayerRegistry.defaults();
+    return MapLayerRegistry({
+      for (final e in serverLayers.entries)
+        if (e.value is Map)
+          e.key.toString(): MapLayer.fromJson(
+            e.key.toString(),
+            Map<String, dynamic>.from(e.value as Map),
+          ),
+    });
+  }
+
+  MapLayer? operator [](String? id) => id == null ? null : layers[id];
 }
 
 /// The full config document (§5.1) plus server-managed metadata.
@@ -342,6 +537,14 @@ class MapProviderConfig {
   /// Absent/false = hidden (safe default — §4.9).
   final bool incidentOverviewMapEnabled;
 
+  /// Raw passthrough of every `features.*` gate other than
+  /// `incidentOverviewMap` — Phase 24 layer gates (`rain`, `waterLevel`, …)
+  /// plus unknown gates written by newer servers. Verbatim round-trip is
+  /// mandatory (§24.A): a client that dropped unknown gates would delete
+  /// them on every save. Entries keep the full gate object, not just
+  /// `enabled`, so sibling fields survive too.
+  final Map<String, Map<String, dynamic>> extraFeatureGates;
+
   const MapProviderConfig({
     required this.revision,
     required this.environment,
@@ -351,6 +554,7 @@ class MapProviderConfig {
     required this.fallback,
     required this.rateConfig,
     this.incidentOverviewMapEnabled = false,
+    this.extraFeatureGates = const {},
   });
 
   /// Environment default embedded in the app — used when the server config
@@ -380,10 +584,21 @@ class MapProviderConfig {
         (features is Map && features['incidentOverviewMap'] is Map)
             ? (features['incidentOverviewMap'] as Map)['enabled']
             : null;
+    final extraGates = <String, Map<String, dynamic>>{};
+    if (features is Map) {
+      for (final e in features.entries) {
+        final name = e.key.toString();
+        if (name == 'incidentOverviewMap') continue;
+        if (e.value is Map) {
+          extraGates[name] = Map<String, dynamic>.from(e.value as Map);
+        }
+      }
+    }
     return MapProviderConfig(
       revision: (json['revision'] as num?)?.toInt() ?? 0,
       environment: json['environment'] as String? ?? 'dev',
       incidentOverviewMapEnabled: incidentGate == true,
+      extraFeatureGates: extraGates,
       platformDefaults: {
         for (final p in MapPlatform.values)
           p: MapTarget.fromJson(
@@ -424,6 +639,7 @@ class MapProviderConfig {
         'rateConfig': rateConfig.toJson(),
         'features': {
           'incidentOverviewMap': {'enabled': incidentOverviewMapEnabled},
+          ...extraFeatureGates,
         },
       };
 
@@ -440,6 +656,7 @@ class MapProviderConfig {
     FallbackConfig? fallback,
     RateConfig? rateConfig,
     bool? incidentOverviewMapEnabled,
+    Map<String, Map<String, dynamic>>? extraFeatureGates,
   }) =>
       MapProviderConfig(
         revision: revision ?? this.revision,
@@ -451,7 +668,26 @@ class MapProviderConfig {
         rateConfig: rateConfig ?? this.rateConfig,
         incidentOverviewMapEnabled:
             incidentOverviewMapEnabled ?? this.incidentOverviewMapEnabled,
+        extraFeatureGates: extraFeatureGates ?? this.extraFeatureGates,
       );
+
+  /// Read a `features.*` gate — [incidentOverviewMapEnabled] for the
+  /// incident-map gate, [extraFeatureGates] otherwise. Absent = off.
+  bool featureGateEnabled(String name) => name == 'incidentOverviewMap'
+      ? incidentOverviewMapEnabled
+      : extraFeatureGates[name]?['enabled'] == true;
+
+  /// Toggle a `features.*` gate, preserving sibling fields on the gate
+  /// object (e.g. `{'enabled': true, 'note': '…'}` keeps `note`).
+  MapProviderConfig withFeatureGate(String name, bool enabled) {
+    if (name == 'incidentOverviewMap') {
+      return copyWith(incidentOverviewMapEnabled: enabled);
+    }
+    return copyWith(extraFeatureGates: {
+      ...extraFeatureGates,
+      name: {...?extraFeatureGates[name], 'enabled': enabled},
+    });
+  }
 
   /// Resolve the effective target for [feature] on [platform]:
   /// feature override → platform default (§5.1). `yieldWay` callers must pass

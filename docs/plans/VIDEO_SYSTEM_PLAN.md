@@ -6170,10 +6170,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 
 #### 22.3.4 Tap flows
 
-- **หมุด:** แตะแล้วมี pressed state และ guard กัน double-tap; ถ้าเป็นเหตุที่กำลังเล่นอยู่ให้แค่ปิดโหมดแผนที่; ถ้าโหลดการ์ดล้มเหลว → คงอยู่บนแผนที่ + SnackBar + mark unavailable (§22.1)
+- **หมุด:** แตะแล้วมี pressed state และ guard กัน double-tap; **มติ 2026-10-19 — แตะหมุดที่มีภาพแต่ยังไม่เห็นวงการ์ดครบ = โฟกัสกล้องก่อน** (ซูมเข้า `photoOverviewZoom`/จัดกล้องกลางหมุด) ไม่เข้าเล่นการ์ดทันที; เข้าเล่นทันทีเมื่อ (a) หมุดไม่มีภาพ (b) วงภาพวางครบบนจอแล้ว (c) หมุดอยู่กลางจอที่ระดับวาดการ์ดแล้วแต่วงยังวางไม่ลงเพราะ viewport แน่น (escape hatch กันตัน) — resolver `resolveIncidentPointTap` ใน `incident_map_models.dart`; ถ้าเป็นเหตุที่กำลังเล่นอยู่ให้แค่ปิดโหมดแผนที่; ถ้าโหลดการ์ดล้มเหลว → คงอยู่บนแผนที่ + SnackBar + mark unavailable (§22.1)
 - **ภาพตัวอย่าง:** แตะ → สลับการ์ดของเหตุนั้น (pause) → เปิด overlay ภาพที่แตะ (resume เมื่อปิด); ระหว่าง overlay map-return back คืนแผนที่และปุ่ม "ปิด" คืน Emergency ปกติ; ภาพที่ `blurring/failed` ไม่ถูกแสดงบนแผนที่ตั้งแต่ต้น
-- **cluster:** แตะ = zoom เข้า bounds ของ cluster (animated) ไม่เปิดการ์ด; ถ้า cluster มีเหตุเดียวให้ถือเป็นหมุด
-  - สถานะ v1: surface fit grid cell ของ cluster ผ่าน renderer controller แล้ว (Google `animateCamera` / OSM `fitCamera`, fallback centroid +2 จนถึง zoom 12) แต่ **cluster `count=1` ยังซูมเข้า cell ไม่เปิดการ์ด** เพราะ payload ไม่มี incident id — ต้องตัดสินใจเพิ่ม field ใน response หรือปรับ spec (จดไว้ใน §22.11)
+- **cluster:** แตะ = zoom เข้า bounds ของ cluster (animated) ไม่เปิดการ์ด; cluster `count=1` ซูมเข้า cell เช่นเดียวกัน (มติ v1 — payload ไม่มี incident id)
+  - สถานะ v1: surface fit grid cell ของ cluster ผ่าน renderer controller แล้ว (Google `animateCamera` / OSM `fitCamera`, fallback centroid +2 จนถึง zoom 12); **มติ 2026-10-09: ไม่ขยาย contract — cluster `count=1` คงพฤติกรรม zoom-in เหมือน cluster ทั่วไป** (ผู้ใช้ zoom เข้าจนกลายเป็นหมุดแล้วแตะอีกครั้ง) เลี่ยงการเพิ่ม field บน contract ทั้ง Node/Supabase RPC เพียงเพื่อช่วย 1 แตะ
 - **legend chip:** เน้น/หรี่เฉพาะ marker ฝั่ง client, ไม่เปลี่ยน camera, ไม่ยิง request, ไม่กระทบ committed filter
 - **Back/close:** map-playback back ซ้ายหรือ hardware back กลับ map; trailing "ปิด" สิ้นสุด map context และคืน committed Trending feed; ทุก exit ต้องไม่ทิ้ง `_isOverlayVisible = true` ค้าง
 
@@ -6321,7 +6321,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 - Admin: `map-config` เพิ่ม `features.incidentOverviewMap.enabled` (server validate + Dart model + toggle ใน Platform Settings)
 - Tests (Flutter): `incident_map_models_test.dart` เพิ่ม `IncidentMapZoomPolicy` (zoom +2 จนถึง 12), `gridBounds` จาก response zoom และ bounded page-resolution (found/missing/maxPages); targeted tests ผ่าน 23/23 และ `dart analyze` ไฟล์ที่แตะไม่มี error ใหม่ (เหลือ warning/info เดิมของ repo)
 
-**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่ และตรวจ metric `map_load_emergency_overview` ระหว่าง canary; cluster tap และ photo page resolution implement แล้ว รอ device verification ตามรายการด้านล่าง. **Implementation gap ที่เหลือ:** cluster `count=1` ยังซูมเข้า cell แทนที่จะ "ถือเป็นหมุด" ตาม §22.3.4 — payload cluster ไม่มี incident id จึงต้องตัดสินใจว่าจะขยาย contract หรือปรับ spec
+**ที่ยังต้องทำตาม §22.8 ก่อนปิด phase:** device verification (iOS/Android/Web smoke ทั้งสอง renderer, ไม่มี `recreating_view`), load test กับข้อมูลจริงขนาดใหญ่ และตรวจ metric `map_load_emergency_overview` ระหว่าง canary; cluster tap และ photo page resolution implement แล้ว รอ device verification ตามรายการด้านล่าง. **Implementation gap `count=1` — ปิดด้วยมติ spec (2026-10-09):** รับพฤติกรรม zoom-in เดิมสำหรับ cluster เหตุเดียวตาม §22.3.4 ที่แก้แล้ว ไม่ขยาย response field
 
 ### 22.11 Device verification รอบ 1 + มติแก้บั๊ก (2026-10-06, Android SM X135G / Google renderer)
 
@@ -6338,15 +6338,15 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
    - Edge ที่มีอยู่ก่อนแล้ว (ไม่ใช่ regression): ภาพ `blur_status='failed'` อาจชี้ไฟล์ต้นฉบับ — lightbox เดิมก็แสดงตรง ๆ เช่นกัน; gallery blocks เฉพาะ `'blurring'` ตอนแตะ
 
 **ยังค้าง verify ตามลำดับ:**
-1. Re-verify 3 fixes บนเครื่องเดิม (legend ตัดบรรทัด, camera restore, overlay แสดงชัดเท่า server-blur)
-2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ; map-playback back → โฟกัส incident ของ clip ล่าสุดที่ zoom 14 และเห็น preview album cards (สูงสุด 15 ตาม map contract ปัจจุบัน — §22.19; **verified 2026-10-18**: กลับแผนที่แล้วเห็นภาพครบ + ช่อง pending สลับเป็นภาพจริงอัตโนมัติที่ cap เดิม 9); ทดสอบ cap 15/two-ring บน device หลัง deploy migration; "ปิด" → normal Emergency คืน committed filter
-3. รอบ OSM renderer (admin สลับ Emergency → OSM + tile source) ทำ checklist §22.8 เดิมทั้งชุด
+1. ✅ **Re-verify 3 fixes ผ่านครบ 2026-10-09 (Android R8YYA0G5S6J, Google):** legend wrap 2 บรรทัดไม่ล้นขวา, overlay ภาพแสดงไฟล์ `_anon` ตรง ๆ ไม่เบลอซ้ำ, radial ring ไม่บังหมุด, camera restore คืน zoom/bounds เดิมหลังกลับจาก playback
+2. แตะ photo card → overlay → ปิดแล้วการ์ดเล่นต่อ (**partially verified 2026-10-19**: overlay เปิด → วิดีโอเบื้องหลังหยุด ไม่มีภาพขยับ; ปิด → เล่นต่อเอง — เสียงคลิปยังไม่ยืนยันเพราะเครื่องทดสอบอาจ mute อยู่ ดู §22.20); map-playback back → โฟกัส incident ของ clip ล่าสุดที่ zoom 14 และเห็น preview album cards (สูงสุด 15 ตาม map contract ปัจจุบัน — §22.19; **verified 2026-10-18**: กลับแผนที่แล้วเห็นภาพครบ + ช่อง pending สลับเป็นภาพจริงอัตโนมัติที่ cap เดิม 9; **re-verified 2026-10-19**: เข้า map mode จาก playback แล้วเห็น photo ring รอบหมุดสีส้ม — พบบั๊ก error card ตอน zoom เร็ว → §22.20); ทดสอบ cap 15/two-ring บน device หลัง deploy migration; "ปิด" → normal Emergency คืน committed filter (**verified 2026-10-19**: commit เลือกหมวดใน sheet → เข้า map mode → แตะหมุดเข้าเล่น → กด "ปิด" → กลับ Emergency ปกติพร้อมปุ่มตัวกรองและ filter เดิมครบ ไม่เอา map scope ทับ)
+3. ✅ **รอบ OSM renderer ผ่านครบ 2026-10-19 (Android, OSM Standard):** tile + attribution, cluster tap fit cell, หมุดสีตาม legend, photo ring รอบหมุด, tap→focus→play (§22.21), overlay pause/resume, กลับจาก playback วงโผล่ทันที, ปิดคืน committed filter — พบ+แก้บั๊ก 3 ตัวระหว่างรอบนี้ (tile `maxNativeZoom`, projector ผิด space, วงหล่มเมื่อหมุดมีภาพซ้อน GPS — ดู §22.22 ทั้งหมด device-verified)
 4. iOS — เข้า-ออกโหมดแผนที่ ~10 รอบ เฝ้า `PlatformException(recreating_view)`
 5. realtime pill "มีเหตุใหม่" (แจ้งจากเครื่องอื่น), mission suspend, Web (CSP/attribution)
 6. Load test ข้อมูลขนาดใหญ่ + เฝ้า metric `map_load_emergency_overview` ระหว่าง canary
 7. ตรวจ cluster tap ซูมผ่าน controller บน Google/OSM และยืนยัน viewport refetch หลังกล้อง settle (implement แล้ว — fit grid cell / fallback centroid +2 จนถึง zoom 12)
-8. แตะภาพจากแผนที่ → overlay เปิดภาพตรง photo ID; ทดสอบ fallback ภาพ completed ล่าสุดเมื่อหาไม่พบใน 5 หน้าและข้อความแจ้ง (implement แล้ว — resolver ผ่าน unit test, รอเช็กบนเครื่อง)
-9. ตัดสินใจ cluster `count=1` ตาม §22.3.4 ("ถือเป็นหมุด") — ปัจจุบันซูมเข้า cell เพราะ payload ไม่มี incident id; เลือกระหว่างขยาย response field หรือปรับ spec ให้ตรง v1
+8. แตะภาพจากแผนที่ → overlay เปิดภาพตรง photo ID (**verified 2026-10-19**: แตะ card ที่ไม่ใช่ใบแรก → overlay เปิดภาพตัวเดียวกัน ไม่เด้งไปใบแรก); ทดสอบ fallback ภาพ completed ล่าสุดเมื่อหาไม่พบใน 5 หน้าและข้อความแจ้ง (implement แล้ว — resolver ผ่าน unit test, รอเช็กบนเครื่อง)
+9. ✅ **ตัดสินใจแล้ว (2026-10-09):** cluster `count=1` คงพฤติกรรม zoom-in เข้า cell เหมือน cluster ทั่วไป — spec §22.3.4 แก้ให้ตรง v1 แล้ว ไม่ขยาย contract
 
 ### 22.12 ปรับ UI ทางเข้าแผนที่ (implement + device verified 2026-10-18, Android)
 
@@ -6452,6 +6452,62 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
   - invalidate `video:emergency:map:*` ทั้งตอน insert และตอน blur เสร็จ (ก่อน broadcast)
 - Tests: `websocket-server/test/incident-map.test.js` 18 เคส (fair rounds, cap 15, ผู้ส่ง >15 ได้ตัวแทนล่าสุดคนละใบ, pending slot ไม่มี url, PHOTOS_SQL และ Supabase migration contract, RPC fallback, upload→invalidate→global event); Flutter focused map suite 61/61 รวม layout cap 15 และวง 2 ชั้น 5+10 ที่ viewport 390×800; full `npm test` 62/62
 - **Device verified ก่อนหน้า (2026-10-18, cap 9):** incident gallery 6 ภาพแสดงครบ, ช่อง gradient bar สลับเป็นภาพจริงอัตโนมัติหลัง blur (Android). การขยาย cap 15/fair sender rounds ผ่าน unit tests แล้ว แต่ยังต้อง apply Supabase migration + restart Node และ device verify ภาพ 10–15 ภาพจริง; poll load เมื่อมีหลาย incident pending ก็ยังต้องทดสอบ
+
+### 22.20 บั๊ก error card ตอน zoom เร็ว + เสียงวิดีโอ (พบระหว่าง device verify 2026-10-19, Android/Google — **✅ client fix verified on device 2026-10-19; เสียงยังไม่ยืนยันเป็น bug**)
+
+**อาการที่รายงาน:** zoom แผนที่เร็ว → การ์ดกลางจอ "โหลดแผนที่ไม่สำเร็จ" ค้าง ไม่หายเอง — ต้องขยับซูมเข้า/ออกอีกครั้งถึง fetch ใหม่และการ์ดหาย (ผู้ใช้ไม่ได้กดปุ่ม "ลองอีกครั้ง" บนการ์ด)
+
+**Root cause chain (วิเคราะห์จากโค้ด — ยังไม่ยืนยันตัว trigger ตัวจริงด้วย log):**
+1. **`_onIncidentMapCameraSettled`** → `_fetchIncidentMapData` → repo: local API ตอบ **4xx ใด ๆ รวม 429** → `throw StateError` → **fail-closed ทันที ไม่มี Supabase fallback** (`incident_map_repository.dart` ~line 56-63) — 4xx classification ใช้สำหรับ contract violation (400) แต่ดันรวม 429 transient เข้าไปด้วย
+2. **429 — ยืนยันจากโค้ด (ยังไม่ยืนยันจาก log เหตุการณ์จริง):** `server.js:269` mount `app.use('/api', defaultRateLimiter)` ก่อน route ทั้งหมด → `/emergency/map` ถูกนับรวมใน **60 req/นาที/IP** ที่ใช้ร่วมกับ traffic `/api` อื่นทั้งหมดของ IP เดียวกัน (ก่อน verifyToken จึงไม่มี userId ใช้เป็น key); `ipLimiter` (300/นาที) เป็นชั้นเพิ่มบน route เท่านั้น → เพดานจริงของ endpoint นี้คือ 60/นาทีต่อ IP. `websocket-server/server.log` ไม่มีบันทึกช่วงเหตุการณ์ (รายการล่าสุด 2026-10-03) จึงยังไม่มีหลักฐานว่าเป็น 429 จริง; ต้องดู response status ตอนเกิดเหตุ (DevTools/log ฝั่งแอป `[IncidentMap] fetch failed: ...` ที่ `debugPrint` บรรทัด ~496 จะบอก 429 vs timeout vs 400)
+   - **ข้อควรระวังด้านความปลอดภัย:** rate limiter เป็น security control — การแก้ควรเป็นการตัดสินใจของผู้ใช้ (เช่นยกเว้น path นี้จาก `defaultRateLimiter` หรือเพิ่มเพดาน) ห้ามปรับค่า limiter เพื่อ workaround เงียบ ๆ
+3. **Timeout 10s** (`incident_map_repository.dart` line 48) ตอน bounds ใหญ่ → `localError` → fallback Supabase RPC → ถ้า RPC พลาดต่อก็ error
+4. **400 bounds นอกช่วง:** Google `getVisibleRegion` ตอน zoom out สุดอาจคืน lng เกิน ±180 / lat เกิน ±90 → server reject (`incident-map.js` ~line 68-75) — client ไม่ clamp ก่อนส่ง
+5. **Error ค้างเพราะไม่มี auto-retry:** `catch` → `setState(error)` แล้วจบ (`emergency_incident_map_logic.dart` ~line 495-498); fetch รอบใหม่เกิดเฉพาะตอน `zoomChanged || boundsChanged` → ผู้ใช้ต้องขยับกล้องเอง
+6. **ปุ่ม "ลองอีกครั้ง" fetch ผิด viewport — ยืนยันจากโค้ดแล้ว (2026-10-10):** `emergency_incident_map_logic.dart:652` `onAction: () => _fetchIncidentMapData()` ไม่ส่ง bounds/zoom → ดีฟอลต์ `IncidentMapBounds.thailand` + zoom 5 → server ตอบ cluster mode (zoom < 12) → ถ้าสำเร็จ `_incidentMapData` ถูกแทนด้วย cluster ที่ไม่มี photos → วงภาพหายทั้งชุด; แก้ด้วยการส่ง `session.lastCameraBounds`/`lastCameraZoom`
+7. **Error ไม่ล้างข้อมูลเดิม — ยืนยันจากโค้ดแล้ว:** `_incidentMapData` ถูกล้างเฉพาะตอนเปลี่ยนหมวด (line ~243) และตอนปิด context (line ~436) เท่านั้น; catch ของ fetch ตั้งแค่ `uiState = error` → ข้อมูลยังอยู่ และ error card เต็มจอจะบังวงภาพไว้ (ภาพ 2026-10-10 แสดงวงภาพอยู่ใต้การ์ด "โหลดแผนที่ไม่สำเร็จ")
+
+**หลักฐาน verify (2026-10-10):**
+- ภาพหน้าจอ: การ์ด "โหลดแผนที่ไม่สำเร็จ / ลองอีกครั้ง" กลางจอ + วง photo cards ~9 ใบยังแสดงอยู่ข้างใต้ → ยืนยันว่าข้อมูลไม่ได้ถูกล้างและ error card ทับ UI
+- อาการ "ภาพไม่แสดงเมื่อกลับมา" ที่รายงานยังไม่ได้ยืนยันว่าเกิดจากปุ่ม "ลองอีกครั้ง" — ในภาพล่าสุดภาพยังอยู่ ข้อสันนิษฐานที่เป็นไปได้: refetch ตอน camera settle หลังกลับมา (`refreshOnNextCameraSettle`) ล้มเหลวชั่วคราว → error card ขึ้นกลางจอและบังวงภาพ; ต้องยืนยันด้วย status code ของ fetch ตอนเกิดเหตุ
+
+**Fix ที่ implement แล้ว (2026-10-19, client-side เท่านั้น — rate limiter ฝั่ง server เป็น security control ไม่ได้แตะ):**
+- ✅ **แยก transient:** `incident_map_repository.dart` — fail-closed `StateError` เหลือเฉพาะ **400** (contract violation); 429/4xx อื่น/5xx/timeout → `localError` → **Supabase RPC fallback** ตาม contract เดิม
+- ✅ **Auto-retry backoff:** `_scheduleIncidentMapFetchRetry` — retry ที่ viewport เดิมหลัง 1.5s และ 3s (สูงสุด 2 รอบ) เฉพาะตอนยังอยู่ map mode + generation ตรง; cancel/reset ตอนเข้าโหมดใหม่ (`_enterIncidentMapMode`), ออก (`_exitIncidentMapMode`), ปิด context (`_closeIncidentMapContext`), กลับจาก playback (`_returnToIncidentMap`) และ dispose
+- ✅ **ไม่ทิ้งข้อมูลเดิม:** catch ตั้ง `IncidentMapUiState.degraded` (enum มีอยู่แล้ว) เมื่อ `_incidentMapData != null` → marker/วงภาพเดิมยังแสดง + chip เล็ก "เชื่อมต่อไม่ได้ — แตะเพื่อลองใหม่" ในคอลัมน์ขวาบนแทนการ์ดเต็มจอ; `error` เต็มจอเหลือเฉพาะตอนยังไม่มีข้อมูลเลย
+- ✅ **Clamp bounds ฝั่ง client:** `IncidentMapBounds.clamped()` — lat ±90 / lng ±180 + คร่อม antimeridian (west>east) → กว้างเต็มแกน lng; repo ใช้ `safeBounds` ทั้ง local API query และ RPC params
+- ✅ **ปุ่ม retry ใช้ viewport จริง:** `_retryIncidentMapFetch` ใช้ `session.lastCameraBounds ?? lastFetchedBounds` / `lastCameraZoom ?? lastFetchedZoom` ทั้งการ์ด error และ chip degraded — ไม่กลับไป Thailand@5 อีก
+- (ยังไม่ทำ) coalesce fetch ต่อ camera settle — debounce 350ms เดิมพอ
+- Tests: `IncidentMapBounds.clamped` 4 เคสใน `incident_map_models_test.dart` (28/28 ผ่าน)
+- **Device verified 2026-10-19 (Android/Google):** zoom เร็วไม่เจอการ์ดเต็มจอค้างอีก — transient ถูก fallback/auto-retry กลืนเอง วงภาพคงอยู่; กลับจาก playback วงภาพยังแสดงถูกต้อง
+
+**ประเด็นเสียงวิดีโอ (reported รอบเดียวกัน — ยังไม่ยืนยันเป็น bug):** ผู้ใช้ไม่ได้ยินเสียงคลิปตอนเล่น — โค้ดฝั่งแอปสะอาด (`setVolume(1.0)` ตอน init, ไม่มี mute persistence; ปุ่มลำโพง toggle 0↔1) และ pipeline ตั้งใจเก็บเสียง (`deface --keep-audio` + ffmpeg ไม่มี `-an`) — ต้อง verify ว่า (a) media volume เครื่อง, (b) ไฟล์ .ts มี audio track จริงไหม (ffprobe), (c) `deface --keep-audio` ต้องการ ffmpeg ใน PATH ของ env ที่รัน — ถ้าหาไม่เจอจะ warning แล้วออกวิดีโอเงียบ, (d) วิดีโอต้นทางอัดมาแบบไม่มีเสียง
+
+### 22.22 OSM renderer — tile ว่างเทาเมื่อ zoom เกินเพดาน source (พบระหว่าง OSM device verify 2026-10-19 — **✅ fix verified: tile scale-up แทนการว่าง**)
+
+- **อาการ:** OSM Standard แสดง tile ปกติที่ zoom ประเทศ แต่ซูมลึก (manual pinch) → จอเทาทั้งหมด ไม่กลับมาแม้รอ >10 วิ
+- **Root cause:** OSM Standard เสิร์ฟ tile สูงสุด **z19** (z20 → HTTP 400 ยืนยันด้วย curl) แต่ `TileLayer` ไม่ได้ตั้ง `maxNativeZoom` → camera zoom >19 แล้วขอ tile z20+ ทุกใบ fail → ว่างถาวร (Google renderer ไม่เจอเพราะรองรับ zoom ลึกกว่าในตัว)
+- **Fix:** เพิ่ม `maxNativeZoom` เข้า `TileSource` model (registry: osm_standard=19, opentopo=18, carto_*=21 — ยืนยันด้วย curl ทุกค่า; `withServerReadiness` merge คงค่าเดิม) แล้วส่งให้ `TileLayer` ทั้ง 3 จุด — `incident_map_surface.dart` (incident map), `osm_adapter.dart` (shared map Home/Rescue/Group Create — บั๊กเดียวกันโดยเงียบ), `map_provider_settings_section.dart` (admin preview); เกินเพดานแล้ว tile จะถูก scale-up แทนการว่าง
+- **Known issue ค้างตัดสินใจ — หมุดซ้อนพิกัดเดียวกัน:** เหตุหลายจุดที่ GPS เดียวกันเป๊ะ (เช่น 4 จุดหมวดฝุ่นละอองที่ 16.8817,99.1101) หมุดซ้อนทับกันและลำดับวาดทำให้หมุดที่มีภาพ (อยู่ต้น list) ถูกฝังใต้หมุดไม่มีภาพ → ผู้ใช้แตะได้แค่หมุดบนสุดซึ่งเป็นแบบไม่มีภาพ → `playIncident` ทันทีตาม spec แต่เข้าถึงหมุดมีภาพไม่ได้; ตัวเลือกแก้: z-order ให้หมุดมีภาพอยู่บนสุด / spiderfier / cluster จุดซ้อน
+- **บั๊กที่สองเจอในรอบเดียวกัน — OSM projector ผิด space (fix implemented):** `_syncOsmCamera` ใช้ `cam.projectAtZoom` ซึ่งคืน **world pixel coordinates** ไม่ใช่ screen offset → (a) anchor โดน filter เป็น offscreen ทุกจุด → **วงภาพไม่เคยวาดบน OSM** (b) `anchorCenterDistance` ใหญ่เสมอ → escape hatch ของ `resolveIncidentPointTap` ไม่ทำงาน → แตะหมุดได้แค่ focus ซ้ำวน ไม่เข้าเล่นเลย — แก้เป็น `cam.getOffsetFromOrigin` (คือ `projectAtZoom - pixelOrigin` = screen space ตาม Google `_mercatorProject`); บั๊กมีตั้งแต่แรก — OSM ไม่เคยผ่าน device verify รอบแรก (Google ใช้ projector คนละตัวจึงปกติ)
+- **ข้อสงสัยพิกัดหมุด (รอข้อมูล):** ผู้ใช้รายงาน "หมุดไม่ตรงกับที่บันทึก" — ตรวจแล้ว `videos.latitude/longitude` ตรงกับ payload แผนที่ทุกจุด (renderer ทั้งสองใช้ข้อมูลเดียวกัน) น่าจะเป็นภาพลวงจาก tile ว่างทำให้ขาดจุดอ้างอิง; ถ้า re-verify แล้วยังรู้สึกผิดตำแหน่งค่อยไล่ data-capture (first-GPS-point contract vs จุดที่ผู้ใช้ปักตอนแจ้งเหตุ)
+- **บั๊กที่สาม — วงภาพหายทั้งจอหลังส่งภาพเข้าเหตุพิกัดซ้ำ (✅ device verified 2026-10-19 ทั้ง OSM และ Google — regression pass บน Google ไม่พบปัญหา):** อาการ: marker playback → ส่งภาพไทยมุง → กลับแผนที่ → วงหายทั้งวง (log `anchors=3 placed=0`) — Root cause: การส่งภาพเข้าเหตุ `8cdb2e2e` ทำให้มีหมุดมีภาพ 2 ตัวที่ **GPS เดียวกัน** (ซ้อน `c95fb6c8`) → exclusion circle (~73px รอบหมุดมีภาพอื่น) ของทั้งคู่ทับกันเอง → วางการ์ดใบเดียวไม่ได้เลย → all-or-none หล่มทั้งสองเหตุ และหมุด 10 ภาพที่ห่าง ~160px ก็หล่มตามเพราะวงชั้นนอกชน exclusion ทุก rotation — **Fix ใน `layoutIncidentPhotoCards` (pure function):** (1) **ยุบหมุดซ้อน** — photo anchors ที่ห่าง < เส้นผ่าศูนย์กลางหมุด (2×pinRadius) รวมเป็น ring slot เดียว ตัวแทน = priority สูงสุด (preferred → recency) เพราะหมุดล่างถูกบัง/แตะไม่ได้อยู่แล้ว (2) **partial-ring fallback** — ทุก strategy วางไม่ครบ n ใบ (ชนขอบจอ/หมุดเพื่อนบ้าน) → ใช้ base-ring rotation ที่วางได้มากสุด แทนการทิ้งทั้งวง; tests +3 เคสใน `incident_map_photo_layout_test.dart` (stacked rep / preferred ชนะกลุ่มซ้อน / regression anchors=3)
+- **พฤติกรรมกล้องตอนกลับจาก playback = ตาม spec (มติ 2026-10-19 คงเดิม):** `_returnToIncidentMap` ตั้ง `returnFocus` ไปเหตุที่เล่นล่าสุดที่ zoom 14 เสมอ — ตำแหน่ง/zoom จึงไม่เท่าจุดที่ทิ้งไว้เสมอไป โดยเฉพาะถ้าเล่นเหตุอื่นระหว่าง playback; พิจารณาทางเลือก "คืน `lastCameraBounds`/`lastCameraZoom` เป๊ะ" แล้ว มติ = คง focus@14 ตาม spec เพราะรับประกันว่าเหตุที่เล่น + วงภาพอยู่ในจอเสมอ
+
+### 22.21 แตะหมุด = โฟกัสวงภาพก่อนเข้าเล่น (context-aware marker tap — implement 2026-10-19, รอ device verify)
+
+- **มติจาก device verify รอบ 2:** เดิมแตะหมุดใด ๆ เข้าเล่นการ์ดทันที — ผู้ใช้ต้องการเห็น **photo cards วงรอบหมุดครบก่อน** ("ซูมเข้า/ออกให้เห็นรูปรอบวงกลมครบถ้วนตามจำนวนภาพไทยมุง"); มติ = context-aware single tap + หมุดไม่มีภาพเข้าเล่นทันที
+- **Resolver แบบ pure function** `resolveIncidentPointTap` ใน `incident_map_models.dart` — แยก decision ออกจาก renderer เพื่อ unit-test ได้:
+  - `photos.isEmpty` → `playIncident` (ไม่มีวงให้ดู)
+  - วงภาพวางครบบนจอแล้ว → `playIncident` (layout all-or-none ต่อเหตุ — เช็คแค่มีการ์ดของเหตุนั้นอยู่)
+  - กล้อง ≥ `photoPreviewThreshold` (13) + หมุดอยู่กลางจอ (`anchor` ห่างจากศูนย์จอ < 25% ของ `shortestSide`) แต่วงยังวางไม่ลง → `playIncident` (escape hatch — focus ซ้ำไม่เปลี่ยนอะไร กันตันบนหมุดที่ viewport แน่น)
+  - นอกนั้น → `focusPhotoRing`
+- **`_focusPhotoRing` ใน `IncidentMapSurface`:** กล้องแพนเข้าหมุดที่ zoom = `IncidentMapZoomPolicy.photoFocusZoom(current)` = `max(current, photoOverviewZoom)` (14) — ไม่ซูมออกเมื่ออยู่ลึกกว่านั้นเพราะการ์ดวางใน screen-space; Google ใช้ `animateCamera(newLatLngZoom)`, OSM ใช้ `controller.move`
+- **ต่อเข้า tap ทั้งสอง renderer:** Google `Marker.onTap` และ OSM `_OsmPointMarker` เรียก `_handlePointTap` แทน `onPointTap` ตรง ๆ — `onPointTap` (→ `_selectIncidentFromMap`) fire เฉพาะตอน resolver ตัดสินเล่น
+- หลัง focus animate → camera settle → refetch ตามกลไกเดิม (zoom/bounds เปลี่ยน) — photo list ของเหตุนั้นอัปเดตเอง
+- Tests: เพิ่มกลุ่ม `resolveIncidentPointTap` ใน `incident_map_models_test.dart` — 7 เคส (ไม่มีภาพ / วงครบ / zoom ต่ำ / ชิดขอบ / escape hatch / projector ยังไม่พร้อม / photoFocusZoom ไม่ซูมออก)
+
+**Fix พร้อมกัน — วงภาพหายหลังกลับจาก playback (race กล้อง):** ผู้ใช้รายงาน "กดหมุดเข้าดูวิดีโอ กดกลับแล้วโหมดแผนที่ไม่แสดงรูปรอบหมุด" — root cause: `initialCameraPosition` (focus path) ไม่ผ่าน animation → `onCameraIdle` ไม่ยิง → มี `_syncGoogleCamera` ครั้งเดียวตอน post-frame ซึ่งอาจชน view ที่ยังไม่ layout (`getVisibleRegion` คืน bounds ศูนย์พื้นที่ / throw / `RenderBox` ยังไม่มี size) → `_camera` ค้างผิดหรือ null → `_photoPlacements` คืน `[]` → วงภาพไม่แสดงจนกว่าผู้ใช้ขยับกล้องเอง; แก้ 3 จุด: (1) `_syncGoogleCamera`/`_syncOsmCamera` ไม่ commit bounds ที่ศูนย์พื้นที่และกัน `box.size` ว่าง/RenderBox ยังไม่มี size (2) `onMapCreated`/`onMapReady` ใช้ `_sync*CameraWhenReady` — poll สั้น ๆ (10×100ms) จน `_camera` commit ได้ (3) ห่อ `_syncOsmCamera` ด้วย try/catch เพราะ `controller.camera` throw เมื่อ map ยังไม่ ready
 
 ## 23. Phase — แชร์เหตุการณ์ (Incident Share Link + Recipient Focus View — ✅ Implemented 2026-10-08)
 
@@ -6810,9 +6866,10 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 ### 24.6 สถานะ
 
 - [x] ยืนยัน schema ของ map-config backend สำหรับ layer flags — map-config อยู่ใน Local PostgreSQL เท่านั้น (ไม่มีใน `supabase/`) จึง**ไม่มี Supabase parity ให้ตรวจ**; เมื่อเริ่ม 24.A ให้ derive layer gate names จาก `MAP_LAYERS` และคง `incidentOverviewMap` ใน allowlist แยก (ดู 24.9)
-- [ ] ตรวจรัน backend จริงบน Primary (migration 04 + `GET /api/map-config` 200) — ยังไม่ผ่านในเครื่องที่ตรวจ
+- [x] ตรวจรัน backend จริงบน Primary (2026-10-10): migration 04 ครบ (`map_provider_config` + `map_provider_config_audit`, rev 3→6), `GET /api/map-config` 200 พร้อม `mapLayers` 8 kinds; PUT admin ผ่าน legacy `x-user-id` → revision+1 + audit row; stale revision → 409; `ews` needs_key → 422; **features merge บน PostgreSQL จริง** — old client PUT เฉพาะ `incidentOverviewMap` ไม่ลบ `rain`; restore rain=off แล้ว (rev 6, state สะอาด); `api.sheserved.me` serve instance เดียวกัน
 - [x] (ทบทวน 2026-10-10) ตรวจ endpoint จากเครื่องนี้แล้ว: Thaiwater `public/waterlevel`, `public/rain_24h`, `analyst/dam` และ RainViewer `weather-maps.json` ตอบ HTTP 200 โดย Thaiwater ไม่ต้องใช้ key
 - [x] (ทบทวน 2026-10-10) สถานะโค้ดจริง: **ยังไม่มี layer ใด implement** — ไม่มี route/service ของ layer ใน `websocket-server/routes/`, ไม่มี client ของ Thaiwater/RainViewer/DWR ใน `lib/`, `KNOWN_FEATURE_GATES` มีเพียง `incidentOverviewMap`, ไม่มี UI ชั้นข้อมูล (24.A ยังไม่เริ่ม)
+- [x] **24.A implement แล้ว (2026-10-10):** `MAP_LAYERS` registry (8 kinds) + `KNOWN_FEATURE_GATES` derive จาก registry; server merge `features` ใน transaction เดียวกับ optimistic lock; readiness gate (dev_only → 422 ใน prod, needs_key → 422 ทุก env); `GET /api/map-config` + admin GET ส่ง `mapLayers`; `MapProviderConfig.extraFeatureGates` round-trip verbatim + `featureGateEnabled`/`withFeatureGate`; `MapLayerRegistry` mirror + `MapConfigSnapshot.mapLayers`; การ์ด "ชั้นข้อมูลบนแผนที่" ใน `MapProviderSettingsSection` (switch/ล็อกตาม readiness + env); ปิด Save เมื่อ `isAppDefault`. Tests: node 27/27, widget+model 34/34. **ผ่านแล้ว (2026-10-10)** — ขั้นที่ 2 (migration 04 + GET/PUT/409/422/merge/audit บน PostgreSQL จริง) และขั้นที่ 4 (UI ครบ 8 layers + save จากอุปกรณ์ → rev+1/audit/renderer ไม่เปลี่ยน) ครบตาม §24.7; เหลือเฉพาะ demo 409 สองเครื่องพร้อมกัน (optional — API + widget test ครอบแล้ว)
 - [ ] ยืนยันสิทธิ์/เงื่อนไขต่อชุดข้อมูลก่อนเปิดให้ผู้ใช้จริง: Thaiwater (terms ของ endpoint), RainViewer (license ก่อน prod), TMD/Open-Meteo (terms ก่อน 24.G), OpenTH-Radar (ถ้าเลือกใช้); DWR EWS ถูกเลื่อนออกจาก first release จนได้สิทธิ์/credential และ contract
 - [ ] **Dependency ก่อน 24.B:** ปิด §22.8 device verification และ Phase 22 รวม decision cluster `count=1`
 - [ ] **Production gate:** rollout Phase 7 safety gate — §22 incident map อยู่ในขอบเขตนี้ (`docs/guides/map_provider_rollout_plan.md` §10); ห้าม prod rollout ของ layer ก่อนผ่าน gate
@@ -6830,34 +6887,35 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 กฎ: เครื่องรองไม่ต้องรัน backend เอง ถ้าไม่ได้รัน `:3000`/`:8080` ให้ถือว่าเป็นสถานะปกติของเครื่องรอง ไม่ใช่ข้อผิดพลาด และห้ามเลือก fallback ไปที่ DB ท้องถิ่นโดยไม่บันทึก (ตาม §4.9)
 
 **ขั้นที่ 1 — ทดสอบที่ทำได้โดยไม่มี backend (รันบน Secondary ได้ทันที)**
-- `node --test test/map-config.test.js` (ผ่านแล้ว 18/18 ที่ websocket-server; ครอบคลุม validation เท่านั้น)
-- `flutter test test/features/admin/map_provider_config_test.dart test/shared/map/` (ผ่านแล้ว 47/47)
-- `flutter test test/features/admin/map_provider_settings_section_test.dart` (ผ่านแล้ว 10/10) ประกอบด้วย:
-  - server ไม่ตอบ → แสดง banner app-default และการบันทึกไม่แสดงความสำเร็จปลอม
-  - การเปิด platform ไม่เปลี่ยน `renderer`/`tileSourceId` ใน PUT
+- `node --test test/map-config.test.js` (ผ่านแล้ว 27/27 — รวม save/409/audit/rollback กับ fake pool, `mapLayers` ใน GET, readiness 422 และ features merge 4 กรณี)
+- `flutter test test/features/admin/map_provider_config_test.dart test/shared/map/` (ผ่านแล้ว — config test ครอบ round-trip gate verbatim, `withFeatureGate`, `MapLayerRegistry`)
+- `flutter test test/features/admin/map_provider_settings_section_test.dart` ประกอบด้วย:
+  - server ไม่ตอบ → แสดง banner app-default, **ปุ่ม Save disabled** และการบันทึกไม่แสดงความสำเร็จปลอม
+  - การเปิด platform ไม่เปลี่ยน `renderer`/`tileSourceId` ใน PUT; การเปิด layer เขียน `features.<id>` โดยไม่แตะ renderer/tileSource
   - 409 conflict, 422 validation, responsive layout 320/393/1280
-- **งานบังคับใน 24.A:** ปิดปุ่ม Save เมื่อ snapshot เป็น app-default/offline เพื่อไม่ให้ส่งค่า fallback ทับ backend; เพิ่ม widget test ยืนยัน disabled state
+  - layers card: switch ต่อ registry layer, needs_key disabled, layer switches ล็อกเมื่อ app-default
+- [x] ~~**งานบังคับใน 24.A:** ปิดปุ่ม Save เมื่อ snapshot เป็น app-default/offline~~ — ทำแล้ว (widget test ยืนยัน `onPressed == null` + `puts` ว่าง)
 
 **ขั้นที่ 2 — ทดสอบที่ต้องมี backend (รันบน Primary หรือชี้จาก Secondary ผ่าน Caddy)**
 - ตรวจ migration: `map_provider_config` และ `map_provider_config_audit` ต้องมีอยู่ใน DB ของ Primary (ปัจจุบันยังไม่มีในทุกฐานข้อมูลบนเครื่องที่ตรวจ)
 - `curl http://<primary-ip>:8080/api/map-config` → 200 พร้อม `revision`; ถ้า 404 = migration ยังไม่ถูก apply; ถ้า timeout = Caddy/Node/IP ผิด (ใช้ checklist ใน §"Network & Configuration Runbook")
-- PUT/409/rollback/audit **ยังไม่มี integration test** (test ปัจจุบันครอบคลุม validation อย่างเดียว) — ต้องเพิ่มก่อนพึ่งพาใน 24.A โดยชี้ไปที่ Primary
-- เมื่อ `MAP_LAYERS` และ `features.<layer>.enabled` เพิ่มแล้ว ต้องทดสอบ save→readback, ไม่มี warning `unknown feature gate`, และยังรักษา `incidentOverviewMap`
+- PUT/409/rollback/audit มี unit test กับ fake pool แล้ว (`node --test test/map-config.test.js`); **ยังต้อง** verify กับ PostgreSQL จริงบน Primary เพราะ fake pool emulate transaction เท่านั้น
+- [x] (unit) save→readback ของ `features.<layer>.enabled`, ไม่มี warning `unknown feature gate` สำหรับ layer keys, รักษา `incidentOverviewMap` และ merge ไม่ลบ gate ที่ client ไม่ส่ง — ทดสอบจริงบน Primary ยังคงต้องทำในขั้นนี้
 
 **ขั้นที่ 3 — Admin layer config UI (24.A) และ provider settings (ตาม rollout plan §4 และ §10)**
-- เพิ่ม global switches ในการ์ด "ชั้นข้อมูลบนแผนที่"; แสดง/เปิดได้เฉพาะ layer ที่ server registry อนุญาต และสถานะ readiness ผ่าน
-- save ผ่าน `MapConfigService.save` ด้วย revision ล่าสุดเท่านั้น; เมื่อเป็น app-default/offline ให้ปิด Save; conflict ต้องโหลด snapshot ใหม่โดยไม่เขียนทับ draft เงียบ ๆ
+- [x] (code 2026-10-10) global switches ในการ์ด "ชั้นข้อมูลบนแผนที่" — switch ต่อ layer จาก `snapshot.mapLayers`; `needs_key` disabled ทุก env, `dev_only` disabled ใน prod; switch ล็อกเมื่อ saving/app-default
+- [x] (code 2026-10-10) save ผ่าน `MapConfigService.save` → PUT เดิมพร้อม `expectedRevision`; ปิด Save เมื่อ `isAppDefault`; conflict โหลด snapshot ใหม่โดยไม่ทับ draft
 - การเปลี่ยน renderer (Google/OSM) และ tile source ทำผ่าน `PlatformSettingsPage` → `MapProviderSettingsSection` เท่านั้น
 - การเปิด/ปิด layer map (§24) ทำผ่านการ์ด "ชั้นข้อมูลบนแผนที่" ใน `MapProviderSettingsSection` (หน้าเดียวกับ gate incidentOverviewMap) ซึ่งเขียน config ผ่าน `MapConfigService.save` ตัวเดียวกับ platform settings — หน้าเดียวเป็น writer ของ `map_provider_config` (ไม่มี two-writer)
-- การเปิด layer ต้องไม่เปลี่ยน `renderer`/`tileSourceId` (มี test ตรวจเฉพาะการเปิด platform; ยังไม่มี test สำหรับ layer ต้องเพิ่มใน 24.A) ห้ามแก้ค่าโดยตรงใน DB หรือ `app_settings` ทั้งสองทาง
+- [x] (unit) การเปิด layer ไม่เปลี่ยน `renderer`/`tileSourceId` — widget test "toggling a layer switch writes features.<id> into the PUT doc" ตรวจ doc เต็ม; ห้ามแก้ค่าโดยตรงใน DB หรือ `app_settings` ทั้งสองทาง
 - ก่อนเปิด OSM ใน environment ใด ต้องผ่าน gate ใน §10 ของ rollout plan (Phase 0–2 เสร็จแล้ว, Phase 7 ยังไม่เริ่ม) — layer ใหม่ใช้ได้เฉพาะหลังแผนที่หลักผ่าน gate เดียวกัน
 - ทุกการบันทึกต้องมี `expectedRevision` และ reason (prod) และตรวจ audit ใหม่หลังบันทึกทุกครั้ง
 
 **ขั้นที่ 4 — ตรวจข้ามเครื่อง**
-- Secondary เปิดหน้า Platform Settings → map-config/feature gates ที่แสดงต้องตรงกับ `GET /api/map-config` ของ Primary (revision เท่ากัน)
-- เปิด/ปิด layer จาก Secondary → Primary ต้องเห็นค่า, revision +1 และ audit row ใหม่; renderer/tileSource ต้องไม่เปลี่ยน
-- แก้พร้อมกันสองเครื่อง → ต้องได้ 409 conflict; reload ได้ค่าปัจจุบันโดยไม่ทับ draft เงียบ ๆ
-- ยืนยัน client รุ่นเก่าที่ไม่รู้จัก layer flags บันทึก platform config แล้ว server ยังคงเก็บ flags เหล่านั้น
+- [x] Device (2026-10-10, iOS): Platform Settings แสดงการ์ด "ชั้นข้อมูลบนแผนที่" ครบ 8 layers ตาม registry — dev_only toggle ได้, needs_key disabled พร้อม note ส้ม; พบและแก้ bug จริง: `map_provider_config_audit.id` เป็น bigint → pg ส่งเป็น string → `MapConfigRevision.fromJson` cast พัง (history ว่าง) — แก้เป็น num.tryParse + test ด้วย fake string-id; และ overflow 63px ที่ `platform_settings_page.dart` usage-stats Row (Expanded wrap)
+- [x] เปิด/ปิด layer จากอุปกรณ์ → verified 2026-10-10: save จาก iOS device (actor derfby) → rev 6→7, audit id=6, `rain`+`radar` enabled, `incidentOverviewMap` คงค่า (merge ทำงานกับ client จริง), renderer/tileSource ไม่เปลี่ยน
+- [x] 409 conflict — verify ระดับ API บน PostgreSQL จริงแล้ว (stale `expectedRevision` → 409); conflict banner ครอบด้วย widget test; เหลือ optional: demo แก้พร้อมกัน 2 เครื่องบนหน้าจอจริง
+- [x] ยืนยัน client รุ่นเก่าที่ไม่รู้จัก layer flags บันทึก platform config แล้ว server ยังคงเก็บ flags เหล่านั้น — verify กับ PostgreSQL จริงแล้ว (PUT `features={incidentOverviewMap}` ไม่ลบ `rain`)
 
 **เงื่อนไขหยุด:** ถ้าขั้น 2 ไม่ผ่าน ห้ามเปิด write path/mark 24.A ผ่าน; ถ้าขั้น 4 ไม่ผ่าน ห้ามเริ่ม 24.B และห้ามเชื่อมต่อ upstream/roll out 24.C–24.H; ถ้า §22.8 ยังไม่ผ่าน ห้ามต่อ 24.B เข้ากับ incident map; production ทุก layer ต้องรอ safety gate Phase 7
 
@@ -6899,7 +6957,7 @@ IncidentMapDataState { loading, ready, empty, error, degraded }
 **กฎการโต้ตอบ**
 
 - แตะ marker ของชั้นข้อมูล → bottom sheet รายละเอียด (ค่า, เวลาที่วัด, แหล่ง) **ห้าม** เลือกการ์ด, สลับวิดีโอ, pause หรือยิง view/like event
-- cluster ของชั้นข้อมูล: แตะ = zoom เข้า bounds เสมอ — ชั้นข้อมูลไม่มี incident id จึงไม่มีกรณี "count=1 ถือเป็นหมุด" (เลี่ยงช่องว่างที่ค้างอยู่ใน §22.11)
+- cluster ของชั้นข้อมูล: แตะ = zoom เข้า bounds เสมอ — ตรงกับมติ §22.3.4 (cluster `count=1` ซูมเข้า cell เหมือน cluster ทั่วไป) และชั้นข้อมูลไม่มี incident id อยู่แล้ว
 - attribution ของ layer ต่อท้าย attribution row เดิม (Google logo / OSM) ไม่สร้าง overlay ใหม่ทับ (§22.3.2)
 - ไม่บังปุ่มฉุกเฉิน (แชร์/ภารกิจ/ยกเลิก) — การบังปุ่มเป็น P0 ตาม rollout Phase 7
 - Radar: แสดงเฟรมล่าสุดเท่านั้นในรอบแรก; slider/animation อยู่นอกขอบเขต

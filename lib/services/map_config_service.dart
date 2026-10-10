@@ -13,6 +13,10 @@ import 'auth_service.dart';
 class MapConfigSnapshot {
   final MapProviderConfig config;
   final TileSourceRegistry registry;
+
+  /// Phase 24.A — data-layer registry mirrored from the server's
+  /// `mapLayers` payload (embedded defaults when the server omits it).
+  final MapLayerRegistry mapLayers;
   final String? updatedBy;
   final String? reason;
 
@@ -20,13 +24,14 @@ class MapConfigSnapshot {
   /// be reached — callers must surface this, never fake a saved state (§4.9).
   final bool isAppDefault;
 
-  const MapConfigSnapshot({
+  MapConfigSnapshot({
     required this.config,
     required this.registry,
+    MapLayerRegistry? mapLayers,
     this.updatedBy,
     this.reason,
     this.isAppDefault = false,
-  });
+  }) : mapLayers = mapLayers ?? MapLayerRegistry.defaults();
 }
 
 /// Audit row from GET /api/admin/map-config/history.
@@ -52,8 +57,10 @@ class MapConfigRevision {
   });
 
   factory MapConfigRevision.fromJson(Map<String, dynamic> json) => MapConfigRevision(
-        id: (json['id'] as num).toInt(),
-        revision: (json['revision'] as num).toInt(),
+        // bigint columns arrive as strings from node-postgres — parse
+        // through toString so both int and string payloads work.
+        id: num.tryParse(json['id']?.toString() ?? '')?.toInt() ?? 0,
+        revision: num.tryParse(json['revision']?.toString() ?? '')?.toInt() ?? 0,
         environment: json['environment'] as String? ?? 'dev',
         oldConfig: json['old_config'] as Map<String, dynamic>?,
         newConfig: Map<String, dynamic>.from(json['new_config'] as Map),
@@ -207,6 +214,8 @@ class MapConfigService {
     return MapConfigSnapshot(
       config: config,
       registry: registry,
+      mapLayers:
+          MapLayerRegistry.fromServer(body['mapLayers'] as Map<String, dynamic>?),
       updatedBy: includeMeta ? body['updatedBy'] as String? : null,
       reason: includeMeta ? body['reason'] as String? : null,
     );
@@ -240,6 +249,7 @@ class MapConfigService {
           _lastGood = MapConfigSnapshot(
             config: saved,
             registry: TileSourceRegistry.defaults(),
+            mapLayers: _lastGood?.mapLayers,
           );
           return MapConfigSaved(
             saved,

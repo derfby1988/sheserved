@@ -23,8 +23,14 @@ const int kIncidentMapMaxPhotosPerIncident = 15;
 ///     automatically (least distortion first — see [_RingLayout.forCount]):
 ///     expand the ring → split into two concentric rings → shrink the card
 ///   * a layout is committed all-or-none; up to 8 rotations are tried per
-///     candidate before moving to the next strategy, and an incident whose
-///     cards all fail is dropped (the pin itself remains on the map)
+///     candidate before moving to the next strategy — when every strategy
+///     fails, a partial-ring fallback keeps the rotation that fits the most
+///     cards on the base ring (a partial ring beats no ring); an incident
+///     that still fits nothing is dropped (the pin itself remains on the map)
+///   * photo pins stacked on top of each other (screen distance below one
+///     pin diameter) can never satisfy each other's pin exclusion — and the
+///     lower pin is not tappable anyway — so they share one ring slot that
+///     goes to the highest-priority incident (preferred → recency → id)
 ///   * a card is placed only when it does not intersect any already-placed
 ///     card, any other incident's pin exclusion circle, or the viewport edge
 ///   * [preferredIncidentId] is placed first when returning from map playback;
@@ -107,10 +113,6 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
   // ทิ้งการ์ดได้รอบทิศ จึงขยาย zone เป็นวงกลมรอบหมุดแทนกล่องเหนือหมุด;
   // หมุดของตัวเองเว้นไว้เพราะ ringRadius คุมไม่ให้การ์ดแตะหน้าหมุดอยู่แล้ว
   const pad = 6.0;
-  final anchorExclusions = <String, Rect>{
-    for (final entry in anchorByIncidentId.entries)
-      entry.key: _anchorExclusion(entry.value, pinRadius + cardHalfDiag + pad),
-  };
 
   // Recency priority: newest photo first, ties by incident id.
   DateTime firstCreatedAt(String id) {
@@ -129,6 +131,33 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
           return a.compareTo(b);
         });
 
+  // Stacked photo pins share one ring slot: pins closer than a pin diameter
+  // already overlap visually, their mutual exclusion circles would make
+  // every card illegal, and only the top pin is tappable anyway. The
+  // representative is the first in priority order (preferred → recency).
+  final ids2 = <String>[];
+  final repAnchors = <String, Offset>{};
+  for (final id in ids) {
+    final anchor = anchorByIncidentId[id];
+    if (anchor == null) continue;
+    var stacked = false;
+    for (final repAnchor in repAnchors.values) {
+      if ((anchor - repAnchor).distance <= pinRadius * 2) {
+        stacked = true;
+        break;
+      }
+    }
+    if (!stacked) {
+      ids2.add(id);
+      repAnchors[id] = anchor;
+    }
+  }
+
+  final anchorExclusions = <String, Rect>{
+    for (final entry in repAnchors.entries)
+      entry.key: _anchorExclusion(entry.value, pinRadius + cardHalfDiag + pad),
+  };
+
   // ลองหมุนวงรอบหมุด (0°, ±45°, ±90°, ±135°, 180°) จนกว่าจะวางครบทุกใบ
   const rotations = <double>[
     0,
@@ -141,7 +170,7 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
     math.pi,
   ];
 
-  for (final id in ids) {
+  for (final id in ids2) {
     final anchor = anchorByIncidentId[id];
     if (anchor == null) continue;
     final photos = (photosByIncidentId[id] ?? const [])
@@ -216,7 +245,64 @@ List<IncidentPhotoCardPlacement> layoutIncidentPhotoCards({
       }
       if (placed) break;
     }
-    // ทุกกลยุทธ์ไม่มีที่วาง → ไม่แสดงการ์ดของเหตุนี้; หมุดยังอยู่บนแผนที่
+
+    if (!placed) {
+      // Partial-ring fallback: no strategy fits all n cards (viewport edge
+      // or a neighbouring photo pin's exclusion) — keep the base-ring
+      // rotation that fits the most cards instead of dropping the ring.
+      var best = <Rect>[];
+      for (final rotation in rotations) {
+        final candidate = <Rect>[];
+        for (var i = 0; i < n; i++) {
+          final angle = startAngle + rotation + 2 * math.pi * i / n;
+          final rect = Rect.fromCenter(
+            center: Offset(
+              anchor.dx + ring * math.cos(angle),
+              anchor.dy + ring * math.sin(angle),
+            ),
+            width: effectiveCard.width,
+            height: effectiveCard.height,
+          );
+          if (rect.left < 0 ||
+              rect.right > viewport.width ||
+              rect.top < 0 ||
+              rect.bottom > viewport.height) {
+            continue;
+          }
+          var blocked = false;
+          for (final other in [...placedRects, ...candidate]) {
+            if (other.overlaps(rect.inflate(gap / 2))) {
+              blocked = true;
+              break;
+            }
+          }
+          if (!blocked) {
+            for (final entry in anchorExclusions.entries) {
+              if (entry.key == id) continue;
+              if (entry.value.overlaps(rect)) {
+                blocked = true;
+                break;
+              }
+            }
+          }
+          if (!blocked) candidate.add(rect);
+        }
+        if (candidate.length > best.length) best = candidate;
+        if (best.length == n) break;
+      }
+      for (var i = 0; i < best.length; i++) {
+        placements.add(
+          IncidentPhotoCardPlacement(
+            incidentId: id,
+            photo: photos[i],
+            topLeft: best[i].topLeft,
+            size: effectiveCard,
+          ),
+        );
+        placedRects.add(best[i]);
+      }
+    }
+    // ยังไม่มีที่วางเลย → ไม่แสดงการ์ดของเหตุนี้; หมุดยังอยู่บนแผนที่
   }
   return placements;
 }

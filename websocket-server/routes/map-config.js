@@ -36,6 +36,62 @@ const TILE_SOURCES = Object.freeze({
   carto_voyager: { readiness: 'needs_key', label: 'CARTO Voyager' },
 });
 
+// Canonical map data-layer registry — VIDEO_SYSTEM_PLAN.md §24.9.
+// Layer feature gates live at `features.<id>`; readiness decides where a
+// layer may be switched on: 'ready' everywhere, 'dev_only' in dev/staging
+// only, 'needs_key' nowhere until a credential/license/data asset is
+// configured (readiness flips via deploy — never via an admin toggle).
+// Mirror: MapLayerRegistry in lib/features/admin/models/map_provider_config.dart.
+const MAP_LAYERS = Object.freeze({
+  rain: {
+    readiness: 'dev_only', type: 'points', label: 'ปริมาณฝน 24 ชม.',
+    minZoom: 6, maxPoints: 400, cacheTtlSec: 900, staleAfterSec: 86400,
+    source: 'Thaiwater (HII)', attribution: 'ข้อมูล สสนก. (Thaiwater)',
+  },
+  waterLevel: {
+    readiness: 'dev_only', type: 'points', label: 'ระดับน้ำ (Thaiwater)',
+    minZoom: 6, maxPoints: 400, cacheTtlSec: 900, staleAfterSec: 43200,
+    source: 'Thaiwater (HII)', attribution: 'ข้อมูล สสนก. (Thaiwater)',
+  },
+  dam: {
+    readiness: 'dev_only', type: 'points', label: 'เขื่อน/อ่างเก็บน้ำ',
+    minZoom: 5, maxPoints: 100, cacheTtlSec: 3600, staleAfterSec: 604800,
+    source: 'Thaiwater (HII)', attribution: 'ข้อมูล สสนก. (Thaiwater)',
+  },
+  ews: {
+    readiness: 'needs_key', type: 'points', label: 'สถานีเตือนภัย (DWR EWS)',
+    minZoom: 7, maxPoints: 300, cacheTtlSec: 600, staleAfterSec: 7200,
+    source: 'DWR', attribution: 'กรมชลประทาน (DWR)',
+  },
+  radar: {
+    readiness: 'dev_only', type: 'raster_tile', label: 'เรดาร์ฝน (RainViewer)',
+    minZoom: 4, maxPoints: 0, cacheTtlSec: 600, staleAfterSec: 3600,
+    source: 'RainViewer', attribution: 'RainViewer',
+  },
+  forecast: {
+    readiness: 'dev_only', type: 'points', label: 'พยากรณ์รายจุด',
+    minZoom: 6, maxPoints: 300, cacheTtlSec: 1800, staleAfterSec: 21600,
+    source: 'Open-Meteo', attribution: 'Open-Meteo',
+  },
+  province: {
+    readiness: 'needs_key', type: 'polygon', label: 'ขอบเขตจังหวัด',
+    minZoom: 5, maxPoints: 0, cacheTtlSec: 86400, staleAfterSec: 2592000,
+    source: 'official GeoJSON (pending)', attribution: '',
+  },
+  floodRoute: {
+    readiness: 'needs_key', type: 'polyline', label: 'เส้นทางลุ่มน้ำ',
+    minZoom: 8, maxPoints: 0, cacheTtlSec: 3600, staleAfterSec: 86400,
+    source: 'official dataset (pending)', attribution: '',
+  },
+});
+
+// Valid `features.*` gate names — UI gates plus every MAP_LAYERS key.
+// Unknown names are warned (forward-compat), never silently activated.
+const KNOWN_FEATURE_GATES = Object.freeze([
+  'incidentOverviewMap',
+  ...Object.keys(MAP_LAYERS),
+]);
+
 const PLATFORMS = ['web', 'ios', 'android'];
 const FEATURES = ['home', 'rescue', 'emergency', 'group_create'];
 const RENDERERS = ['google', 'osm'];
@@ -189,7 +245,8 @@ function validateMapConfig(config, { environment, reason, confirmations } = {}) 
   // (VIDEO_SYSTEM_PLAN.md §22.6: the incident overview map entry must be
   // toggleable from the server). Unknown names are warned, not rejected, so
   // older clients can still save configs written by newer servers.
-  const KNOWN_FEATURE_GATES = ['incidentOverviewMap'];
+  // §24.A — MAP_LAYERS names additionally enforce readiness: a layer may
+  // only be enabled where its readiness allows (422 otherwise).
   const fv = config.features;
   if (fv !== undefined && !_isObj(fv)) {
     errors.push('features: must be an object');
@@ -201,8 +258,20 @@ function validateMapConfig(config, { environment, reason, confirmations } = {}) 
       }
       if (typeof gate.enabled !== 'boolean') {
         errors.push(`features.${name}.enabled: must be boolean`);
+        continue;
       }
-      if (!KNOWN_FEATURE_GATES.includes(name)) {
+      const layer = MAP_LAYERS[name];
+      if (layer) {
+        if (gate.enabled === true) {
+          if (layer.readiness === 'needs_key') {
+            errors.push(
+              `features.${name}: '${name}' requires credentials/license/data that are not configured yet`,
+            );
+          } else if (layer.readiness === 'dev_only' && environment === 'prod') {
+            errors.push(`features.${name}: '${name}' is dev-only and cannot be enabled in prod`);
+          }
+        }
+      } else if (!KNOWN_FEATURE_GATES.includes(name)) {
         warnings.push(`features.${name}: unknown feature gate ignored`);
       }
     }
@@ -244,10 +313,25 @@ module.exports = (pool) => {
   }
 
   /**
+   * §24.A — merge `features` against the row being replaced so a client that
+   * does not know a newer gate (or sends no `features` at all) cannot delete
+   * it. Runs inside the transaction on the in-flight row, so the merge base
+   * is exactly what the optimistic lock verified.
+   */
+  function _mergeFeatureGates(incoming, currentConfig) {
+    const currentFeatures =
+      _isObj(currentConfig) && _isObj(currentConfig.features) ? currentConfig.features : {};
+    const incomingFeatures = _isObj(incoming.features) ? incoming.features : {};
+    return { ...incoming, features: { ...currentFeatures, ...incomingFeatures } };
+  }
+
+  /**
    * Save a new revision inside a transaction.
    * Returns { saved: row } or throws { status, body } for conflicts.
+   * Pass mergeFeatureGates for normal PUTs so missing `features.*` keys are
+   * preserved; rollbacks restore the audit document verbatim (no merge).
    */
-  async function _saveRevision({ config, expectedRevision, reason, actor }) {
+  async function _saveRevision({ config, expectedRevision, reason, actor, mergeFeatureGates = false }) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -264,12 +348,13 @@ module.exports = (pool) => {
           },
         };
       }
+      const finalConfig = mergeFeatureGates ? _mergeFeatureGates(config, current.config) : config;
       const upd = await client.query(
         `UPDATE map_provider_config
            SET revision = revision + 1, config = $1, reason = $2, updated_by = $3, updated_at = NOW()
          WHERE id = 1 AND revision = $4
          RETURNING id, revision, environment, config, reason, updated_by, updated_at`,
-        [config, reason || null, actor, expectedRevision],
+        [finalConfig, reason || null, actor, expectedRevision],
       );
       if (upd.rows.length === 0) {
         // Lost the race between SELECT and UPDATE.
@@ -282,7 +367,7 @@ module.exports = (pool) => {
           upd.rows[0].revision,
           upd.rows[0].environment,
           current.config,
-          config,
+          finalConfig,
           reason || null,
           actor,
         ],
@@ -317,7 +402,7 @@ module.exports = (pool) => {
       if (!data) {
         return res.status(404).json({ error: 'Map config not initialized' });
       }
-      res.json({ ...data, tileSources: TILE_SOURCES });
+      res.json({ ...data, tileSources: TILE_SOURCES, mapLayers: MAP_LAYERS });
     } catch (err) {
       console.error('Error fetching map config:', err);
       res.status(500).json({ error: 'Server error' });
@@ -336,6 +421,7 @@ module.exports = (pool) => {
         updatedBy: row.updated_by,
         reason: row.reason,
         tileSources: TILE_SOURCES,
+        mapLayers: MAP_LAYERS,
       });
     } catch (err) {
       console.error('Error fetching admin map config:', err);
@@ -376,6 +462,7 @@ module.exports = (pool) => {
         expectedRevision: expected,
         reason,
         actor: req.userId || req.user?.id || 'unknown',
+        mergeFeatureGates: true,
       });
 
       res.json({ message: 'Map config saved', warnings, data: _publicShape(saved) });
@@ -444,3 +531,5 @@ module.exports = (pool) => {
 // Exported for unit tests.
 module.exports.validateMapConfig = validateMapConfig;
 module.exports.TILE_SOURCES = TILE_SOURCES;
+module.exports.MAP_LAYERS = MAP_LAYERS;
+module.exports.KNOWN_FEATURE_GATES = KNOWN_FEATURE_GATES;

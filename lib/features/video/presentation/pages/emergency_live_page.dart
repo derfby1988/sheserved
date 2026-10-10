@@ -236,6 +236,9 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
   IncidentMapAvailability? _incidentMapAvailability;
   bool _incidentOverviewMapEnabled = false;
   int _incidentMapFetchGeneration = 0;
+  /// §22.20: auto-retry backoff หลัง fetch พลาด (transient 429/timeout/5xx)
+  int _incidentMapFetchRetryCount = 0;
+  Timer? _incidentMapFetchRetryTimer;
   IncidentMapRepository? _incidentMapRepository;
   int _incidentMapNewCount = 0;
   StreamSubscription? _incidentMapRealtimeSub;
@@ -376,6 +379,7 @@ class _EmergencyLivePageState extends State<EmergencyLivePage>
     _incidentMapPhotoSub?.cancel(); // ✅ Phase 22 (§22.19)
     _incidentMapPhotoRefreshDebounce?.cancel();
     _incidentMapPendingPollTimer?.cancel();
+    _incidentMapFetchRetryTimer?.cancel();
     _videoPlayerController?.removeListener(_syncGpsWithVideo);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();

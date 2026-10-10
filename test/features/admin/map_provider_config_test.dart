@@ -198,4 +198,86 @@ void main() {
       expect(r['ghost'], isNull);
     });
   });
+
+  group('feature gates passthrough (Phase 24.A)', () {
+    test('unknown + layer gates round-trip verbatim', () {
+      final c = MapProviderConfig.fromJson({
+        'revision': 3,
+        'environment': 'dev',
+        'config': {
+          'features': {
+            'incidentOverviewMap': {'enabled': false},
+            'rain': {'enabled': true},
+            'futureGate': {'enabled': true, 'note': 'keep me'},
+          },
+        },
+      });
+      expect(c.featureGateEnabled('rain'), isTrue);
+      expect(c.featureGateEnabled('futureGate'), isTrue);
+      final out = c.toConfigJson()['features'] as Map<String, dynamic>;
+      expect((out['incidentOverviewMap'] as Map)['enabled'], isFalse);
+      expect((out['rain'] as Map)['enabled'], isTrue);
+      // Sibling fields on the gate object survive the round trip.
+      expect(out['futureGate'], {'enabled': true, 'note': 'keep me'});
+    });
+
+    test('withFeatureGate toggles a layer flag without dropping siblings', () {
+      var c = seedConfig()
+          .withFeatureGate('rain', true)
+          .withFeatureGate('dam', true);
+      c = c.withFeatureGate('rain', false);
+      final features = c.toConfigJson()['features'] as Map<String, dynamic>;
+      expect((features['rain'] as Map)['enabled'], isFalse);
+      expect((features['dam'] as Map)['enabled'], isTrue);
+    });
+
+    test('withFeatureGate routes incidentOverviewMap to the typed field', () {
+      final c = seedConfig().withFeatureGate('incidentOverviewMap', true);
+      expect(c.incidentOverviewMapEnabled, isTrue);
+      expect(c.extraFeatureGates.containsKey('incidentOverviewMap'), isFalse);
+    });
+
+    test('toggling a layer gate makes the config dirty', () {
+      final a = seedConfig();
+      final b = a.withFeatureGate('rain', true);
+      expect(a.isSameConfig(b), isFalse);
+    });
+  });
+
+  group('MapLayerRegistry', () {
+    test('defaults mirror the server MAP_LAYERS ids', () {
+      final r = MapLayerRegistry.defaults();
+      expect(
+        r.layers.keys,
+        containsAll([
+          'rain',
+          'waterLevel',
+          'dam',
+          'ews',
+          'radar',
+          'forecast',
+          'province',
+          'floodRoute',
+        ]),
+      );
+      expect(r['ews']!.selectable, isFalse);
+      expect(r['rain']!.prodBlocked('prod'), isTrue);
+      expect(r['rain']!.prodBlocked('dev'), isFalse);
+    });
+
+    test('fromServer parses entries and keeps kinds unknown to the client', () {
+      final r = MapLayerRegistry.fromServer({
+        'rain': {'readiness': 'ready', 'label': 'Rain', 'type': 'points'},
+        'newKind': {'readiness': 'dev_only', 'label': 'New', 'type': 'points'},
+      });
+      expect(r['rain']!.readiness, TileSourceReadiness.ready);
+      expect(r['newKind'], isNotNull);
+      // Server canonical — kinds the server removed do not come back.
+      expect(r['dam'], isNull);
+    });
+
+    test('fromServer(null) falls back to embedded defaults', () {
+      expect(MapLayerRegistry.fromServer(null).layers, isNotEmpty);
+    });
+  });
 }
